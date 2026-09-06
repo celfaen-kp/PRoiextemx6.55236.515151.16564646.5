@@ -43,7 +43,7 @@ a:hover{color:var(--tinta)}
 
 .mono{font-family:var(--mono)}
 .lbl{font:400 10px/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:rgba(20,23,15,.45)}
-.h1{font:600 30px/1 var(--cond)}
+.h1{font:700 30px/1.05 var(--cond);letter-spacing:-.01em}
 .h2{font:600 19px/1.15 var(--sans)}
 .num{font-family:var(--cond);font-weight:600}
 .sub{font:400 13px/1.4 var(--sans);color:var(--t2)}
@@ -85,7 +85,30 @@ a:hover{color:var(--tinta)}
 .hdr-dark{flex:none;background:var(--tinta);color:#fff;padding:calc(14px + var(--safe-t)) 20px 18px}
 .hdr-dark .back{font:500 13px/1 var(--sans);color:rgba(255,255,255,.5);cursor:pointer;display:inline-block;padding:4px 0 10px}
 .semaforo{flex:none;padding:calc(18px + var(--safe-t)) 22px 26px;transition:background .25s}
-.hoja{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;background:var(--papel);border-radius:26px 26px 0 0;margin-top:-16px;padding:22px 20px calc(100px + var(--safe-b))}
+.hoja{position:relative;flex:1;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;background:var(--papel);border-radius:26px 26px 0 0;margin-top:-16px;padding:22px 20px calc(100px + var(--safe-b))}
+.hoja-contenido{position:relative;z-index:1}
+/* Marca de agua Sysefen GLOBAL: se aplica a los dos contenedores de contenido
+   que usa toda la app (.hoja en Hoy/Admin, .scroll en el resto de secciones),
+   así que aparece igual en Obras, Partes, Horas, Empleados y Ajustes sin
+   tocar cada vista. Va como pseudo-elemento EN FLUJO NORMAL (no
+   absolute/fixed): ocupa su propia franja de espacio arriba de cada sección,
+   antes de la primera tarjeta. Así nunca queda a mitad de una tarjeta ni
+   partida por los renglones de una lista (el problema de la versión
+   anterior, que la superponía y una lista densa la cortaba en trozos):
+   al reservar su propio hueco, la imagen se ve siempre completa y entera. */
+.scroll::before,.hoja::before{
+  content:'';
+  display:block;
+  width:100%;
+  height:104px;
+  margin-bottom:14px;
+  background:url('logo-trans.png') center/contain no-repeat;
+  opacity:.32;
+  pointer-events:none;
+}
+@media (max-width:520px){
+  .scroll::before,.hoja::before{height:76px;margin-bottom:10px}
+}
 
 .nav{flex:none;display:flex;align-items:flex-start;padding:10px 6px calc(6px + var(--safe-b));background:rgba(252,251,249,.97);border-top:1px solid rgba(20,23,15,.08);backdrop-filter:blur(12px)}
 .nav div{flex:1;display:flex;flex-direction:column;align-items:center;gap:6px;cursor:pointer;padding:3px 0;color:rgba(20,23,15,.32)}
@@ -100,7 +123,8 @@ a:hover{color:var(--tinta)}
 .sheet>div{width:100%;background:#fff;border-radius:26px;padding:24px 22px 22px;animation:up .22s cubic-bezier(.2,.9,.3,1)}
 @keyframes fade{from{opacity:0}}
 @keyframes up{from{transform:translateY(18px)}}
-.toast{position:fixed;left:20px;right:20px;bottom:calc(100px + var(--safe-b));background:var(--tinta);color:#fff;padding:14px 16px;border-radius:14px;font:500 14px/1.4 var(--sans);z-index:60;box-shadow:0 8px 24px rgba(0,0,0,.25);animation:up .2s}
+.toast{position:fixed;left:20px;right:20px;top:calc(56px + var(--safe-t));max-width:520px;margin:0 auto;background:var(--tinta);color:#fff;padding:14px 16px;border-radius:14px;font:500 14px/1.4 var(--sans);z-index:70;box-shadow:0 8px 24px rgba(0,0,0,.25);animation:toastIn .2s ease-out}
+@keyframes toastIn{from{opacity:0;transform:translateY(-10px)}}
 .offline{flex:none;background:var(--ambar);color:var(--tinta);font:500 12px/1 var(--sans);text-align:center;padding:7px}
 
 #firma{width:100%;height:190px;display:block;border-radius:10px;touch-action:none}
@@ -146,9 +170,19 @@ a:hover{color:var(--tinta)}
 <div id="app"></div>
 <div id="print"></div>
 
-<script>
+<script type="module">
 'use strict';
+
+import { supabase } from './supabase-client.js';
+import * as sysAuth from './supabase-auth.js';
+import * as sysDB from './supabase-db.js';
+
+// Capa Supabase disponible para la Etapa 3 (integración progresiva) y pruebas.
+// La app sigue funcionando con localStorage hasta que se enchufe pieza a pieza.
+window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
+
 const KEY = 'ch_v1';
+const APP_VERSION = '7.1'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -170,6 +204,7 @@ function semilla() {
     ],
     obras: [],
     fichajes: [],
+    imputaciones: [],
     partes: [],
     seq: 1,
     obraActiva: null,
@@ -180,35 +215,300 @@ let S = cargar();
 function cargar() {
   try {
     const raw = localStorage.getItem(KEY);
-    if (!raw) return semilla();
-    const d = JSON.parse(raw);
-    return Object.assign(semilla(), d);
+    const base = raw ? Object.assign(semilla(), JSON.parse(raw)) : semilla();
+    base.fichajes = [];      // fichajes -> Supabase (public.fichajes), nunca localStorage
+    base.obras = [];         // obras -> Supabase (public.obras)
+    base.imputaciones = [];  // imputaciones -> Supabase (public.imputaciones)
+    base.partes = [];        // partes -> Supabase (public.partes/parte_horas/parte_materiales)
+    return base;
   } catch (e) { return semilla(); }
 }
 let guardando = null;
 function save() {
   clearTimeout(guardando);
   guardando = setTimeout(() => {
-    try { localStorage.setItem(KEY, JSON.stringify(S)); }
+    try { localStorage.setItem(KEY, JSON.stringify(Object.assign({}, S, { fichajes: [], obras: [], imputaciones: [], partes: [] }))); }
     catch (e) { toast('No hay espacio en el móvil. Borra algún adjunto antiguo.'); }
   }, 120);
 }
 
 /* ---------- sesión / vista ---------- */
-let V = { view: 'login', pinUser: null, pin: '', err: false, obraId: null, tabHoras: 'empleado', sheet: null, draft: null, verParte: null, user: null };
+let V = { view: 'login', pinUser: null, pin: '', pinBusy: false, err: false, obraId: null, tabHoras: 'empleado', sheet: null, draft: null, verParte: null, user: null, impFecha: null, impEmp: null, impDraft: null, impBorrar: [], impBusy: false, empEmp: null, empDraft: null, empBusy: false, planEmp: null, planMes: null };
 try { const u = sessionStorage.getItem('ch_user'); if (u) V.user = JSON.parse(u); } catch (e) {}
 if (V.user) V.view = 'hoy';
+
+/* --- login: mapeo empleado local <-> cuenta de Supabase Auth --- */
+const CUENTAS_AUTH = sysAuth.CUENTAS;
+const nombreDeEmail = (email) => Object.keys(CUENTAS_AUTH).find((n) => CUENTAS_AUTH[n].email === (email || '').toLowerCase()) || null;
+const localPorNombre = (nombre) => S.users.find((u) => u.nombre === nombre) || null;
+
+// Restaura la sesión de Supabase existente al arrancar (funciona sin conexión:
+// lee el token persistido, no llama a la red).
+async function restaurarSesion() {
+  try {
+    const session = await sysAuth.sesionActual();
+    const authUser = session && session.user;
+    const VISTAS_PRIVADAS = ['hoy', 'obras', 'obra', 'alta', 'partes', 'horas', 'ajustes', 'p1', 'p2', 'p3', 'ok'];
+    if (authUser) {
+      const local = localPorNombre(nombreDeEmail(authUser.email));
+      if (local) {
+        V.user = { id: local.id };
+        try { sessionStorage.setItem('ch_user', JSON.stringify(V.user)); } catch (e) {}
+        if (V.view === 'login' || V.view === 'pin') V.view = 'hoy';
+      } else {
+        V.user = null; V.view = 'login';
+        try { sessionStorage.removeItem('ch_user'); } catch (e) {}
+      }
+    } else {
+      // No hay sesión de Supabase: no dejar entrar aunque quede rastro en sessionStorage.
+      V.user = null;
+      try { sessionStorage.removeItem('ch_user'); } catch (e) {}
+      if (VISTAS_PRIVADAS.includes(V.view)) V.view = 'login';
+    }
+  } catch (e) { /* sin token y sin red: se queda en login */ }
+  render();
+  refrescarDatos().then(render);
+}
+
+/* ---------- fichajes: espejo en memoria de public.fichajes (Supabase) ---------- */
+let empIdPorNombre = {};   // 'Bayron' -> uuid empleados.id
+let nombrePorEmpId = {};   // uuid empleados.id -> 'Bayron'
+let empRows = [];          // filas crudas de public.empleados
+let sincronizando = false;
+let mapaEmpPromesa = null;
+
+async function cargarMapaEmpleados() {
+  if (mapaEmpPromesa) return mapaEmpPromesa;
+  mapaEmpPromesa = (async () => {
+    const filas = await Sysefen.db.listarEmpleados();
+    empRows = filas || [];
+    empIdPorNombre = {}; nombrePorEmpId = {};
+    empRows.forEach((e) => {
+      empIdPorNombre[e.nombre] = e.id; nombrePorEmpId[e.id] = e.nombre;
+      // Vincula/actualiza la identidad local con la de Supabase (rol/activo/perfil).
+      // Se busca por empId (soporta renombrar) y, si no, por nombre.
+      let local = S.users.find((u) => u.empId === e.id) || S.users.find((u) => u.nombre === e.nombre);
+      if (!local) {
+        local = { id: 'e_' + e.id, nombre: e.nombre, rol: e.rol || 'operario', pin: null };
+        S.users.push(local);
+      }
+      local.nombre = e.nombre;
+      local.rol = e.rol || local.rol;
+      local.activo = e.activo !== false;
+      local.email = e.email || null;
+      local.telefono = e.telefono || null;
+      local.empId = e.id;
+      local.altaEn = e.creado_en || null;
+      local.bajaEn = e.fecha_baja || null;
+    });
+  })();
+  try { await mapaEmpPromesa; } finally { mapaEmpPromesa = null; }
+}
+const empRowById = (empId) => empRows.find((e) => e.id === empId) || null;
+
+function mapFichajeDeDB(row) {
+  const local = localPorNombre(nombrePorEmpId[row.empleado_id]);
+  return {
+    id: row.id,
+    userId: local ? local.id : null,
+    obraId: row.obra_id || null,
+    entrada: row.entrada,
+    salida: row.salida || null,
+  };
+}
+
+// Recarga S.fichajes desde Supabase. No usa localStorage. Si falla (p. ej. sin
+// conexión) deja lo que hubiera y no rompe la vista.
+async function sincronizarFichajes() {
+  if (!V.user || sincronizando) return;
+  sincronizando = true;
+  try {
+    if (!Object.keys(empIdPorNombre).length) await cargarMapaEmpleados();
+    const filas = await Sysefen.db.listarFichajes();
+    S.fichajes = filas.map(mapFichajeDeDB).filter((f) => f.userId);
+  } catch (e) { /* sin conexión / RLS: se mantiene el estado actual */ }
+  finally { sincronizando = false; }
+}
+
+/* ---------- obras + asignaciones: espejo en memoria de Supabase ---------- */
+let sincObras = false;
+
+// Fila de public.obras -> forma que usa la UI. La obra NO lleva lista de empleados.
+function mapObraDeDB(row) {
+  return {
+    id: row.id,
+    cliente: row.nombre,               // título que muestra toda la interfaz
+    nombre: row.nombre,
+    dir: row.direccion || '',
+    email: row.email_cliente || '',
+    estado: row.estado || 'En curso',
+    creado_en: row.creado_en,
+  };
+}
+
+async function sincronizarObras() {
+  if (!V.user || sincObras) return;
+  sincObras = true;
+  try {
+    const filas = await Sysefen.db.listarObras();
+    S.obras = (filas || []).map(mapObraDeDB);
+    if (S.obraActiva && !S.obras.some((o) => o.id === S.obraActiva)) { S.obraActiva = null; save(); }
+  } catch (e) { /* sin conexión / RLS: se mantiene el estado actual */ }
+  finally { sincObras = false; }
+}
+
+const empIdDeUser = (userId) => empIdPorNombre[(userById(userId) || {}).nombre];
+const miEmpId = () => empIdDeUser(V.user && V.user.id);
+
+/* ---------- imputación de horas (public.imputaciones · Supabase) ---------- */
+// FICHAJE = presencia (cuándo).  IMPUTACIÓN = reparto del tiempo (en qué).
+// Los fichajes NO se tocan. El fichaje no tiene obra: la obra la decide el jefe
+// al imputar. Las horas de obra salen SIEMPRE de las imputaciones.
+const IMP_CATS = [
+  ['obra', 'Obra'],
+  ['despacho', 'Despacho / oficina'],
+  ['preparacion', 'Preparación / carga / descarga'],
+  ['desplazamiento', 'Desplazamiento'],
+  ['otros', 'Otros'],
+];
+let sincImp = false;
+
+function mapImputacionDeDB(row) {
+  const local = localPorNombre(nombrePorEmpId[row.empleado_id]);
+  return {
+    id: row.id,
+    userId: local ? local.id : null,
+    empleado_id: row.empleado_id,
+    fecha: row.fecha,
+    categoria: row.categoria,
+    obraId: row.obra_id || null,
+    minutos: row.minutos || 0,
+    origen: row.origen,
+    bloqueado: !!row.bloqueado,
+    actualizadoPor: row.actualizado_por || null,
+    actualizadoEn: row.actualizado_en || null,
+  };
+}
+
+// Espejo global de imputaciones visibles (todas las fechas). RLS acota:
+// jefe/admin ven todas; el operario, solo las suyas.
+async function sincronizarImputaciones() {
+  if (!V.user || sincImp) return;
+  sincImp = true;
+  try {
+    if (!Object.keys(empIdPorNombre).length) await cargarMapaEmpleados();
+    const filas = await Sysefen.db.listarImputaciones(
+      puedeCrear() ? {} : { empleadoId: miEmpId() }
+    );
+    S.imputaciones = (filas || []).map(mapImputacionDeDB).filter((i) => i.userId);
+  } catch (e) { /* sin conexión / RLS: se mantiene lo que haya */ }
+  finally { sincImp = false; }
+}
+
+/* ---------- partes: espejo en memoria de public.partes/parte_horas/parte_materiales ---------- */
+// Esquema REAL (confirmado, sin columna `ref`, sin adjuntos, sin importe en partes):
+//   partes(id, obra_id, fecha, autor_id, descripcion, nivel_incidencia, incidencia,
+//          observaciones, firmante, firma, email_cliente, estado, creado_en, actualizado_en)
+//   parte_horas(id, parte_id, empleado_id, horas numeric, creado_en)
+//   parte_materiales(id, parte_id, nombre, cantidad, importe, compra, creado_en)
+let sincPartes = false;
+
+// La tabla NO tiene columna `ref`: se deriva de forma determinista (fecha + id),
+// nunca se guarda en Supabase. Mismo resultado en cualquier dispositivo.
+const refDeParte = (row) => 'PT-' + String(row.fecha || '').slice(5, 7) + String(row.fecha || '').slice(8, 10) + '-' + String(row.id || '').slice(0, 4).toUpperCase();
+
+function mapParteDeDB(row, horasFilas, matsFilas) {
+  const horas = {};
+  (horasFilas || []).forEach((h) => {
+    const local = localPorNombre(nombrePorEmpId[h.empleado_id]);
+    if (local) horas[local.id] = Number(h.horas) || 0;
+  });
+  const mats = (matsFilas || []).map((m) => ({ id: m.id, nombre: m.nombre || '', cant: m.cantidad || '', importe: '', compra: m.compra !== false }));
+  const autorLocal = localPorNombre(nombrePorEmpId[row.autor_id]);
+  return {
+    id: row.id,
+    ref: refDeParte(row),
+    obraId: row.obra_id,
+    fecha: row.fecha,
+    autorId: autorLocal ? autorLocal.id : null,
+    desc: row.descripcion || '',
+    horas, mats,
+    nivel: row.nivel_incidencia || 'Sin incidencias',
+    inc: row.incidencia || '',
+    adjuntos: [], // el esquema real no tiene columna para adjuntos: no se persisten (ver informe)
+    importe: '',  // `partes` no tiene columna importe
+    obs: row.observaciones || '',
+    firmante: row.firmante || '',
+    firma: row.firma || null,
+    email: row.email_cliente || '',
+    estado: row.estado || 'firmado',
+    creado: row.creado_en,
+  };
+}
+
+// Espejo de partes visibles (RLS acota: jefe/admin todos; operario, los suyos).
+async function sincronizarPartes() {
+  if (!V.user || sincPartes) return;
+  sincPartes = true;
+  try {
+    if (!Object.keys(empIdPorNombre).length) await cargarMapaEmpleados();
+    const [filas, horasFilas, matsFilas] = await Promise.all([
+      Sysefen.db.listarPartes(),
+      Sysefen.db.listarHorasPartes(),
+      Sysefen.db.listarMaterialesPartes(),
+    ]);
+    const horasPorParte = {}; (horasFilas || []).forEach((h) => { (horasPorParte[h.parte_id] = horasPorParte[h.parte_id] || []).push(h); });
+    const matsPorParte = {}; (matsFilas || []).forEach((m) => { (matsPorParte[m.parte_id] = matsPorParte[m.parte_id] || []).push(m); });
+    S.partes = (filas || [])
+      .map((row) => mapParteDeDB(row, horasPorParte[row.id], matsPorParte[row.id]))
+      .sort((a, b) => String(b.creado || '').localeCompare(String(a.creado || '')));
+  } catch (e) { /* sin conexión / RLS: se mantiene lo que haya */ }
+  finally { sincPartes = false; }
+}
+
+const refrescarDatos = () => Promise.all([sincronizarFichajes(), sincronizarObras(), sincronizarImputaciones(), sincronizarPartes()]);
+
+// Presencia CERRADA (jornada terminada) de un empleado en un día, desde S.fichajes.
+// Minutos REALES exactos. NO se redondea aquí.
+function presenciaCerradaDia(userId, dia) {
+  return S.fichajes
+    .filter((f) => f.userId === userId && f.salida && fechaLocal(f.entrada) === dia)
+    .reduce((t, f) => t + minEntre(f.entrada, f.salida), 0);
+}
+// Redondeo al múltiplo de 15 min MÁS CERCANO (0-7→0, 8-22→15, 23-37→30, 38-52→45…).
+const redondear15 = (min) => Math.round((min || 0) / 15) * 15;
+// Disponibilidad para IMPUTAR: presencia cerrada redondeada al 15 más cercano.
+// Tolerancia. NO afecta al fichaje real ni a la planilla de horas del personal.
+const disponibleImputar = (userId, dia) => redondear15(presenciaCerradaDia(userId, dia));
+const impLineasDe = (userId, fecha) => S.imputaciones.filter((i) => i.userId === userId && (!fecha || i.fecha === fecha));
+const impMinImputados = (userId, fecha) => impLineasDe(userId, fecha).reduce((t, i) => t + (i.minutos || 0), 0);
 
 const yo = () => (V.user ? S.users.find((u) => u.id === V.user.id) : null);
 const rol = () => { const u = yo(); return u ? u.rol : null; };
 const esAdmin = () => rol() === 'admin';
 const puedeCrear = () => ['admin', 'jefe'].includes(rol());
-const equipo = () => S.users.filter((u) => u.rol !== 'admin');
+// equipo() = empleados ACTIVOS no admin (para operaciones nuevas: fichaje, imputación, partes).
+const equipo = () => S.users.filter((u) => u.rol !== 'admin' && u.activo !== false);
+// equipoTodos() = incluye inactivos (para la sección Empleados / histórico).
+const equipoTodos = () => S.users.filter((u) => u.rol !== 'admin');
 const userById = (id) => S.users.find((u) => u.id === id) || { nombre: '—' };
 const ini = (n) => n.trim().slice(0, 1).toUpperCase();
+// Marca pequeña (logo oficial + "Sysefen") para cabeceras internas. Reutiliza
+// icon-512.png (el mismo icono ya usado como icono de la app/PWA).
+const marcaSysefen = (oscuro) => `<div class="row g8" style="margin-bottom:9px">
+    <img src="icon-512.png" alt="" style="width:16px;height:16px;border-radius:5px;flex:none">
+    <span style="font:700 10px/1 var(--mono);letter-spacing:.14em;text-transform:uppercase;color:${oscuro ? 'rgba(255,255,255,.5)' : 'var(--t3)'}">Sysefen</span>
+  </div>`;
 
 /* ---------- tiempo ---------- */
-const hoyISO = () => new Date().toISOString().slice(0, 10);
+// Fecha LOCAL (del dispositivo, = hora de Palma) en formato YYYY-MM-DD.
+// Debe coincidir con la fecha local que usa Supabase (v_presencia_diaria,
+// imputaciones.fecha). Nunca usar toISOString() (UTC) para agrupar por día.
+const fechaLocal = (d) => {
+  const x = d ? new Date(d) : new Date();
+  return x.getFullYear() + '-' + String(x.getMonth() + 1).padStart(2, '0') + '-' + String(x.getDate()).padStart(2, '0');
+};
+const hoyISO = () => fechaLocal();
 const hhmm = (iso) => { const d = new Date(iso); return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'); };
 const fmtH = (h) => Math.floor(h) + ':' + String(Math.round((h % 1) * 60)).padStart(2, '0');
 const cuarto = (h) => Math.max(0, Math.min(16, Math.round(h * 4) / 4));
@@ -225,7 +525,7 @@ function minEntre(a, b) { return Math.max(0, Math.round((new Date(b) - new Date(
 
 const fichajeAbierto = (uid_) => S.fichajes.find((f) => f.userId === uid_ && !f.salida);
 function minutosDia(uid_, dia) {
-  return S.fichajes.filter((f) => f.userId === uid_ && f.entrada.slice(0, 10) === dia)
+  return S.fichajes.filter((f) => f.userId === uid_ && fechaLocal(f.entrada) === dia)
     .reduce((t, f) => t + minEntre(f.entrada, f.salida || new Date().toISOString()), 0);
 }
 function minutosSemana(uid_) {
@@ -234,98 +534,385 @@ function minutosSemana(uid_) {
   return S.fichajes.filter((f) => f.userId === uid_ && new Date(f.entrada) >= lunes)
     .reduce((t, f) => t + minEntre(f.entrada, f.salida || new Date().toISOString()), 0);
 }
+// Horas de obra = SIEMPRE desde imputaciones (el fichaje no tiene obra).
 function minutosObra(obraId, uid_) {
-  return S.fichajes.filter((f) => f.obraId === obraId && (!uid_ || f.userId === uid_) && f.salida)
-    .reduce((t, f) => t + minEntre(f.entrada, f.salida), 0);
+  return minutosObraImp(obraId, uid_);
 }
 function minutosMes(uid_) {
   const m = hoyISO().slice(0, 7);
-  return S.fichajes.filter((f) => f.userId === uid_ && f.entrada.slice(0, 7) === m)
+  return S.fichajes.filter((f) => f.userId === uid_ && fechaLocal(f.entrada).slice(0, 7) === m)
     .reduce((t, f) => t + minEntre(f.entrada, f.salida || new Date().toISOString()), 0);
 }
 
 /* ---------- acciones ---------- */
 const A = {};
-A.elegirUser = (id) => { V.pinUser = S.users.find((u) => u.id === id); V.pin = ''; V.view = 'pin'; render(); };
-A.volverLogin = () => { V.pinUser = null; V.pin = ''; V.view = 'login'; render(); };
+A.elegirUser = (id) => { V.pinUser = S.users.find((u) => u.id === id); V.pin = ''; V.pinBusy = false; V.err = false; V.view = 'pin'; render(); };
+A.volverLogin = () => { V.pinUser = null; V.pin = ''; V.pinBusy = false; V.err = false; V.view = 'login'; render(); };
 A.pinTecla = (k) => {
+  if (V.pinBusy) return;
   if (k === 'del') { V.pin = V.pin.slice(0, -1); return render(); }
   V.pin = (V.pin + k).slice(0, 4);
   if (V.pin.length === 4) {
-    if (V.pin === V.pinUser.pin) {
-      V.user = { id: V.pinUser.id };
+    const pin = V.pin, pu = V.pinUser;
+    V.pinBusy = true; render();
+    sysAuth.loginConPin(pu.nombre, pin, pu.email).then(() => {
+      const local = localPorNombre(pu.nombre) || pu;
+      V.user = { id: local.id };
       try { sessionStorage.setItem('ch_user', JSON.stringify(V.user)); } catch (e) {}
-      V.pinUser = null; V.pin = ''; V.view = 'hoy';
+      V.pinUser = null; V.pin = ''; V.pinBusy = false; V.view = 'hoy';
       if (S.bienvenida) { S.bienvenida = false; save(); }
-    } else { V.err = true; V.pin = ''; setTimeout(() => { V.err = false; render(); }, 400); }
+      render();
+      refrescarDatos().then(render);
+    }).catch((err) => {
+      V.pinBusy = false; V.err = true; V.pin = '';
+      if (err && err.message && !/PIN incorrecto/.test(err.message)) toast(err.message);
+      render();
+      setTimeout(() => { V.err = false; render(); }, 400);
+    });
+    return;
   }
   render();
 };
-A.salir = () => { V.user = null; try { sessionStorage.removeItem('ch_user'); } catch (e) {} V.view = 'login'; render(); };
-A.ir = (v) => { V.view = v; render(); };
-A.verObra = (id) => { V.obraId = id; V.view = 'obra'; render(); };
-A.activarObra = () => { S.obraActiva = V.obraId; save(); toast('Obra de hoy: ' + obraById(V.obraId).cliente); V.view = 'hoy'; render(); };
+A.salir = () => {
+  V.user = null;
+  try { sessionStorage.removeItem('ch_user'); } catch (e) {}
+  V.view = 'login'; render();
+  sysAuth.logout().catch(() => {});
+};
+A.ir = (v) => { V.view = v; render(); if (['hoy', 'obras', 'obra', 'partes', 'horas'].includes(v)) refrescarDatos().then(render); };
+A.verObra = (id) => { V.obraId = id; V.view = 'obra'; render(); refrescarDatos().then(render); };
+A.activarObra = () => { const o = obraById(V.obraId); if (!o) return; S.obraActiva = V.obraId; save(); toast('Obra de hoy: ' + o.cliente); V.view = 'hoy'; render(); };
 A.tabHoras = (t) => { V.tabHoras = t; render(); };
+
+/* --- imputación de horas --- */
+const impDraftDeLineas = (userId, fecha) => impLineasDe(userId, fecha).map((l) => ({
+  id: l.id, categoria: l.categoria, obraId: l.obraId, minutos: l.minutos, origen: l.origen, bloqueado: l.bloqueado,
+}));
+A.abrirImputar = () => {
+  if (!V.impFecha) V.impFecha = hoyISO();
+  V.impEmp = null; V.impDraft = null; V.impBorrar = [];
+  V.view = 'imputar'; render();
+  refrescarDatos().then(render);
+};
+// Desde el aviso "Jornada cerrada": abre el MÓDULO de imputaciones (la lista),
+// donde el jefe elige a cualquier empleado con fichaje cerrado (no solo el suyo).
+A.imputarTrasSalida = () => {
+  V.sheet = null;
+  V.impFecha = hoyISO(); V.impEmp = null; V.impDraft = null; V.impBorrar = [];
+  V.view = 'imputar'; render();
+  refrescarDatos().then(render);
+};
+A.impFecha = (v) => {
+  if (!v) return;
+  V.impFecha = v; V.impEmp = null; V.impDraft = null; V.impBorrar = [];
+  render();
+  refrescarDatos().then(render);
+};
+A.abrirImputEmp = (userId) => {
+  V.impEmp = userId;
+  // Solo las líneas ya guardadas. NO se pre-rellena nada (ni obra ni 'otros').
+  // Puede quedar tiempo sin imputar; el jefe añade las categorías que quiera.
+  V.impDraft = impDraftDeLineas(userId, V.impFecha);
+  V.impBorrar = [];
+  V.view = 'imputarEmp'; render();
+};
+// Acceso directo a la imputación individual de HOY desde "Horas" (tarjeta por
+// empleado). A.abrirImputEmp asume V.impFecha ya puesto (normal si se llega
+// desde vImputar, que siempre lo fija antes de entrar); aquí puede no estarlo,
+// o quedar de una fecha pasada de una sesión anterior de "Imputar horas": se
+// fuerza siempre a HOY (coincide con la etiqueta del botón) y se reutiliza la
+// misma acción, sin duplicar su lógica.
+A.abrirImputHoy = (userId) => {
+  V.impFecha = hoyISO();
+  A.abrirImputEmp(userId);
+};
+A.volverImputar = () => { V.impEmp = null; V.impDraft = null; V.impBorrar = []; V.view = 'imputar'; render(); };
+A.impCat = (i, cat) => {
+  const l = V.impDraft[i]; if (!l) return;
+  l.categoria = cat;
+  if (cat !== 'obra') l.obraId = null;
+  render();
+};
+A.impObra = (i, obraId) => { const l = V.impDraft[i]; if (l) { l.obraId = obraId || null; render(); } };
+// nuevo control tipo reloj: fija el valor en minutos (pasos de 15)
+A.impReloj = (i, minutos) => {
+  const l = V.impDraft[i]; if (!l) return;
+  l.minutos = Math.max(0, Math.round(Number(minutos) / 15) * 15);
+  render();
+};
+A.impAddLinea = () => {
+  (V.impDraft = V.impDraft || []).push({ categoria: 'otros', obraId: null, minutos: 0, origen: 'manual' });
+  render();
+};
+A.impDelLinea = (i) => {
+  const l = V.impDraft[i]; if (!l) return;
+  if (l.id) V.impBorrar.push(l.id);
+  V.impDraft.splice(i, 1); render();
+};
+A.impGuardar = async () => {
+  if (!puedeCrear()) return;
+  if (!navigator.onLine) { toast('Sin conexión — no se ha guardado'); return; }
+  const empId = empIdDeUser(V.impEmp);
+  if (!empId) { toast('Empleado no vinculado en Supabase.'); return; }
+  const lineas = V.impDraft || [];
+  if (lineas.some((l) => l.categoria === 'obra' && !l.obraId)) { toast('Elige la obra en las líneas de tipo Obra.'); return; }
+  const disp = disponibleImputar(V.impEmp, V.impFecha);
+  if (disp <= 0) { toast('Ese empleado no tiene jornada fichada y cerrada ese día.'); return; }
+  const total = lineas.reduce((t, l) => t + (l.minutos || 0), 0);
+  if (total > disp) { toast('Excede la disponibilidad en ' + durMin(total - disp) + '. Disponible: ' + durMin(disp) + '.'); return; }
+  const mio = miEmpId();
+  // Estrategia simple y robusta frente al trigger de "no superar presencia":
+  // se borran TODAS las líneas de ese empleado/día y se reinsertan las nuevas
+  // en orden (así el acumulado nunca supera la presencia a mitad de guardado).
+  const idsPrevios = S.imputaciones
+    .filter((i) => i.userId === V.impEmp && i.fecha === V.impFecha && !i.bloqueado)
+    .map((i) => i.id);
+  const nuevas = lineas.filter((l) => (l.minutos || 0) > 0).map((l) => ({
+    empleado_id: empId,
+    fecha: V.impFecha,
+    categoria: l.categoria,
+    obra_id: l.categoria === 'obra' ? l.obraId : null,
+    minutos: l.minutos || 0,
+    origen: 'manual',
+    creado_por: mio,
+    actualizado_por: mio,
+  }));
+  V.impBusy = true; render();
+  try {
+    for (const id of idsPrevios) await Sysefen.db.borrarImputacion(id);
+    for (const fila of nuevas) await Sysefen.db.guardarImputaciones([fila]);
+    await refrescarDatos();
+    V.impBusy = false;
+    toast('Imputación guardada');
+    A.volverImputar();
+  } catch (e) {
+    V.impBusy = false;
+    toast('No se pudo guardar: ' + (e && e.message ? e.message : 'error'));
+    await refrescarDatos(); render();
+  }
+};
+
+/* --- ADMINISTRACIÓN: gestión de empleados (perfil) --- */
+const emailSugerido = (nombre) => (nombre || '').trim().toLowerCase()
+  .normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '.').replace(/^\.|\.$/g, '') + '@sysefen.app';
+
+A.abrirEmpleados = () => { V.empEmp = null; V.empDraft = null; V.view = 'empleados'; render(); refrescarDatos().then(render); };
+A.abrirEmpleado = (userId) => {
+  const u = userById(userId);
+  V.empEmp = userId;
+  V.empDraft = { nombre: u.nombre || '', email: u.email || '', telefono: u.telefono || '', rol: u.rol || 'operario', activo: u.activo !== false, nuevo: false };
+  V.view = 'empleado'; render();
+};
+A.empNuevo = () => {
+  V.empEmp = null;
+  V.empDraft = { nombre: '', email: '', telefono: '', rol: 'operario', activo: true, nuevo: true };
+  V.view = 'empleado'; render();
+};
+A.volverEmpleados = () => { V.empEmp = null; V.empDraft = null; V.view = 'empleados'; render(); };
+A.empCampo = (k, v) => { if (V.empDraft) V.empDraft[k] = v; };
+A.empRol = (r) => { if (V.empDraft) { V.empDraft.rol = r; render(); } };
+A.empToggleActivo = () => { if (V.empDraft) { V.empDraft.activo = !V.empDraft.activo; render(); } };
+A.empGuardar = async () => {
+  if (!esAdmin()) return;
+  const d = V.empDraft; if (!d) return;
+  if (!d.nombre.trim()) { toast('Pon el nombre.'); return; }
+  if (!navigator.onLine) { toast('Sin conexión — no se ha guardado.'); return; }
+  if (d.nuevo && !d.email.trim()) d.email = emailSugerido(d.nombre);
+  const campos = {
+    nombre: d.nombre.trim(),
+    email: (d.email || '').trim().toLowerCase() || null,
+    telefono: (d.telefono || '').trim() || null,
+    rol: d.rol,
+    activo: d.activo,
+    fecha_baja: d.activo ? null : (empRowById(empIdDeUser(V.empEmp)) || {}).fecha_baja || hoyISO(),
+  };
+  V.empBusy = true; render();
+  try {
+    if (d.nuevo) {
+      await Sysefen.db.crearEmpleado(campos);
+      mapaEmpPromesa = null; await cargarMapaEmpleados();
+      toast('Empleado creado. Falta darle acceso (ver aviso).');
+      V.sheet = { tipo: 'accesoEmpleado', nombre: campos.nombre, email: campos.email };
+    } else {
+      const empId = empIdDeUser(V.empEmp);
+      await Sysefen.db.actualizarEmpleado(empId, campos);
+      mapaEmpPromesa = null; await cargarMapaEmpleados();
+      toast('Cambios guardados.');
+    }
+    V.empBusy = false;
+    V.view = 'empleados'; V.empEmp = null; V.empDraft = null; render();
+  } catch (e) {
+    V.empBusy = false;
+    toast('No se pudo guardar: ' + (e && e.message ? e.message : 'error'));
+    render();
+  }
+};
+
+/* --- ADMINISTRACIÓN: fichar entrada/salida de OTRO empleado (solo presencia) --- */
+A.adminFichar = (userId) => {
+  if (!esAdmin()) return;
+  const f = fichajeAbierto(userId);
+  V.sheet = { tipo: 'adminFichaje', userId, salida: !!f };
+  render();
+};
+A.adminConfirmarFichaje = async () => {
+  const { userId, salida } = V.sheet;
+  V.sheet = null; render();
+  if (!navigator.onLine) { toast('Sin conexión.'); return; }
+  const empId = empIdDeUser(userId);
+  if (!empId) { toast('Empleado no vinculado.'); return; }
+  try {
+    if (salida) {
+      const abierto = await Sysefen.db.fichajeAbierto(empId);
+      if (!abierto) { toast('Ese empleado no tiene ningún fichaje abierto.'); await refrescarDatos(); return render(); }
+      const cerrado = await Sysefen.db.ficharSalida(abierto.id);
+      await refrescarDatos();
+      toast(userById(userId).nombre + ' — salida registrada ' + hhmm(cerrado.salida));
+    } else {
+      const abierto = await Sysefen.db.fichajeAbierto(empId);
+      if (abierto) { toast('Ese empleado ya tiene un fichaje abierto.'); await refrescarDatos(); return render(); }
+      const nuevo = await Sysefen.db.ficharEntrada(empId, null);
+      await refrescarDatos();
+      toast(userById(userId).nombre + ' — entrada registrada ' + hhmm(nuevo.entrada));
+    }
+    render();
+  } catch (e) {
+    toast('No se pudo registrar el fichaje: ' + (e && e.message ? e.message : 'error'));
+    await refrescarDatos(); render();
+  }
+};
+
+/* --- ADMINISTRACIÓN: planilla mensual de horas reales del empleado --- */
+A.abrirPlanilla = (userId) => {
+  V.planEmp = userId;
+  if (!V.planMes) V.planMes = hoyISO().slice(0, 7);
+  V.view = 'planilla'; render();
+  refrescarDatos().then(render);
+};
+A.planMesNav = (delta) => {
+  const [y, m] = (V.planMes || hoyISO().slice(0, 7)).split('-').map(Number);
+  const d = new Date(y, m - 1 + Number(delta), 1);
+  V.planMes = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+  render();
+};
+A.imprimirPlanilla = () => { imprimirPlanilla(V.planEmp, V.planMes); };
 
 const obraById = (id) => S.obras.find((o) => o.id === id) || null;
 
+// Minutos imputados a una obra (categoría 'obra'), opcionalmente por empleado
+// y/o por fecha. Las horas de obra salen SIEMPRE de las imputaciones.
+function minutosObraImp(obraId, userId, fecha) {
+  return S.imputaciones
+    .filter((i) => i.categoria === 'obra' && i.obraId === obraId
+      && (!userId || i.userId === userId) && (!fecha || i.fecha === fecha))
+    .reduce((t, i) => t + (i.minutos || 0), 0);
+}
+// Empleados con horas imputadas a esta obra.
+const empleadosDeObra = (obraId) => {
+  const ids = new Set(S.imputaciones.filter((i) => i.categoria === 'obra' && i.obraId === obraId).map((i) => i.userId));
+  return equipo().filter((u) => ids.has(u.id));
+};
+
+// FICHAJE SIN OBRA: entrada y salida solo registran presencia. No se pregunta obra.
 A.pedirFichaje = (userId) => {
-  const u = userById(userId);
+  if (esAdmin()) { toast('Administración no ficha. Puedes ver y corregir los fichajes del equipo.'); return; }
+  const uu = userById(userId);
+  if (uu && uu.activo === false) { toast('Empleado inactivo: no puede fichar.'); return; }
   const f = fichajeAbierto(userId);
-  if (!f && !S.obraActiva && !S.obras.length) { toast('Crea primero una obra para poder fichar.'); return; }
   V.sheet = { tipo: 'fichaje', userId, salida: !!f, propio: userId === V.user.id };
   render();
 };
 A.cerrarSheet = () => { V.sheet = null; render(); };
-A.confirmarFichaje = () => {
+
+async function empIdParaFichar(nombre) {
+  if (!Object.keys(empIdPorNombre).length) { try { await cargarMapaEmpleados(); } catch (e) {} }
+  return empIdPorNombre[nombre];
+}
+
+// Entrada o salida. NUNCA pide obra.
+A.confirmarFichaje = async () => {
   const { userId, salida } = V.sheet;
-  const ahora = new Date().toISOString();
-  if (salida) {
-    const f = fichajeAbierto(userId);
-    if (f) { f.salida = ahora; f.cerradoPor = V.user.id; }
-    toast(userById(userId).nombre + ' — salida ' + hhmm(ahora));
-  } else {
-    const obraId = S.obraActiva || (S.obras[0] && S.obras[0].id);
-    S.fichajes.push({ id: uid(), userId, obraId, entrada: ahora, salida: null, abiertoPor: V.user.id });
-    toast(userById(userId).nombre + ' — entrada ' + hhmm(ahora));
+  const nombre = userById(userId).nombre;
+  V.sheet = null; render();
+  if (!navigator.onLine) { toast('Sin conexión — el fichaje no se ha guardado'); return; }
+  const empId = await empIdParaFichar(nombre);
+  if (!empId) { toast('Ese empleado no está vinculado en Supabase.'); return; }
+  try {
+    if (salida) {
+      const abierto = await Sysefen.db.fichajeAbierto(empId);
+      if (!abierto) { toast('No hay ningún fichaje abierto.'); await refrescarDatos(); return render(); }
+      const cerrado = await Sysefen.db.ficharSalida(abierto.id);
+      await refrescarDatos();
+      toast(nombre + ' — salida ' + hhmm(cerrado.salida));
+      // Jefes: tras cerrar el fichaje, acceso directo a imputar. (Admin no ficha.)
+      if (puedeCrear()) V.sheet = { tipo: 'trasSalida', userId };
+    } else {
+      const nuevo = await Sysefen.db.ficharEntrada(empId, null);
+      await refrescarDatos();
+      toast(nombre + ' — entrada ' + hhmm(nuevo.entrada));
+    }
+    render();
+  } catch (e) {
+    toast('No se pudo fichar: ' + (e && e.message ? e.message : 'error'));
+    await refrescarDatos(); render();
   }
-  save(); V.sheet = null; render();
 };
 
-/* alta de obra */
-A.nuevaObra = () => { V.draft = { cliente: '', dir: '', tipo: '', contacto: '', email: '', equipo: equipo().map((u) => u.id) }; V.view = 'alta'; render(); };
-A.editarObra = (id) => { const o = obraById(id); V.draft = Object.assign({}, o, { equipo: o.equipo.slice() }); V.view = 'alta'; render(); };
-A.guardarObra = () => {
+/* alta de obra (public.obras). La obra NO tiene lista de empleados. */
+A.nuevaObra = () => { V.draft = { cliente: '', dir: '', email: '' }; V.view = 'alta'; render(); };
+A.editarObra = (id) => { const o = obraById(id); if (!o) return; V.draft = { id: o.id, cliente: o.cliente, dir: o.dir, email: o.email }; V.view = 'alta'; render(); };
+A.guardarObra = async () => {
   const d = V.draft;
   if (!d.cliente.trim()) { toast('Pon al menos el nombre del cliente.'); return; }
-  if (d.id) { Object.assign(obraById(d.id), d); }
-  else { const o = Object.assign({ id: uid(), estado: 'En curso' }, d); S.obras.push(o); if (!S.obraActiva) S.obraActiva = o.id; }
-  save(); V.draft = null; V.view = 'obras'; toast('Obra guardada'); render();
+  if (!navigator.onLine) { toast('Sin conexión — la obra no se ha guardado'); return; }
+  const campos = { nombre: d.cliente.trim(), direccion: d.dir || null, email_cliente: d.email || null };
+  try {
+    if (d.id) {
+      await Sysefen.db.actualizarObra(d.id, campos);
+    } else {
+      const nueva = await Sysefen.db.crearObra(campos);
+      if (!S.obraActiva) { S.obraActiva = nueva.id; save(); }
+    }
+    await sincronizarObras();
+    V.draft = null; V.view = 'obras'; toast('Obra guardada'); render();
+  } catch (e) {
+    toast('No se pudo guardar la obra: ' + (e && e.message ? e.message : 'error'));
+  }
 };
-A.toggleEquipoAlta = (id) => {
-  const e = V.draft.equipo;
-  const i = e.indexOf(id); i < 0 ? e.push(id) : e.splice(i, 1);
-  render();
+A.cerrarObra = async (id) => {
+  const o = obraById(id); if (!o) return;
+  if (!navigator.onLine) { toast('Sin conexión — no se ha cambiado el estado'); return; }
+  const nuevo = o.estado === 'Cerrada' ? 'En curso' : 'Cerrada';
+  try { await Sysefen.db.actualizarObra(id, { estado: nuevo }); await sincronizarObras(); render(); }
+  catch (e) { toast('No se pudo cambiar el estado: ' + (e && e.message ? e.message : 'error')); }
 };
-A.cerrarObra = (id) => { const o = obraById(id); o.estado = o.estado === 'Cerrada' ? 'En curso' : 'Cerrada'; save(); render(); };
 
 /* parte */
+// Elegir obra para el parte desde la sección Partes (sin pasar por Home).
+A.nuevoParteElegir = () => {
+  const abiertas = S.obras.filter((o) => o.estado !== 'Cerrada');
+  if (!abiertas.length) { toast('Crea primero una obra.'); return; }
+  if (abiertas.length === 1) return A.nuevoParte(abiertas[0].id);
+  V.sheet = { tipo: 'nuevoParteObra' }; render();
+};
 A.nuevoParte = (obraId) => {
+  V.sheet = null;
   const oid = obraId || S.obraActiva || (S.obras[0] && S.obras[0].id);
   if (!oid) { toast('Crea primero una obra.'); return; }
   const o = obraById(oid);
+  const fecha = hoyISO();
+  // Personal y horas del parte = imputaciones REALES a esta obra en esta fecha.
+  // (No es la presencia: es el tiempo que el jefe imputó a esta obra.)
+  const impObra = S.imputaciones.filter((i) => i.categoria === 'obra' && i.obraId === oid && i.fecha === fecha && i.userId);
   const horas = {};
-  o.equipo.forEach((id) => {
-    const m = minutosDia(id, hoyISO());
-    horas[id] = m > 0 ? cuarto(m / 60) : 0;
-  });
+  impObra.forEach((i) => { horas[i.userId] = (horas[i.userId] || 0) + i.minutos / 60; });
+  Object.keys(horas).forEach((k) => { horas[k] = cuarto(horas[k]); });
   V.draft = {
-    id: uid(), obraId: oid, fecha: hoyISO(), autorId: V.user.id,
-    desc: '', horas, incluidos: Object.keys(horas).filter((k) => horas[k] > 0),
+    id: uid(), obraId: oid, fecha, autorId: V.user.id,
+    desc: '', horas, incluidos: Object.keys(horas),
     mats: [], nivel: 'Sin incidencias', inc: '', adjuntos: [],
     importe: '', obs: '', firmante: '', firma: null, email: o.email || '',
   };
-  if (!V.draft.incluidos.length) V.draft.incluidos = o.equipo.slice();
   V.view = 'p1'; render();
 };
 A.pcampo = (k, val) => { V.draft[k] = val; };
@@ -335,6 +922,14 @@ A.togglePersona = (id) => {
 };
 A.horaMas = (id) => { V.draft.horas[id] = cuarto((V.draft.horas[id] || 0) + 0.25); if (!V.draft.incluidos.includes(id)) V.draft.incluidos.push(id); render(); };
 A.horaMenos = (id) => { V.draft.horas[id] = cuarto((V.draft.horas[id] || 0) - 0.25); render(); };
+// control tipo reloj en el parte (pasos de 15 min -> horas). Reutiliza montarRelojes().
+// El parte NO está limitado por la presencia ni la imputación: horas finales de obra.
+A.horaReloj = (id, minutos) => {
+  const h = Math.max(0, Math.round(Number(minutos) / 15) * 15) / 60;
+  V.draft.horas[id] = h;
+  if (h > 0 && !V.draft.incluidos.includes(id)) V.draft.incluidos.push(id);
+  render();
+};
 A.addMat = (nombre) => { V.draft.mats.push({ id: uid(), nombre: nombre || '', cant: '', importe: '', compra: true }); render(); };
 A.quitarMat = (id) => { V.draft.mats = V.draft.mats.filter((m) => m.id !== id); render(); };
 A.toggleCompra = (id) => { const m = V.draft.mats.find((x) => x.id === id); m.compra = !m.compra; render(); };
@@ -385,21 +980,48 @@ A.aPaso = (p) => {
   V.view = p; render();
 };
 A.borrarFirma = () => { V.draft.firma = null; render(); };
-A.guardarEnviar = (enviar) => {
-  const d = V.draft;
-  const o = obraById(d.obraId);
-  const p = {
-    id: d.id, ref: 'PT-' + hoyISO().slice(5, 7) + hoyISO().slice(8, 10) + '-' + String(S.seq).padStart(3, '0'),
-    obraId: d.obraId, fecha: d.fecha, autorId: d.autorId, desc: d.desc,
-    horas: {}, mats: d.mats.filter((m) => m.nombre.trim()), nivel: d.nivel, inc: d.inc,
-    adjuntos: d.adjuntos, importe: d.importe, obs: d.obs, firmante: d.firmante, firma: d.firma,
-    email: d.email, estado: enviar ? 'enviado' : 'firmado', creado: new Date().toISOString(),
+// Crea el parte en Supabase (partes + parte_horas + parte_materiales).
+// La tabla `partes` NO tiene columna `ref`, `adjuntos` ni `importe`: no se
+// envían. La referencia visible (PT-MMDD-XXXX) se deriva al leer, no se guarda.
+A.guardarEnviar = async (enviar) => {
+  const d = V.draft; if (!d) return;
+  if (!navigator.onLine) { toast('Sin conexión — el parte no se ha guardado'); return; }
+  const empId = empIdDeUser(V.user.id);
+  const ahora = new Date().toISOString();
+  const campos = {
+    obra_id: d.obraId,
+    fecha: d.fecha,
+    autor_id: empId || null,
+    descripcion: d.desc,
+    nivel_incidencia: d.nivel,
+    incidencia: d.nivel !== 'Sin incidencias' ? (d.inc || null) : null,
+    observaciones: d.obs || null,
+    firmante: d.firmante || null,
+    firma: d.firma || null,
+    email_cliente: d.email || null,
+    estado: enviar ? 'enviado' : 'firmado',
+    actualizado_en: ahora,
   };
-  d.incluidos.filter((id) => (d.horas[id] || 0) > 0).forEach((id) => { p.horas[id] = d.horas[id]; });
-  S.seq++; S.partes.unshift(p); save();
-  V.verParte = p.id; V.draft = null;
-  if (enviar) { enviarEmail(p); }
-  V.view = 'ok'; render();
+  const horasFilas = d.incluidos
+    .filter((id) => (d.horas[id] || 0) > 0)
+    .map((id) => { const eId = empIdDeUser(id); return eId ? { empleado_id: eId, horas: d.horas[id] } : null; })
+    .filter(Boolean);
+  const matsFilas = d.mats.filter((m) => m.nombre.trim()).map((m) => ({
+    nombre: m.nombre.trim(), cantidad: m.cant || null, importe: null, compra: !!m.compra,
+  }));
+  try {
+    const nuevo = await Sysefen.db.crearParte(campos);
+    if (horasFilas.length) await Sysefen.db.guardarHorasParte(nuevo.id, horasFilas);
+    if (matsFilas.length) await Sysefen.db.guardarMaterialesParte(nuevo.id, matsFilas);
+    await sincronizarPartes();
+    const p = S.partes.find((x) => x.id === nuevo.id);
+    V.verParte = nuevo.id; V.draft = null;
+    if (enviar && p) enviarEmail(p);
+    V.view = 'ok'; render();
+  } catch (e) {
+    toast('No se pudo guardar el parte: ' + (e && e.message ? e.message : 'error'));
+    render();
+  }
 };
 function enviarEmail(p) {
   const o = obraById(p.obraId);
@@ -418,11 +1040,11 @@ function enviarEmail(p) {
     ...Object.keys(p.horas).map((id) => '- ' + userById(id).nombre + ': ' + fmtH(p.horas[id]) + ' h'),
     'Total: ' + fmtH(totalHoras(p)) + ' h',
   ];
-  if (p.mats.length) {
-    lineas.push('', 'MATERIALES', ...p.mats.map((m) => '- ' + m.nombre + (m.cant ? ' (' + m.cant + ')' : '') + (m.importe ? ' — ' + m.importe + ' €' : '')));
+  const mats = p.mats.filter((m) => m.nombre && m.nombre.trim());
+  if (mats.length) {
+    lineas.push('', 'MATERIALES UTILIZADOS', ...mats.map((m) => '- ' + m.nombre + (m.cant ? ' — ' + m.cant : '')));
   }
   if (p.nivel !== 'Sin incidencias') lineas.push('', 'INCIDENCIA (' + p.nivel + ')', p.inc || '—');
-  if (p.importe) lineas.push('', 'Importe: ' + p.importe + ' € (sin IVA)');
   lineas.push('', 'Firmado por ' + (p.firmante || 'el cliente') + ' el ' + fechaLarga(p.fecha) + '.', '', 'Se adjunta el PDF del parte firmado.');
   const dest = [p.email, S.emailCopia].filter(Boolean).join(',');
   const url = 'mailto:' + encodeURIComponent(dest) + '?subject=' + encodeURIComponent('Parte de trabajo ' + p.ref + ' — ' + o.cliente) + '&body=' + encodeURIComponent(lineas.join('\n'));
@@ -431,10 +1053,19 @@ function enviarEmail(p) {
 A.reenviar = (id) => enviarEmail(S.partes.find((p) => p.id === id));
 A.verPdf = (id) => { imprimirParte(S.partes.find((p) => p.id === id)); };
 A.anular = (id) => { V.sheet = { tipo: 'anular', id }; render(); };
-A.confirmarAnular = () => {
-  const p = S.partes.find((x) => x.id === V.sheet.id);
-  p.estado = 'anulado'; p.anuladoPor = V.user.id; p.anuladoEl = new Date().toISOString();
-  save(); V.sheet = null; toast('Parte anulado (queda en el historial)'); render();
+A.confirmarAnular = async () => {
+  const id = V.sheet.id;
+  V.sheet = null; render();
+  if (!navigator.onLine) { toast('Sin conexión — no se ha anulado'); return; }
+  try {
+    await Sysefen.db.actualizarParte(id, { estado: 'anulado', actualizado_en: new Date().toISOString() });
+    await sincronizarPartes();
+    toast('Parte anulado (queda en el historial)');
+    render();
+  } catch (e) {
+    toast('No se pudo anular: ' + (e && e.message ? e.message : 'error'));
+    await sincronizarPartes(); render();
+  }
 };
 const totalHoras = (p) => Object.keys(p.horas).reduce((t, k) => t + p.horas[k], 0);
 const totalMats = (p) => p.mats.reduce((t, m) => t + (parseFloat(String(m.importe).replace(',', '.')) || 0), 0);
@@ -456,11 +1087,11 @@ A.guardarUser = () => {
   S.users.splice(S.users.length - 1, 0, { id: uid(), nombre: nombre.trim(), rol: 'operario', pin });
   save(); V.sheet = null; render();
 };
-A.exportar = () => {
-  const filas = [['Empleado', 'Obra', 'Fecha', 'Entrada', 'Salida', 'Horas']];
+A.exportar = async () => {
+  await sincronizarFichajes();
+  const filas = [['Empleado', 'Fecha', 'Entrada', 'Salida', 'Horas']];
   S.fichajes.slice().sort((a, b) => a.entrada.localeCompare(b.entrada)).forEach((f) => {
-    const o = obraById(f.obraId);
-    filas.push([userById(f.userId).nombre, o ? o.cliente : '—', f.entrada.slice(0, 10), hhmm(f.entrada), f.salida ? hhmm(f.salida) : '', f.salida ? durMin(minEntre(f.entrada, f.salida)) : '']);
+    filas.push([userById(f.userId).nombre, fechaLocal(f.entrada), hhmm(f.entrada), f.salida ? hhmm(f.salida) : '', f.salida ? durMin(minEntre(f.entrada, f.salida)) : '']);
   });
   const csv = '\uFEFF' + filas.map((r) => r.map((c) => '"' + String(c).replace(/"/g, '""') + '"').join(';')).join('\n');
   const a = document.createElement('a');
@@ -499,16 +1130,22 @@ function render() {
   else if (v === 'alta') html = vAlta();
   else if (v === 'partes') html = vPartes();
   else if (v === 'horas') html = vHoras();
+  else if (v === 'imputar') html = vImputar();
+  else if (v === 'imputarEmp') html = vImputarEmpleado();
+  else if (v === 'empleados' && esAdmin()) html = vEmpleados();
+  else if (v === 'empleado' && esAdmin()) html = vEmpleado();
+  else if (v === 'planilla' && esAdmin()) html = vPlanilla();
   else if (v === 'ajustes') html = vAjustes();
   else if (v === 'p1') html = vP1();
   else if (v === 'p2') html = vP2();
   else if (v === 'p3') html = vP3();
   else if (v === 'ok') html = vOk();
-  if (V.user && ['hoy', 'obras', 'obra', 'partes', 'horas', 'ajustes'].includes(v)) html += nav(v);
+  if (V.user && ['hoy', 'obras', 'obra', 'partes', 'horas', 'imputar', 'empleados', 'ajustes'].includes(v)) html += nav(v);
   if (!navigator.onLine && V.user) html = '<div class="offline">Sin conexión — todo se guarda en el móvil</div>' + html;
   if (V.sheet) html += sheet();
   app.innerHTML = html;
   if (V.view === 'p2') montarFirma();
+  if (V.view === 'imputarEmp' || V.view === 'p1') montarRelojes();
   const sc = app.querySelector('.scroll,.hoja'); if (sc && scrollMemo[V.view] != null) sc.scrollTop = scrollMemo[V.view];
 }
 const scrollMemo = {};
@@ -519,14 +1156,14 @@ document.addEventListener('scroll', (e) => {
 /* --- login --- */
 function vLogin() {
   const avc = (r) => r === 'admin' ? 'background:var(--ambar);color:var(--tinta)' : r === 'jefe' ? 'background:var(--verde-c);color:#fff' : 'background:rgba(255,255,255,.16);color:#fff';
-  return `<div class="scroll" style="background:var(--tinta);padding:calc(50px + var(--safe-t)) 24px calc(30px + var(--safe-b))">
-    <img src="logo-blanco.png" alt="Sysefen" style="width:186px;max-width:64%;display:block;margin-bottom:16px">
+  return `<div class="scroll" style="background:var(--tinta);padding:calc(56px + var(--safe-t)) 24px calc(30px + var(--safe-b))">
+    <img src="logo-blanco.png" alt="Sysefen" style="width:196px;max-width:64%;display:block;margin-bottom:20px">
     <div class="sub" style="color:rgba(255,255,255,.5)">Control horario y partes de trabajo</div>
     ${S.bienvenida ? `<div style="margin-top:22px;padding:14px 15px;border-radius:14px;background:rgba(255,255,255,.08);font:400 13px/1.55 var(--sans);color:rgba(255,255,255,.72)">
       <b style="color:#fff">Primera vez.</b> PIN inicial: Bayron 1111 · Jaime 2222 · David 3333 · Ale 4444 · Administración 9999. Cámbialos desde Ajustes.</div>` : ''}
     <div class="lbl" style="color:rgba(255,255,255,.4);margin:30px 0 12px">¿Quién eres?</div>
     <div class="col g8">
-      ${S.users.map((u) => `<div class="row" data-a="elegirUser" data-id="${u.id}" style="padding:14px;border-radius:16px;background:rgba(255,255,255,.07);cursor:pointer">
+      ${S.users.filter((u) => u.activo !== false).map((u) => `<div class="row" data-a="elegirUser" data-id="${u.id}" style="padding:14px;border-radius:16px;background:rgba(255,255,255,.07);cursor:pointer">
         <div class="av" style="width:42px;height:42px;font-size:17px;${avc(u.rol)}">${esc(ini(u.nombre))}</div>
         <div class="grow">
           <div style="font:600 17px/1.1 var(--sans);color:#fff">${esc(u.nombre)}</div>
@@ -546,7 +1183,7 @@ function vPin() {
     <div class="col" style="align-items:center;margin-top:22px">
       <div class="av ${V.err ? 'shake' : ''}" style="width:64px;height:64px;font-size:25px;background:${u.rol === 'admin' ? 'var(--ambar);color:var(--tinta)' : u.rol === 'jefe' ? 'var(--verde-c);color:#fff' : 'rgba(255,255,255,.16);color:#fff'}">${esc(ini(u.nombre))}</div>
       <div style="font:600 25px/1.1 var(--cond);color:#fff;margin-top:14px">${esc(u.nombre)}</div>
-      <div class="tiny" style="color:rgba(255,255,255,.45);margin-top:7px;letter-spacing:.1em;text-transform:uppercase">${V.err ? 'PIN incorrecto' : 'Introduce tu PIN'}</div>
+      <div class="tiny" style="color:rgba(255,255,255,.45);margin-top:7px;letter-spacing:.1em;text-transform:uppercase">${V.err ? 'PIN incorrecto' : V.pinBusy ? 'Comprobando…' : 'Introduce tu PIN'}</div>
     </div>
     <div class="pin-dots ${V.err ? 'shake' : ''}">${[0, 1, 2, 3].map((i) => `<i class="${i < V.pin.length ? 'on' : ''}"></i>`).join('')}</div>
     <div class="pin-pad">${teclas.map((k) => k === '' ? '<span></span>' : `<button data-a="pinTecla" data-k="${k}" class="${k === 'del' ? 'plain' : ''}">${k === 'del' ? '←' : k}</button>`).join('')}</div>
@@ -556,25 +1193,27 @@ function vPin() {
 /* --- hoy --- */
 function vHoy() {
   const u = yo();
+  if (esAdmin()) return vHoyAdmin(u);
   const f = fichajeAbierto(u.id);
   const dentro = !!f;
   const oAct = obraById(S.obraActiva) || S.obras[0] || null;
   const mins = minutosDia(u.id, hoyISO());
   const dentroN = equipo().filter((x) => fichajeAbierto(x.id)).length;
   return `<div class="semaforo" style="background:${dentro ? 'var(--verde)' : 'var(--tinta)'}">
+    ${marcaSysefen(true)}
     <div class="row" style="justify-content:space-between">
-      <div class="lbl" style="color:${dentro ? 'rgba(255,255,255,.72)' : 'var(--ambar)'}">${dentro ? 'Estás dentro' : 'Estás fuera'}</div>
+      <div class="row g8"><span class="dot" style="background:${dentro ? '#fff' : 'var(--ambar)'}"></span><div class="lbl" style="color:${dentro ? 'rgba(255,255,255,.72)' : 'var(--ambar)'}">${dentro ? 'Estás dentro' : 'Estás fuera'}</div></div>
       <div class="row g8">
         ${u.rol === 'admin' ? '<span class="badge" style="background:rgba(20,23,15,.85);color:var(--ambar)">Admin</span>' : ''}
         <div class="av" style="width:32px;height:32px;font-size:13px;background:rgba(255,255,255,.16);color:#fff">${esc(ini(u.nombre))}</div>
       </div>
     </div>
     <div style="font:600 60px/1 var(--cond);margin-top:10px;color:#fff">${dentro ? durMin(minEntre(f.entrada, new Date().toISOString())) : hhmm(new Date().toISOString())}</div>
-    <div style="font:400 14px/1.35 var(--sans);margin-top:7px;color:rgba(255,255,255,.55)">${dentro ? esc((obraById(f.obraId) || { cliente: '—' }).cliente) + ' · desde ' + hhmm(f.entrada) : 'Sin fichar' + (oAct ? ' · ' + esc(oAct.cliente) : '')}</div>
+    <div style="font:400 14px/1.35 var(--sans);margin-top:7px;color:rgba(255,255,255,.55)">${dentro ? 'Entrada a las ' + hhmm(f.entrada) : 'Sin fichar'}</div>
     <button class="btn" data-a="pedirFichaje" data-id="${u.id}" style="margin-top:20px;background:${dentro ? '#fff' : 'var(--verde)'};color:${dentro ? 'var(--rojo)' : '#fff'};box-shadow:0 6px 16px rgba(20,23,15,.2)">${dentro ? 'Fichar salida' : 'Fichar entrada'}</button>
     ${S.opts.gps ? `<div class="row" style="justify-content:center;gap:7px;margin-top:12px"><span class="dot" style="width:6px;height:6px;background:rgba(255,255,255,.6)"></span><span class="tiny" style="color:rgba(255,255,255,.5)">Ubicación registrada al fichar</span></div>` : ''}
   </div>
-  <div class="hoja">
+  <div class="hoja"><div class="hoja-contenido">
     ${oAct ? `<div class="card row" data-a="ir" data-v="obras" style="cursor:pointer">
       <div class="grow"><div class="lbl">Obra de hoy</div>
       <div class="h2" style="margin-top:6px">${esc(oAct.cliente)}</div>
@@ -602,19 +1241,53 @@ function vHoy() {
         <button class="pill ${fx ? '' : 'pill-verde'}" data-a="pedirFichaje" data-id="${x.id}">${fx ? 'Salida' : 'Entrada'}</button>
       </div>`; }).join('')}</div>
 
-    ${oAct ? `<div class="card row" data-a="nuevoParte" style="margin-top:14px;background:var(--tinta);cursor:pointer">
+    ${S.obras.length ? `<div class="card row" data-a="nuevoParteElegir" style="margin-top:14px;background:var(--tinta);cursor:pointer">
       <div class="grow"><div style="font:600 16px/1 var(--sans);color:#fff">Nuevo parte de trabajo</div>
-      <div class="tiny" style="color:rgba(255,255,255,.5);margin-top:6px">${esc(oAct.cliente)}</div></div>
+      <div class="tiny" style="color:rgba(255,255,255,.5);margin-top:6px">Selecciona una obra</div></div>
       <div class="av" style="width:28px;height:28px;background:var(--ambar);color:var(--tinta);font-size:16px">+</div>
     </div>` : ''}`
     : `<div style="margin-top:16px;padding:15px;border-radius:16px;border:1px dashed var(--l2);font:400 13px/1.5 var(--sans);color:var(--t2)">Los partes de trabajo los crea y firma el jefe de obra. Tú solo tienes que fichar bien tus horas.</div>`}
-  </div>`;
+  </div></div>`;
+}
+
+/* --- hoy · administración (no ficha) --- */
+function vHoyAdmin(u) {
+  const dentroN = equipo().filter((x) => fichajeAbierto(x.id)).length;
+  return `<div class="semaforo" style="background:var(--tinta)">
+    ${marcaSysefen(true)}
+    <div class="row" style="justify-content:space-between">
+      <div class="lbl" style="color:var(--ambar)">Administración</div>
+      <div class="av" style="width:32px;height:32px;font-size:13px;background:rgba(255,255,255,.16);color:#fff">${esc(ini(u.nombre))}</div>
+    </div>
+    <div style="font:600 44px/1.05 var(--cond);margin-top:14px;color:#fff">${dentroN} <span style="font:400 16px var(--sans);color:rgba(255,255,255,.5)">de ${equipo().length} fichados ahora</span></div>
+    <div style="font:400 13px/1.4 var(--sans);margin-top:8px;color:rgba(255,255,255,.55)">Gestión. No necesitas fichar. Puedes consultar y corregir los fichajes del equipo.</div>
+  </div>
+  <div class="hoja"><div class="hoja-contenido">
+    <div class="lbl" style="font-weight:600;font-size:12px;color:var(--t2);margin-bottom:10px">Equipo ahora</div>
+    <div class="col g8">${equipo().map((x) => {
+      const fx = fichajeAbierto(x.id);
+      return `<div class="card row" data-a="abrirEmpleado" data-id="${x.id}" style="padding:12px 14px;cursor:pointer">
+        <span class="dot" style="background:${fx ? 'var(--verde)' : 'rgba(20,23,15,.22)'}"></span>
+        <div class="grow"><div style="font:500 15px/1.1 var(--sans)">${esc(x.nombre)}</div>
+        <div class="tiny" style="margin-top:4px">${fx ? 'Dentro · entrada ' + hhmm(fx.entrada) : (minutosDia(x.id, hoyISO()) ? 'Hoy ' + durMin(minutosDia(x.id, hoyISO())) + ' · fuera' : 'Sin fichar hoy')}</div></div>
+        <button class="pill ${fx ? 'pill-rojo' : 'pill-verde'}" data-a="adminFichar" data-id="${x.id}">${fx ? 'Fichar salida' : 'Fichar entrada'}</button>
+      </div>`; }).join('')}</div>
+    <div class="row g10" style="margin-top:16px">
+      <div class="card grow" data-a="ir" data-v="empleados" style="cursor:pointer;text-align:center"><div class="lbl">Empleados</div><div style="font:600 15px var(--sans);margin-top:6px">Abrir</div></div>
+      <div class="card grow" data-a="ir" data-v="horas" style="cursor:pointer;text-align:center"><div class="lbl">Horas / imputaciones</div><div style="font:600 15px var(--sans);margin-top:6px">Abrir</div></div>
+    </div>
+    <div class="row g10" style="margin-top:10px">
+      <div class="card grow" data-a="ir" data-v="obras" style="cursor:pointer;text-align:center"><div class="lbl">Obras</div><div style="font:600 15px var(--sans);margin-top:6px">Abrir</div></div>
+      <div class="card grow" data-a="ir" data-v="partes" style="cursor:pointer;text-align:center"><div class="lbl">Partes</div><div style="font:600 15px var(--sans);margin-top:6px">Abrir</div></div>
+    </div>
+  </div></div>`;
 }
 
 /* --- obras --- */
 function vObras() {
-  const lista = puedeCrear() ? S.obras : S.obras.filter((o) => o.equipo.includes(V.user.id));
+  const lista = S.obras; // todo el equipo ve todas las obras
   return `<div class="hdr">
+    ${marcaSysefen(false)}
     <div class="row" style="justify-content:space-between">
       <div class="h1">Obras</div>
       ${puedeCrear() ? '<button class="pill" data-a="nuevaObra" style="background:var(--tinta);color:#fff">+ Nueva</button>' : ''}
@@ -631,9 +1304,9 @@ function vObras() {
         <div><div class="lbl">Horas</div><div class="num" style="font-size:18px;margin-top:5px">${durMin(minutosObra(o.id))}</div></div>
         <div><div class="lbl">Partes</div><div class="num" style="font-size:18px;margin-top:5px">${S.partes.filter((p) => p.obraId === o.id && p.estado !== 'anulado').length}</div></div>
         <div class="grow"></div>
-        <div class="tiny ell" style="max-width:140px">${o.equipo.map((id) => esc(userById(id).nombre)).join(' · ')}</div>
+        <div class="tiny ell" style="max-width:140px">${empleadosDeObra(o.id).map((x) => esc(x.nombre)).join(' · ')}</div>
       </div>
-    </div>`).join('') : `<div class="card"><div class="h2">Sin obras todavía</div><div class="sub" style="margin-top:6px">${puedeCrear() ? 'Dale a “+ Nueva” para crear la primera.' : 'El jefe todavía no te ha asignado ninguna.'}</div></div>`}
+    </div>`).join('') : `<div class="card"><div class="h2">Sin obras todavía</div><div class="sub" style="margin-top:6px">${puedeCrear() ? 'Dale a “+ Nueva” para crear la primera.' : 'Todavía no hay obras dadas de alta.'}</div></div>`}
   </div>`;
 }
 function vObra() {
@@ -654,12 +1327,12 @@ function vObra() {
   <div class="scroll pad pb-nav">
     <div class="lbl" style="font-weight:600;font-size:12px;color:var(--t2);margin-bottom:10px">Horas por empleado</div>
     <div class="card" style="padding:6px 15px 13px">
-      ${o.equipo.map((id) => { const m = minutosObra(o.id, id); return `<div style="padding:11px 0;border-bottom:1px solid var(--l1)">
+      ${empleadosDeObra(o.id).map((x) => { const id = x.id; const m = minutosObra(o.id, id); return `<div style="padding:11px 0;border-bottom:1px solid var(--l1)">
         <div class="row" style="align-items:baseline;justify-content:space-between;gap:14px">
-          <div style="font:500 15px/1.2 var(--sans)" class="grow">${esc(userById(id).nombre)}</div>
+          <div style="font:500 15px/1.2 var(--sans)" class="grow">${esc(x.nombre)}</div>
           <div class="num" style="font-size:16px;flex:none">${durMin(m)}</div>
         </div><div class="prog"><i style="width:${Math.round((m / total) * 100)}%"></i></div>
-      </div>`; }).join('')}
+      </div>`; }).join('') || '<div class="tiny" style="padding:11px 0">Nadie ha fichado en esta obra todavía.</div>'}
       <div class="row" style="justify-content:space-between;padding-top:12px"><div class="sub">Total obra</div><div class="num" style="font-size:19px">${durMin(minutosObra(o.id))}</div></div>
     </div>
     <div class="lbl" style="font-weight:600;font-size:12px;color:var(--t2);margin:22px 0 10px">Partes de esta obra</div>
@@ -669,7 +1342,7 @@ function vObra() {
 }
 function vAlta() {
   const d = V.draft;
-  const campos = [['cliente', 'Cliente', 'Comunidad, empresa o particular'], ['dir', 'Dirección de la obra', 'Calle, número, población'], ['tipo', 'Tipo de trabajo', 'Aerotermia, LED, autoconsumo...'], ['contacto', 'Persona de contacto', 'Nombre y teléfono'], ['email', 'Email para los informes', 'cliente@correo.es']];
+  const campos = [['cliente', 'Cliente', 'Comunidad, empresa o particular'], ['dir', 'Dirección de la obra', 'Calle, número, población'], ['email', 'Email para los informes', 'cliente@correo.es']];
   return `<div class="hdr row g12">
     <div data-a="ir" data-v="obras" style="font:500 13px var(--sans);color:var(--t2);cursor:pointer">Cancelar</div>
     <div class="grow" style="text-align:center;font:600 16px var(--sans)">${d.id ? 'Editar obra' : 'Nueva obra'}</div>
@@ -678,8 +1351,7 @@ function vAlta() {
   <div class="scroll pad" style="padding-bottom:40px">
     ${campos.map(([k, l, ph]) => `<div style="margin-bottom:14px"><div class="lbl" style="margin-bottom:7px">${l}</div>
       <input class="inp" data-f="${k}" value="${esc(d[k] || '')}" placeholder="${ph}" ${k === 'email' ? 'type="email" inputmode="email" autocapitalize="off"' : ''}></div>`).join('')}
-    <div class="lbl" style="margin:20px 0 9px">Equipo asignado</div>
-    <div class="wrap">${equipo().map((u) => `<div class="chip ${d.equipo.includes(u.id) ? 'on' : ''}" data-a="toggleEquipoAlta" data-id="${u.id}">${esc(u.nombre)}</div>`).join('')}</div>
+    <div class="tiny" style="margin-top:6px">La obra no lleva lista de empleados. Cualquier empleado puede fichar y trabajar en cualquier obra; las horas se asignan luego al imputar.</div>
   </div>`;
 }
 
@@ -709,15 +1381,19 @@ function cardParte(p) {
   </div>`;
 }
 function vPartes() {
-  const lista = puedeCrear() ? S.partes : S.partes.filter((p) => S.obras.some((o) => o.id === p.obraId && o.equipo.includes(V.user.id)));
+  const lista = puedeCrear() ? S.partes : S.partes.filter((p) => p.horas && p.horas[V.user.id] != null);
   const inc = lista.filter((p) => p.nivel !== 'Sin incidencias' && p.estado !== 'anulado').length;
   return `<div class="hdr">
-    <div class="h1">Partes</div>
+    ${marcaSysefen(false)}
+    <div class="row" style="justify-content:space-between">
+      <div class="h1">Partes</div>
+      ${puedeCrear() ? '<button class="pill" data-a="nuevoParteElegir" style="background:var(--tinta);color:#fff">+ Nuevo parte</button>' : ''}
+    </div>
     <div class="sub" style="margin-top:8px">${lista.length} en total${inc ? ' · ' + inc + ' con incidencia' : ''}</div>
   </div>
   <div class="scroll pad pb-nav">
     ${lista.length ? lista.map(cardParte).join('') : `<div class="card"><div class="h2">Sin partes todavía</div><div class="sub" style="margin-top:6px">Los partes que crees aparecerán aquí, con su firma y sus adjuntos.</div>
-      ${puedeCrear() ? '<button class="btn btn-verde" data-a="nuevoParte" style="margin-top:14px">Crear el primero</button>' : ''}</div>`}
+      ${puedeCrear() ? '<button class="btn btn-verde" data-a="nuevoParteElegir" style="margin-top:14px">Crear el primero</button>' : ''}</div>`}
   </div>`;
 }
 
@@ -725,21 +1401,41 @@ function vPartes() {
 function vHoras() {
   const emp = V.tabHoras === 'empleado' || !puedeCrear();
   const mes = hoyISO().slice(0, 7);
-  const dias = Array.from({ length: 12 }, (_, i) => { const d = new Date(); d.setDate(d.getDate() - (11 - i)); return d.toISOString().slice(0, 10); });
+  const hoy = hoyISO();
+  const dias = Array.from({ length: 12 }, (_, i) => { const d = new Date(); d.setDate(d.getDate() - (11 - i)); return fechaLocal(d); });
+  // Detalle de HOY (entrada/salida/presencia/imputado) solo hace falta para
+  // admin/jefe viendo "Por empleado": es lo que permite revisar y saltar a la
+  // imputación individual de cada uno sin depender de sus propias horas.
+  const detalleHoy = (u) => {
+    const fx = fichajeAbierto(u.id);
+    const fHoy = S.fichajes.filter((f) => f.userId === u.id && fechaLocal(f.entrada) === hoy).sort((a, b) => a.entrada.localeCompare(b.entrada));
+    const cerrada = [...fHoy].reverse().find((f) => f.salida);
+    const disp = disponibleImputar(u.id, hoy);
+    const imp = impMinImputados(u.id, hoy);
+    return {
+      hoyMin: minutosDia(u.id, hoy), semana: minutosSemana(u.id),
+      entrada: fHoy.length ? hhmm(fHoy[0].entrada) : '—',
+      salida: fx ? 'en curso' : (cerrada ? hhmm(cerrada.salida) : '—'),
+      pres: presenciaCerradaDia(u.id, hoy), disp, imp,
+      sinImp: Math.max(0, disp - imp),
+    };
+  };
   const filas = emp
     ? (puedeCrear() ? equipo() : [yo()]).map((u) => ({
-        nombre: u.nombre, total: durMin(minutosMes(u.id)),
-        sub: S.obras.filter((o) => o.equipo.includes(u.id)).length + ' obras · esta semana ' + durMin(minutosSemana(u.id)),
+        id: u.id, nombre: u.nombre, total: durMin(minutosMes(u.id)),
+        sub: S.obras.filter((o) => empleadosDeObra(o.id).some((x) => x.id === u.id)).length + ' obras · esta semana ' + durMin(minutosSemana(u.id)),
         barras: dias.map((d) => minutosDia(u.id, d)), pie: 'Últimos 12 días',
+        det: puedeCrear() ? detalleHoy(u) : null,
       }))
     : S.obras.map((o) => ({
         nombre: o.cliente, total: durMin(minutosObra(o.id)),
-        sub: (o.tipo || o.estado) + ' · ' + S.partes.filter((p) => p.obraId === o.id).length + ' partes',
-        barras: dias.map((d) => S.fichajes.filter((f) => f.obraId === o.id && f.entrada.slice(0, 10) === d && f.salida).reduce((t, f) => t + minEntre(f.entrada, f.salida), 0)),
-        pie: o.equipo.map((id) => userById(id).nombre).join(' · '),
+        sub: o.estado + ' · ' + S.partes.filter((p) => p.obraId === o.id).length + ' partes',
+        barras: dias.map((d) => minutosObraImp(o.id, null, d)),
+        pie: empleadosDeObra(o.id).map((x) => x.nombre).join(' · ') || '—',
       }));
   const totalMes = equipo().reduce((t, u) => t + minutosMes(u.id), 0);
   return `<div class="hdr" style="padding-bottom:0">
+    ${marcaSysefen(false)}
     <div class="h1">Horas</div>
     <div class="sub" style="margin-top:8px">${puedeCrear() ? 'Este mes · ' + durMin(totalMes) + ' del equipo' : 'Este mes · ' + durMin(minutosMes(V.user.id))}</div>
     ${puedeCrear() ? `<div class="row" style="gap:22px;margin-top:16px">
@@ -748,6 +1444,11 @@ function vHoras() {
     </div>` : '<div style="height:16px"></div>'}
   </div>
   <div class="scroll pad pb-nav">
+    <div class="card row" data-a="abrirImputar" style="margin-bottom:12px;cursor:pointer;background:var(--tinta)">
+      <div class="grow"><div style="font:600 15px/1 var(--sans);color:#fff">${puedeCrear() ? 'Imputar / repartir horas' : 'Mis imputaciones'}</div>
+      <div class="tiny" style="color:rgba(255,255,255,.5);margin-top:5px">${puedeCrear() ? 'Distribuir la jornada por obra, despacho, desplazamiento…' : 'Consulta cómo se ha repartido tu jornada'}</div></div>
+      <div class="av" style="width:28px;height:28px;background:var(--ambar);color:var(--tinta);font-size:15px">→</div>
+    </div>
     ${esAdmin() ? '<div class="row g8" style="margin-bottom:14px"><button class="pill grow" data-a="exportar" style="padding:13px;text-align:center;background:var(--tinta);color:#fff">Exportar CSV</button><button class="pill grow" data-a="copia" style="padding:13px;text-align:center">Copia de seguridad</button></div>' : ''}
     ${filas.map((f) => { const max = Math.max(60, ...f.barras); return `<div class="card" style="margin-bottom:10px">
       <div class="row" style="align-items:baseline;justify-content:space-between;gap:14px">
@@ -757,9 +1458,395 @@ function vHoras() {
       <div class="tiny" style="margin-top:7px">${esc(f.sub)}</div>
       <div class="bar">${f.barras.map((m) => `<i class="${m ? '' : 'off'}" style="height:${Math.max(8, Math.round((m / max) * 100))}%"></i>`).join('')}</div>
       <div class="lbl" style="margin-top:8px;letter-spacing:.08em">${esc(f.pie)}</div>
+      ${f.det ? `<div class="row" style="gap:14px;margin-top:12px;padding-top:12px;border-top:1px solid var(--l1)">
+        <div><div class="lbl">Hoy</div><div class="num" style="font-size:15px;margin-top:4px">${durMin(f.det.hoyMin)}</div></div>
+        <div><div class="lbl">Entrada</div><div class="num" style="font-size:15px;margin-top:4px">${f.det.entrada}</div></div>
+        <div><div class="lbl">Salida</div><div class="num" style="font-size:15px;margin-top:4px">${f.det.salida}</div></div>
+      </div>
+      <div class="row" style="gap:14px;margin-top:10px;align-items:flex-end">
+        <div><div class="lbl">Presencia</div><div class="num" style="font-size:15px;margin-top:4px">${durMin(f.det.pres)}</div></div>
+        <div><div class="lbl">Imputado</div><div class="num" style="font-size:15px;margin-top:4px">${durMin(f.det.imp)}</div></div>
+        <div><div class="lbl">Sin imputar</div><div class="num" style="font-size:15px;margin-top:4px;color:${f.det.disp > 0 && f.det.sinImp > 0 ? 'var(--ambar-o)' : 'var(--verde-o)'}">${f.det.disp > 0 ? durMin(f.det.sinImp) : '—'}</div></div>
+        <div class="grow"></div>
+        ${f.det.disp > 0 ? `<div class="pill" data-a="abrirImputHoy" data-id="${f.id}" style="background:var(--tinta);color:#fff;padding:9px 14px;cursor:pointer">Imputar hoy</div>` : `<div class="tiny">${f.det.entrada === '—' ? 'Sin fichar hoy' : 'Jornada en curso'}</div>`}
+      </div>` : ''}
     </div>`; }).join('')}
     ${!filas.length ? '<div class="card"><div class="sub">Todavía no hay horas fichadas.</div></div>' : ''}
   </div>`;
+}
+
+/* --- control tipo reloj (rueda). Reutilizable. Paso configurable (min).
+   El máximo del dial es amplio (hasta 10 h por línea); el límite de negocio
+   (presencia disponible / lógica del parte) se comprueba al guardar. --- */
+function arcoPath(cx, cy, r, a0, a1) {
+  const pt = (a) => { const rad = (a - 90) * Math.PI / 180; return [cx + r * Math.cos(rad), cy + r * Math.sin(rad)]; };
+  const [x0, y0] = pt(a0), [x1, y1] = pt(a1);
+  const large = (a1 - a0) > 180 ? 1 : 0;
+  return `M ${x0.toFixed(1)} ${y0.toFixed(1)} A ${r} ${r} 0 ${large} 1 ${x1.toFixed(1)} ${y1.toFixed(1)}`;
+}
+const RELOJ_A0 = -125, RELOJ_A1 = 125; // arco de 250° (no da la vuelta completa)
+const RELOJ_MAX_DEFECTO = 600;         // 10:00 h por línea
+function relojHTML(scope, key, valMin, maxMin, editable, paso) {
+  paso = paso || 30;
+  const max = Math.max(paso * 2, Math.round((maxMin || RELOJ_MAX_DEFECTO) / paso) * paso);
+  const val = Math.max(0, Math.min(max, Math.round((valMin || 0) / paso) * paso));
+  const frac = max > 0 ? val / max : 0;
+  const ang = RELOJ_A0 + frac * (RELOJ_A1 - RELOJ_A0);
+  const rad = (ang - 90) * Math.PI / 180;
+  const hx = 65 + 46 * Math.cos(rad), hy = 65 + 46 * Math.sin(rad);
+  return `<div class="reloj${editable ? '' : ' ro'}" data-scope="${scope}" data-key="${key}" data-max="${max}" data-paso="${paso}" data-val="${val}" style="width:128px;height:128px;position:relative;margin:6px auto 2px;touch-action:none;${editable ? 'cursor:grab' : ''}">
+    <svg viewBox="0 0 130 130" width="128" height="128">
+      <path d="${arcoPath(65, 65, 46, RELOJ_A0, RELOJ_A1)}" fill="none" stroke="rgba(20,23,15,.10)" stroke-width="9" stroke-linecap="round"/>
+      <path class="reloj-arc" d="${val > 0 ? arcoPath(65, 65, 46, RELOJ_A0, ang) : ''}" fill="none" stroke="var(--verde)" stroke-width="9" stroke-linecap="round"/>
+      <circle class="reloj-h" cx="${hx.toFixed(1)}" cy="${hy.toFixed(1)}" r="10" fill="#fff" stroke="var(--verde)" stroke-width="3"/>
+    </svg>
+    <div class="reloj-v" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:600 26px var(--cond);pointer-events:none">${durMin(val)}</div>
+  </div>`;
+}
+function relojPinta(el, val) {
+  const max = +el.dataset.max;
+  const frac = max > 0 ? val / max : 0;
+  const ang = RELOJ_A0 + frac * (RELOJ_A1 - RELOJ_A0);
+  const rad = (ang - 90) * Math.PI / 180;
+  const hx = 65 + 46 * Math.cos(rad), hy = 65 + 46 * Math.sin(rad);
+  const h = el.querySelector('.reloj-h'); h.setAttribute('cx', hx.toFixed(1)); h.setAttribute('cy', hy.toFixed(1));
+  el.querySelector('.reloj-arc').setAttribute('d', val > 0 ? arcoPath(65, 65, 46, RELOJ_A0, ang) : '');
+  el.querySelector('.reloj-v').textContent = durMin(val);
+  el.dataset.val = val;
+}
+function montarRelojes() {
+  document.querySelectorAll('.reloj:not(.ro)').forEach((el) => {
+    const max = +el.dataset.max, paso = +el.dataset.paso || 30;
+    let drag = false;
+    const desde = (e) => {
+      const b = el.getBoundingClientRect();
+      const dx = e.clientX - (b.left + b.width / 2), dy = e.clientY - (b.top + b.height / 2);
+      let deg = Math.atan2(dy, dx) * 180 / Math.PI + 90;
+      if (deg > 180) deg -= 360;
+      deg = Math.max(RELOJ_A0, Math.min(RELOJ_A1, deg));
+      const frac = (deg - RELOJ_A0) / (RELOJ_A1 - RELOJ_A0);
+      let v = Math.round((frac * max) / paso) * paso;
+      v = Math.max(0, Math.min(max, v));
+      relojPinta(el, v);
+    };
+    const commit = () => {
+      if (!drag) return; drag = false; el.style.cursor = 'grab';
+      const v = +el.dataset.val;
+      if (el.dataset.scope === 'imp') A.impReloj(+el.dataset.key, v);
+      else if (el.dataset.scope === 'parte') A.horaReloj(el.dataset.key, v);
+    };
+    el.addEventListener('pointerdown', (e) => { e.preventDefault(); drag = true; el.style.cursor = 'grabbing'; try { el.setPointerCapture(e.pointerId); } catch (x) {} desde(e); });
+    el.addEventListener('pointermove', (e) => { if (drag) { e.preventDefault(); desde(e); } });
+    el.addEventListener('pointerup', commit);
+    el.addEventListener('pointercancel', commit);
+  });
+}
+
+/* --- imputación de horas --- */
+// Trazabilidad: quién hizo la última imputación de este empleado/día.
+function impUltimaImputacion(userId, fecha) {
+  const filas = S.imputaciones.filter((i) => i.userId === userId && i.fecha === fecha && i.actualizadoEn);
+  if (!filas.length) return null;
+  const last = filas.reduce((a, b) => (a.actualizadoEn > b.actualizadoEn ? a : b));
+  return { nombre: nombrePorEmpId[last.actualizadoPor] || '—', en: last.actualizadoEn };
+}
+function vImputar() {
+  const fecha = V.impFecha || hoyISO();
+  const jefe = puedeCrear();
+  const base = jefe ? equipo() : (yo() ? [yo()] : []);
+  const conCierre = base
+    .map((u) => ({ u, pres: presenciaCerradaDia(u.id, fecha), disp: disponibleImputar(u.id, fecha), imp: impMinImputados(u.id, fecha) }))
+    .filter((x) => x.disp > 0)
+    .sort((a, b) => (a.imp >= a.disp ? 1 : 0) - (b.imp >= b.disp ? 1 : 0));
+  const sinCierre = base.filter((u) => disponibleImputar(u.id, fecha) === 0);
+  return `<div class="hdr">
+    <div class="row" style="justify-content:space-between">
+      <div class="h1" style="font-size:26px">Imputar horas</div>
+      <div data-a="ir" data-v="horas" style="font:500 13px var(--sans);color:var(--t2);cursor:pointer">Cerrar</div>
+    </div>
+    <div class="row g10" style="margin-top:12px;align-items:center">
+      <div class="lbl">Día</div>
+      <input class="inp" data-f="impFecha" type="date" value="${fecha}" max="${hoyISO()}" style="flex:1;padding:11px 12px">
+    </div>
+  </div>
+  <div class="scroll pad pb-nav">
+    ${conCierre.map(({ u, pres, disp, imp }) => {
+      const completa = imp >= disp;
+      const sinImp = Math.max(0, disp - imp);
+      const exceso = imp > disp;
+      return `<div class="card" data-a="abrirImputEmp" data-id="${u.id}" style="margin-bottom:10px;cursor:pointer">
+        <div class="row" style="align-items:baseline;justify-content:space-between">
+          <div class="h2 grow">${esc(u.nombre)}</div>
+          ${exceso ? '<span class="badge" style="background:var(--rojo-cl);color:var(--rojo)">⚠ Revisar</span>' : (completa ? '<span class="badge" style="background:#e3efe5;color:var(--verde-o)">✓ Completa</span>' : `<span class="num" style="font-size:16px;color:var(--ambar-o)">${durMin(sinImp)} sin imputar</span>`)}
+        </div>
+        <div class="row" style="gap:12px;margin-top:12px">
+          <div><div class="lbl">Presencia</div><div class="num" style="font-size:15px;margin-top:4px">${durMin(pres)}</div></div>
+          <div><div class="lbl">Disponible</div><div class="num" style="font-size:15px;margin-top:4px">${durMin(disp)}</div></div>
+          <div><div class="lbl">Imputado</div><div class="num" style="font-size:15px;margin-top:4px">${durMin(imp)}</div></div>
+          <div><div class="lbl">Sin imputar</div><div class="num" style="font-size:15px;margin-top:4px;color:${exceso ? 'var(--rojo)' : (completa ? 'var(--verde-o)' : 'var(--ambar-o)')}">${exceso ? '⚠ +' + durMin(imp - disp) : durMin(sinImp)}</div></div>
+        </div>
+      </div>`;
+    }).join('') || '<div class="card"><div class="sub">Nadie tiene jornada cerrada este día.</div></div>'}
+    ${sinCierre.length ? `<div class="lbl" style="margin:16px 0 8px">Sin fichaje cerrado (no imputable)</div>
+      <div class="col g8">${sinCierre.map((u) => `<div class="card row" style="padding:11px 13px;opacity:.7">
+        <div class="grow" style="font:500 14px var(--sans)">${esc(u.nombre)}</div>
+        <div class="tiny">${fichajeAbierto(u.id) ? 'jornada en curso' : 'sin fichar'}</div>
+      </div>`).join('')}</div>` : ''}
+    ${!jefe ? '<div class="tiny" style="margin-top:10px">Solo puedes consultar tus imputaciones. Las hace un jefe o administración.</div>' : ''}
+  </div>`;
+}
+function vImputarEmpleado() {
+  const jefe = puedeCrear();
+  const u = userById(V.impEmp);
+  const pres = presenciaCerradaDia(V.impEmp, V.impFecha);
+  const disp = disponibleImputar(V.impEmp, V.impFecha);
+  const draft = V.impDraft || [];
+  const imp = draft.reduce((t, l) => t + (l.minutos || 0), 0);
+  const sinImp = Math.max(0, disp - imp);
+  const exceso = imp > disp;
+  const obras = S.obras.filter((o) => o.estado !== 'Cerrada');
+  const bloqueado = draft.some((l) => l.bloqueado);
+  const editable = jefe && !bloqueado && disp > 0;
+  const ult = impUltimaImputacion(V.impEmp, V.impFecha);
+  return `<div class="hdr-dark">
+    <div class="back" data-a="volverImputar">‹ Imputar horas</div>
+    <div style="font:600 25px/1.1 var(--cond)">${esc(u.nombre)}</div>
+    <div class="sub" style="color:rgba(255,255,255,.55);margin-top:6px">${fechaLarga(V.impFecha)}</div>
+    <div class="row" style="gap:14px;margin-top:14px">
+      <div><div class="lbl" style="color:rgba(255,255,255,.5)">Presencia real</div><div class="num" style="color:#fff;font-size:16px;margin-top:4px">${durMin(pres)}</div></div>
+      <div><div class="lbl" style="color:rgba(255,255,255,.5)">Disponible</div><div class="num" style="color:#fff;font-size:16px;margin-top:4px">${durMin(disp)}</div></div>
+      <div><div class="lbl" style="color:rgba(255,255,255,.5)">Imputado</div><div class="num" style="color:#fff;font-size:16px;margin-top:4px">${durMin(imp)}</div></div>
+      <div><div class="lbl" style="color:rgba(255,255,255,.5)">Sin imputar</div><div class="num" style="font-size:16px;margin-top:4px;color:${exceso ? 'var(--rojo)' : (sinImp === 0 ? 'var(--verde-c)' : 'var(--ambar)')}">${exceso ? '⚠ +' + durMin(imp - disp) : durMin(sinImp)}</div></div>
+    </div>
+    ${ult ? `<div class="tiny" style="color:rgba(255,255,255,.4);margin-top:10px">Última imputación: ${esc(ult.nombre)} · ${new Date(ult.en).toLocaleString('es-ES', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</div>` : ''}
+  </div>
+  <div class="scroll pad" style="padding-bottom:${editable ? '112px' : 'calc(100px + var(--safe-b))'}">
+    ${disp <= 0 ? '<div class="card"><div class="sub">Este empleado no tiene jornada fichada y cerrada este día. No se puede imputar.</div></div>' : ''}
+    ${bloqueado ? '<div class="tiny" style="margin-bottom:12px;color:var(--rojo)">Hay líneas bloqueadas (parte de horas firmado): no se pueden editar.</div>' : ''}
+    ${disp > 0 ? (draft.length ? draft.map((l, i) => `<div class="card" style="margin-bottom:10px">
+      <div class="wrap">${IMP_CATS.map(([c, lab]) => `<div class="chip ${l.categoria === c ? 'on' : ''}" ${editable ? `data-a="impCat" data-i="${i}" data-c="${c}"` : ''}>${lab}</div>`).join('')}</div>
+      ${l.categoria === 'obra' ? `<div class="lbl" style="margin:12px 0 7px">Obra</div>
+        <div class="wrap">${obras.length ? obras.map((o) => `<div class="chip ${l.obraId === o.id ? 'on' : ''}" ${editable ? `data-a="impObra" data-i="${i}" data-id="${o.id}"` : ''}>${esc(o.cliente)}</div>`).join('') : '<div class="tiny">No hay obras abiertas.</div>'}</div>` : ''}
+      ${relojHTML('imp', i, l.minutos || 0, RELOJ_MAX_DEFECTO, editable, 15)}
+      ${editable ? `<button class="pill pill-rojo" data-a="impDelLinea" data-i="${i}" style="display:block;margin:2px auto 0">Quitar línea</button>` : ''}
+    </div>`).join('') : '<div class="card"><div class="sub">Sin líneas. Añade las categorías donde estuvo.</div></div>') : ''}
+    ${editable ? '<button class="btn btn-gris" data-a="impAddLinea" style="border-radius:14px;margin-top:4px">+ Añadir categoría</button>' : ''}
+  </div>
+  ${editable ? `<div style="flex:none;padding:12px 20px calc(12px + var(--safe-b));background:rgba(247,246,243,.96);border-top:1px solid var(--l1)">
+    ${exceso ? `<div class="tiny" style="text-align:center;color:var(--rojo);margin-bottom:8px">Excede la disponibilidad en ${durMin(imp - disp)}. Ajusta antes de guardar.</div>` : ''}
+    <button class="btn btn-verde" data-a="impGuardar" ${(V.impBusy || exceso) ? 'disabled' : ''}>${V.impBusy ? 'Guardando…' : 'Guardar imputación'}</button>
+  </div>` : ''}`;
+}
+
+/* --- ADMINISTRACIÓN · Empleados --- */
+const ROLES = [['operario', 'Operario'], ['jefe', 'Jefe'], ['admin', 'Administración']];
+const rolLabel = (r) => (ROLES.find((x) => x[0] === r) || [r, r])[1];
+
+function vEmpleados() {
+  const lista = equipoTodos().concat(S.users.filter((u) => u.rol === 'admin'));
+  return `<div class="hdr">
+    ${marcaSysefen(false)}
+    <div class="row" style="justify-content:space-between">
+      <div class="h1">Empleados</div>
+      <button class="pill" data-a="empNuevo" style="background:var(--tinta);color:#fff">+ Nuevo empleado</button>
+    </div>
+    <div class="sub" style="margin-top:8px">${lista.filter((u) => u.activo !== false).length} activos · ${lista.filter((u) => u.activo === false).length} inactivos</div>
+  </div>
+  <div class="scroll pad pb-nav">
+    ${lista.map((u) => `<div class="card row" data-a="abrirEmpleado" data-id="${u.id}" style="margin-bottom:9px;cursor:pointer${u.activo === false ? ';opacity:.6' : ''}">
+      <div class="av" style="width:38px;height:38px;font-size:15px;background:${u.rol === 'admin' ? 'var(--ambar);color:var(--tinta)' : u.rol === 'jefe' ? 'var(--verde-c);color:#fff' : 'rgba(20,23,15,.08);color:var(--tinta)'}">${esc(ini(u.nombre))}</div>
+      <div class="grow"><div style="font:600 15px/1.1 var(--sans)">${esc(u.nombre)}</div>
+      <div class="row g8" style="margin-top:5px"><span class="dot" style="background:${u.activo === false ? 'rgba(20,23,15,.25)' : 'var(--verde)'}"></span><div class="lbl">${rolLabel(u.rol)} · ${u.activo === false ? 'Inactivo' : 'Activo'}</div></div></div>
+      <div style="font:400 20px/1 var(--sans);color:var(--t3)">›</div>
+    </div>`).join('')}
+  </div>`;
+}
+
+function vEmpleado() {
+  const d = V.empDraft; if (!d) { V.view = 'empleados'; return vEmpleados(); }
+  const u = V.empEmp ? userById(V.empEmp) : null;
+  const fx = V.empEmp ? fichajeAbierto(V.empEmp) : null;
+  const empId = V.empEmp ? empIdDeUser(V.empEmp) : null;
+  const row = empId ? empRowById(empId) : null;
+  return `<div class="hdr row g12">
+    <div data-a="volverEmpleados" style="font:500 13px var(--sans);color:var(--t2);cursor:pointer">‹ Empleados</div>
+    <div class="grow" style="text-align:center;font:600 16px var(--sans)">${d.nuevo ? 'Nuevo empleado' : esc(d.nombre)}</div>
+    <div data-a="empGuardar" style="font:600 13px var(--sans);color:var(--verde-o);cursor:pointer">${V.empBusy ? '…' : 'Guardar'}</div>
+  </div>
+  <div class="scroll pad pb-nav">
+    ${!d.nuevo && V.empEmp ? `<div class="card" style="margin-bottom:14px;background:${fx ? 'var(--verde-o)' : 'var(--tinta)'};color:#fff">
+      <div class="row" style="justify-content:space-between;align-items:center">
+        <div><div class="lbl" style="color:rgba(255,255,255,.6)">Fichaje de hoy</div>
+        <div style="font:600 15px var(--sans);margin-top:4px">${fx ? 'Entrada ' + hhmm(fx.entrada) + ' · dentro' : (minutosDia(V.empEmp, hoyISO()) ? 'Hoy ' + durMin(minutosDia(V.empEmp, hoyISO())) + ' · fuera' : 'Sin fichar hoy')}</div></div>
+        <button class="pill" data-a="adminFichar" data-id="${V.empEmp}" style="background:#fff;color:${fx ? 'var(--rojo)' : 'var(--verde-o)'}">${fx ? 'Fichar salida' : 'Fichar entrada'}</button>
+      </div>
+    </div>` : ''}
+
+    <div class="lbl" style="margin-bottom:7px">Nombre</div>
+    <input class="inp" data-f="empNombre" value="${esc(d.nombre)}" placeholder="Nombre y apellidos">
+    <div class="lbl" style="margin:14px 0 7px">Email (acceso)</div>
+    <input class="inp" data-f="empEmail" value="${esc(d.email)}" type="email" inputmode="email" autocapitalize="off" placeholder="${d.nuevo ? esc(emailSugerido(d.nombre) || 'nombre@sysefen.app') : 'nombre@sysefen.app'}">
+    <div class="lbl" style="margin:14px 0 7px">Teléfono</div>
+    <input class="inp" data-f="empTelefono" value="${esc(d.telefono)}" type="tel" inputmode="tel" placeholder="Opcional">
+    <div class="lbl" style="margin:18px 0 9px">Rol</div>
+    <div class="wrap">${ROLES.map(([r, l]) => `<div class="chip ${d.rol === r ? 'on' : ''}" data-a="empRol" data-r="${r}">${l}</div>`).join('')}</div>
+
+    <div class="card row" data-a="empToggleActivo" style="margin-top:18px;cursor:pointer">
+      <div class="grow"><div style="font:500 15px var(--sans)">Empleado activo</div>
+      <div class="sub" style="font-size:12px;margin-top:4px">${d.activo ? 'Participa en fichajes, imputaciones y partes.' : 'Inactivo: conserva su historial pero no aparece en operaciones nuevas.'}</div></div>
+      <div class="sw" style="background:${d.activo ? 'var(--verde)' : 'rgba(20,23,15,.16)'};justify-content:${d.activo ? 'flex-end' : 'flex-start'}"><i></i></div>
+    </div>
+
+    ${!d.nuevo ? `<div class="tiny" style="margin-top:14px">${row && row.creado_en ? 'Alta: ' + fechaCorta(row.creado_en) : ''}${row && row.fecha_baja ? ' · Baja: ' + fechaCorta(row.fecha_baja + 'T12:00') : ''}</div>
+    <button class="btn btn-gris" data-a="abrirPlanilla" data-id="${V.empEmp}" style="margin-top:16px;border-radius:14px">Ver planilla de horas</button>` : `<div class="tiny" style="margin-top:16px">Al guardar se crea el perfil. Para que pueda iniciar sesión hay que crear su acceso (te lo indicaremos).</div>`}
+  </div>`;
+}
+
+/* --- ADMINISTRACIÓN · Planilla mensual (horas REALES de fichaje) --- */
+function planillaMes(userId, mes) {
+  const [y, m] = mes.split('-').map(Number);
+  const ultimo = new Date(y, m, 0).getDate();
+  const dias = [];
+  let totalMin = 0, diasTrab = 0;
+  for (let dd = 1; dd <= ultimo; dd++) {
+    const fecha = mes + '-' + String(dd).padStart(2, '0');
+    const fs = S.fichajes.filter((f) => f.userId === userId && fechaLocal(f.entrada) === fecha)
+      .sort((a, b) => a.entrada.localeCompare(b.entrada));
+    if (!fs.length) { dias.push({ fecha, dd, estado: 'Sin fichaje', min: null }); continue; }
+    const entrada = fs[0].entrada;
+    const cerrados = fs.filter((f) => f.salida);
+    const salida = cerrados.length ? cerrados[cerrados.length - 1].salida : null;
+    const min = fs.reduce((t, f) => t + (f.salida ? minEntre(f.entrada, f.salida) : 0), 0);
+    const abierto = fs.some((f) => !f.salida);
+    if (min > 0) { totalMin += min; diasTrab++; }
+    dias.push({ fecha, dd, estado: abierto ? 'En curso' : 'Trabajado', entrada, salida, min: abierto ? null : min });
+  }
+  return { dias, totalMin, diasTrab, ultimo };
+}
+function horasEmpleadoDesde(userId, desdeISO) {
+  return S.fichajes
+    .filter((f) => f.userId === userId && f.salida && (!desdeISO || f.entrada >= desdeISO))
+    .reduce((t, f) => t + minEntre(f.entrada, f.salida), 0);
+}
+function resumenPorMes(userId, nMeses) {
+  const out = [];
+  const hoy = new Date();
+  for (let k = 0; k < nMeses; k++) {
+    const d = new Date(hoy.getFullYear(), hoy.getMonth() - k, 1);
+    const mes = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+    const min = S.fichajes.filter((f) => f.userId === userId && f.salida && fechaLocal(f.entrada).slice(0, 7) === mes)
+      .reduce((t, f) => t + minEntre(f.entrada, f.salida), 0);
+    out.push({ mes, min });
+  }
+  return out;
+}
+const mesLargo = (mes) => { const [y, m] = mes.split('-').map(Number); return new Date(y, m - 1, 1).toLocaleDateString('es-ES', { month: 'long', year: 'numeric' }); };
+const horasLargas = (min) => Math.floor(min / 60) + ':' + String(min % 60).padStart(2, '0');
+
+function vPlanilla() {
+  const userId = V.planEmp;
+  const u = userById(userId);
+  const mes = V.planMes || hoyISO().slice(0, 7);
+  const empId = empIdDeUser(userId);
+  const row = empId ? empRowById(empId) : null;
+  const pl = planillaMes(userId, mes);
+  const totalHist = horasEmpleadoDesde(userId, null);
+  const d12 = new Date(); d12.setMonth(d12.getMonth() - 12);
+  const total12 = horasEmpleadoDesde(userId, d12.toISOString());
+  const porMes = resumenPorMes(userId, 12);
+  return `<div class="hdr-dark">
+    <div class="back" data-a="abrirEmpleado" data-id="${userId}">‹ ${esc(u.nombre)}</div>
+    <div style="font:600 23px/1.1 var(--cond)">Planilla de horas</div>
+    <div class="row" style="justify-content:space-between;align-items:center;margin-top:14px">
+      <button class="pill" data-a="planMesNav" data-d="-1" style="background:rgba(255,255,255,.14);color:#fff">‹</button>
+      <div style="font:600 16px var(--cond);text-transform:capitalize">${mesLargo(mes)}</div>
+      <button class="pill" data-a="planMesNav" data-d="1" style="background:rgba(255,255,255,.14);color:#fff">›</button>
+    </div>
+  </div>
+  <div class="scroll pad pb-nav">
+    <div class="row g8" style="margin-bottom:12px">
+      <button class="pill grow" data-a="imprimirPlanilla" style="padding:12px;text-align:center;background:var(--tinta);color:#fff">Imprimir planilla</button>
+    </div>
+    <div class="card" style="padding:0;overflow:hidden">
+      <div class="row" style="padding:9px 12px;background:rgba(20,23,15,.04);font:600 10px var(--mono);text-transform:uppercase;letter-spacing:.06em;color:var(--t2)">
+        <div style="width:38px">Día</div><div class="grow">Entrada / Salida</div><div style="width:52px;text-align:right">Horas</div>
+      </div>
+      ${pl.dias.map((x) => `<div class="row" style="padding:9px 12px;border-top:1px solid var(--l1)">
+        <div style="width:38px;font:500 13px var(--mono)">${String(x.dd).padStart(2, '0')}</div>
+        <div class="grow" style="font:400 13px var(--sans)">${x.min != null || x.estado === 'En curso'
+          ? hhmm(x.entrada) + ' – ' + (x.salida ? hhmm(x.salida) : '—')
+          : `<span style="color:var(--t3)">${x.estado}</span>`}</div>
+        <div style="width:52px;text-align:right;font:500 13px var(--mono)">${x.min != null ? horasLargas(x.min) : (x.estado === 'En curso' ? '…' : '—')}</div>
+      </div>`).join('')}
+    </div>
+    <div class="card" style="margin-top:12px">
+      <div class="row" style="justify-content:space-between"><div class="sub">Horas trabajadas</div><div class="num" style="font-size:17px">${horasLargas(pl.totalMin)}</div></div>
+      <div class="row" style="justify-content:space-between;margin-top:6px"><div class="sub">Días trabajados</div><div class="num" style="font-size:17px">${pl.diasTrab}</div></div>
+      <div class="row" style="justify-content:space-between;margin-top:6px"><div class="sub">Días de vacaciones</div><div class="num" style="font-size:17px;color:var(--t3)">0</div></div>
+      <div class="row" style="justify-content:space-between;margin-top:6px"><div class="sub">Festivos</div><div class="num" style="font-size:17px;color:var(--t3)">0</div></div>
+      <div class="row" style="justify-content:space-between;margin-top:6px"><div class="sub">Otros estados</div><div class="num" style="font-size:17px;color:var(--t3)">0</div></div>
+      <div class="tiny" style="margin-top:8px">Vacaciones, festivos y otros estados: pendientes de implementar.</div>
+    </div>
+    <div class="lbl" style="font-weight:600;font-size:12px;color:var(--t2);margin:22px 0 10px">Resumen histórico</div>
+    <div class="row g10">
+      <div class="stat"><div class="lbl">Total en la empresa</div><b>${horasLargas(totalHist)}</b></div>
+      <div class="stat"><div class="lbl">Últimos 12 meses</div><b>${horasLargas(total12)}</b></div>
+    </div>
+    <div class="card" style="margin-top:12px;padding:0;overflow:hidden">
+      ${porMes.map((x, i) => `<div class="row" style="justify-content:space-between;padding:10px 13px;${i ? 'border-top:1px solid var(--l1)' : ''}">
+        <div style="font:400 13px var(--sans);text-transform:capitalize">${mesLargo(x.mes)}</div>
+        <div class="num" style="font-size:14px">${horasLargas(x.min)}</div>
+      </div>`).join('')}
+    </div>
+    ${row ? `<div class="tiny" style="margin-top:12px">Alta: ${row.creado_en ? fechaCorta(row.creado_en) : '—'}${row.fecha_baja ? ' · Baja: ' + fechaCorta(row.fecha_baja + 'T12:00') : ''} · Registro basado en fichajes reales (no imputaciones).</div>` : ''}
+  </div>`;
+}
+function imprimirPlanilla(userId, mes) {
+  const u = userById(userId);
+  const empId = empIdDeUser(userId);
+  const row = empId ? empRowById(empId) : null;
+  const pl = planillaMes(userId, mes);
+  const el = $('#print');
+  el.innerHTML = `<div style="font-family:var(--sans);color:#14170f;max-width:180mm;position:relative;z-index:0">
+    <img src="logo-trans.png" alt="" style="position:absolute;top:110mm;left:50%;transform:translate(-50%,-50%);width:120mm;opacity:.11;z-index:-1;pointer-events:none">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start">
+      <div><img src="logo-trans.png" alt="" style="height:15mm">
+      ${S.cif ? `<div style="font:400 10px var(--mono);color:#666;margin-top:2px">${esc(S.empresa)} · ${esc(S.cif)}</div>` : ''}</div>
+      <div style="text-align:right"><div style="font:600 11px var(--mono);letter-spacing:.1em">REGISTRO DE JORNADA</div>
+      <div style="font:700 15px var(--cond);margin-top:2px;text-transform:capitalize">${mesLargo(mes)}</div></div>
+    </div>
+    <div style="height:2px;background:#14170f;margin:10px 0 12px"></div>
+    <table style="width:100%;font:400 12px var(--sans);border-collapse:collapse">
+      <tr><td style="padding:2px 0;color:#666;width:28%">Empleado</td><td style="font-weight:600">${esc(u.nombre)}</td></tr>
+      ${row && row.creado_en ? `<tr><td style="padding:2px 0;color:#666">Fecha de alta</td><td>${fechaCorta(row.creado_en)}</td></tr>` : ''}
+      ${row && row.fecha_baja ? `<tr><td style="padding:2px 0;color:#666">Fecha de baja</td><td>${fechaCorta(row.fecha_baja + 'T12:00')}</td></tr>` : ''}
+    </table>
+    <table style="width:100%;font:400 11px var(--sans);border-collapse:collapse;margin-top:12px">
+      <tr style="font:600 10px var(--mono);text-transform:uppercase;letter-spacing:.05em;color:#666">
+        <td style="padding:4px 0;border-bottom:1px solid #14170f">Fecha</td>
+        <td style="padding:4px 0;border-bottom:1px solid #14170f">Entrada</td>
+        <td style="padding:4px 0;border-bottom:1px solid #14170f">Salida</td>
+        <td style="padding:4px 0;border-bottom:1px solid #14170f;text-align:right">Horas reales</td>
+        <td style="padding:4px 6px;border-bottom:1px solid #14170f">Estado</td>
+      </tr>
+      ${pl.dias.map((x) => `<tr>
+        <td style="padding:3px 0;border-bottom:1px solid #eee">${String(x.dd).padStart(2, '0')}/${mes.slice(5)}</td>
+        <td style="padding:3px 0;border-bottom:1px solid #eee;font-family:var(--mono)">${x.entrada ? hhmm(x.entrada) : '—'}</td>
+        <td style="padding:3px 0;border-bottom:1px solid #eee;font-family:var(--mono)">${x.salida ? hhmm(x.salida) : '—'}</td>
+        <td style="padding:3px 0;border-bottom:1px solid #eee;text-align:right;font-family:var(--mono)">${x.min != null ? horasLargas(x.min) : '—'}</td>
+        <td style="padding:3px 6px;border-bottom:1px solid #eee">${x.estado}</td>
+      </tr>`).join('')}
+      <tr><td colspan="3" style="padding:6px 0;font-weight:700">Total mensual</td>
+        <td style="padding:6px 0;text-align:right;font-weight:700;font-family:var(--mono)">${horasLargas(pl.totalMin)}</td>
+        <td style="padding:6px 6px">${pl.diasTrab} días</td></tr>
+    </table>
+    <div style="font:400 10px var(--sans);color:#666;margin-top:14px">Horas reales de presencia según los fichajes registrados. Los días sin fichaje no se contabilizan como 0 h a la espera de definir su estado (vacaciones, festivo, ausencia…).</div>
+    <div style="display:flex;gap:24px;margin-top:26px">
+      <div style="flex:1"><div style="font:600 10px var(--mono);text-transform:uppercase;color:#666">El trabajador</div><div style="height:20mm"></div><div style="border-top:1px solid #14170f;padding-top:4px;font:400 11px var(--sans)">${esc(u.nombre)}</div></div>
+      <div style="flex:1"><div style="font:600 10px var(--mono);text-transform:uppercase;color:#666">Por ${esc(S.empresa)}</div><div style="height:20mm"></div><div style="border-top:1px solid #14170f;padding-top:4px;font:400 11px var(--sans)">&nbsp;</div></div>
+    </div>
+  </div>`;
+  setTimeout(() => window.print(), 60);
 }
 
 /* --- ajustes --- */
@@ -770,6 +1857,11 @@ function vAjustes() {
     : [['gps', 'Registrar ubicación al fichar', 'Se guarda la posición junto al fichaje'], ['recordatorio', 'Aviso de fichaje', 'Recordatorio si sigues dentro por la tarde']];
   return `<div class="hdr"><div class="h1">${esAdmin() ? 'Ajustes' : 'Perfil'}</div></div>
   <div class="scroll pad pb-nav">
+    <div class="row g10" style="align-items:center;margin-bottom:16px">
+      <img src="logo-trans.png" alt="Sysefen" style="height:32px;flex:none">
+      <div class="grow"><div style="font:700 15px/1 var(--cond)">Sysefen</div>
+      <div class="tiny" style="margin-top:3px">Eficiencia Energética</div></div>
+    </div>
     <div class="card row" style="margin-bottom:12px">
       <div class="av" style="width:46px;height:46px;font-size:18px;background:${u.rol === 'admin' ? 'var(--ambar);color:var(--tinta)' : u.rol === 'jefe' ? 'var(--verde-c);color:#fff' : 'rgba(20,23,15,.08);color:var(--tinta)'}">${esc(ini(u.nombre))}</div>
       <div class="grow"><div style="font:600 18px/1.1 var(--sans)">${esc(u.nombre)}</div>
@@ -791,17 +1883,11 @@ function vAjustes() {
       </div>`).join('')}
     </div>
 
-    ${esAdmin() ? `<div class="lbl" style="font-weight:600;font-size:12px;color:var(--t2);margin:20px 0 10px">Usuarios y permisos</div>
-    <div class="card" style="padding:0;overflow:hidden">
-      ${S.users.filter((x) => x.rol !== 'admin').map((x, i) => `<div class="row" style="padding:13px 16px;${i ? 'border-top:1px solid var(--l1)' : ''}">
-        <div class="av" style="width:34px;height:34px;font-size:14px;background:${x.rol === 'jefe' ? 'var(--verde-c);color:#fff' : 'rgba(20,23,15,.08);color:var(--tinta)'}">${esc(ini(x.nombre))}</div>
-        <div class="grow"><div style="font:500 15px/1.1 var(--sans)">${esc(x.nombre)}</div><div class="lbl" style="margin-top:4px">${x.rol === 'jefe' ? 'Jefe de obra' : 'Operario'} · PIN ••••</div></div>
-        <button class="pill" data-a="editarPin" data-id="${x.id}" style="padding:9px 10px">PIN</button>
-        <button class="pill ${x.rol === 'jefe' ? '' : 'pill-verde'}" data-a="cambiarRol" data-id="${x.id}" style="padding:9px 10px">${x.rol === 'jefe' ? 'Quitar' : 'Jefe'}</button>
-      </div>`).join('')}
-      <div class="row" data-a="addUser" style="padding:14px 16px;border-top:1px solid var(--l1);cursor:pointer;color:var(--verde-o);font:600 14px var(--sans)">+ Añadir empleado</div>
+    ${esAdmin() ? `<div class="card row" data-a="ir" data-v="empleados" style="margin-top:14px;cursor:pointer">
+      <div class="grow"><div style="font:600 15px var(--sans)">Empleados</div>
+      <div class="sub" style="font-size:12px;margin-top:4px">Alta, edición, rol, activar/desactivar y planilla de horas.</div></div>
+      <div style="font:400 20px/1 var(--sans);color:var(--t3)">›</div>
     </div>
-    <div class="sub" style="font-size:12px;margin-top:10px">Solo tú puedes cambiar roles y PIN, anular partes ya enviados y exportar los datos. Los fichajes no se borran: quedan registrados con quien los tocó.</div>
 
     <div class="lbl" style="font-weight:600;font-size:12px;color:var(--t2);margin:22px 0 10px">Datos</div>
     <div class="row g8">
@@ -811,7 +1897,7 @@ function vAjustes() {
     <div class="sub" style="font-size:12px;margin-top:10px">La ley obliga a conservar el registro de jornada 4 años. Descarga la copia una vez al mes y guárdala fuera del móvil.</div>` : ''}
 
     <button class="btn btn-gris" data-a="instalar" style="margin-top:20px;border-radius:99px">Instalar en la pantalla de inicio</button>
-    <div class="lbl" style="text-align:center;margin-top:18px">Versión 1.0 · datos guardados en este móvil</div>
+    <div class="lbl" style="text-align:center;margin-top:18px">Versión ${APP_VERSION} · datos sincronizados</div>
   </div>`;
 }
 
@@ -836,41 +1922,38 @@ function vP1() {
     <textarea class="inp" data-f="desc" rows="4" placeholder="Qué se ha hecho hoy en la obra...">${esc(d.desc)}</textarea>
 
     <div class="row" style="justify-content:space-between;margin:22px 0 8px">
-      <div class="lbl">Empleados y horas</div><div class="tiny">cuartos de hora</div>
+      <div class="lbl">Personal y horas</div><div class="tiny">pasos de 15 min</div>
     </div>
     <div class="card" style="padding:0;overflow:hidden">
-      ${o.equipo.map((id, i) => { const on = d.incluidos.includes(id); return `<div class="row" style="gap:9px;padding:11px 13px;${i ? 'border-top:1px solid var(--l1)' : ''}">
-        <div data-a="togglePersona" data-id="${id}" style="width:22px;height:22px;border-radius:7px;flex:none;cursor:pointer;display:flex;align-items:center;justify-content:center;font:700 12px var(--sans);color:#fff;background:${on ? 'var(--verde)' : 'transparent'};border:1.5px solid ${on ? 'var(--verde)' : 'rgba(20,23,15,.25)'}">${on ? '✓' : ''}</div>
-        <div class="grow" style="font:500 15px/1.1 var(--sans);color:${on ? 'var(--tinta)' : 'rgba(20,23,15,.35)'}">${esc(userById(id).nombre)}</div>
-        <button class="av" data-a="horaMenos" data-id="${id}" style="width:32px;height:32px;background:#eeece5;font-size:17px">−</button>
-        <div class="num" style="width:56px;text-align:center;font-size:19px;flex:none;color:${on ? 'var(--tinta)' : 'rgba(20,23,15,.35)'}">${fmtH(d.horas[id] || 0)}</div>
-        <button class="av" data-a="horaMas" data-id="${id}" style="width:32px;height:32px;background:#eeece5;font-size:17px">+</button>
+      ${equipo().map((uu, i) => { const id = uu.id; const on = d.incluidos.includes(id); return `<div style="padding:12px 13px;${i ? 'border-top:1px solid var(--l1)' : ''}">
+        <div class="row" style="gap:10px">
+          <div data-a="togglePersona" data-id="${id}" style="width:22px;height:22px;border-radius:7px;flex:none;cursor:pointer;display:flex;align-items:center;justify-content:center;font:700 12px var(--sans);color:#fff;background:${on ? 'var(--verde)' : 'transparent'};border:1.5px solid ${on ? 'var(--verde)' : 'rgba(20,23,15,.25)'}">${on ? '✓' : ''}</div>
+          <div class="grow" style="font:500 15px/1.1 var(--sans);color:${on ? 'var(--tinta)' : 'rgba(20,23,15,.35)'}">${esc(uu.nombre)}</div>
+          <div class="num" style="font-size:16px;color:${on ? 'var(--tinta)' : 'rgba(20,23,15,.3)'}">${on ? fmtH(d.horas[id] || 0) + ' h' : 'tocar para incluir'}</div>
+        </div>
+        ${on ? relojHTML('parte', id, (d.horas[id] || 0) * 60, RELOJ_MAX_DEFECTO, true, 15) : ''}
       </div>`; }).join('')}
     </div>
     <div class="row" style="justify-content:space-between;padding:11px 4px 0"><div class="sub">Total del parte</div><div class="num" style="font-size:17px">${fmtH(total)} h</div></div>
 
-    <div class="row" style="justify-content:space-between;margin:22px 0 8px">
-      <div class="lbl">Materiales usados</div>
+    <div class="row" style="justify-content:space-between;margin:22px 0 4px">
+      <div class="lbl">Materiales utilizados</div>
       <div data-a="addMat" style="font:500 12px var(--sans);color:var(--verde-o);cursor:pointer">+ Añadir</div>
     </div>
+    <div class="tiny" style="margin-bottom:8px">Qué se usó y cuánto. Sin precios: el coste se valora aparte.</div>
     <div class="col g8">
       ${d.mats.map((m) => `<div class="card row" style="padding:11px 13px">
         <div class="grow">
-          <input data-fm="${m.id}:nombre" value="${esc(m.nombre)}" placeholder="Material" style="width:100%;font:500 15px var(--sans)">
+          <input data-fm="${m.id}:nombre" value="${esc(m.nombre)}" placeholder="Descripción (p. ej. Cable 3x2,5)" style="width:100%;font:500 15px var(--sans)">
           <div class="row" style="gap:6px;margin-top:5px">
             <div class="badge" data-a="toggleCompra" data-id="${m.id}" style="cursor:pointer;background:${m.compra ? '#f6eddb' : 'rgba(20,23,15,.06)'};color:${m.compra ? 'var(--ambar-o)' : 'var(--t2)'}">${m.compra ? 'Comprado en obra' : 'De almacén'}</div>
-            <input data-fm="${m.id}:cant" value="${esc(m.cant)}" placeholder="cant." style="width:56px;font:400 12px var(--mono);color:var(--t2)">
+            <input data-fm="${m.id}:cant" value="${esc(m.cant)}" placeholder="cantidad (p. ej. 50 m)" style="flex:1;font:400 13px var(--sans);color:var(--t2)">
           </div>
-        </div>
-        <div class="row" style="gap:3px;flex:none">
-          <input data-fm="${m.id}:importe" value="${esc(m.importe)}" placeholder="0" inputmode="decimal" style="width:52px;text-align:right;font:600 17px var(--cond)">
-          <span class="num" style="font-size:15px;color:var(--t3)">€</span>
         </div>
         <button class="av" data-a="quitarMat" data-id="${m.id}" style="width:26px;height:26px;background:#eeece5;font-size:14px;color:var(--t2)">×</button>
       </div>`).join('')}
     </div>
     <div class="wrap" style="margin-top:10px">${frec.map((n) => `<div class="chip" data-a="addMat" data-n="${esc(n)}">+ ${esc(n)}</div>`).join('')}</div>
-    ${d.mats.length ? `<div class="row" style="justify-content:space-between;padding:12px 4px 0"><div class="sub">Comprado en obra</div><div class="num" style="font-size:17px">${String(d.mats.reduce((t, m) => t + (parseFloat(String(m.importe).replace(',', '.')) || 0), 0).toFixed(2)).replace('.00', '').replace('.', ',')} €</div></div>` : ''}
 
     <div class="lbl" style="margin:22px 0 8px">Incidencias</div>
     <div class="wrap">${niveles.map((n) => `<div class="chip ${d.nivel === n ? (n === 'Sin incidencias' ? 'ok' : 'alerta') : ''}" data-a="nivel" data-n="${esc(n)}">${n}</div>`).join('')}</div>
@@ -891,10 +1974,6 @@ function vP1() {
       <div class="dash" data-a="pedirArchivo" data-foto="1">Hacer foto</div>
     </div>
 
-    ${puedeCrear() ? `<div style="margin-top:22px">
-      <div class="lbl" style="margin-bottom:8px">Importe del parte (sin IVA)</div>
-      <div class="row inp" style="padding:0 15px"><input class="grow inp-lg" data-f="importe" value="${esc(d.importe)}" inputmode="decimal" style="border:none;padding:15px 0;background:none"><span class="num" style="font-size:20px;color:var(--t3)">€</span></div>
-    </div>` : ''}
   </div>
   <div style="flex:none;padding:14px 20px calc(14px + var(--safe-b));background:rgba(247,246,243,.96);border-top:1px solid var(--l1)">
     <button class="btn" data-a="aPaso" data-p="p2">Continuar a la firma</button>
@@ -976,14 +2055,13 @@ function vP3() {
       <div class="hr"></div>
       ${d.incluidos.filter((id) => (d.horas[id] || 0) > 0).map((id) => `<div class="fila"><div>${esc(userById(id).nombre)}</div><span>${fmtH(d.horas[id])} h</span></div>`).join('') || '<div class="fila"><div style="color:var(--rojo)">Sin horas asignadas</div><span></span></div>'}
       <div class="tot"><div>Total horas</div><div>${fmtH(total)} h</div></div>
-      ${d.mats.filter((m) => m.nombre).length ? `<div class="hr"></div><div class="lbl" style="margin-bottom:7px">Materiales</div>
-        ${d.mats.filter((m) => m.nombre).map((m) => `<div class="fila"><div>${esc(m.nombre)}${m.cant ? ' · ' + esc(m.cant) : ''}</div><span>${m.importe ? esc(m.importe) + ' €' : 'almacén'}</span></div>`).join('')}` : ''}
+      ${d.mats.filter((m) => m.nombre && m.nombre.trim()).length ? `<div class="hr"></div><div class="lbl" style="margin-bottom:7px">Materiales utilizados</div>
+        ${d.mats.filter((m) => m.nombre && m.nombre.trim()).map((m) => `<div class="fila"><div>${esc(m.nombre)}</div><span>${m.cant ? esc(m.cant) : '—'}</span></div>`).join('')}` : ''}
       ${d.nivel !== 'Sin incidencias' ? `<div style="margin-top:14px;padding:11px 13px;border-radius:8px;background:var(--rojo-cl)">
         <div class="lbl" style="color:var(--rojo)">Incidencia · ${esc(d.nivel)}</div>
         <div style="font:400 13px/1.45 var(--sans);color:rgba(20,23,15,.78);margin-top:6px">${esc(d.inc || '—')}</div></div>` : ''}
       ${d.adjuntos.length ? `<div class="lbl" style="margin:14px 0 7px">Adjuntos · ${d.adjuntos.length}</div>
         <div class="wrap">${d.adjuntos.map((a) => a.img ? `<img src="${a.data}" style="width:64px;height:64px;object-fit:cover;border-radius:6px">` : `<div class="tiny" style="padding:8px 10px;background:#efede6;border-radius:6px">${esc(a.nombre)}</div>`).join('')}</div>` : ''}
-      ${d.importe ? `<div class="tot" style="margin-top:14px"><div>Importe (sin IVA)</div><div>${esc(d.importe)} €</div></div>` : ''}
       <div class="hr"></div>
       <div class="lbl">Conforme el cliente</div>
       ${d.firma ? `<img src="${d.firma}" style="width:100%;max-height:90px;object-fit:contain;margin-top:4px">` : ''}
@@ -1012,22 +2090,77 @@ function vOk() {
 
 /* --- nav --- */
 function nav(v) {
-  const items = puedeCrear()
+  const items = esAdmin()
+    ? [['hoy', 'Hoy', '99px'], ['empleados', 'Empleados', '4px'], ['obras', 'Obras', '5px'], ['partes', 'Partes', '3px'], ['horas', 'Horas', '2px'], ['ajustes', 'Ajustes', '99px']]
+    : puedeCrear()
     ? [['hoy', 'Hoy', '99px'], ['obras', 'Obras', '5px'], ['partes', 'Partes', '3px'], ['horas', 'Horas', '2px'], ['ajustes', 'Ajustes', '99px']]
     : [['hoy', 'Hoy', '99px'], ['obras', 'Obras', '5px'], ['horas', 'Horas', '2px'], ['ajustes', 'Perfil', '99px']];
-  return `<div class="nav">${items.map(([id, l, r]) => `<div class="${v === id || (id === 'obras' && v === 'obra') ? 'on' : ''}" data-a="ir" data-v="${id}"><i style="border-radius:${r}"></i><span>${l}</span></div>`).join('')}</div>`;
+  const act = (id) => v === id
+    || (id === 'obras' && v === 'obra')
+    || (id === 'horas' && v === 'imputar')
+    || (id === 'empleados' && (v === 'empleado' || v === 'planilla'));
+  return `<div class="nav">${items.map(([id, l, r]) => `<div class="${act(id) ? 'on' : ''}" data-a="ir" data-v="${id}"><i style="border-radius:${r}"></i><span>${l}</span></div>`).join('')}</div>`;
 }
 
 /* --- sheets --- */
 function sheet() {
   const s = V.sheet;
+  if (s.tipo === 'adminFichaje') {
+    const n = userById(s.userId).nombre;
+    const fx = fichajeAbierto(s.userId);
+    return `<div class="sheet"><div>
+      <div class="av" style="width:52px;height:52px;font-size:22px;background:${s.salida ? '#f7eae6;color:var(--rojo)' : '#e3efe5;color:var(--verde-o)'}">?</div>
+      <div style="font:600 25px/1.15 var(--cond);margin-top:16px">${s.salida ? '¿Fichar la salida de ' + esc(n) + '?' : '¿Fichar la entrada de ' + esc(n) + '?'}</div>
+      <div class="sub" style="margin-top:8px">${s.salida
+        ? (fx ? 'Entró a las ' + hhmm(fx.entrada) + '. Se cerrará su jornada a las ' + hhmm(new Date().toISOString()) + '. Corrección administrativa.' : 'No tiene ningún fichaje abierto.')
+        : 'Se registrará su entrada a las ' + hhmm(new Date().toISOString()) + '. Solo presencia: sin obra ni categoría (la imputación se hace después).'}</div>
+      <div class="row g8" style="margin-top:20px">
+        <button class="btn btn-gris" data-a="cerrarSheet" style="border-radius:99px">Cancelar</button>
+        <button class="btn ${s.salida ? 'btn-rojo' : 'btn-verde'}" data-a="adminConfirmarFichaje" style="font-size:14px" ${s.salida && !fx ? 'disabled' : ''}>${s.salida ? 'Fichar salida' : 'Fichar entrada'}</button>
+      </div>
+    </div></div>`;
+  }
+  if (s.tipo === 'accesoEmpleado') {
+    return `<div class="sheet"><div>
+      <div style="font:600 25px/1.15 var(--cond)">Falta crear el acceso</div>
+      <div class="sub" style="margin-top:8px">El perfil de <b>${esc(s.nombre)}</b> ya está creado. Para que pueda iniciar sesión, un administrador debe crear su usuario en Supabase (por seguridad esto no se hace desde la app):</div>
+      <div class="card" style="margin-top:12px;background:rgba(20,23,15,.04)">
+        <div class="tiny">1. Supabase → Authentication → Users → <b>Add user</b></div>
+        <div class="tiny" style="margin-top:6px">2. Email: <b>${esc(s.email || 'nombre@sysefen.app')}</b></div>
+        <div class="tiny" style="margin-top:6px">3. Password: <b>&lt;PIN de 4 cifras&gt;sysefen</b> (ej. <b>5678sysefen</b>)</div>
+        <div class="tiny" style="margin-top:6px">4. Marca <b>Auto Confirm User</b> → Create user</div>
+      </div>
+      <div class="tiny" style="margin-top:8px">El vínculo con el perfil es automático. Más adelante se automatizará con una función de servidor segura.</div>
+      <button class="btn btn-verde" data-a="cerrarSheet" style="margin-top:16px">Entendido</button>
+    </div></div>`;
+  }
+  if (s.tipo === 'trasSalida') {
+    return `<div class="sheet"><div>
+      <div class="av" style="width:52px;height:52px;font-size:22px;background:#e3efe5;color:var(--verde-o)">✓</div>
+      <div style="font:600 25px/1.15 var(--cond);margin-top:16px">Jornada cerrada</div>
+      <div class="sub" style="margin-top:8px">${esc(userById(s.userId).nombre)} — salida registrada. Ahora puedes repartir esas horas por obra, despacho, desplazamiento…</div>
+      <div class="row g8" style="margin-top:20px">
+        <button class="btn btn-gris" data-a="cerrarSheet" style="border-radius:99px">Ahora no</button>
+        <button class="btn btn-verde" data-a="imputarTrasSalida" data-id="${s.userId}" style="font-size:14px">Imputar horas</button>
+      </div>
+    </div></div>`;
+  }
+  if (s.tipo === 'nuevoParteObra') {
+    const abiertas = S.obras.filter((o) => o.estado !== 'Cerrada');
+    return `<div class="sheet"><div>
+      <div style="font:600 25px/1.15 var(--cond)">¿De qué obra es el parte?</div>
+      <div class="col g8" style="margin-top:18px">
+        ${abiertas.map((o) => `<button class="btn btn-gris" data-a="nuevoParte" data-id="${o.id}">${esc(o.cliente)}</button>`).join('')}
+      </div>
+      <button class="btn btn-gris" data-a="cerrarSheet" style="border-radius:99px;margin-top:14px;opacity:.6">Cancelar</button>
+    </div></div>`;
+  }
   if (s.tipo === 'fichaje') {
-    const o = obraById(S.obraActiva) || S.obras[0] || { cliente: 'la obra' };
     const n = userById(s.userId).nombre;
     return `<div class="sheet"><div>
       <div class="av" style="width:52px;height:52px;font-size:22px;background:${s.salida ? '#f7eae6;color:var(--rojo)' : '#e3efe5;color:var(--verde-o)'}">?</div>
       <div style="font:600 25px/1.15 var(--cond);margin-top:16px">${s.propio ? (s.salida ? '¿Fichar tu salida?' : '¿Fichar tu entrada?') : (s.salida ? '¿Fichar la salida de ' + esc(n) + '?' : '¿Fichar la entrada de ' + esc(n) + '?')}</div>
-      <div class="sub" style="margin-top:8px">${s.salida ? 'Se cerrará la jornada en ' + esc(o.cliente) + ' a las ' + hhmm(new Date().toISOString()) + '. Queda registrada y solo el administrador puede corregirla.' : 'Se abrirá la jornada en ' + esc(o.cliente) + ' a las ' + hhmm(new Date().toISOString()) + '.'}</div>
+      <div class="sub" style="margin-top:8px">${s.salida ? 'Se registrará la salida a las ' + hhmm(new Date().toISOString()) + '. Queda registrada; solo un jefe o administración pueden corregirla.' : 'Se registrará la entrada a las ' + hhmm(new Date().toISOString()) + '.'}</div>
       <div class="row g8" style="margin-top:20px">
         <button class="btn btn-gris" data-a="cerrarSheet" style="border-radius:99px">Cancelar</button>
         <button class="btn ${s.salida ? 'btn-rojo' : 'btn-verde'}" data-a="confirmarFichaje" style="font-size:14px">${s.salida ? 'Sí, fichar salida' : 'Sí, fichar entrada'}</button>
@@ -1093,7 +2226,8 @@ function toast(msg) {
 function imprimirParte(p) {
   const o = obraById(p.obraId) || { cliente: '—' };
   const el = $('#print');
-  el.innerHTML = `<div style="font-family:var(--sans);color:#14170f;max-width:180mm">
+  el.innerHTML = `<div style="font-family:var(--sans);color:#14170f;max-width:180mm;position:relative;z-index:0">
+    <img src="logo-trans.png" alt="" style="position:absolute;top:110mm;left:50%;transform:translate(-50%,-50%);width:120mm;opacity:.11;z-index:-1;pointer-events:none">
     <div style="display:flex;justify-content:space-between;align-items:flex-start">
       <div><img src="logo-trans.png" alt="" style="height:17mm">
       ${S.cif ? `<div style="font:400 10px var(--mono);color:#666;margin-top:2px">${esc(S.empresa)} · ${esc(S.cif)}</div>` : ''}</div>
@@ -1114,17 +2248,16 @@ function imprimirParte(p) {
       ${Object.keys(p.horas).map((id) => `<tr><td style="padding:4px 0;border-bottom:1px solid #eee">${esc(userById(id).nombre)}</td><td style="text-align:right;border-bottom:1px solid #eee;font-family:var(--mono);font-size:11px">${fmtH(p.horas[id])} h</td></tr>`).join('')}
       <tr><td style="padding:6px 0;font-weight:700">Total horas</td><td style="text-align:right;font-weight:700">${fmtH(totalHoras(p))} h</td></tr>
     </table>
-    ${p.mats.length ? `<div style="font:600 10px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:#666;margin:16px 0 5px">Materiales</div>
+    ${p.mats.filter((m) => m.nombre && m.nombre.trim()).length ? `<div style="font:600 10px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:#666;margin:16px 0 5px">Materiales utilizados</div>
     <table style="width:100%;font:400 12px var(--sans);border-collapse:collapse">
-      ${p.mats.map((m) => `<tr><td style="padding:4px 0;border-bottom:1px solid #eee">${esc(m.nombre)}${m.cant ? ' · ' + esc(m.cant) : ''}${m.compra ? ' <i style="color:#8a6316;font-style:normal;font-size:10px">(comprado en obra)</i>' : ''}</td><td style="text-align:right;border-bottom:1px solid #eee;font-family:var(--mono);font-size:11px">${m.importe ? esc(m.importe) + ' €' : '—'}</td></tr>`).join('')}
-      ${totalMats(p) ? `<tr><td style="padding:6px 0;font-weight:700">Materiales comprados</td><td style="text-align:right;font-weight:700">${String(totalMats(p).toFixed(2)).replace('.', ',')} €</td></tr>` : ''}
+      <tr><td style="padding:2px 0;color:#666;font-size:10px;text-transform:uppercase;letter-spacing:.08em">Descripción</td><td style="text-align:right;color:#666;font-size:10px;text-transform:uppercase;letter-spacing:.08em">Cantidad</td></tr>
+      ${p.mats.filter((m) => m.nombre && m.nombre.trim()).map((m) => `<tr><td style="padding:4px 0;border-bottom:1px solid #eee">${esc(m.nombre)}</td><td style="text-align:right;border-bottom:1px solid #eee;font-family:var(--mono);font-size:11px">${m.cant ? esc(m.cant) : '—'}</td></tr>`).join('')}
     </table>` : ''}
     ${p.nivel !== 'Sin incidencias' ? `<div style="margin-top:14px;padding:10px 12px;border:1px solid #a8402a;border-radius:4px">
       <div style="font:600 10px var(--mono);letter-spacing:.1em;text-transform:uppercase;color:#a8402a">Incidencia · ${esc(p.nivel)}</div>
       <div style="font:400 12px/1.5 var(--sans);margin-top:4px;white-space:pre-wrap">${esc(p.inc || '—')}</div></div>` : ''}
     ${p.obs ? `<div style="font:600 10px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:#666;margin:16px 0 5px">Observaciones del cliente</div>
       <div style="font:400 12px/1.5 var(--sans);white-space:pre-wrap">${esc(p.obs)}</div>` : ''}
-    ${p.importe ? `<div style="display:flex;justify-content:space-between;margin-top:16px;padding-top:8px;border-top:2px solid #14170f;font:700 14px var(--sans)"><div>Importe (sin IVA)</div><div>${esc(p.importe)} €</div></div>` : ''}
     <div style="display:flex;gap:24px;margin-top:26px">
       <div style="flex:1">
         <div style="font:600 10px var(--mono);letter-spacing:.1em;text-transform:uppercase;color:#666">Conforme el cliente</div>
@@ -1133,7 +2266,13 @@ function imprimirParte(p) {
       </div>
       <div style="flex:1">
         <div style="font:600 10px var(--mono);letter-spacing:.1em;text-transform:uppercase;color:#666">Por ${esc(S.empresa)}</div>
-        <div style="height:26mm"></div>
+        <div style="height:26mm;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1.5mm">
+          <img src="logo-trans.png" alt="" style="height:11mm;opacity:.92">
+          <div style="text-align:center;line-height:1.2">
+            <div style="font:700 9px var(--cond);letter-spacing:.05em">SYSEFEN</div>
+            <div style="font:400 7px var(--mono);color:#666;letter-spacing:.06em;text-transform:uppercase">Eficiencia Energética</div>
+          </div>
+        </div>
         <div style="border-top:1px solid #14170f;padding-top:4px;font:400 11px var(--sans)">${esc(userById(p.autorId).nombre)}</div>
       </div>
     </div>
@@ -1161,11 +2300,12 @@ document.addEventListener('click', (e) => {
   if (a === 'nuevaObra') return A.nuevaObra();
   if (a === 'editarObra') { e.stopPropagation(); return A.editarObra(d.id); }
   if (a === 'guardarObra') return A.guardarObra();
-  if (a === 'toggleEquipoAlta') return A.toggleEquipoAlta(d.id);
   if (a === 'cerrarObra') return A.cerrarObra(d.id);
   if (a === 'pedirFichaje') { e.stopPropagation(); return A.pedirFichaje(d.id); }
   if (a === 'cerrarSheet') return A.cerrarSheet();
   if (a === 'confirmarFichaje') return A.confirmarFichaje();
+  if (a === 'imputarTrasSalida') return A.imputarTrasSalida(d.id);
+  if (a === 'nuevoParteElegir') return A.nuevoParteElegir();
   if (a === 'nuevoParte') { e.stopPropagation(); return A.nuevoParte(d.id); }
   if (a === 'togglePersona') return A.togglePersona(d.id);
   if (a === 'horaMas') return A.horaMas(d.id);
@@ -1184,6 +2324,27 @@ document.addEventListener('click', (e) => {
   if (a === 'anular') { e.stopPropagation(); return A.anular(d.id); }
   if (a === 'confirmarAnular') return A.confirmarAnular();
   if (a === 'tabHoras') return A.tabHoras(d.t);
+  if (a === 'abrirImputar') return A.abrirImputar();
+  if (a === 'abrirImputEmp') { e.stopPropagation(); return A.abrirImputEmp(d.id); }
+  if (a === 'abrirImputHoy') { e.stopPropagation(); return A.abrirImputHoy(d.id); }
+  if (a === 'volverImputar') return A.volverImputar();
+  if (a === 'impCat') return A.impCat(+d.i, d.c);
+  if (a === 'impObra') return A.impObra(+d.i, d.id);
+  if (a === 'impAddLinea') return A.impAddLinea();
+  if (a === 'impDelLinea') return A.impDelLinea(+d.i);
+  if (a === 'impGuardar') return A.impGuardar();
+  if (a === 'abrirEmpleados') return A.abrirEmpleados();
+  if (a === 'abrirEmpleado') { e.stopPropagation(); return A.abrirEmpleado(d.id); }
+  if (a === 'empNuevo') return A.empNuevo();
+  if (a === 'volverEmpleados') return A.volverEmpleados();
+  if (a === 'empRol') return A.empRol(d.r);
+  if (a === 'empToggleActivo') return A.empToggleActivo();
+  if (a === 'empGuardar') return A.empGuardar();
+  if (a === 'adminFichar') { e.stopPropagation(); return A.adminFichar(d.id); }
+  if (a === 'adminConfirmarFichaje') return A.adminConfirmarFichaje();
+  if (a === 'abrirPlanilla') { e.stopPropagation(); return A.abrirPlanilla(d.id); }
+  if (a === 'planMesNav') return A.planMesNav(d.d);
+  if (a === 'imprimirPlanilla') return A.imprimirPlanilla();
   if (a === 'toggleOpt') return A.toggleOpt(d.k);
   if (a === 'cambiarRol') return A.cambiarRol(d.id);
   if (a === 'editarPin') return A.editarPin(d.id);
@@ -1205,6 +2366,10 @@ document.addEventListener('input', (e) => {
     return;
   }
   if (!f) return;
+  if (f === 'impFecha') return A.impFecha(t.value);
+  if (f === 'empNombre') { A.empCampo('nombre', t.value); return; }
+  if (f === 'empEmail') { A.empCampo('email', t.value); return; }
+  if (f === 'empTelefono') { A.empCampo('telefono', t.value); return; }
   if (f === 'sheetVal') { V.sheet.val = t.value.replace(/\D/g, '').slice(0, 4); return; }
   if (f === 'sheetNombre') { V.sheet.nombre = t.value; return; }
   if (f === 'sheetPin') { V.sheet.pin = t.value.replace(/\D/g, '').slice(0, 4); return; }
@@ -1218,12 +2383,20 @@ window.addEventListener('offline', render);
 let deferredPrompt = null;
 window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); deferredPrompt = e; });
 
-setInterval(() => { if (V.user && V.view === 'hoy' && !V.sheet) render(); }, 30000);
+setInterval(() => {
+  if (V.user && V.view === 'hoy' && !V.sheet) sincronizarFichajes().then(render);
+}, 30000);
 
 if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
   window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
 }
 render();
+restaurarSesion();
+
+// Cambios de sesión de Supabase (expiración de token, cierre desde otro sitio).
+sysAuth.onAuthChange((session) => {
+  if (!session && V.user) { V.user = null; try { sessionStorage.removeItem('ch_user'); } catch (e) {} V.view = 'login'; render(); }
+});
 </script>
 </body>
 </html>

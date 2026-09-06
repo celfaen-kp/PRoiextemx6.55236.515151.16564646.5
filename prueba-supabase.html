@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Prueba Supabase - Sysefen</title>
+</head>
+<body>
+
+  <h1>Prueba de conexión</h1>
+  <button id="probar">Probar Supabase</button>
+
+  <pre id="resultado">Esperando...</pre>
+
+  <script type="module">
+    import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
+
+    const SUPABASE_URL = 'https://pcftuxqgzeacladtmaqx.supabase.co';
+
+    const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_ijYsYDVew8Ekm0-5ejQHHg_grqt2QMM';
+
+    const supabase = createClient(
+      SUPABASE_URL,
+      SUPABASE_PUBLISHABLE_KEY
+    );
+
+    document.getElementById('probar').addEventListener('click', async () => {
+
+      const resultado = document.getElementById('resultado');
+
+      resultado.textContent = 'Conectando...';
+
+      const { data, error } = await supabase
+        .from('empleados')
+        .select('*');
+
+      if (error) {
+        resultado.textContent =
+          'ERROR:\\n' + error.message;
+        console.error(error);
+        return;
+      }
+
+      resultado.textContent =
+        'CONEXIÓN CORRECTA 🎉\\n\\n' +
+        JSON.stringify(data, null, 2);
+    });
+  </script>
+
+</body>
+</html>
