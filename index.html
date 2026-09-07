@@ -383,6 +383,9 @@ const IMP_CATS = [
   ['desplazamiento', 'Desplazamiento'],
   ['otros', 'Otros'],
 ];
+// Paleta categórica validada (5 colores, orden fijo, distinguibles también con
+// daltonismo) para el resumen por categoría de Horas. Mismo orden que IMP_CATS.
+const IMP_COLORES = { obra: '#2a78d6', despacho: '#eb6834', preparacion: '#1baf7a', desplazamiento: '#eda100', otros: '#e87ba4' };
 let sincImp = false;
 
 function mapImputacionDeDB(row) {
@@ -596,6 +599,8 @@ A.verObra = (id) => { V.obraId = id; V.obraRango = 'total'; V.view = 'obra'; ren
 A.obraRango = (r) => { V.obraRango = r; render(); };
 A.activarObra = () => { const o = obraById(V.obraId); if (!o) return; S.obraActiva = V.obraId; save(); toast('Obra de hoy: ' + o.cliente); V.view = 'hoy'; render(); };
 A.tabHoras = (t) => { V.tabHoras = t; render(); };
+A.abrirResumenImp = () => { V.resumenRango = 'mes'; V.view = 'resumenImp'; render(); refrescarDatos().then(render); };
+A.resumenRango = (r) => { V.resumenRango = r; render(); };
 
 /* --- imputación de horas --- */
 const impDraftDeLineas = (userId, fecha) => impLineasDe(userId, fecha).map((l) => ({
@@ -1056,6 +1061,7 @@ function rangoFechas(rango) {
     return { desde: fechaLocal(d), hasta: hoy };
   }
   if (rango === 'mes') return { desde: hoy.slice(0, 7) + '-01', hasta: hoy };
+  if (rango === 'ano') return { desde: hoy.slice(0, 4) + '-01-01', hasta: hoy };
   return null;
 }
 // Igual que minutosObraImp, pero por período (hoy/semana/mes) en vez de un
@@ -1067,6 +1073,22 @@ function minutosObraRango(obraId, userId, rango) {
       && (!userId || i.userId === userId)
       && (!r || (i.fecha >= r.desde && i.fecha <= r.hasta)))
     .reduce((t, i) => t + (i.minutos || 0), 0);
+}
+// Resumen de imputaciones por categoría (Obra/Despacho/Preparación/Desplazamiento/
+// Otros) en un período, para el gráfico de "Horas" > "Resumen por categoría".
+// admin/jefe ven todo el equipo; un operario solo ve las suyas (mismo criterio
+// que el resto de la sección Horas).
+function resumenCategorias(rango) {
+  const r = rangoFechas(rango);
+  const soloYo = !puedeCrear();
+  const base = S.imputaciones.filter((i) =>
+    (!r || (i.fecha >= r.desde && i.fecha <= r.hasta)) && (!soloYo || i.userId === V.user.id));
+  const totalMin = base.reduce((t, i) => t + (i.minutos || 0), 0);
+  const filas = IMP_CATS.map(([c, lab]) => {
+    const min = base.filter((i) => i.categoria === c).reduce((t, i) => t + (i.minutos || 0), 0);
+    return { cat: c, lab, min, pct: totalMin > 0 ? Math.round((min / totalMin) * 100) : 0 };
+  });
+  return { filas, totalMin };
 }
 
 // FICHAJE SIN OBRA: entrada y salida solo registran presencia. No se pregunta obra.
@@ -1401,6 +1423,7 @@ function render() {
   else if (v === 'alta') html = vAlta();
   else if (v === 'partes') html = vPartes();
   else if (v === 'horas') html = vHoras();
+  else if (v === 'resumenImp') html = vResumenImp();
   else if (v === 'imputar') html = vImputar();
   else if (v === 'imputarGrupo') html = vImputarGrupo();
   else if (v === 'imputarEmp') html = vImputarEmpleado();
@@ -1730,6 +1753,11 @@ function vHoras() {
       <div class="tiny" style="color:rgba(255,255,255,.5);margin-top:5px">${puedeCrear() ? 'Distribuir la jornada por obra, despacho, desplazamiento…' : 'Consulta cómo se ha repartido tu jornada'}</div></div>
       <div class="av" style="width:28px;height:28px;background:var(--ambar);color:var(--tinta);font-size:15px">→</div>
     </div>
+    <div class="card row" data-a="abrirResumenImp" style="margin-bottom:12px;cursor:pointer">
+      <div class="grow"><div style="font:600 15px/1 var(--sans)">Resumen por categoría</div>
+      <div class="tiny" style="margin-top:5px">Cuánto se usó en obra, despacho, desplazamiento… por día, semana, mes o año</div></div>
+      <div style="font:400 20px/1 var(--sans);color:var(--t3)">›</div>
+    </div>
     ${esAdmin() ? '<div class="row g8" style="margin-bottom:14px"><button class="pill grow" data-a="exportar" style="padding:13px;text-align:center;background:var(--tinta);color:#fff">Exportar CSV</button><button class="pill grow" data-a="copia" style="padding:13px;text-align:center">Copia de seguridad</button></div>' : ''}
     ${filas.map((f) => { const max = Math.max(60, ...f.barras); return `<div class="card" style="margin-bottom:10px">
       <div class="row" style="align-items:baseline;justify-content:space-between;gap:14px">
@@ -1838,6 +1866,41 @@ function montarRelojes() {
     colH.addEventListener('scroll', onScroll, { passive: true });
     colM.addEventListener('scroll', onScroll, { passive: true });
   });
+}
+
+const RESUMEN_RANGOS = [['hoy', 'Hoy'], ['semana', 'Semana'], ['mes', 'Mes'], ['ano', 'Año']];
+// Barra apilada en vez de torta: con 5 categorías, un gráfico de torta no pasa
+// las pruebas de distinción por color (daltonismo); una barra apilada muestra
+// exactamente lo mismo (parte del total, con porcentaje y horas) sin ese
+// riesgo, y es más fácil de leer con precisión.
+function vResumenImp() {
+  const rango = V.resumenRango || 'mes';
+  const { filas, totalMin } = resumenCategorias(rango);
+  const ordenadas = filas.filter((f) => f.min > 0).sort((a, b) => b.min - a.min);
+  return `<div class="hdr">
+    <div class="row" style="justify-content:space-between">
+      <div class="h1" style="font-size:24px">Resumen por categoría</div>
+      <div data-a="ir" data-v="horas" style="font:500 13px var(--sans);color:var(--t2);cursor:pointer">Cerrar</div>
+    </div>
+    <div class="wrap" style="margin-top:12px">${RESUMEN_RANGOS.map(([r, l]) => `<div class="chip ${r === rango ? 'on' : ''}" data-a="resumenRango" data-r="${r}">${l}</div>`).join('')}</div>
+  </div>
+  <div class="scroll pad pb-nav">
+    <div class="card" style="margin-bottom:14px">
+      <div class="sub">Total ${esc((RANGO_LARGO[rango] || rango).toLowerCase())}</div>
+      <div class="num" style="font-size:30px;margin-top:4px">${durMin(totalMin)}</div>
+    </div>
+    ${ordenadas.length ? `<div class="card">
+      <div style="display:flex;height:20px;border-radius:99px;overflow:hidden;background:var(--l1)">
+        ${ordenadas.map((f) => `<div style="width:${(f.min / totalMin) * 100}%;background:${IMP_COLORES[f.cat]}"></div>`).join('')}
+      </div>
+      <div class="col g12" style="margin-top:18px">
+        ${ordenadas.map((f) => `<div class="row" style="justify-content:space-between">
+          <div class="row g8"><span class="dot" style="background:${IMP_COLORES[f.cat]}"></span><div style="font:500 14px var(--sans)">${esc(f.lab)}</div></div>
+          <div class="num" style="font-size:14px">${durMin(f.min)} · ${f.pct}%</div>
+        </div>`).join('')}
+      </div>
+    </div>` : '<div class="card"><div class="sub">Sin imputaciones en este período.</div></div>'}
+  </div>`;
 }
 
 /* --- imputación de horas --- */
@@ -2221,7 +2284,7 @@ function imprimirPlanilla(userId, mesBase) {
   </div>`;
   setTimeout(() => window.print(), 60);
 }
-const RANGO_LARGO = { hoy: 'Hoy', semana: 'Esta semana', mes: 'Este mes', total: 'Total histórico' };
+const RANGO_LARGO = { hoy: 'Hoy', semana: 'Esta semana', mes: 'Este mes', ano: 'Este año', total: 'Total histórico' };
 function imprimirHorasObra(obraId, rango) {
   const o = obraById(obraId); if (!o) return;
   const filas = empleadosDeObra(o.id)
@@ -2754,6 +2817,8 @@ document.addEventListener('click', (e) => {
   if (a === 'confirmarAnular') return A.confirmarAnular();
   if (a === 'tabHoras') return A.tabHoras(d.t);
   if (a === 'abrirImputar') return A.abrirImputar();
+  if (a === 'abrirResumenImp') return A.abrirResumenImp();
+  if (a === 'resumenRango') return A.resumenRango(d.r);
   if (a === 'abrirImputLista') return A.abrirImputLista();
   if (a === 'abrirImputGrupo') return A.abrirImputGrupo();
   if (a === 'impGrupoToggle') return A.impGrupoToggle(d.id);
