@@ -84,7 +84,12 @@ a:hover{color:var(--tinta)}
 
 .hdr{flex:none;background:#fff;border-bottom:1px solid var(--l1);padding:calc(14px + var(--safe-t)) 20px 14px}
 .hdr-dark{flex:none;background:var(--tinta);color:#fff;padding:calc(14px + var(--safe-t)) 20px 18px}
-.hdr-dark .back{font:500 13px/1 var(--sans);color:rgba(255,255,255,.5);cursor:pointer;display:inline-block;padding:4px 0 10px}
+/* Volver / cancelar / cerrar. Eran textos de 13px casi sin margen: con el
+   pulgar costaba acertarles. Ahora todos tienen 44px de alto real de toque
+   (el mínimo cómodo en móvil), aunque el texto siga siendo discreto. */
+.back,.volver{display:inline-flex;align-items:center;min-height:44px;padding:8px 14px 8px 0;font:500 15px/1 var(--sans);color:var(--t2);cursor:pointer;-webkit-tap-highlight-color:transparent}
+.volver.der{padding:8px 0 8px 14px}
+.hdr-dark .back,.hdr-dark .volver,.semaforo .back,.semaforo .volver{color:rgba(255,255,255,.6)}
 .semaforo{flex:none;padding:calc(18px + var(--safe-t)) 22px 26px;transition:background .25s}
 .hoja{position:relative;flex:1;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;background:var(--papel);border-radius:26px 26px 0 0;margin-top:-16px;padding:22px 20px calc(100px + var(--safe-b))}
 .hoja-contenido{position:relative;z-index:1}
@@ -194,7 +199,7 @@ import * as sysDB from './supabase-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '7.4'; // versión visible de la app (única fuente)
+const APP_VERSION = '7.5'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -1638,7 +1643,7 @@ function vPin() {
   const u = V.pinUser;
   const teclas = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '', '0', 'del'];
   return `<div class="scroll" style="background:var(--tinta);padding:calc(44px + var(--safe-t)) 24px calc(26px + var(--safe-b))">
-    <div class="back" data-a="volverLogin" style="color:rgba(255,255,255,.5);cursor:pointer;font:500 13px var(--sans)">‹ Cambiar de usuario</div>
+    <div class="volver" data-a="volverLogin" style="color:rgba(255,255,255,.6)">‹ Cambiar de usuario</div>
     <div class="col" style="align-items:center;margin-top:22px">
       <div class="av ${V.err ? 'shake' : ''}" style="width:64px;height:64px;font-size:25px;background:${u.rol === 'admin' ? 'var(--ambar);color:var(--tinta)' : u.rol === 'jefe' ? 'var(--verde-c);color:#fff' : 'rgba(255,255,255,.16);color:#fff'}">${esc(ini(u.nombre))}</div>
       <div style="font:600 25px/1.1 var(--cond);color:#fff;margin-top:14px">${esc(u.nombre)}</div>
@@ -1814,7 +1819,7 @@ function vAlta() {
   const d = V.draft;
   const campos = [['cliente', 'Cliente', 'Comunidad, empresa o particular'], ['dir', 'Dirección de la obra', 'Calle, número, población'], ['email', 'Email para los informes', 'cliente@correo.es']];
   return `<div class="hdr row g12">
-    <div data-a="ir" data-v="obras" style="font:500 13px var(--sans);color:var(--t2);cursor:pointer">Cancelar</div>
+    <div data-a="ir" data-v="obras" class="volver">Cancelar</div>
     <div class="grow" style="text-align:center;font:600 16px var(--sans)">${d.id ? 'Editar obra' : 'Nueva obra'}</div>
     <div data-a="guardarObra" style="font:600 13px var(--sans);color:var(--verde-o);cursor:pointer">Guardar</div>
   </div>
@@ -2126,7 +2131,7 @@ function vResumenImp() {
   return `<div class="hdr">
     <div class="row" style="justify-content:space-between">
       <div class="h1" style="font-size:24px">Resumen por categoría</div>
-      <div data-a="ir" data-v="horas" style="font:500 13px var(--sans);color:var(--t2);cursor:pointer">Cerrar</div>
+      <div data-a="ir" data-v="horas" class="volver der">Cerrar</div>
     </div>
     <div class="wrap" style="margin-top:12px">${RESUMEN_RANGOS.map(([r, l]) => `<div class="chip ${r === rango ? 'on' : ''}" data-a="resumenRango" data-r="${r}">${l}</div>`).join('')}</div>
   </div>
@@ -2218,7 +2223,7 @@ function vImputarGrupo() {
   return `<div class="hdr">
     <div class="row" style="justify-content:space-between">
       <div class="h1" style="font-size:24px">Imputar horas</div>
-      <div data-a="ir" data-v="horas" style="font:500 13px var(--sans);color:var(--t2);cursor:pointer">Cerrar</div>
+      <div data-a="ir" data-v="horas" class="volver der">Cerrar</div>
     </div>
     <div class="row g10" style="margin-top:12px;align-items:center">
       <div class="lbl">Día</div>
@@ -2332,7 +2337,7 @@ function vEmpleado() {
     ? S.fichajes.filter((f) => f.userId === V.empEmp).sort((a, b) => b.entrada.localeCompare(a.entrada)).slice(0, 10)
     : [];
   return `<div class="hdr row g12">
-    <div data-a="volverEmpleados" style="font:500 13px var(--sans);color:var(--t2);cursor:pointer">‹ Empleados</div>
+    <div data-a="volverEmpleados" class="volver">‹ Empleados</div>
     <div class="grow" style="text-align:center;font:600 16px var(--sans)">${d.nuevo ? 'Nuevo empleado' : esc(d.nombre)}</div>
     <div data-a="empGuardar" style="font:600 13px var(--sans);color:var(--verde-o);cursor:pointer">${V.empBusy ? '…' : 'Guardar'}</div>
   </div>
@@ -2636,7 +2641,7 @@ function vP1() {
   const frec = ['Tubo multicapa 26', 'Aislamiento 19 mm', 'Luminaria LED 36 W', 'Cable 6 mm²', 'Bridas y soportes'].filter((n) => !d.mats.some((m) => m.nombre === n)).slice(0, 4);
   return `<div class="hdr-dark" style="padding-bottom:16px">
     <div class="row g12">
-      <div data-a="ir" data-v="hoy" style="font:500 13px var(--sans);color:rgba(255,255,255,.5);cursor:pointer">Cancelar</div>
+      <div data-a="ir" data-v="hoy" class="volver">Cancelar</div>
       <div class="grow" style="text-align:center;font:600 15px var(--sans)">Parte de trabajo</div>
       <div class="tiny" style="color:rgba(255,255,255,.45)">1/3</div>
     </div>
@@ -2721,7 +2726,7 @@ function vP2() {
   const d = V.draft;
   return `<div class="hdr-dark" style="padding-bottom:16px">
     <div class="row g12">
-      <div data-a="aPaso" data-p="p1" style="font:500 13px var(--sans);color:rgba(255,255,255,.5);cursor:pointer">‹ Atrás</div>
+      <div data-a="aPaso" data-p="p1" class="volver">‹ Atrás</div>
       <div class="grow" style="text-align:center;font:600 15px var(--sans)">Firma del cliente</div>
       <div class="tiny" style="color:rgba(255,255,255,.45)">2/3</div>
     </div>
@@ -2771,7 +2776,7 @@ function vP3() {
   const total = d.incluidos.reduce((t, id) => t + (d.horas[id] || 0), 0);
   return `<div class="hdr-dark" style="padding-bottom:16px">
     <div class="row g12">
-      <div data-a="aPaso" data-p="p2" style="font:500 13px var(--sans);color:rgba(255,255,255,.5);cursor:pointer">‹ Atrás</div>
+      <div data-a="aPaso" data-p="p2" class="volver">‹ Atrás</div>
       <div class="grow" style="text-align:center;font:600 15px var(--sans)">Enviar informe</div>
       <div class="tiny" style="color:rgba(255,255,255,.45)">3/3</div>
     </div>
