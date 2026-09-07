@@ -183,7 +183,7 @@ import * as sysDB from './supabase-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '7.2'; // versión visible de la app (única fuente)
+const APP_VERSION = '7.3'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -1420,8 +1420,6 @@ function vLogin() {
   return `<div class="scroll" style="background:var(--tinta);padding:calc(56px + var(--safe-t)) 24px calc(30px + var(--safe-b))">
     <img src="logo-blanco.png" alt="Sysefen" style="width:196px;max-width:64%;display:block;margin-bottom:20px">
     <div class="sub" style="color:rgba(255,255,255,.5)">Control horario y partes de trabajo</div>
-    ${S.bienvenida ? `<div style="margin-top:22px;padding:14px 15px;border-radius:14px;background:rgba(255,255,255,.08);font:400 13px/1.55 var(--sans);color:rgba(255,255,255,.72)">
-      <b style="color:#fff">Primera vez.</b> PIN inicial: Bayron 1111 · Jaime 2222 · David 3333 · Ale 4444 · Administración 9999. Cámbialos desde Ajustes.</div>` : ''}
     <div class="lbl" style="color:rgba(255,255,255,.4);margin:30px 0 12px">¿Quién eres?</div>
     <div class="col g8">
       ${S.users.filter((u) => u.activo !== false).map((u) => `<div class="row" data-a="elegirUser" data-id="${u.id}" style="padding:14px;border-radius:16px;background:rgba(255,255,255,.07);cursor:pointer">
