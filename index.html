@@ -158,6 +158,17 @@ a:hover{color:var(--tinta)}
 .adj .tipo{width:34px;height:34px;border-radius:9px;flex:none;display:flex;align-items:center;justify-content:center;font:600 9px var(--mono)}
 .dash{text-align:center;font:500 13px var(--sans);padding:14px;border-radius:14px;border:1.5px dashed rgba(20,23,15,.22);color:var(--t2);cursor:pointer;flex:1}
 
+/* Control de horas: dos ruedas (horas / minutos en pasos de 15) tipo selector
+   nativo. El desplazamiento vertical con encastre (scroll-snap) es un gesto
+   que ya se conoce de los pickers de fecha/hora del propio teléfono — mucho
+   más preciso al dedo que un dial circular de arrastre. */
+.rueda-marco{position:absolute;left:0;right:0;top:50%;transform:translateY(-50%);background:rgba(20,23,15,.06);border-radius:12px;pointer-events:none;z-index:0}
+.rueda-col{overflow-y:auto;scroll-snap-type:y mandatory;-webkit-overflow-scrolling:touch;scrollbar-width:none;position:relative;z-index:1;-webkit-mask-image:linear-gradient(to bottom,transparent 0,#000 32%,#000 68%,transparent 100%);mask-image:linear-gradient(to bottom,transparent 0,#000 32%,#000 68%,transparent 100%)}
+.rueda-col::-webkit-scrollbar{display:none}
+.rueda-track{display:flex;flex-direction:column}
+.rueda-item{display:flex;align-items:center;justify-content:center;font:500 19px var(--mono);color:var(--t3);scroll-snap-align:center}
+.rueda-item.on{color:var(--tinta);font:700 24px var(--cond)}
+
 #print{display:none}
 @media print{
   html,body{overflow:visible;height:auto;background:#fff}
@@ -1745,71 +1756,87 @@ function vHoras() {
   </div>`;
 }
 
-/* --- control tipo reloj (rueda). Reutilizable. Paso configurable (min).
-   El máximo del dial es amplio (hasta 10 h por línea); el límite de negocio
-   (presencia disponible / lógica del parte) se comprueba al guardar. --- */
-function arcoPath(cx, cy, r, a0, a1) {
-  const pt = (a) => { const rad = (a - 90) * Math.PI / 180; return [cx + r * Math.cos(rad), cy + r * Math.sin(rad)]; };
-  const [x0, y0] = pt(a0), [x1, y1] = pt(a1);
-  const large = (a1 - a0) > 180 ? 1 : 0;
-  return `M ${x0.toFixed(1)} ${y0.toFixed(1)} A ${r} ${r} 0 ${large} 1 ${x1.toFixed(1)} ${y1.toFixed(1)}`;
-}
-const RELOJ_A0 = -125, RELOJ_A1 = 125; // arco de 250° (no da la vuelta completa)
-const RELOJ_MAX_DEFECTO = 600;         // 10:00 h por línea
+/* --- control de horas: dos ruedas (horas / minutos, minutos SIEMPRE en pasos
+   de 15) tipo selector nativo de fecha/hora. Reemplaza al dial circular de
+   arrastre: arrastrar en círculo con el dedo era poco preciso; deslizar una
+   rueda hasta que encastra es un gesto que ya se conoce y no depende de
+   puntería. Mismo contrato que antes: misma firma de relojHTML, mismas
+   acciones al soltar (impReloj / impGrupoReloj / horaReloj), así que ningún
+   punto donde se usa el control necesitó cambiar. --- */
+const RELOJ_MAX_DEFECTO = 600; // 10:00 h por línea
+const RUEDA_ITEM_H = 44;       // alto de fila, en px (debe coincidir con el CSS)
+const RUEDA_VISIBLES = 5;      // filas visibles a la vez (impar, para tener centro)
 function relojHTML(scope, key, valMin, maxMin, editable, paso) {
-  paso = paso || 30;
+  paso = paso || 15;
   const max = Math.max(paso * 2, Math.round((maxMin || RELOJ_MAX_DEFECTO) / paso) * paso);
   const val = Math.max(0, Math.min(max, Math.round((valMin || 0) / paso) * paso));
-  const frac = max > 0 ? val / max : 0;
-  const ang = RELOJ_A0 + frac * (RELOJ_A1 - RELOJ_A0);
-  const rad = (ang - 90) * Math.PI / 180;
-  const hx = 65 + 46 * Math.cos(rad), hy = 65 + 46 * Math.sin(rad);
-  return `<div class="reloj${editable ? '' : ' ro'}" data-scope="${scope}" data-key="${key}" data-max="${max}" data-paso="${paso}" data-val="${val}" style="width:128px;height:128px;position:relative;margin:6px auto 2px;touch-action:none;${editable ? 'cursor:grab' : ''}">
-    <svg viewBox="0 0 130 130" width="128" height="128">
-      <path d="${arcoPath(65, 65, 46, RELOJ_A0, RELOJ_A1)}" fill="none" stroke="rgba(20,23,15,.10)" stroke-width="9" stroke-linecap="round"/>
-      <path class="reloj-arc" d="${val > 0 ? arcoPath(65, 65, 46, RELOJ_A0, ang) : ''}" fill="none" stroke="var(--verde)" stroke-width="9" stroke-linecap="round"/>
-      <circle class="reloj-h" cx="${hx.toFixed(1)}" cy="${hy.toFixed(1)}" r="10" fill="#fff" stroke="var(--verde)" stroke-width="3"/>
-    </svg>
-    <div class="reloj-v" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:600 26px var(--cond);pointer-events:none">${durMin(val)}</div>
+  if (!editable) {
+    return `<div class="rueda ro" style="margin:10px auto 4px;text-align:center"><div style="font:700 28px var(--cond)">${durMin(val)}</div></div>`;
+  }
+  const maxH = Math.max(1, Math.floor(max / 60));
+  const horas = Array.from({ length: maxH + 1 }, (_, i) => i);
+  const mins = [0, 15, 30, 45];
+  const h0 = Math.min(maxH, Math.floor(val / 60)), m0 = val % 60;
+  const pad = (RUEDA_VISIBLES - 1) / 2 * RUEDA_ITEM_H;
+  const colHTML = (items, sel, fmt) => `<div class="rueda-col" style="height:${RUEDA_VISIBLES * RUEDA_ITEM_H}px;width:56px">
+      <div class="rueda-track">
+        <div style="height:${pad}px;flex:none"></div>
+        ${items.map((v) => `<div class="rueda-item${v === sel ? ' on' : ''}" data-v="${v}" style="height:${RUEDA_ITEM_H}px">${fmt(v)}</div>`).join('')}
+        <div style="height:${pad}px;flex:none"></div>
+      </div>
+    </div>`;
+  return `<div class="rueda" data-scope="${scope}" data-key="${key}" data-max="${max}" data-h="${h0}" data-m="${m0}" style="position:relative;height:${RUEDA_VISIBLES * RUEDA_ITEM_H}px;margin:6px auto 2px;width:150px">
+    <div class="rueda-marco" style="height:${RUEDA_ITEM_H}px"></div>
+    <div class="row" style="position:relative;z-index:1;height:100%;justify-content:center;align-items:stretch;gap:0">
+      ${colHTML(horas, h0, (v) => v)}
+      <div style="display:flex;align-items:center;font:600 20px var(--cond);color:var(--t3)">h</div>
+      ${colHTML(mins, m0, (v) => String(v).padStart(2, '0'))}
+      <div style="display:flex;align-items:center;font:600 20px var(--cond);color:var(--t3)">m</div>
+    </div>
   </div>`;
 }
-function relojPinta(el, val) {
-  const max = +el.dataset.max;
-  const frac = max > 0 ? val / max : 0;
-  const ang = RELOJ_A0 + frac * (RELOJ_A1 - RELOJ_A0);
-  const rad = (ang - 90) * Math.PI / 180;
-  const hx = 65 + 46 * Math.cos(rad), hy = 65 + 46 * Math.sin(rad);
-  const h = el.querySelector('.reloj-h'); h.setAttribute('cx', hx.toFixed(1)); h.setAttribute('cy', hy.toFixed(1));
-  el.querySelector('.reloj-arc').setAttribute('d', val > 0 ? arcoPath(65, 65, 46, RELOJ_A0, ang) : '');
-  el.querySelector('.reloj-v').textContent = durMin(val);
-  el.dataset.val = val;
-}
 function montarRelojes() {
-  document.querySelectorAll('.reloj:not(.ro)').forEach((el) => {
-    const max = +el.dataset.max, paso = +el.dataset.paso || 30;
-    let drag = false;
-    const desde = (e) => {
-      const b = el.getBoundingClientRect();
-      const dx = e.clientX - (b.left + b.width / 2), dy = e.clientY - (b.top + b.height / 2);
-      let deg = Math.atan2(dy, dx) * 180 / Math.PI + 90;
-      if (deg > 180) deg -= 360;
-      deg = Math.max(RELOJ_A0, Math.min(RELOJ_A1, deg));
-      const frac = (deg - RELOJ_A0) / (RELOJ_A1 - RELOJ_A0);
-      let v = Math.round((frac * max) / paso) * paso;
-      v = Math.max(0, Math.min(max, v));
-      relojPinta(el, v);
+  document.querySelectorAll('.rueda:not(.ro)').forEach((el) => {
+    const max = +el.dataset.max;
+    const [colH, colM] = el.querySelectorAll('.rueda-col');
+    if (!colH || !colM) return;
+    const centrado = (col) => {
+      const centro = col.scrollTop + col.clientHeight / 2;
+      let best = null, bestD = Infinity;
+      col.querySelectorAll('.rueda-item').forEach((it) => {
+        const d = Math.abs((it.offsetTop + it.offsetHeight / 2) - centro);
+        if (d < bestD) { bestD = d; best = it; }
+      });
+      return best;
     };
-    const commit = () => {
-      if (!drag) return; drag = false; el.style.cursor = 'grab';
-      const v = +el.dataset.val;
-      if (el.dataset.scope === 'imp') A.impReloj(+el.dataset.key, v);
-      else if (el.dataset.scope === 'impGrupo') A.impGrupoReloj(v);
-      else if (el.dataset.scope === 'parte') A.horaReloj(el.dataset.key, v);
+    const pintar = () => [colH, colM].forEach((col) => {
+      const activo = centrado(col);
+      col.querySelectorAll('.rueda-item').forEach((it) => it.classList.toggle('on', it === activo));
+    });
+    const posicionar = (col, v) => {
+      const item = col.querySelector(`.rueda-item[data-v="${v}"]`);
+      if (item) col.scrollTop = item.offsetTop - (col.clientHeight - item.offsetHeight) / 2;
     };
-    el.addEventListener('pointerdown', (e) => { e.preventDefault(); drag = true; el.style.cursor = 'grabbing'; try { el.setPointerCapture(e.pointerId); } catch (x) {} desde(e); });
-    el.addEventListener('pointermove', (e) => { if (drag) { e.preventDefault(); desde(e); } });
-    el.addEventListener('pointerup', commit);
-    el.addEventListener('pointercancel', commit);
+    posicionar(colH, +el.dataset.h);
+    posicionar(colM, +el.dataset.m);
+    pintar();
+    let t = null;
+    const onScroll = () => {
+      pintar();
+      clearTimeout(t);
+      t = setTimeout(() => {
+        const h = +centrado(colH).dataset.v, m = +centrado(colM).dataset.v;
+        const v = Math.max(0, Math.min(max, h * 60 + m));
+        posicionar(colH, Math.min(Math.floor(max / 60), Math.floor(v / 60)));
+        posicionar(colM, v % 60);
+        pintar();
+        if (el.dataset.scope === 'imp') A.impReloj(+el.dataset.key, v);
+        else if (el.dataset.scope === 'impGrupo') A.impGrupoReloj(v);
+        else if (el.dataset.scope === 'parte') A.horaReloj(el.dataset.key, v);
+      }, 140);
+    };
+    colH.addEventListener('scroll', onScroll, { passive: true });
+    colM.addEventListener('scroll', onScroll, { passive: true });
   });
 }
 
