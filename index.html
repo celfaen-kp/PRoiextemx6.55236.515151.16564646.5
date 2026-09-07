@@ -183,7 +183,7 @@ import * as sysDB from './supabase-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '7.1'; // versión visible de la app (única fuente)
+const APP_VERSION = '7.2'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -589,7 +589,16 @@ A.tabHoras = (t) => { V.tabHoras = t; render(); };
 const impDraftDeLineas = (userId, fecha) => impLineasDe(userId, fecha).map((l) => ({
   id: l.id, categoria: l.categoria, obraId: l.obraId, minutos: l.minutos, origen: l.origen, bloqueado: l.bloqueado,
 }));
+// La imputación en GRUPO es ahora la entrada principal: seleccionar a la
+// gente y repartir un bloque de horas es el caso normal. La lista clásica
+// (una persona a la vez) queda como modo secundario, para corregir a alguien
+// puntual — se llega a ella desde dentro de la pantalla de grupo.
 A.abrirImputar = () => {
+  if (!V.impFecha) V.impFecha = hoyISO();
+  V.impEmp = null; V.impDraft = null; V.impBorrar = [];
+  A.abrirImputGrupo();
+};
+A.abrirImputLista = () => {
   if (!V.impFecha) V.impFecha = hoyISO();
   V.impEmp = null; V.impDraft = null; V.impBorrar = [];
   V.view = 'imputar'; render();
@@ -617,9 +626,16 @@ A.impFecha = (v) => {
 };
 A.abrirImputEmp = (userId) => {
   V.impEmp = userId;
-  // Solo las líneas ya guardadas. NO se pre-rellena nada (ni obra ni 'otros').
-  // Puede quedar tiempo sin imputar; el jefe añade las categorías que quiera.
   V.impDraft = impDraftDeLineas(userId, V.impFecha);
+  // Si todavía no hay ninguna línea guardada, se arranca con una ya puesta
+  // en lo que hay para imputar (presencia real redondeada a 15 min), no en
+  // 0: es lo normal (todo el día fue de una sola categoría) y el jefe solo
+  // tiene que elegir la categoría y, si hace falta, repartir el tiempo en
+  // más líneas. Si ya había líneas guardadas, se respetan tal cual.
+  if (!V.impDraft.length) {
+    const restante = disponibleImputar(userId, V.impFecha);
+    if (restante > 0) V.impDraft.push({ categoria: 'otros', obraId: null, minutos: restante, origen: 'manual' });
+  }
   V.impBorrar = [];
   V.view = 'imputarEmp'; render();
 };
@@ -739,7 +755,13 @@ A.impReloj = (i, minutos) => {
   render();
 };
 A.impAddLinea = () => {
-  (V.impDraft = V.impDraft || []).push({ categoria: 'otros', obraId: null, minutos: 0, origen: 'manual' });
+  const draft = (V.impDraft = V.impDraft || []);
+  // Igual criterio que al abrir: la línea nueva arranca en lo que queda
+  // pendiente (disponible menos lo ya puesto en el resto de líneas), no en 0.
+  const disp = disponibleImputar(V.impEmp, V.impFecha);
+  const yaImp = draft.reduce((t, l) => t + (l.minutos || 0), 0);
+  const restante = redondear15(Math.max(0, disp - yaImp));
+  draft.push({ categoria: 'otros', obraId: null, minutos: restante, origen: 'manual' });
   render();
 };
 A.impDelLinea = (i) => {
@@ -1755,8 +1777,8 @@ function vImputar() {
   const sinCierre = base.filter((u) => disponibleImputar(u.id, fecha) === 0);
   return `<div class="hdr">
     <div class="row" style="justify-content:space-between">
-      <div class="h1" style="font-size:26px">Imputar horas</div>
-      <div data-a="ir" data-v="horas" style="font:500 13px var(--sans);color:var(--t2);cursor:pointer">Cerrar</div>
+      <div class="h1" style="font-size:24px">Imputar una por una</div>
+      <div data-a="${jefe ? 'abrirImputGrupo' : 'ir'}" data-v="horas" style="font:500 13px var(--sans);color:var(--t2);cursor:pointer">${jefe ? '‹ Grupo' : 'Cerrar'}</div>
     </div>
     <div class="row g10" style="margin-top:12px;align-items:center">
       <div class="lbl">Día</div>
@@ -1764,11 +1786,6 @@ function vImputar() {
     </div>
   </div>
   <div class="scroll pad pb-nav">
-    ${jefe ? `<div class="card row" data-a="abrirImputGrupo" style="margin-bottom:14px;cursor:pointer;background:var(--tinta)">
-      <div class="grow"><div style="font:600 15px/1 var(--sans);color:#fff">Imputar en grupo</div>
-      <div class="tiny" style="color:rgba(255,255,255,.5);margin-top:5px">Un mismo bloque de horas a varias personas a la vez</div></div>
-      <div class="av" style="width:28px;height:28px;background:var(--ambar);color:var(--tinta);font-size:15px">→</div>
-    </div>` : ''}
     ${conCierre.map(({ u, pres, disp, imp }) => {
       const completa = imp >= disp;
       const sinImp = Math.max(0, disp - imp);
@@ -1806,13 +1823,14 @@ function vImputarGrupo() {
   const puedeAplicar = seleccionados.length > 0 && min > 0 && !exceso && (cat !== 'obra' || V.impGrupoObraId) && !V.impGrupoBusy;
   return `<div class="hdr">
     <div class="row" style="justify-content:space-between">
-      <div class="h1" style="font-size:24px">Imputar en grupo</div>
-      <div data-a="volverImputar" style="font:500 13px var(--sans);color:var(--t2);cursor:pointer">Cerrar</div>
+      <div class="h1" style="font-size:24px">Imputar horas</div>
+      <div data-a="ir" data-v="horas" style="font:500 13px var(--sans);color:var(--t2);cursor:pointer">Cerrar</div>
     </div>
     <div class="row g10" style="margin-top:12px;align-items:center">
       <div class="lbl">Día</div>
       <input class="inp" data-f="impFecha" type="date" value="${fecha}" max="${hoyISO()}" style="flex:1;padding:11px 12px">
     </div>
+    <div data-a="abrirImputLista" style="margin-top:10px;font:500 12px var(--sans);color:var(--t2);cursor:pointer;text-decoration:underline">Imputar a una sola persona</div>
   </div>
   <div class="scroll pad" style="padding-bottom:${cand.length ? '150px' : 'calc(100px + var(--safe-b))'}">
     ${cand.length ? `
@@ -2619,6 +2637,7 @@ document.addEventListener('click', (e) => {
   if (a === 'confirmarAnular') return A.confirmarAnular();
   if (a === 'tabHoras') return A.tabHoras(d.t);
   if (a === 'abrirImputar') return A.abrirImputar();
+  if (a === 'abrirImputLista') return A.abrirImputLista();
   if (a === 'abrirImputGrupo') return A.abrirImputGrupo();
   if (a === 'impGrupoToggle') return A.impGrupoToggle(d.id);
   if (a === 'impGrupoCat') return A.impGrupoCat(d.c);
