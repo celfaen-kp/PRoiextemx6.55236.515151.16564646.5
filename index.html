@@ -639,7 +639,7 @@ A.impFecha = (v) => {
   if (V.view === 'imputarGrupo') {
     const cand = impGrupoCandidatos(v);
     V.impGrupoSel = cand.map((x) => x.u.id);
-    V.impGrupoMin = impGrupoMinDefecto();
+    impGrupoReiniciarLineas();
   }
   render();
   refrescarDatos().then(render);
@@ -691,10 +691,9 @@ const impGrupoCandidatos = (fecha) => equipo()
   .map((u) => ({ u, disp: disponibleImputar(u.id, fecha), imp: impMinImputados(u.id, fecha) }))
   .map((x) => ({ ...x, restante: Math.max(0, x.disp - x.imp) }))
   .filter((x) => x.disp > 0 && x.restante > 0);
-// Valor por defecto del reloj compartido: lo mínimo pendiente entre los
-// seleccionados, para no pasarse de la disponibilidad de nadie por defecto
-// (el jefe puede bajarlo a mano para repartir menos, como "30 min de traslado").
-function impGrupoMinDefecto() {
+// Lo MÍNIMO que le queda pendiente a los seleccionados: es el tope común que
+// se puede repartir de una tanda sin pasarse de nadie.
+function impGrupoRestanteMin() {
   const cand = impGrupoCandidatos(V.impFecha);
   const restantes = (V.impGrupoSel || [])
     .map((id) => cand.find((x) => x.u.id === id))
@@ -702,19 +701,31 @@ function impGrupoMinDefecto() {
     .map((x) => x.restante);
   return restantes.length ? Math.min(...restantes) : 0;
 }
+// Lo ya repartido entre las líneas del borrador (todavía sin guardar).
+const impGrupoAsignado = () => (V.impGrupoLineas || []).reduce((t, l) => t + (l.minutos || 0), 0);
+// Lo que queda por repartir: el tope común menos lo ya puesto en las líneas.
+const impGrupoLibre = () => redondear15(Math.max(0, impGrupoRestanteMin() - impGrupoAsignado()));
+// Línea nueva: arranca con TODO lo que quede libre (lo normal es que la
+// primera categoría se lleve el grueso y luego se le vaya restando).
+const impGrupoLineaNueva = () => ({ categoria: 'obra', obraId: null, minutos: impGrupoLibre() });
+// Deja el borrador con UNA línea que arranca con todo lo pendiente. Hay que
+// vaciar antes de calcular: si no, las líneas viejas siguen contando como
+// "ya repartido" y la línea nueva saldría en 0.
+function impGrupoReiniciarLineas() {
+  V.impGrupoLineas = [];
+  V.impGrupoLineas = [impGrupoLineaNueva()];
+}
 A.abrirImputGrupo = () => {
   if (!V.impFecha) V.impFecha = hoyISO();
   const cand = impGrupoCandidatos(V.impFecha);
   V.impGrupoSel = cand.map((x) => x.u.id);
-  V.impGrupoCat = 'obra';
-  V.impGrupoObraId = null;
-  V.impGrupoMin = impGrupoMinDefecto();
+  impGrupoReiniciarLineas();
   V.impGrupoBusy = false;
   V.view = 'imputarGrupo'; render();
   refrescarDatos().then(() => {
     const cand2 = impGrupoCandidatos(V.impFecha);
     V.impGrupoSel = (V.impGrupoSel || []).filter((id) => cand2.some((x) => x.u.id === id));
-    V.impGrupoMin = impGrupoMinDefecto();
+    impGrupoReiniciarLineas();
     render();
   });
 };
@@ -722,48 +733,72 @@ A.impGrupoToggle = (userId) => {
   const sel = V.impGrupoSel || (V.impGrupoSel = []);
   const i = sel.indexOf(userId);
   if (i < 0) sel.push(userId); else sel.splice(i, 1);
-  V.impGrupoMin = impGrupoMinDefecto();
+  // Cambia el tope común: si alguna línea se pasó, se recorta a lo que hay.
+  const tope = impGrupoRestanteMin();
+  let acum = 0;
+  (V.impGrupoLineas || []).forEach((l) => {
+    l.minutos = Math.max(0, Math.min(l.minutos || 0, Math.max(0, tope - acum)));
+    acum += l.minutos;
+  });
   render();
 };
-A.impGrupoCat = (c) => { V.impGrupoCat = c; if (c !== 'obra') V.impGrupoObraId = null; render(); };
-A.impGrupoObra = (id) => { V.impGrupoObraId = id || null; render(); };
-A.impGrupoReloj = (minutos) => { V.impGrupoMin = Math.max(0, Math.round(Number(minutos) / 15) * 15); render(); };
-A.impGrupoAplicar = async () => {
+A.impGrupoAddLinea = () => {
+  (V.impGrupoLineas = V.impGrupoLineas || []).push(impGrupoLineaNueva());
+  render();
+};
+A.impGrupoDelLinea = (i) => {
+  if (!V.impGrupoLineas) return;
+  V.impGrupoLineas.splice(i, 1);
+  if (!V.impGrupoLineas.length) impGrupoReiniciarLineas();
+  render();
+};
+A.impGrupoCat = (i, c) => {
+  const l = (V.impGrupoLineas || [])[i]; if (!l) return;
+  l.categoria = c; if (c !== 'obra') l.obraId = null;
+  render();
+};
+A.impGrupoObra = (i, id) => {
+  const l = (V.impGrupoLineas || [])[i]; if (l) { l.obraId = id || null; render(); }
+};
+A.impGrupoReloj = (i, minutos) => {
+  const l = (V.impGrupoLineas || [])[i]; if (!l) return;
+  l.minutos = Math.max(0, Math.round(Number(minutos) / 15) * 15);
+  render();
+};
+A.impGrupoGuardar = async () => {
   if (!puedeCrear() || V.impGrupoBusy) return;
   sincronizarRuedas();
   if (!navigator.onLine) { toast('Sin conexión — no se ha guardado'); return; }
   const fecha = V.impFecha;
-  const cat = V.impGrupoCat || 'obra';
-  if (cat === 'obra' && !V.impGrupoObraId) { toast('Elige la obra.'); return; }
-  const min = V.impGrupoMin || 0;
-  if (min <= 0) { toast('Pon algo de tiempo en el reloj.'); return; }
+  const lineas = (V.impGrupoLineas || []).filter((l) => (l.minutos || 0) > 0);
+  if (!lineas.length) { toast('Pon algo de tiempo en alguna categoría.'); return; }
+  if (lineas.some((l) => l.categoria === 'obra' && !l.obraId)) { toast('Elige la obra en las líneas de tipo Obra.'); return; }
   const cand = impGrupoCandidatos(fecha);
   const seleccionados = cand.filter((x) => (V.impGrupoSel || []).includes(x.u.id));
   if (!seleccionados.length) { toast('Selecciona al menos a una persona.'); return; }
-  const excede = seleccionados.find((x) => min > x.restante);
+  const total = lineas.reduce((t, l) => t + l.minutos, 0);
+  const excede = seleccionados.find((x) => total > x.restante);
   if (excede) { toast(excede.u.nombre + ' solo tiene ' + durMin(excede.restante) + ' pendiente.'); return; }
   const mio = miEmpId();
-  const filas = seleccionados
-    .map((x) => ({
-      empleado_id: empIdDeUser(x.u.id),
-      fecha, categoria: cat,
-      obra_id: cat === 'obra' ? V.impGrupoObraId : null,
-      minutos: min, origen: 'manual',
+  const filas = [];
+  seleccionados.forEach((x) => {
+    const empId = empIdDeUser(x.u.id);
+    if (!empId) return;
+    lineas.forEach((l) => filas.push({
+      empleado_id: empId, fecha, categoria: l.categoria,
+      obra_id: l.categoria === 'obra' ? l.obraId : null,
+      minutos: l.minutos, origen: 'manual',
       creado_por: mio, actualizado_por: mio,
-    }))
-    .filter((f) => f.empleado_id);
+    }));
+  });
   V.impGrupoBusy = true; render();
   try {
     await Sysefen.db.guardarImputaciones(filas);
     await sincronizarImputaciones();
-    toast('Imputado a ' + filas.length + (filas.length === 1 ? ' persona' : ' personas'));
-    // Deja lista la SIGUIENTE línea: recalcula quién sigue con pendiente
-    // (desmarca solo a quien ya quedó completo) y el reloj vuelve a su
-    // valor por defecto para ese resto. La categoría/obra se mantiene
-    // porque es habitual repetir varias líneas seguidas de lo mismo.
+    toast(lineas.length + (lineas.length === 1 ? ' categoría' : ' categorías') + ' a ' + seleccionados.length + (seleccionados.length === 1 ? ' persona' : ' personas'));
     const cand2 = impGrupoCandidatos(fecha);
     V.impGrupoSel = (V.impGrupoSel || []).filter((id) => cand2.some((x) => x.u.id === id));
-    V.impGrupoMin = impGrupoMinDefecto();
+    impGrupoReiniciarLineas();
   } catch (e) {
     toast('No se pudo guardar: ' + (e && e.message ? e.message : 'error'));
   } finally {
@@ -1906,7 +1941,7 @@ function ruedaCentrado(col) {
 function ruedaEscribir(el, v) {
   const scope = el.dataset.scope, key = el.dataset.key;
   if (scope === 'imp') { const l = V.impDraft && V.impDraft[+key]; if (l) l.minutos = v; }
-  else if (scope === 'impGrupo') V.impGrupoMin = v;
+  else if (scope === 'impGrupo') { const l = V.impGrupoLineas && V.impGrupoLineas[+key]; if (l) l.minutos = v; }
   else if (scope === 'parte') { if (V.draft) V.draft.horas[key] = v / 60; }
   else if (scope === 'parteGrupo') V.horasGrupoMin = v;
 }
@@ -1995,11 +2030,17 @@ function refrescarNumerosRueda() {
   } else if (V.view === 'imputarGrupo') {
     const cand = impGrupoCandidatos(V.impFecha);
     const seleccionados = cand.filter((x) => (V.impGrupoSel || []).includes(x.u.id));
-    const min = V.impGrupoMin || 0;
-    const exceso = seleccionados.some((x) => min > x.restante);
-    const cat = V.impGrupoCat || 'obra';
-    const ok = seleccionados.length > 0 && min > 0 && !exceso && (cat !== 'obra' || V.impGrupoObraId) && !V.impGrupoBusy;
-    document.querySelectorAll('[data-a="impGrupoAplicar"]').forEach((b) => { b.disabled = !ok; });
+    const lineas = V.impGrupoLineas || [];
+    const asignado = lineas.reduce((t, l) => t + (l.minutos || 0), 0);
+    const exceso = seleccionados.some((x) => asignado > x.restante);
+    const faltaObra = lineas.some((l) => (l.minutos || 0) > 0 && l.categoria === 'obra' && !l.obraId);
+    const ok = seleccionados.length > 0 && asignado > 0 && !exceso && !faltaObra && !V.impGrupoBusy;
+    set('[data-num="grupoAsignado"]', durMin(asignado));
+    set('[data-num="grupoLibre"]', durMin(Math.max(0, impGrupoRestanteMin() - asignado)));
+    document.querySelectorAll('[data-a="impGrupoGuardar"]').forEach((b) => {
+      b.disabled = !ok;
+      b.textContent = V.impGrupoBusy ? 'Guardando…' : 'Guardar ' + durMin(asignado) + ' a ' + seleccionados.length + (seleccionados.length === 1 ? ' persona' : ' personas');
+    });
   }
 }
 
@@ -2095,12 +2136,15 @@ function vImputarGrupo() {
   const fecha = V.impFecha || hoyISO();
   const cand = impGrupoCandidatos(fecha);
   const sel = V.impGrupoSel || [];
-  const cat = V.impGrupoCat || 'obra';
   const obras = S.obras.filter((o) => o.estado !== 'Cerrada');
-  const min = V.impGrupoMin || 0;
+  const lineas = (V.impGrupoLineas && V.impGrupoLineas.length) ? V.impGrupoLineas : [impGrupoLineaNueva()];
   const seleccionados = cand.filter((x) => sel.includes(x.u.id));
-  const exceso = seleccionados.some((x) => min > x.restante);
-  const puedeAplicar = seleccionados.length > 0 && min > 0 && !exceso && (cat !== 'obra' || V.impGrupoObraId) && !V.impGrupoBusy;
+  const tope = impGrupoRestanteMin();
+  const asignado = lineas.reduce((t, l) => t + (l.minutos || 0), 0);
+  const libre = Math.max(0, tope - asignado);
+  const exceso = seleccionados.some((x) => asignado > x.restante);
+  const faltaObra = lineas.some((l) => (l.minutos || 0) > 0 && l.categoria === 'obra' && !l.obraId);
+  const puedeGuardar = seleccionados.length > 0 && asignado > 0 && !exceso && !faltaObra && !V.impGrupoBusy;
   return `<div class="hdr">
     <div class="row" style="justify-content:space-between">
       <div class="h1" style="font-size:24px">Imputar horas</div>
@@ -2122,16 +2166,23 @@ function vImputarGrupo() {
         <div class="tiny">${durMin(x.restante)} pendiente</div>
       </div>`; }).join('')}
     </div>
-    <div class="lbl" style="margin-bottom:8px">Categoría de esta línea</div>
-    <div class="wrap" style="margin-bottom:14px">${IMP_CATS.map(([c, lab]) => `<div class="chip ${cat === c ? 'on' : ''}" data-a="impGrupoCat" data-c="${c}">${lab}</div>`).join('')}</div>
-    ${cat === 'obra' ? `<div class="lbl" style="margin-bottom:8px">Obra</div>
-      <div class="wrap" style="margin-bottom:14px">${obras.length ? obras.map((o) => `<div class="chip ${V.impGrupoObraId === o.id ? 'on' : ''}" data-a="impGrupoObra" data-id="${o.id}">${esc(o.cliente)}</div>`).join('') : '<div class="tiny">No hay obras abiertas.</div>'}</div>` : ''}
-    ${relojHTML('impGrupo', 0, min, RELOJ_MAX_DEFECTO, seleccionados.length > 0, 15)}
-    ${exceso ? `<div class="tiny" style="text-align:center;color:var(--rojo);margin-top:8px">Supera lo pendiente de alguien del grupo. Baja el tiempo o desmárcalo.</div>` : ''}
+    <div class="row" style="justify-content:space-between;align-items:baseline;margin-bottom:8px">
+      <div class="lbl">Reparto</div>
+      <div class="tiny"><span data-num="grupoAsignado">${durMin(asignado)}</span> de ${durMin(tope)} · <span data-num="grupoLibre">${durMin(libre)}</span> sin repartir</div>
+    </div>
+    ${lineas.map((l, i) => `<div class="card" style="margin-bottom:10px">
+      <div class="wrap">${IMP_CATS.map(([c, lab]) => `<div class="chip ${l.categoria === c ? 'on' : ''}" data-a="impGrupoCat" data-i="${i}" data-c="${c}">${lab}</div>`).join('')}</div>
+      ${l.categoria === 'obra' ? `<div class="lbl" style="margin:12px 0 7px">Obra</div>
+        <div class="wrap">${obras.length ? obras.map((o) => `<div class="chip ${l.obraId === o.id ? 'on' : ''}" data-a="impGrupoObra" data-i="${i}" data-id="${o.id}">${esc(o.cliente)}</div>`).join('') : '<div class="tiny">No hay obras abiertas.</div>'}</div>` : ''}
+      ${relojHTML('impGrupo', i, l.minutos || 0, RELOJ_MAX_DEFECTO, seleccionados.length > 0, 15)}
+      ${lineas.length > 1 ? `<button class="pill pill-rojo" data-a="impGrupoDelLinea" data-i="${i}" style="display:block;margin:2px auto 0">Quitar línea</button>` : ''}
+    </div>`).join('')}
+    <button class="btn btn-gris" data-a="impGrupoAddLinea" style="border-radius:14px;margin-top:4px">+ Añadir categoría</button>
+    ${exceso ? `<div class="tiny" style="text-align:center;color:var(--rojo);margin-top:10px">El total supera lo pendiente de alguien del grupo. Baja el tiempo o desmárcalo.</div>` : ''}
     ` : `<div class="card"><div class="sub">Nadie tiene horas pendientes de imputar este día.</div></div>`}
   </div>
   ${cand.length ? `<div style="flex:none;padding:12px 20px calc(12px + var(--safe-b));background:rgba(247,246,243,.96);border-top:1px solid var(--l1)">
-    <button class="btn btn-verde" data-a="impGrupoAplicar" ${puedeAplicar ? '' : 'disabled'}>${V.impGrupoBusy ? 'Guardando…' : 'Aplicar a ' + seleccionados.length + (seleccionados.length === 1 ? ' persona' : ' personas')}</button>
+    <button class="btn btn-verde" data-a="impGrupoGuardar" ${puedeGuardar ? '' : 'disabled'}>${V.impGrupoBusy ? 'Guardando…' : 'Guardar ' + durMin(asignado) + ' a ' + seleccionados.length + (seleccionados.length === 1 ? ' persona' : ' personas')}</button>
   </div>` : ''}`;
 }
 function vImputarEmpleado() {
@@ -3001,9 +3052,11 @@ document.addEventListener('click', (e) => {
   if (a === 'abrirImputLista') return A.abrirImputLista();
   if (a === 'abrirImputGrupo') return A.abrirImputGrupo();
   if (a === 'impGrupoToggle') return A.impGrupoToggle(d.id);
-  if (a === 'impGrupoCat') return A.impGrupoCat(d.c);
-  if (a === 'impGrupoObra') return A.impGrupoObra(d.id);
-  if (a === 'impGrupoAplicar') return A.impGrupoAplicar();
+  if (a === 'impGrupoCat') return A.impGrupoCat(+d.i, d.c);
+  if (a === 'impGrupoObra') return A.impGrupoObra(+d.i, d.id);
+  if (a === 'impGrupoAddLinea') return A.impGrupoAddLinea();
+  if (a === 'impGrupoDelLinea') return A.impGrupoDelLinea(+d.i);
+  if (a === 'impGrupoGuardar') return A.impGrupoGuardar();
   if (a === 'abrirImputEmp') { e.stopPropagation(); return A.abrirImputEmp(d.id); }
   if (a === 'abrirImputHoy') { e.stopPropagation(); return A.abrirImputHoy(d.id); }
   if (a === 'volverImputar') return A.volverImputar();
