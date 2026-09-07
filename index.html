@@ -1217,7 +1217,17 @@ A.nuevoParte = (obraId) => {
 A.pcampo = (k, val) => { V.draft[k] = val; };
 A.togglePersona = (id) => {
   const inc = V.draft.incluidos; const i = inc.indexOf(id);
-  i < 0 ? inc.push(id) : inc.splice(i, 1); render();
+  if (i < 0) {
+    // Al sumar a alguien, arranca con las MISMAS horas que ya tiene el resto:
+    // lo normal es que vayan y vuelvan juntos de la obra. Si hace falta que
+    // uno lleve otras horas, se le cambian aparte con su propia rueda.
+    if (!(V.draft.horas[id] > 0)) {
+      const ref = inc.map((x) => V.draft.horas[x] || 0).find((h) => h > 0);
+      if (ref) V.draft.horas[id] = ref;
+    }
+    inc.push(id);
+  } else inc.splice(i, 1);
+  render();
 };
 A.horaMas = (id) => { V.draft.horas[id] = cuarto((V.draft.horas[id] || 0) + 0.25); if (!V.draft.incluidos.includes(id)) V.draft.incluidos.push(id); render(); };
 A.horaMenos = (id) => { V.draft.horas[id] = cuarto((V.draft.horas[id] || 0) - 0.25); render(); };
@@ -1908,39 +1918,72 @@ function montarRelojes() {
       const activo = ruedaCentrado(col);
       col.querySelectorAll('.rueda-item').forEach((it) => it.classList.toggle('on', it === activo));
     });
+    // Al colocar la rueda por código, el navegador dispara igual un evento de
+    // scroll. Sin esta bandera, ese scroll "nuestro" se tomaba como si lo
+    // hubiera hecho el dedo: confirmaba el valor, eso re-renderizaba la
+    // pantalla, el render volvía a colocar la rueda, y vuelta a empezar. Era
+    // un bucle: la rueda se destruía y recreaba varias veces por segundo, y
+    // por eso costaba que "agarrara" el gesto y se perdía lo que ibas moviendo.
+    let programatico = false;
     const posicionar = (col, v) => {
       const item = col.querySelector(`.rueda-item[data-v="${v}"]`);
-      if (item) col.scrollTop = item.offsetTop - (col.clientHeight - item.offsetHeight) / 2;
+      if (!item) return;
+      const destino = item.offsetTop - (col.clientHeight - item.offsetHeight) / 2;
+      if (Math.abs(col.scrollTop - destino) < 1) return;
+      programatico = true;
+      col.scrollTop = destino;
+      setTimeout(() => { programatico = false; }, 60);
     };
     posicionar(colH, +el.dataset.h);
     posicionar(colM, +el.dataset.m);
     pintar();
     let t = null;
     const onScroll = () => {
+      if (programatico) return;
       pintar();
       clearTimeout(t);
       t = setTimeout(() => {
-        // Si mientras se esperaba este ajuste (140ms) ya hubo otro render
-        // (p. ej. "+ Añadir categoría"), esta rueda quedó desmontada del
-        // documento: seguir y confirmar un valor leído de un elemento
-        // suelto pisaría con un dato erróneo la línea que ya se había
-        // guardado bien. Si ya no está en el documento, no hacer nada: el
-        // valor correcto ya quedó fijado por el render que la reemplazó.
         if (!colH.isConnected || !colM.isConnected) return;
         const h = +ruedaCentrado(colH).dataset.v, m = +ruedaCentrado(colM).dataset.v;
         const v = Math.max(0, Math.min(max, h * 60 + m));
-        posicionar(colH, Math.min(Math.floor(max / 60), Math.floor(v / 60)));
-        posicionar(colM, v % 60);
-        pintar();
-        if (el.dataset.scope === 'imp') A.impReloj(+el.dataset.key, v);
-        else if (el.dataset.scope === 'impGrupo') A.impGrupoReloj(v);
-        else if (el.dataset.scope === 'parte') A.horaReloj(el.dataset.key, v);
-        else if (el.dataset.scope === 'parteGrupo') A.horasGrupoReloj(v);
+        // Se escribe el valor y se refrescan SOLO los números que dependen de
+        // él. No se llama a render(): volver a pintar toda la pantalla mata el
+        // elemento que el dedo está tocando en ese momento.
+        ruedaEscribir(el, v);
+        refrescarNumerosRueda();
       }, 140);
     };
     colH.addEventListener('scroll', onScroll, { passive: true });
     colM.addEventListener('scroll', onScroll, { passive: true });
   });
+}
+// Refresca a mano los números que dependen de las ruedas, sin re-renderizar
+// (ver montarRelojes). Cada hueco lleva un data-num en su vista.
+function refrescarNumerosRueda() {
+  const set = (sel, txt) => document.querySelectorAll(sel).forEach((n) => { n.textContent = txt; });
+  if (V.view === 'imputarEmp' && V.impEmp) {
+    const disp = disponibleImputar(V.impEmp, V.impFecha);
+    const imp = (V.impDraft || []).reduce((t, l) => t + (l.minutos || 0), 0);
+    const exceso = imp > disp, sinImp = Math.max(0, disp - imp);
+    set('[data-num="impImputado"]', durMin(imp));
+    document.querySelectorAll('[data-num="impSinImputar"]').forEach((n) => {
+      n.textContent = exceso ? '⚠ +' + durMin(imp - disp) : durMin(sinImp);
+      n.style.color = exceso ? 'var(--rojo)' : (sinImp === 0 ? 'var(--verde-c)' : 'var(--ambar)');
+    });
+    document.querySelectorAll('[data-a="impGuardar"]').forEach((b) => { b.disabled = !!(V.impBusy || exceso); });
+  } else if (V.view === 'p1' && V.draft) {
+    const d = V.draft;
+    d.incluidos.forEach((id) => set(`[data-num="parteHoras"][data-id="${id}"]`, fmtH(d.horas[id] || 0) + ' h'));
+    set('[data-num="parteTotal"]', fmtH(d.incluidos.reduce((t, id) => t + (d.horas[id] || 0), 0)) + ' h');
+  } else if (V.view === 'imputarGrupo') {
+    const cand = impGrupoCandidatos(V.impFecha);
+    const seleccionados = cand.filter((x) => (V.impGrupoSel || []).includes(x.u.id));
+    const min = V.impGrupoMin || 0;
+    const exceso = seleccionados.some((x) => min > x.restante);
+    const cat = V.impGrupoCat || 'obra';
+    const ok = seleccionados.length > 0 && min > 0 && !exceso && (cat !== 'obra' || V.impGrupoObraId) && !V.impGrupoBusy;
+    document.querySelectorAll('[data-a="impGrupoAplicar"]').forEach((b) => { b.disabled = !ok; });
+  }
 }
 
 const RESUMEN_RANGOS = [['hoy', 'Hoy'], ['semana', 'Semana'], ['mes', 'Mes'], ['ano', 'Año']];
@@ -2094,8 +2137,8 @@ function vImputarEmpleado() {
     <div class="row" style="gap:14px;margin-top:14px">
       <div><div class="lbl" style="color:rgba(255,255,255,.5)">Presencia real</div><div class="num" style="color:#fff;font-size:16px;margin-top:4px">${durMin(pres)}</div></div>
       <div><div class="lbl" style="color:rgba(255,255,255,.5)">Disponible</div><div class="num" style="color:#fff;font-size:16px;margin-top:4px">${durMin(disp)}</div></div>
-      <div><div class="lbl" style="color:rgba(255,255,255,.5)">Imputado</div><div class="num" style="color:#fff;font-size:16px;margin-top:4px">${durMin(imp)}</div></div>
-      <div><div class="lbl" style="color:rgba(255,255,255,.5)">Sin imputar</div><div class="num" style="font-size:16px;margin-top:4px;color:${exceso ? 'var(--rojo)' : (sinImp === 0 ? 'var(--verde-c)' : 'var(--ambar)')}">${exceso ? '⚠ +' + durMin(imp - disp) : durMin(sinImp)}</div></div>
+      <div><div class="lbl" style="color:rgba(255,255,255,.5)">Imputado</div><div class="num" data-num="impImputado" style="color:#fff;font-size:16px;margin-top:4px">${durMin(imp)}</div></div>
+      <div><div class="lbl" style="color:rgba(255,255,255,.5)">Sin imputar</div><div class="num" data-num="impSinImputar" style="font-size:16px;margin-top:4px;color:${exceso ? 'var(--rojo)' : (sinImp === 0 ? 'var(--verde-c)' : 'var(--ambar)')}">${exceso ? '⚠ +' + durMin(imp - disp) : durMin(sinImp)}</div></div>
     </div>
     ${ult ? `<div class="tiny" style="color:rgba(255,255,255,.4);margin-top:10px">Última imputación: ${esc(ult.nombre)} · ${new Date(ult.en).toLocaleString('es-ES', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</div>` : ''}
   </div>
@@ -2473,15 +2516,15 @@ function vP1() {
     </div>
     <div class="card" style="padding:0;overflow:hidden">
       ${equipo().map((uu, i) => { const id = uu.id; const on = d.incluidos.includes(id); return `<div style="padding:12px 13px;${i ? 'border-top:1px solid var(--l1)' : ''}">
-        <div class="row" style="gap:10px">
-          <div data-a="togglePersona" data-id="${id}" style="width:22px;height:22px;border-radius:7px;flex:none;cursor:pointer;display:flex;align-items:center;justify-content:center;font:700 12px var(--sans);color:#fff;background:${on ? 'var(--verde)' : 'transparent'};border:1.5px solid ${on ? 'var(--verde)' : 'rgba(20,23,15,.25)'}">${on ? '✓' : ''}</div>
+        <div class="row" data-a="togglePersona" data-id="${id}" style="gap:10px;cursor:pointer;padding:4px 0">
+          <div style="width:22px;height:22px;border-radius:7px;flex:none;display:flex;align-items:center;justify-content:center;font:700 12px var(--sans);color:#fff;background:${on ? 'var(--verde)' : 'transparent'};border:1.5px solid ${on ? 'var(--verde)' : 'rgba(20,23,15,.25)'}">${on ? '✓' : ''}</div>
           <div class="grow" style="font:500 15px/1.1 var(--sans);color:${on ? 'var(--tinta)' : 'rgba(20,23,15,.35)'}">${esc(uu.nombre)}</div>
-          <div class="num" style="font-size:16px;color:${on ? 'var(--tinta)' : 'rgba(20,23,15,.3)'}">${on ? fmtH(d.horas[id] || 0) + ' h' : 'tocar para incluir'}</div>
+          <div class="num" data-num="parteHoras" data-id="${id}" style="font-size:16px;color:${on ? 'var(--tinta)' : 'rgba(20,23,15,.3)'}">${on ? fmtH(d.horas[id] || 0) + ' h' : 'tocar para incluir'}</div>
         </div>
         ${on ? relojHTML('parte', id, (d.horas[id] || 0) * 60, RELOJ_MAX_DEFECTO, true, 15) : ''}
       </div>`; }).join('')}
     </div>
-    <div class="row" style="justify-content:space-between;padding:11px 4px 0"><div class="sub">Total del parte</div><div class="num" style="font-size:17px">${fmtH(total)} h</div></div>
+    <div class="row" style="justify-content:space-between;padding:11px 4px 0"><div class="sub">Total del parte</div><div class="num" data-num="parteTotal" style="font-size:17px">${fmtH(total)} h</div></div>
 
     <div class="row" style="justify-content:space-between;margin:22px 0 4px">
       <div class="lbl">Materiales utilizados</div>
