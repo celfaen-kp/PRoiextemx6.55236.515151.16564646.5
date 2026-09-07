@@ -595,17 +595,23 @@ A.abrirImputar = () => {
   V.view = 'imputar'; render();
   refrescarDatos().then(render);
 };
-// Desde el aviso "Jornada cerrada": abre el MÓDULO de imputaciones (la lista),
-// donde el jefe elige a cualquier empleado con fichaje cerrado (no solo el suyo).
+// Desde el aviso "Jornada cerrada": abre directamente la imputación en GRUPO
+// de HOY, con todo el mundo que tenga jornada cerrada ya marcado (el caso
+// típico: varios terminan juntos y el jefe reparte el mismo bloque de horas
+// a todos de una vez). Quien no corresponda se desmarca a mano.
 A.imputarTrasSalida = () => {
   V.sheet = null;
   V.impFecha = hoyISO(); V.impEmp = null; V.impDraft = null; V.impBorrar = [];
-  V.view = 'imputar'; render();
-  refrescarDatos().then(render);
+  A.abrirImputGrupo();
 };
 A.impFecha = (v) => {
   if (!v) return;
   V.impFecha = v; V.impEmp = null; V.impDraft = null; V.impBorrar = [];
+  if (V.view === 'imputarGrupo') {
+    const cand = impGrupoCandidatos(v);
+    V.impGrupoSel = cand.map((x) => x.u.id);
+    V.impGrupoMin = impGrupoMinDefecto();
+  }
   render();
   refrescarDatos().then(render);
 };
@@ -628,6 +634,97 @@ A.abrirImputHoy = (userId) => {
   A.abrirImputEmp(userId);
 };
 A.volverImputar = () => { V.impEmp = null; V.impDraft = null; V.impBorrar = []; V.view = 'imputar'; render(); };
+
+/* --- imputación en GRUPO: mismo bloque de horas a varias personas a la vez.
+   Cada "Aplicar" INSERTA una línea nueva por persona seleccionada (nunca
+   edita ni borra líneas existentes), así que no hace falta el patrón de
+   "borrar todo y reinsertar" que usa la edición individual: simplemente se
+   suma. Pensado para repetirse varias veces seguidas (una línea por
+   categoría) hasta que a cada uno no le quede nada pendiente. --- */
+// Quién puede entrar en esta línea de grupo: jornada cerrada y con minutos
+// todavía sin imputar hoy (o en la fecha elegida).
+const impGrupoCandidatos = (fecha) => equipo()
+  .map((u) => ({ u, disp: disponibleImputar(u.id, fecha), imp: impMinImputados(u.id, fecha) }))
+  .map((x) => ({ ...x, restante: Math.max(0, x.disp - x.imp) }))
+  .filter((x) => x.disp > 0 && x.restante > 0);
+// Valor por defecto del reloj compartido: lo mínimo pendiente entre los
+// seleccionados, para no pasarse de la disponibilidad de nadie por defecto
+// (el jefe puede bajarlo a mano para repartir menos, como "30 min de traslado").
+function impGrupoMinDefecto() {
+  const cand = impGrupoCandidatos(V.impFecha);
+  const restantes = (V.impGrupoSel || [])
+    .map((id) => cand.find((x) => x.u.id === id))
+    .filter(Boolean)
+    .map((x) => x.restante);
+  return restantes.length ? Math.min(...restantes) : 0;
+}
+A.abrirImputGrupo = () => {
+  if (!V.impFecha) V.impFecha = hoyISO();
+  const cand = impGrupoCandidatos(V.impFecha);
+  V.impGrupoSel = cand.map((x) => x.u.id);
+  V.impGrupoCat = 'obra';
+  V.impGrupoObraId = null;
+  V.impGrupoMin = impGrupoMinDefecto();
+  V.impGrupoBusy = false;
+  V.view = 'imputarGrupo'; render();
+  refrescarDatos().then(() => {
+    const cand2 = impGrupoCandidatos(V.impFecha);
+    V.impGrupoSel = (V.impGrupoSel || []).filter((id) => cand2.some((x) => x.u.id === id));
+    V.impGrupoMin = impGrupoMinDefecto();
+    render();
+  });
+};
+A.impGrupoToggle = (userId) => {
+  const sel = V.impGrupoSel || (V.impGrupoSel = []);
+  const i = sel.indexOf(userId);
+  if (i < 0) sel.push(userId); else sel.splice(i, 1);
+  V.impGrupoMin = impGrupoMinDefecto();
+  render();
+};
+A.impGrupoCat = (c) => { V.impGrupoCat = c; if (c !== 'obra') V.impGrupoObraId = null; render(); };
+A.impGrupoObra = (id) => { V.impGrupoObraId = id || null; render(); };
+A.impGrupoReloj = (minutos) => { V.impGrupoMin = Math.max(0, Math.round(Number(minutos) / 15) * 15); render(); };
+A.impGrupoAplicar = async () => {
+  if (!puedeCrear() || V.impGrupoBusy) return;
+  if (!navigator.onLine) { toast('Sin conexión — no se ha guardado'); return; }
+  const fecha = V.impFecha;
+  const cat = V.impGrupoCat || 'obra';
+  if (cat === 'obra' && !V.impGrupoObraId) { toast('Elige la obra.'); return; }
+  const min = V.impGrupoMin || 0;
+  if (min <= 0) { toast('Pon algo de tiempo en el reloj.'); return; }
+  const cand = impGrupoCandidatos(fecha);
+  const seleccionados = cand.filter((x) => (V.impGrupoSel || []).includes(x.u.id));
+  if (!seleccionados.length) { toast('Selecciona al menos a una persona.'); return; }
+  const excede = seleccionados.find((x) => min > x.restante);
+  if (excede) { toast(excede.u.nombre + ' solo tiene ' + durMin(excede.restante) + ' pendiente.'); return; }
+  const mio = miEmpId();
+  const filas = seleccionados
+    .map((x) => ({
+      empleado_id: empIdDeUser(x.u.id),
+      fecha, categoria: cat,
+      obra_id: cat === 'obra' ? V.impGrupoObraId : null,
+      minutos: min, origen: 'manual',
+      creado_por: mio, actualizado_por: mio,
+    }))
+    .filter((f) => f.empleado_id);
+  V.impGrupoBusy = true; render();
+  try {
+    await Sysefen.db.guardarImputaciones(filas);
+    await sincronizarImputaciones();
+    toast('Imputado a ' + filas.length + (filas.length === 1 ? ' persona' : ' personas'));
+    // Deja lista la SIGUIENTE línea: recalcula quién sigue con pendiente
+    // (desmarca solo a quien ya quedó completo) y el reloj vuelve a su
+    // valor por defecto para ese resto. La categoría/obra se mantiene
+    // porque es habitual repetir varias líneas seguidas de lo mismo.
+    const cand2 = impGrupoCandidatos(fecha);
+    V.impGrupoSel = (V.impGrupoSel || []).filter((id) => cand2.some((x) => x.u.id === id));
+    V.impGrupoMin = impGrupoMinDefecto();
+  } catch (e) {
+    toast('No se pudo guardar: ' + (e && e.message ? e.message : 'error'));
+  } finally {
+    V.impGrupoBusy = false; render();
+  }
+};
 A.impCat = (i, cat) => {
   const l = V.impDraft[i]; if (!l) return;
   l.categoria = cat;
@@ -1226,6 +1323,7 @@ function render() {
   else if (v === 'partes') html = vPartes();
   else if (v === 'horas') html = vHoras();
   else if (v === 'imputar') html = vImputar();
+  else if (v === 'imputarGrupo') html = vImputarGrupo();
   else if (v === 'imputarEmp') html = vImputarEmpleado();
   else if (v === 'empleados' && esAdmin()) html = vEmpleados();
   else if (v === 'empleado' && esAdmin()) html = vEmpleado();
@@ -1240,7 +1338,7 @@ function render() {
   if (V.sheet) html += sheet();
   app.innerHTML = html;
   if (V.view === 'p2') montarFirma();
-  if (V.view === 'imputarEmp' || V.view === 'p1') montarRelojes();
+  if (V.view === 'imputarEmp' || V.view === 'imputarGrupo' || V.view === 'p1') montarRelojes();
   const sc = app.querySelector('.scroll,.hoja'); if (sc && scrollMemo[V.view] != null) sc.scrollTop = scrollMemo[V.view];
 }
 const scrollMemo = {};
@@ -1628,6 +1726,7 @@ function montarRelojes() {
       if (!drag) return; drag = false; el.style.cursor = 'grab';
       const v = +el.dataset.val;
       if (el.dataset.scope === 'imp') A.impReloj(+el.dataset.key, v);
+      else if (el.dataset.scope === 'impGrupo') A.impGrupoReloj(v);
       else if (el.dataset.scope === 'parte') A.horaReloj(el.dataset.key, v);
     };
     el.addEventListener('pointerdown', (e) => { e.preventDefault(); drag = true; el.style.cursor = 'grabbing'; try { el.setPointerCapture(e.pointerId); } catch (x) {} desde(e); });
@@ -1665,6 +1764,11 @@ function vImputar() {
     </div>
   </div>
   <div class="scroll pad pb-nav">
+    ${jefe ? `<div class="card row" data-a="abrirImputGrupo" style="margin-bottom:14px;cursor:pointer;background:var(--tinta)">
+      <div class="grow"><div style="font:600 15px/1 var(--sans);color:#fff">Imputar en grupo</div>
+      <div class="tiny" style="color:rgba(255,255,255,.5);margin-top:5px">Un mismo bloque de horas a varias personas a la vez</div></div>
+      <div class="av" style="width:28px;height:28px;background:var(--ambar);color:var(--tinta);font-size:15px">→</div>
+    </div>` : ''}
     ${conCierre.map(({ u, pres, disp, imp }) => {
       const completa = imp >= disp;
       const sinImp = Math.max(0, disp - imp);
@@ -1689,6 +1793,48 @@ function vImputar() {
       </div>`).join('')}</div>` : ''}
     ${!jefe ? '<div class="tiny" style="margin-top:10px">Solo puedes consultar tus imputaciones. Las hace un jefe o administración.</div>' : ''}
   </div>`;
+}
+function vImputarGrupo() {
+  const fecha = V.impFecha || hoyISO();
+  const cand = impGrupoCandidatos(fecha);
+  const sel = V.impGrupoSel || [];
+  const cat = V.impGrupoCat || 'obra';
+  const obras = S.obras.filter((o) => o.estado !== 'Cerrada');
+  const min = V.impGrupoMin || 0;
+  const seleccionados = cand.filter((x) => sel.includes(x.u.id));
+  const exceso = seleccionados.some((x) => min > x.restante);
+  const puedeAplicar = seleccionados.length > 0 && min > 0 && !exceso && (cat !== 'obra' || V.impGrupoObraId) && !V.impGrupoBusy;
+  return `<div class="hdr">
+    <div class="row" style="justify-content:space-between">
+      <div class="h1" style="font-size:24px">Imputar en grupo</div>
+      <div data-a="volverImputar" style="font:500 13px var(--sans);color:var(--t2);cursor:pointer">Cerrar</div>
+    </div>
+    <div class="row g10" style="margin-top:12px;align-items:center">
+      <div class="lbl">Día</div>
+      <input class="inp" data-f="impFecha" type="date" value="${fecha}" max="${hoyISO()}" style="flex:1;padding:11px 12px">
+    </div>
+  </div>
+  <div class="scroll pad" style="padding-bottom:${cand.length ? '150px' : 'calc(100px + var(--safe-b))'}">
+    ${cand.length ? `
+    <div class="lbl" style="margin-bottom:8px">Quiénes estuvieron (desmarca quien no)</div>
+    <div class="col g8" style="margin-bottom:18px">
+      ${cand.map((x) => { const on = sel.includes(x.u.id); return `<div class="card row" data-a="impGrupoToggle" data-id="${x.u.id}" style="padding:12px 14px;cursor:pointer">
+        <div style="width:22px;height:22px;border-radius:7px;flex:none;display:flex;align-items:center;justify-content:center;font:700 12px var(--sans);color:#fff;background:${on ? 'var(--verde)' : 'transparent'};border:1.5px solid ${on ? 'var(--verde)' : 'rgba(20,23,15,.25)'}">${on ? '✓' : ''}</div>
+        <div class="grow" style="font:500 15px var(--sans)">${esc(x.u.nombre)}</div>
+        <div class="tiny">${durMin(x.restante)} pendiente</div>
+      </div>`; }).join('')}
+    </div>
+    <div class="lbl" style="margin-bottom:8px">Categoría de esta línea</div>
+    <div class="wrap" style="margin-bottom:14px">${IMP_CATS.map(([c, lab]) => `<div class="chip ${cat === c ? 'on' : ''}" data-a="impGrupoCat" data-c="${c}">${lab}</div>`).join('')}</div>
+    ${cat === 'obra' ? `<div class="lbl" style="margin-bottom:8px">Obra</div>
+      <div class="wrap" style="margin-bottom:14px">${obras.length ? obras.map((o) => `<div class="chip ${V.impGrupoObraId === o.id ? 'on' : ''}" data-a="impGrupoObra" data-id="${o.id}">${esc(o.cliente)}</div>`).join('') : '<div class="tiny">No hay obras abiertas.</div>'}</div>` : ''}
+    ${relojHTML('impGrupo', 0, min, RELOJ_MAX_DEFECTO, seleccionados.length > 0, 15)}
+    ${exceso ? `<div class="tiny" style="text-align:center;color:var(--rojo);margin-top:8px">Supera lo pendiente de alguien del grupo. Baja el tiempo o desmárcalo.</div>` : ''}
+    ` : `<div class="card"><div class="sub">Nadie tiene horas pendientes de imputar este día.</div></div>`}
+  </div>
+  ${cand.length ? `<div style="flex:none;padding:12px 20px calc(12px + var(--safe-b));background:rgba(247,246,243,.96);border-top:1px solid var(--l1)">
+    <button class="btn btn-verde" data-a="impGrupoAplicar" ${puedeAplicar ? '' : 'disabled'}>${V.impGrupoBusy ? 'Guardando…' : 'Aplicar a ' + seleccionados.length + (seleccionados.length === 1 ? ' persona' : ' personas')}</button>
+  </div>` : ''}`;
 }
 function vImputarEmpleado() {
   const jefe = puedeCrear();
@@ -2473,6 +2619,11 @@ document.addEventListener('click', (e) => {
   if (a === 'confirmarAnular') return A.confirmarAnular();
   if (a === 'tabHoras') return A.tabHoras(d.t);
   if (a === 'abrirImputar') return A.abrirImputar();
+  if (a === 'abrirImputGrupo') return A.abrirImputGrupo();
+  if (a === 'impGrupoToggle') return A.impGrupoToggle(d.id);
+  if (a === 'impGrupoCat') return A.impGrupoCat(d.c);
+  if (a === 'impGrupoObra') return A.impGrupoObra(d.id);
+  if (a === 'impGrupoAplicar') return A.impGrupoAplicar();
   if (a === 'abrirImputEmp') { e.stopPropagation(); return A.abrirImputEmp(d.id); }
   if (a === 'abrirImputHoy') { e.stopPropagation(); return A.abrirImputHoy(d.id); }
   if (a === 'volverImputar') return A.volverImputar();
