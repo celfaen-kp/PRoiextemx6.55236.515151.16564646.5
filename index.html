@@ -1074,6 +1074,17 @@ A.planMesNav = (delta) => {
   render();
 };
 A.planRango = (r) => { V.planRango = r; render(); };
+// El rango (mes / año / historial) se elige AL imprimir o exportar, no antes:
+// es una decisión del momento de sacar el papel, no un estado de la pantalla.
+A.abrirRangoPlanilla = (modo) => { V.sheet = { tipo: 'rangoPlanilla', modo }; render(); };
+A.planillaSalida = (rango) => {
+  const modo = V.sheet && V.sheet.modo;
+  V.planRango = rango;
+  V.sheet = null;
+  render();
+  if (modo === 'csv') A.exportarPlanillaCSV();
+  else A.imprimirPlanilla();
+};
 A.imprimirPlanilla = () => { imprimirPlanilla(V.planEmp, V.planMes); };
 // Lista de meses 'YYYY-MM' que cubre el rango elegido (mes / año / historial).
 // 'ano': todo el año del mes que se está viendo, sin pasarse del mes actual.
@@ -2341,7 +2352,7 @@ function vEmpleado() {
           <div style="font:500 14px/1.2 var(--sans)">${fechaCorta(f.entrada)}</div>
           <div class="tiny" style="margin-top:3px">${hhmm(f.entrada)} → ${f.salida ? hhmm(f.salida) : 'en curso'}</div>
         </div>
-        <div data-a="abrirCorregirFichaje" data-id="${f.id}" style="font:500 12px var(--sans);color:var(--verde-o);cursor:pointer;flex:none">Corregir (admin)</div>
+        <div data-a="abrirCorregirFichaje" data-id="${f.id}" style="font:500 12px var(--sans);color:var(--verde-o);cursor:pointer;flex:none">Corregir</div>
       </div>`).join('')}
     </div>` : ''}
 
@@ -2433,15 +2444,11 @@ function vPlanilla() {
     </div>
   </div>
   <div class="scroll pad pb-nav">
-    <div class="wrap" style="margin-bottom:10px">
-      <div class="chip ${(V.planRango || 'mes') === 'mes' ? 'on' : ''}" data-a="planRango" data-r="mes">Este mes</div>
-      <div class="chip ${(V.planRango || 'mes') === 'ano' ? 'on' : ''}" data-a="planRango" data-r="ano">Año completo</div>
-      <div class="chip ${(V.planRango || 'mes') === 'historial' ? 'on' : ''}" data-a="planRango" data-r="historial">Todo el historial</div>
-    </div>
     <div class="row g8" style="margin-bottom:12px">
-      <button class="pill grow" data-a="imprimirPlanilla" style="padding:12px;text-align:center;background:var(--tinta);color:#fff">Imprimir PDF</button>
-      <button class="pill grow" data-a="exportarPlanillaCSV" style="padding:12px;text-align:center">Exportar CSV</button>
+      <button class="pill grow" data-a="abrirRangoPlanilla" data-m="pdf" style="padding:12px;text-align:center;background:var(--tinta);color:#fff">Imprimir PDF</button>
+      <button class="pill grow" data-a="abrirRangoPlanilla" data-m="csv" style="padding:12px;text-align:center">Exportar CSV</button>
     </div>
+    ${editable ? '<div class="tiny" style="margin-bottom:10px">Toca cualquier día para corregir sus horas o añadir un fichaje que falte.</div>' : ''}
     <div class="card" style="padding:0;overflow:hidden">
       <div class="row" style="padding:9px 12px;background:rgba(20,23,15,.04);font:600 10px var(--mono);text-transform:uppercase;letter-spacing:.06em;color:var(--t2)">
         <div style="width:38px">Día</div><div class="grow">Entrada / Salida</div><div style="width:52px;text-align:right">Horas</div>
@@ -2880,6 +2887,26 @@ function sheet() {
       </div>
     </div></div>`;
   }
+  if (s.tipo === 'rangoPlanilla') {
+    const u = userById(V.planEmp);
+    const opciones = [
+      ['mes', 'Este mes', mesLargo(V.planMes || hoyISO().slice(0, 7)), true],
+      ['ano', 'Año completo', 'Año ' + (V.planMes || hoyISO()).slice(0, 4), false],
+      ['historial', 'Todo el historial', 'Desde el alta hasta hoy', false],
+    ];
+    return `<div class="sheet"><div>
+      <div style="font:600 23px/1.15 var(--cond)">${s.modo === 'csv' ? '¿Qué exportamos?' : '¿Qué imprimimos?'}</div>
+      <div class="sub" style="margin-top:4px">${esc(u ? u.nombre : '')}</div>
+      <div class="col g8" style="margin-top:16px">
+        ${opciones.map(([r, lab, det, cap]) => `<div class="card row" data-a="planillaSalida" data-r="${r}" style="padding:13px 14px;cursor:pointer">
+          <div class="grow"><div style="font:600 15px var(--sans)">${lab}</div>
+          <div class="tiny" style="margin-top:3px${cap ? ';text-transform:capitalize' : ''}">${esc(det)}</div></div>
+          <div style="font:400 18px var(--sans);color:var(--t3)">›</div>
+        </div>`).join('')}
+      </div>
+      <button class="btn btn-gris" data-a="cerrarSheet" style="border-radius:99px;margin-top:14px;opacity:.7">Cancelar</button>
+    </div></div>`;
+  }
   if (s.tipo === 'diaFichajes') {
     const n = userById(s.userId).nombre;
     const fs = S.fichajes
@@ -2903,7 +2930,7 @@ function sheet() {
   if (s.tipo === 'altaFichaje') {
     const n = userById(s.userId).nombre;
     return `<div class="sheet"><div>
-      <div style="font:600 23px/1.15 var(--cond)">Añadir fichaje (admin)</div>
+      <div style="font:600 23px/1.15 var(--cond)">Añadir fichaje</div>
       <div class="sub" style="margin-top:6px">${esc(n)} · ${fechaLarga(s.fecha)}</div>
       <div class="lbl" style="margin:18px 0 7px">Entrada</div>
       <input class="inp" data-f="corrEntrada" type="datetime-local" value="${s.entrada}">
@@ -2920,7 +2947,7 @@ function sheet() {
   if (s.tipo === 'corregirFichaje') {
     const n = userById(s.userId).nombre;
     return `<div class="sheet"><div>
-      <div style="font:600 25px/1.15 var(--cond)">Corregir fichaje (admin)</div>
+      <div style="font:600 25px/1.15 var(--cond)">Corregir fichaje</div>
       <div class="sub" style="margin-top:6px">${esc(n)}</div>
       <div class="lbl" style="margin:18px 0 7px">Entrada</div>
       <input class="inp" data-f="corrEntrada" type="datetime-local" value="${s.entrada}">
@@ -3186,6 +3213,8 @@ document.addEventListener('click', (e) => {
   if (a === 'abrirPlanilla') { e.stopPropagation(); return A.abrirPlanilla(d.id); }
   if (a === 'planMesNav') return A.planMesNav(d.d);
   if (a === 'planRango') return A.planRango(d.r);
+  if (a === 'abrirRangoPlanilla') return A.abrirRangoPlanilla(d.m);
+  if (a === 'planillaSalida') return A.planillaSalida(d.r);
   if (a === 'imprimirPlanilla') return A.imprimirPlanilla();
   if (a === 'exportarPlanillaCSV') return A.exportarPlanillaCSV();
   if (a === 'toggleOpt') return A.toggleOpt(d.k);
