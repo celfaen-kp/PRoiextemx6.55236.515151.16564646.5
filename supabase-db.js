@@ -99,6 +99,18 @@ export async function ficharSalida(fichajeId) {
     .select().single());
 }
 
+// Corrección administrativa (solo jefe/admin, aplicado por RLS + trigger del
+// servidor): a diferencia de ficharSalida, aquí SÍ se respetan los valores
+// exactos de entrada/salida que se envían — es la vía para arreglar un
+// fichaje mal cerrado o una salida olvidada con la hora real, no con "ahora".
+export async function corregirFichaje(fichajeId, { entrada, salida }) {
+  return unwrap(await supabase
+    .from('fichajes')
+    .update({ entrada, salida })
+    .eq('id', fichajeId)
+    .select().single());
+}
+
 export async function fichajesDelDia(dia) {
   const desde = dia + 'T00:00:00';
   const hasta = dia + 'T23:59:59.999';
@@ -225,7 +237,7 @@ export default {
   listarEmpleados, crearEmpleado, actualizarEmpleado,
   listarObras, crearObra, actualizarObra,
   empleadosDeObra, listarAsignaciones, asignarEmpleadoAObra, quitarEmpleadoDeObra,
-  fichajeAbierto, ficharEntrada, ficharSalida, fichajesDelDia, listarFichajes, escucharFichajes,
+  fichajeAbierto, ficharEntrada, ficharSalida, corregirFichaje, fichajesDelDia, listarFichajes, escucharFichajes,
   listarPartes, crearParte, actualizarParte, guardarHorasParte, guardarMaterialesParte,
   listarHorasPartes, listarMaterialesPartes,
   listarIncidencias, crearIncidencia,

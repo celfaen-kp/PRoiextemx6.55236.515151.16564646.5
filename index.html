@@ -13,7 +13,7 @@
 <link rel="apple-touch-icon" href="icon-180.png">
 <link rel="icon" href="icon-192.png">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Semi+Condensed:wght@600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Semi+Condensed:wght@600;700&family=IBM+Plex+Mono:wght@400;500&family=Dancing+Script:wght@500;700&display=swap" rel="stylesheet">
 <style>
 :root{
   --tinta:#14170f; --papel:#f5f4ef; --blanco:#fff;
@@ -27,6 +27,7 @@
   --sans:'Barlow',system-ui,-apple-system,sans-serif;
   --cond:'Barlow Semi Condensed','Barlow',system-ui,sans-serif;
   --mono:'IBM Plex Mono',ui-monospace,monospace;
+  --script:'Dancing Script',cursive;
 }
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{margin:0;height:100%;overflow:hidden}
@@ -782,10 +783,49 @@ A.adminConfirmarFichaje = async () => {
   }
 };
 
+// Corrección administrativa de un fichaje puntual (entrada y/o salida exactas,
+// no "ahora"). Para casos como una salida olvidada que sigue acumulando horas.
+// El backend (RLS + trigger de fichajes_hora_servidor) ya distingue jefe/admin
+// de operario y respeta los valores enviados solo para jefe/admin.
+const isoALocalInput = (iso) => {
+  if (!iso) return '';
+  const d = new Date(iso);
+  const pad = (n) => String(n).padStart(2, '0');
+  return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + 'T' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+};
+A.abrirCorregirFichaje = (id) => {
+  if (!esAdmin()) return;
+  const f = S.fichajes.find((x) => x.id === id); if (!f) return;
+  V.sheet = { tipo: 'corregirFichaje', id, userId: f.userId, entrada: isoALocalInput(f.entrada), salida: isoALocalInput(f.salida), err: '', busy: false };
+  render();
+};
+A.corrGuardar = async () => {
+  const s = V.sheet; if (!s || s.tipo !== 'corregirFichaje') return;
+  if (!s.entrada) { s.err = 'Falta la hora de entrada.'; return render(); }
+  if (s.salida && s.salida <= s.entrada) { s.err = 'La salida tiene que ser después de la entrada.'; return render(); }
+  s.err = ''; s.busy = true; render();
+  if (!navigator.onLine) { s.busy = false; toast('Sin conexión — no se ha guardado'); return render(); }
+  try {
+    await Sysefen.db.corregirFichaje(s.id, {
+      entrada: new Date(s.entrada).toISOString(),
+      salida: s.salida ? new Date(s.salida).toISOString() : null,
+    });
+    await refrescarDatos();
+    V.sheet = null;
+    toast('Fichaje corregido');
+    render();
+  } catch (e) {
+    s.busy = false;
+    toast('No se pudo guardar: ' + (e && e.message ? e.message : 'error'));
+    await refrescarDatos(); render();
+  }
+};
+
 /* --- ADMINISTRACIÓN: planilla mensual de horas reales del empleado --- */
 A.abrirPlanilla = (userId) => {
   V.planEmp = userId;
   if (!V.planMes) V.planMes = hoyISO().slice(0, 7);
+  V.planRango = 'mes';
   V.view = 'planilla'; render();
   refrescarDatos().then(render);
 };
@@ -795,7 +835,62 @@ A.planMesNav = (delta) => {
   V.planMes = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
   render();
 };
+A.planRango = (r) => { V.planRango = r; render(); };
 A.imprimirPlanilla = () => { imprimirPlanilla(V.planEmp, V.planMes); };
+// Lista de meses 'YYYY-MM' que cubre el rango elegido (mes / año / historial).
+// 'ano': todo el año del mes que se está viendo, sin pasarse del mes actual.
+// 'historial': desde el alta del empleado (o su primer fichaje si no hay alta
+// registrada) hasta el mes actual.
+function mesesEnRango(userId, rango, mesBase) {
+  const hoy = hoyISO().slice(0, 7);
+  if (rango === 'ano') {
+    const anio = mesBase.slice(0, 4);
+    const out = [];
+    for (let m = 1; m <= 12; m++) {
+      const mm = anio + '-' + String(m).padStart(2, '0');
+      if (mm > hoy) break;
+      out.push(mm);
+    }
+    return out;
+  }
+  if (rango === 'historial') {
+    const empId = empIdDeUser(userId);
+    const row = empId ? empRowById(empId) : null;
+    let desde = row && row.creado_en ? row.creado_en.slice(0, 7) : null;
+    if (!desde) {
+      const fs = S.fichajes.filter((f) => f.userId === userId);
+      desde = fs.length ? fs.reduce((min, f) => (f.entrada < min ? f.entrada : min), fs[0].entrada).slice(0, 7) : mesBase;
+    }
+    const out = [];
+    let [y, m] = desde.split('-').map(Number);
+    const [hy, hm] = hoy.split('-').map(Number);
+    while (y < hy || (y === hy && m <= hm)) {
+      out.push(y + '-' + String(m).padStart(2, '0'));
+      m++; if (m > 12) { m = 1; y++; }
+    }
+    return out;
+  }
+  return [mesBase];
+}
+A.exportarPlanillaCSV = () => {
+  const userId = V.planEmp;
+  const u = userById(userId);
+  const rango = V.planRango || 'mes';
+  const mesBase = V.planMes || hoyISO().slice(0, 7);
+  const meses = mesesEnRango(userId, rango, mesBase);
+  const filas = [['Fecha', 'Entrada', 'Salida', 'Horas', 'Estado']];
+  meses.forEach((mes) => {
+    planillaMes(userId, mes).dias.forEach((x) => {
+      filas.push([mes + '-' + String(x.dd).padStart(2, '0'), x.entrada ? hhmm(x.entrada) : '', x.salida ? hhmm(x.salida) : '', x.min != null ? horasLargas(x.min) : '', x.estado]);
+    });
+  });
+  const csv = '\uFEFF' + filas.map((r) => r.map((c) => '"' + String(c).replace(/"/g, '""') + '"').join(';')).join('\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+  a.download = 'planilla-' + (u.nombre || 'empleado').toLowerCase().replace(/\s+/g, '-') + '-' + rango + '-' + hoyISO() + '.csv';
+  a.click();
+  toast('Planilla exportada en CSV');
+};
 
 const obraById = (id) => S.obras.find((o) => o.id === id) || null;
 
@@ -1668,6 +1763,9 @@ function vEmpleado() {
   const fx = V.empEmp ? fichajeAbierto(V.empEmp) : null;
   const empId = V.empEmp ? empIdDeUser(V.empEmp) : null;
   const row = empId ? empRowById(empId) : null;
+  const fichajesRecientes = V.empEmp
+    ? S.fichajes.filter((f) => f.userId === V.empEmp).sort((a, b) => b.entrada.localeCompare(a.entrada)).slice(0, 10)
+    : [];
   return `<div class="hdr row g12">
     <div data-a="volverEmpleados" style="font:500 13px var(--sans);color:var(--t2);cursor:pointer">‹ Empleados</div>
     <div class="grow" style="text-align:center;font:600 16px var(--sans)">${d.nuevo ? 'Nuevo empleado' : esc(d.nombre)}</div>
@@ -1680,6 +1778,17 @@ function vEmpleado() {
         <div style="font:600 15px var(--sans);margin-top:4px">${fx ? 'Entrada ' + hhmm(fx.entrada) + ' · dentro' : (minutosDia(V.empEmp, hoyISO()) ? 'Hoy ' + durMin(minutosDia(V.empEmp, hoyISO())) + ' · fuera' : 'Sin fichar hoy')}</div></div>
         <button class="pill" data-a="adminFichar" data-id="${V.empEmp}" style="background:#fff;color:${fx ? 'var(--rojo)' : 'var(--verde-o)'}">${fx ? 'Fichar salida' : 'Fichar entrada'}</button>
       </div>
+    </div>` : ''}
+
+    ${!d.nuevo && fichajesRecientes.length ? `<div class="lbl" style="font-weight:600;font-size:12px;color:var(--t2);margin-bottom:8px">Fichajes recientes</div>
+    <div class="card" style="padding:0;overflow:hidden;margin-bottom:18px">
+      ${fichajesRecientes.map((f, i) => `<div class="row" style="padding:11px 13px;${i ? 'border-top:1px solid var(--l1)' : ''}">
+        <div class="grow">
+          <div style="font:500 14px/1.2 var(--sans)">${fechaCorta(f.entrada)}</div>
+          <div class="tiny" style="margin-top:3px">${hhmm(f.entrada)} → ${f.salida ? hhmm(f.salida) : 'en curso'}</div>
+        </div>
+        <div data-a="abrirCorregirFichaje" data-id="${f.id}" style="font:500 12px var(--sans);color:var(--verde-o);cursor:pointer;flex:none">Corregir (admin)</div>
+      </div>`).join('')}
     </div>` : ''}
 
     <div class="lbl" style="margin-bottom:7px">Nombre</div>
@@ -1764,8 +1873,14 @@ function vPlanilla() {
     </div>
   </div>
   <div class="scroll pad pb-nav">
+    <div class="wrap" style="margin-bottom:10px">
+      <div class="chip ${(V.planRango || 'mes') === 'mes' ? 'on' : ''}" data-a="planRango" data-r="mes">Este mes</div>
+      <div class="chip ${(V.planRango || 'mes') === 'ano' ? 'on' : ''}" data-a="planRango" data-r="ano">Año completo</div>
+      <div class="chip ${(V.planRango || 'mes') === 'historial' ? 'on' : ''}" data-a="planRango" data-r="historial">Todo el historial</div>
+    </div>
     <div class="row g8" style="margin-bottom:12px">
-      <button class="pill grow" data-a="imprimirPlanilla" style="padding:12px;text-align:center;background:var(--tinta);color:#fff">Imprimir planilla</button>
+      <button class="pill grow" data-a="imprimirPlanilla" style="padding:12px;text-align:center;background:var(--tinta);color:#fff">Imprimir PDF</button>
+      <button class="pill grow" data-a="exportarPlanillaCSV" style="padding:12px;text-align:center">Exportar CSV</button>
     </div>
     <div class="card" style="padding:0;overflow:hidden">
       <div class="row" style="padding:9px 12px;background:rgba(20,23,15,.04);font:600 10px var(--mono);text-transform:uppercase;letter-spacing:.06em;color:var(--t2)">
@@ -1801,19 +1916,24 @@ function vPlanilla() {
     ${row ? `<div class="tiny" style="margin-top:12px">Alta: ${row.creado_en ? fechaCorta(row.creado_en) : '—'}${row.fecha_baja ? ' · Baja: ' + fechaCorta(row.fecha_baja + 'T12:00') : ''} · Registro basado en fichajes reales (no imputaciones).</div>` : ''}
   </div>`;
 }
-function imprimirPlanilla(userId, mes) {
+function imprimirPlanilla(userId, mesBase) {
+  const rango = V.planRango || 'mes';
+  const meses = mesesEnRango(userId, rango, mesBase);
   const u = userById(userId);
   const empId = empIdDeUser(userId);
   const row = empId ? empRowById(empId) : null;
-  const pl = planillaMes(userId, mes);
+  const bloques = meses.map((mes) => ({ mes, pl: planillaMes(userId, mes) }));
+  const totalGeneral = bloques.reduce((t, b) => t + b.pl.totalMin, 0);
+  const diasGeneral = bloques.reduce((t, b) => t + b.pl.diasTrab, 0);
+  const tituloRango = rango === 'mes' ? mesLargo(mesBase) : rango === 'ano' ? 'Año ' + mesBase.slice(0, 4) : 'Historial completo';
   const el = $('#print');
   el.innerHTML = `<div style="font-family:var(--sans);color:#14170f;max-width:180mm;position:relative;z-index:0">
-    <img src="logo-trans.png" alt="" style="position:absolute;top:110mm;left:50%;transform:translate(-50%,-50%);width:120mm;opacity:.11;z-index:-1;pointer-events:none">
+    <img src="logo-trans.png" alt="" style="position:absolute;top:130mm;left:50%;transform:translate(-50%,-50%);width:120mm;opacity:.11;z-index:-1;pointer-events:none">
     <div style="display:flex;justify-content:space-between;align-items:flex-start">
       <div><img src="logo-trans.png" alt="" style="height:15mm">
       ${S.cif ? `<div style="font:400 10px var(--mono);color:#666;margin-top:2px">${esc(S.empresa)} · ${esc(S.cif)}</div>` : ''}</div>
       <div style="text-align:right"><div style="font:600 11px var(--mono);letter-spacing:.1em">REGISTRO DE JORNADA</div>
-      <div style="font:700 15px var(--cond);margin-top:2px;text-transform:capitalize">${mesLargo(mes)}</div></div>
+      <div style="font:700 15px var(--cond);margin-top:2px;text-transform:capitalize">${esc(tituloRango)}</div></div>
     </div>
     <div style="height:2px;background:#14170f;margin:10px 0 12px"></div>
     <table style="width:100%;font:400 12px var(--sans);border-collapse:collapse">
@@ -1821,25 +1941,32 @@ function imprimirPlanilla(userId, mes) {
       ${row && row.creado_en ? `<tr><td style="padding:2px 0;color:#666">Fecha de alta</td><td>${fechaCorta(row.creado_en)}</td></tr>` : ''}
       ${row && row.fecha_baja ? `<tr><td style="padding:2px 0;color:#666">Fecha de baja</td><td>${fechaCorta(row.fecha_baja + 'T12:00')}</td></tr>` : ''}
     </table>
-    <table style="width:100%;font:400 11px var(--sans);border-collapse:collapse;margin-top:12px">
-      <tr style="font:600 10px var(--mono);text-transform:uppercase;letter-spacing:.05em;color:#666">
-        <td style="padding:4px 0;border-bottom:1px solid #14170f">Fecha</td>
-        <td style="padding:4px 0;border-bottom:1px solid #14170f">Entrada</td>
-        <td style="padding:4px 0;border-bottom:1px solid #14170f">Salida</td>
-        <td style="padding:4px 0;border-bottom:1px solid #14170f;text-align:right">Horas reales</td>
-        <td style="padding:4px 6px;border-bottom:1px solid #14170f">Estado</td>
-      </tr>
-      ${pl.dias.map((x) => `<tr>
-        <td style="padding:3px 0;border-bottom:1px solid #eee">${String(x.dd).padStart(2, '0')}/${mes.slice(5)}</td>
-        <td style="padding:3px 0;border-bottom:1px solid #eee;font-family:var(--mono)">${x.entrada ? hhmm(x.entrada) : '—'}</td>
-        <td style="padding:3px 0;border-bottom:1px solid #eee;font-family:var(--mono)">${x.salida ? hhmm(x.salida) : '—'}</td>
-        <td style="padding:3px 0;border-bottom:1px solid #eee;text-align:right;font-family:var(--mono)">${x.min != null ? horasLargas(x.min) : '—'}</td>
-        <td style="padding:3px 6px;border-bottom:1px solid #eee">${x.estado}</td>
-      </tr>`).join('')}
-      <tr><td colspan="3" style="padding:6px 0;font-weight:700">Total mensual</td>
-        <td style="padding:6px 0;text-align:right;font-weight:700;font-family:var(--mono)">${horasLargas(pl.totalMin)}</td>
-        <td style="padding:6px 6px">${pl.diasTrab} días</td></tr>
-    </table>
+    ${bloques.map((b) => `
+    <div style="margin-top:18px;break-inside:avoid">
+      <div style="font:700 12px var(--cond);text-transform:capitalize;margin-bottom:4px">${mesLargo(b.mes)}</div>
+      <table style="width:100%;font:400 11px var(--sans);border-collapse:collapse">
+        <tr style="font:600 10px var(--mono);text-transform:uppercase;letter-spacing:.05em;color:#666">
+          <td style="padding:4px 0;border-bottom:1px solid #14170f">Fecha</td>
+          <td style="padding:4px 0;border-bottom:1px solid #14170f">Entrada</td>
+          <td style="padding:4px 0;border-bottom:1px solid #14170f">Salida</td>
+          <td style="padding:4px 0;border-bottom:1px solid #14170f;text-align:right">Horas reales</td>
+          <td style="padding:4px 6px;border-bottom:1px solid #14170f">Estado</td>
+        </tr>
+        ${b.pl.dias.map((x) => `<tr>
+          <td style="padding:3px 0;border-bottom:1px solid #eee">${String(x.dd).padStart(2, '0')}/${b.mes.slice(5)}</td>
+          <td style="padding:3px 0;border-bottom:1px solid #eee;font-family:var(--mono)">${x.entrada ? hhmm(x.entrada) : '—'}</td>
+          <td style="padding:3px 0;border-bottom:1px solid #eee;font-family:var(--mono)">${x.salida ? hhmm(x.salida) : '—'}</td>
+          <td style="padding:3px 0;border-bottom:1px solid #eee;text-align:right;font-family:var(--mono)">${x.min != null ? horasLargas(x.min) : '—'}</td>
+          <td style="padding:3px 6px;border-bottom:1px solid #eee">${x.estado}</td>
+        </tr>`).join('')}
+        <tr><td colspan="3" style="padding:6px 0;font-weight:700">Total del mes</td>
+          <td style="padding:6px 0;text-align:right;font-weight:700;font-family:var(--mono)">${horasLargas(b.pl.totalMin)}</td>
+          <td style="padding:6px 6px">${b.pl.diasTrab} días</td></tr>
+      </table>
+    </div>`).join('')}
+    ${bloques.length > 1 ? `<div style="margin-top:16px;padding-top:10px;border-top:2px solid #14170f;display:flex;justify-content:space-between;font:700 13px var(--sans)">
+      <div>Total del periodo (${bloques.length} meses)</div><div>${horasLargas(totalGeneral)} · ${diasGeneral} días</div>
+    </div>` : ''}
     <div style="font:400 10px var(--sans);color:#666;margin-top:14px">Horas reales de presencia según los fichajes registrados. Los días sin fichaje no se contabilizan como 0 h a la espera de definir su estado (vacaciones, festivo, ausencia…).</div>
     <div style="display:flex;gap:24px;margin-top:26px">
       <div style="flex:1"><div style="font:600 10px var(--mono);text-transform:uppercase;color:#666">El trabajador</div><div style="height:20mm"></div><div style="border-top:1px solid #14170f;padding-top:4px;font:400 11px var(--sans)">${esc(u.nombre)}</div></div>
@@ -2120,6 +2247,23 @@ function sheet() {
       </div>
     </div></div>`;
   }
+  if (s.tipo === 'corregirFichaje') {
+    const n = userById(s.userId).nombre;
+    return `<div class="sheet"><div>
+      <div style="font:600 25px/1.15 var(--cond)">Corregir fichaje (admin)</div>
+      <div class="sub" style="margin-top:6px">${esc(n)}</div>
+      <div class="lbl" style="margin:18px 0 7px">Entrada</div>
+      <input class="inp" data-f="corrEntrada" type="datetime-local" value="${s.entrada}">
+      <div class="lbl" style="margin:14px 0 7px">Salida</div>
+      <input class="inp" data-f="corrSalida" type="datetime-local" value="${s.salida}">
+      <div class="tiny" style="margin-top:8px">Deja "Salida" vacío si el fichaje debe quedar abierto (por ejemplo, sigue dentro).</div>
+      ${s.err ? `<div class="tiny" style="margin-top:8px;color:var(--rojo)">${esc(s.err)}</div>` : ''}
+      <div class="row g8" style="margin-top:20px">
+        <button class="btn btn-gris" data-a="cerrarSheet" style="border-radius:99px">Cancelar</button>
+        <button class="btn btn-verde" data-a="corrGuardar" style="font-size:14px" ${s.busy ? 'disabled' : ''}>${s.busy ? 'Guardando…' : 'Guardar corrección'}</button>
+      </div>
+    </div></div>`;
+  }
   if (s.tipo === 'accesoEmpleado') {
     return `<div class="sheet"><div>
       <div style="font:600 25px/1.15 var(--cond)">Falta crear el acceso</div>
@@ -2266,11 +2410,15 @@ function imprimirParte(p) {
       </div>
       <div style="flex:1">
         <div style="font:600 10px var(--mono);letter-spacing:.1em;text-transform:uppercase;color:#666">Por ${esc(S.empresa)}</div>
-        <div style="height:26mm;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1.5mm">
-          <img src="logo-trans.png" alt="" style="height:11mm;opacity:.92">
-          <div style="text-align:center;line-height:1.2">
-            <div style="font:700 9px var(--cond);letter-spacing:.05em">SYSEFEN</div>
-            <div style="font:400 7px var(--mono);color:#666;letter-spacing:.06em;text-transform:uppercase">Eficiencia Energética</div>
+        <div style="height:26mm;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1mm">
+          <div style="font:500 30px var(--script);color:#14170f;line-height:1;padding-bottom:3px">${esc(userById(p.autorId).nombre)}</div>
+          <div style="font:400 6px var(--mono);color:#999;letter-spacing:.05em;text-transform:uppercase;margin-top:2px">Firma digital generada por la app</div>
+          <div style="display:flex;align-items:center;gap:4px;margin-top:1mm">
+            <img src="logo-trans.png" alt="" style="height:8mm;opacity:.92">
+            <div style="text-align:left;line-height:1.15">
+              <div style="font:700 8px var(--cond);letter-spacing:.05em">SYSEFEN</div>
+              <div style="font:400 6px var(--mono);color:#666;letter-spacing:.05em;text-transform:uppercase">Eficiencia Energética</div>
+            </div>
           </div>
         </div>
         <div style="border-top:1px solid #14170f;padding-top:4px;font:400 11px var(--sans)">${esc(userById(p.autorId).nombre)}</div>
@@ -2342,9 +2490,13 @@ document.addEventListener('click', (e) => {
   if (a === 'empGuardar') return A.empGuardar();
   if (a === 'adminFichar') { e.stopPropagation(); return A.adminFichar(d.id); }
   if (a === 'adminConfirmarFichaje') return A.adminConfirmarFichaje();
+  if (a === 'abrirCorregirFichaje') { e.stopPropagation(); return A.abrirCorregirFichaje(d.id); }
+  if (a === 'corrGuardar') return A.corrGuardar();
   if (a === 'abrirPlanilla') { e.stopPropagation(); return A.abrirPlanilla(d.id); }
   if (a === 'planMesNav') return A.planMesNav(d.d);
+  if (a === 'planRango') return A.planRango(d.r);
   if (a === 'imprimirPlanilla') return A.imprimirPlanilla();
+  if (a === 'exportarPlanillaCSV') return A.exportarPlanillaCSV();
   if (a === 'toggleOpt') return A.toggleOpt(d.k);
   if (a === 'cambiarRol') return A.cambiarRol(d.id);
   if (a === 'editarPin') return A.editarPin(d.id);
@@ -2373,6 +2525,8 @@ document.addEventListener('input', (e) => {
   if (f === 'sheetVal') { V.sheet.val = t.value.replace(/\D/g, '').slice(0, 4); return; }
   if (f === 'sheetNombre') { V.sheet.nombre = t.value; return; }
   if (f === 'sheetPin') { V.sheet.pin = t.value.replace(/\D/g, '').slice(0, 4); return; }
+  if (f === 'corrEntrada') { V.sheet.entrada = t.value; return; }
+  if (f === 'corrSalida') { V.sheet.salida = t.value; return; }
   if (['empresa', 'cif', 'emailCopia'].includes(f)) { S[f] = t.value; save(); return; }
   if (V.view === 'alta') { V.draft[f] = t.value; return; }
   if (V.draft) V.draft[f] = t.value;
