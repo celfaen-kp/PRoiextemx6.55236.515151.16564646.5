@@ -581,7 +581,8 @@ A.salir = () => {
   sysAuth.logout().catch(() => {});
 };
 A.ir = (v) => { V.view = v; render(); if (['hoy', 'obras', 'obra', 'partes', 'horas'].includes(v)) refrescarDatos().then(render); };
-A.verObra = (id) => { V.obraId = id; V.view = 'obra'; render(); refrescarDatos().then(render); };
+A.verObra = (id) => { V.obraId = id; V.obraRango = 'total'; V.view = 'obra'; render(); refrescarDatos().then(render); };
+A.obraRango = (r) => { V.obraRango = r; render(); };
 A.activarObra = () => { const o = obraById(V.obraId); if (!o) return; S.obraActiva = V.obraId; save(); toast('Obra de hoy: ' + o.cliente); V.view = 'hoy'; render(); };
 A.tabHoras = (t) => { V.tabHoras = t; render(); };
 
@@ -1034,6 +1035,28 @@ const empleadosDeObra = (obraId) => {
   const ids = new Set(S.imputaciones.filter((i) => i.categoria === 'obra' && i.obraId === obraId).map((i) => i.userId));
   return equipo().filter((u) => ids.has(u.id));
 };
+// Rango de fechas (strings 'YYYY-MM-DD', comparables directo con imputaciones.fecha)
+// para los desgloses "por período" de una obra. null = sin filtro (todo el histórico).
+function rangoFechas(rango) {
+  const hoy = hoyISO();
+  if (rango === 'hoy') return { desde: hoy, hasta: hoy };
+  if (rango === 'semana') {
+    const d = new Date(); d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+    return { desde: fechaLocal(d), hasta: hoy };
+  }
+  if (rango === 'mes') return { desde: hoy.slice(0, 7) + '-01', hasta: hoy };
+  return null;
+}
+// Igual que minutosObraImp, pero por período (hoy/semana/mes) en vez de un
+// único día. Base de "Horas de obra" con desglose diario/semanal/mensual/total.
+function minutosObraRango(obraId, userId, rango) {
+  const r = rangoFechas(rango);
+  return S.imputaciones
+    .filter((i) => i.categoria === 'obra' && i.obraId === obraId
+      && (!userId || i.userId === userId)
+      && (!r || (i.fecha >= r.desde && i.fecha <= r.hasta)))
+    .reduce((t, i) => t + (i.minutos || 0), 0);
+}
 
 // FICHAJE SIN OBRA: entrada y salida solo registran presencia. No se pregunta obra.
 A.pedirFichaje = (userId) => {
@@ -1107,6 +1130,21 @@ A.cerrarObra = async (id) => {
   const nuevo = o.estado === 'Cerrada' ? 'En curso' : 'Cerrada';
   try { await Sysefen.db.actualizarObra(id, { estado: nuevo }); await sincronizarObras(); render(); }
   catch (e) { toast('No se pudo cambiar el estado: ' + (e && e.message ? e.message : 'error')); }
+};
+A.imprimirHorasObra = () => { imprimirHorasObra(V.obraId, V.obraRango || 'total'); };
+A.exportarHorasObraCSV = () => {
+  const o = obraById(V.obraId); if (!o) return;
+  const rango = V.obraRango || 'total';
+  const filas = [['Empleado', 'Minutos', 'Horas']];
+  empleadosDeObra(o.id).map((x) => ({ x, m: minutosObraRango(o.id, x.id, rango) }))
+    .filter((f) => rango === 'total' || f.m > 0)
+    .forEach((f) => filas.push([f.x.nombre, f.m, durMin(f.m)]));
+  const csv = '\uFEFF' + filas.map((r) => r.map((c) => '"' + String(c).replace(/"/g, '""') + '"').join(';')).join('\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+  a.download = 'horas-' + o.cliente.toLowerCase().replace(/\s+/g, '-') + '-' + rango + '-' + hoyISO() + '.csv';
+  a.click();
+  toast('Horas de la obra exportadas en CSV');
 };
 
 /* parte */
@@ -1532,11 +1570,16 @@ function vObras() {
     </div>`).join('') : `<div class="card"><div class="h2">Sin obras todavía</div><div class="sub" style="margin-top:6px">${puedeCrear() ? 'Dale a “+ Nueva” para crear la primera.' : 'Todavía no hay obras dadas de alta.'}</div></div>`}
   </div>`;
 }
+const OBRA_RANGOS = [['hoy', 'Hoy'], ['semana', 'Semana'], ['mes', 'Mes'], ['total', 'Total']];
 function vObra() {
   const o = obraById(V.obraId);
   if (!o) { V.view = 'obras'; return vObras(); }
   const partes = S.partes.filter((p) => p.obraId === o.id);
-  const total = minutosObra(o.id) || 1;
+  const rango = V.obraRango || 'total';
+  const filas = empleadosDeObra(o.id)
+    .map((x) => ({ x, m: minutosObraRango(o.id, x.id, rango) }))
+    .filter((f) => rango === 'total' || f.m > 0);
+  const total = filas.reduce((t, f) => t + f.m, 0) || 1;
   return `<div class="hdr-dark">
     <div class="back" data-a="ir" data-v="obras">‹ Obras</div>
     <div style="font:600 27px/1.1 var(--cond)">${esc(o.cliente)}</div>
@@ -1548,16 +1591,23 @@ function vObra() {
     </div>
   </div>
   <div class="scroll pad pb-nav">
-    <div class="lbl" style="font-weight:600;font-size:12px;color:var(--t2);margin-bottom:10px">Horas por empleado</div>
+    <div class="row" style="justify-content:space-between;align-items:baseline;margin-bottom:10px">
+      <div class="lbl" style="font-weight:600;font-size:12px;color:var(--t2)">Horas por empleado</div>
+      <div class="wrap">${OBRA_RANGOS.map(([r, l]) => `<div class="chip" style="padding:6px 11px;font-size:11px${r === rango ? ';background:var(--tinta);color:#fff;border-color:var(--tinta)' : ''}" data-a="obraRango" data-r="${r}">${l}</div>`).join('')}</div>
+    </div>
     <div class="card" style="padding:6px 15px 13px">
-      ${empleadosDeObra(o.id).map((x) => { const id = x.id; const m = minutosObra(o.id, id); return `<div style="padding:11px 0;border-bottom:1px solid var(--l1)">
+      ${filas.map(({ x, m }) => `<div style="padding:11px 0;border-bottom:1px solid var(--l1)">
         <div class="row" style="align-items:baseline;justify-content:space-between;gap:14px">
           <div style="font:500 15px/1.2 var(--sans)" class="grow">${esc(x.nombre)}</div>
           <div class="num" style="font-size:16px;flex:none">${durMin(m)}</div>
         </div><div class="prog"><i style="width:${Math.round((m / total) * 100)}%"></i></div>
-      </div>`; }).join('') || '<div class="tiny" style="padding:11px 0">Nadie ha fichado en esta obra todavía.</div>'}
-      <div class="row" style="justify-content:space-between;padding-top:12px"><div class="sub">Total obra</div><div class="num" style="font-size:19px">${durMin(minutosObra(o.id))}</div></div>
+      </div>`).join('') || `<div class="tiny" style="padding:11px 0">${rango === 'total' ? 'Nadie ha imputado horas a esta obra todavía.' : 'Sin horas imputadas en este período.'}</div>`}
+      <div class="row" style="justify-content:space-between;padding-top:12px"><div class="sub">Total ${rango === 'total' ? 'obra' : OBRA_RANGOS.find((r) => r[0] === rango)[1].toLowerCase()}</div><div class="num" style="font-size:19px">${durMin(filas.reduce((t, f) => t + f.m, 0))}</div></div>
     </div>
+    ${puedeCrear() ? `<div class="row g8" style="margin-top:10px">
+      <button class="pill grow" data-a="imprimirHorasObra" style="padding:12px;text-align:center;background:var(--tinta);color:#fff">Imprimir PDF</button>
+      <button class="pill grow" data-a="exportarHorasObraCSV" style="padding:12px;text-align:center">Exportar CSV</button>
+    </div>` : ''}
     <div class="lbl" style="font-weight:600;font-size:12px;color:var(--t2);margin:22px 0 10px">Partes de esta obra</div>
     ${partes.length ? partes.map(cardParte).join('') : '<div class="card"><div class="sub">Todavía no hay partes en esta obra.</div></div>'}
     ${puedeCrear() ? `<button class="btn btn-gris" data-a="cerrarObra" data-id="${o.id}" style="margin-top:14px;border-radius:99px">${o.estado === 'Cerrada' ? 'Reabrir obra' : 'Marcar obra como cerrada'}</button>` : ''}
@@ -2147,6 +2197,38 @@ function imprimirPlanilla(userId, mesBase) {
   </div>`;
   setTimeout(() => window.print(), 60);
 }
+const RANGO_LARGO = { hoy: 'Hoy', semana: 'Esta semana', mes: 'Este mes', total: 'Total histórico' };
+function imprimirHorasObra(obraId, rango) {
+  const o = obraById(obraId); if (!o) return;
+  const filas = empleadosDeObra(o.id)
+    .map((x) => ({ x, m: minutosObraRango(o.id, x.id, rango) }))
+    .filter((f) => rango === 'total' || f.m > 0)
+    .sort((a, b) => b.m - a.m);
+  const totalMin = filas.reduce((t, f) => t + f.m, 0);
+  const el = $('#print');
+  el.innerHTML = `<div style="font-family:var(--sans);color:#14170f;max-width:180mm;position:relative;z-index:0">
+    <img src="logo-trans.png" alt="" style="position:absolute;top:110mm;left:50%;transform:translate(-50%,-50%);width:120mm;opacity:.11;z-index:-1;pointer-events:none">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start">
+      <div><img src="logo-trans.png" alt="" style="height:15mm">
+      ${S.cif ? `<div style="font:400 10px var(--mono);color:#666;margin-top:2px">${esc(S.empresa)} · ${esc(S.cif)}</div>` : ''}</div>
+      <div style="text-align:right"><div style="font:600 11px var(--mono);letter-spacing:.1em">HORAS DE OBRA</div>
+      <div style="font:700 15px var(--cond);margin-top:2px">${esc(RANGO_LARGO[rango] || rango)}</div></div>
+    </div>
+    <div style="height:2px;background:#14170f;margin:10px 0 12px"></div>
+    <table style="width:100%;font:400 12px var(--sans);border-collapse:collapse">
+      <tr><td style="padding:2px 0;color:#666;width:28%">Obra</td><td style="font-weight:600">${esc(o.cliente)}</td></tr>
+      <tr><td style="padding:2px 0;color:#666">Dirección</td><td>${esc(o.dir || '—')}</td></tr>
+      <tr><td style="padding:2px 0;color:#666">Estado</td><td>${esc(o.estado)}</td></tr>
+    </table>
+    <div style="font:600 10px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:#666;margin:16px 0 5px">Horas imputadas por empleado</div>
+    <table style="width:100%;font:400 12px var(--sans);border-collapse:collapse">
+      ${filas.map((f) => `<tr><td style="padding:4px 0;border-bottom:1px solid #eee">${esc(f.x.nombre)}</td><td style="text-align:right;border-bottom:1px solid #eee;font-family:var(--mono);font-size:11px">${durMin(f.m)}</td></tr>`).join('') || `<tr><td style="padding:4px 0;color:#666">Sin horas imputadas en este período.</td></tr>`}
+      <tr><td style="padding:6px 0;font-weight:700">Total</td><td style="text-align:right;font-weight:700">${durMin(totalMin)}</td></tr>
+    </table>
+    <div style="font:400 10px var(--sans);color:#666;margin-top:14px">Horas imputadas a esta obra (categoría "Obra" en las imputaciones), no presencia fichada.</div>
+  </div>`;
+  setTimeout(() => window.print(), 60);
+}
 
 /* --- ajustes --- */
 function vAjustes() {
@@ -2621,6 +2703,9 @@ document.addEventListener('click', (e) => {
   if (a === 'editarObra') { e.stopPropagation(); return A.editarObra(d.id); }
   if (a === 'guardarObra') return A.guardarObra();
   if (a === 'cerrarObra') return A.cerrarObra(d.id);
+  if (a === 'obraRango') return A.obraRango(d.r);
+  if (a === 'imprimirHorasObra') return A.imprimirHorasObra();
+  if (a === 'exportarHorasObraCSV') return A.exportarHorasObraCSV();
   if (a === 'pedirFichaje') { e.stopPropagation(); return A.pedirFichaje(d.id); }
   if (a === 'cerrarSheet') return A.cerrarSheet();
   if (a === 'confirmarFichaje') return A.confirmarFichaje();
