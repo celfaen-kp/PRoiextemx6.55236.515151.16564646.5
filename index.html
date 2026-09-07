@@ -1194,18 +1194,23 @@ A.nuevoParteElegir = () => {
   if (abiertas.length === 1) return A.nuevoParte(abiertas[0].id);
   V.sheet = { tipo: 'nuevoParteObra' }; render();
 };
+// Personal y horas sugeridos del parte = imputaciones REALES a esa obra ese
+// día. (No es la presencia: es el tiempo que se imputó a esta obra.)
+function horasDeObraEnFecha(oid, fecha) {
+  const horas = {};
+  S.imputaciones
+    .filter((i) => i.categoria === 'obra' && i.obraId === oid && i.fecha === fecha && i.userId)
+    .forEach((i) => { horas[i.userId] = (horas[i.userId] || 0) + i.minutos / 60; });
+  Object.keys(horas).forEach((k) => { horas[k] = cuarto(horas[k]); });
+  return horas;
+}
 A.nuevoParte = (obraId) => {
   V.sheet = null;
   const oid = obraId || S.obraActiva || (S.obras[0] && S.obras[0].id);
   if (!oid) { toast('Crea primero una obra.'); return; }
   const o = obraById(oid);
-  const fecha = hoyISO();
-  // Personal y horas del parte = imputaciones REALES a esta obra en esta fecha.
-  // (No es la presencia: es el tiempo que el jefe imputó a esta obra.)
-  const impObra = S.imputaciones.filter((i) => i.categoria === 'obra' && i.obraId === oid && i.fecha === fecha && i.userId);
-  const horas = {};
-  impObra.forEach((i) => { horas[i.userId] = (horas[i.userId] || 0) + i.minutos / 60; });
-  Object.keys(horas).forEach((k) => { horas[k] = cuarto(horas[k]); });
+  const fecha = hoyISO(); // por defecto, siempre el día en curso
+  const horas = horasDeObraEnFecha(oid, fecha);
   V.draft = {
     id: uid(), obraId: oid, fecha, autorId: V.user.id,
     desc: '', horas, incluidos: Object.keys(horas),
@@ -1213,6 +1218,18 @@ A.nuevoParte = (obraId) => {
     importe: '', obs: '', firmante: '', firma: null, email: o.email || '',
   };
   V.view = 'p1'; render();
+};
+// Cambiar la fecha del parte (p. ej. hacer hoy un parte de la semana pasada).
+// Las horas se recalculan con las imputaciones de ESE día, que es justo el
+// sentido de cambiar la fecha; lo escrito a mano (trabajos, materiales...) no
+// se toca.
+A.parteFecha = (v) => {
+  if (!v || !V.draft) return;
+  V.draft.fecha = v;
+  const horas = horasDeObraEnFecha(V.draft.obraId, v);
+  V.draft.horas = horas;
+  V.draft.incluidos = Object.keys(horas);
+  render();
 };
 A.pcampo = (k, val) => { V.draft[k] = val; };
 A.togglePersona = (id) => {
@@ -2504,6 +2521,11 @@ function vP1() {
     <div class="tiny" style="color:rgba(255,255,255,.5);margin-top:5px">${esc(o.dir || '')} · ${fechaLarga(d.fecha)}</div>
   </div>
   <div class="scroll pad" style="padding-bottom:110px">
+    <div class="row g10" style="align-items:center;margin-bottom:6px">
+      <div class="lbl">Fecha del parte</div>
+      <input class="inp" data-f="parteFecha" type="date" value="${d.fecha}" max="${hoyISO()}" style="flex:1;padding:11px 12px">
+    </div>
+    <div class="tiny" style="margin-bottom:18px">${d.fecha === hoyISO() ? 'Hoy. Cámbiala si el parte es de otro día.' : 'Parte de un día anterior. Las horas salen de las imputaciones de ese día.'}</div>
     <div class="lbl" style="margin-bottom:8px">Trabajos realizados</div>
     <textarea class="inp" data-f="desc" rows="4" placeholder="Qué se ha hecho hoy en la obra...">${esc(d.desc)}</textarea>
 
@@ -3028,6 +3050,7 @@ document.addEventListener('input', (e) => {
   }
   if (!f) return;
   if (f === 'impFecha') return A.impFecha(t.value);
+  if (f === 'parteFecha') return A.parteFecha(t.value);
   if (f === 'empNombre') { A.empCampo('nombre', t.value); return; }
   if (f === 'empEmail') { A.empCampo('email', t.value); return; }
   if (f === 'empTelefono') { A.empCampo('telefono', t.value); return; }
