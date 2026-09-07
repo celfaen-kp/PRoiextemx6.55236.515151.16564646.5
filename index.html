@@ -1005,7 +1005,61 @@ A.corrGuardar = async () => {
   }
 };
 
-/* --- ADMINISTRACIÓN: planilla mensual de horas reales del empleado --- */
+/* --- Corrección administrativa de un DÍA concreto desde la planilla ---
+   Sirve para el caso real de que alguien se olvide de fichar: el admin abre
+   ese día y añade, corrige o borra los fichajes hasta dejarlo en orden. --- */
+A.planDia = (fecha) => {
+  if (!esAdmin() || !V.planEmp) return;
+  V.sheet = { tipo: 'diaFichajes', userId: V.planEmp, fecha };
+  render();
+};
+A.altaFichaje = (userId, fecha) => {
+  if (!esAdmin()) return;
+  // Se deja la hora en 00:00 a propósito: que la ponga quien sabe cuál fue.
+  // Un horario "de ejemplo" prellenado se guardaría sin mirar y esto es un
+  // registro de jornada, no un borrador.
+  V.sheet = { tipo: 'altaFichaje', userId, fecha, entrada: fecha + 'T00:00', salida: fecha + 'T00:00', err: '', busy: false };
+  render();
+};
+A.altaGuardar = async () => {
+  const s = V.sheet; if (!s || s.tipo !== 'altaFichaje') return;
+  if (!s.entrada) { s.err = 'Falta la hora de entrada.'; return render(); }
+  if (!s.salida || s.salida <= s.entrada) { s.err = 'La salida tiene que ser después de la entrada.'; return render(); }
+  const empId = empIdDeUser(s.userId);
+  if (!empId) { s.err = 'Empleado no vinculado en Supabase.'; return render(); }
+  s.err = ''; s.busy = true; render();
+  if (!navigator.onLine) { s.busy = false; toast('Sin conexión — no se ha guardado'); return render(); }
+  try {
+    await Sysefen.db.crearFichajeManual(empId, {
+      entrada: new Date(s.entrada).toISOString(),
+      salida: new Date(s.salida).toISOString(),
+    });
+    await refrescarDatos();
+    V.sheet = null;
+    toast('Fichaje añadido');
+    render();
+  } catch (e) {
+    s.busy = false;
+    const msg = e && e.message ? e.message : 'error';
+    s.err = /un_abierto_por_empleado/.test(msg)
+      ? 'Esa persona tiene ahora mismo un fichaje abierto. Ciérralo primero y vuelve a intentarlo.'
+      : msg;
+    render();
+  }
+};
+A.borrarFichaje = async (id) => {
+  if (!esAdmin()) return;
+  if (!navigator.onLine) { toast('Sin conexión — no se ha borrado'); return; }
+  try {
+    await Sysefen.db.borrarFichaje(id);
+    await refrescarDatos();
+    toast('Fichaje borrado');
+    render();
+  } catch (e) { toast('No se pudo borrar: ' + (e && e.message ? e.message : 'error')); }
+};
+
+/* --- Planilla mensual de horas reales. Admin la ve de cualquiera; un
+   operario o jefe puede ver la SUYA (es su propio registro de jornada). --- */
 A.abrirPlanilla = (userId) => {
   V.planEmp = userId;
   if (!V.planMes) V.planMes = hoyISO().slice(0, 7);
@@ -1527,7 +1581,7 @@ function render() {
   else if (v === 'imputarEmp') html = vImputarEmpleado();
   else if (v === 'empleados' && esAdmin()) html = vEmpleados();
   else if (v === 'empleado' && esAdmin()) html = vEmpleado();
-  else if (v === 'planilla' && esAdmin()) html = vPlanilla();
+  else if (v === 'planilla' && (esAdmin() || V.planEmp === V.user.id)) html = vPlanilla();
   else if (v === 'ajustes') html = vAjustes();
   else if (v === 'p1') html = vP1();
   else if (v === 'p2') html = vP2();
@@ -1857,6 +1911,11 @@ function vHoras() {
     <div class="card row" data-a="abrirResumenImp" style="margin-bottom:12px;cursor:pointer">
       <div class="grow"><div style="font:600 15px/1 var(--sans)">Resumen por categoría</div>
       <div class="tiny" style="margin-top:5px">Cuánto se usó en obra, despacho, desplazamiento… por día, semana, mes o año</div></div>
+      <div style="font:400 20px/1 var(--sans);color:var(--t3)">›</div>
+    </div>
+    <div class="card row" data-a="abrirPlanilla" data-id="${V.user.id}" style="margin-bottom:12px;cursor:pointer">
+      <div class="grow"><div style="font:600 15px/1 var(--sans)">Mi registro de jornada</div>
+      <div class="tiny" style="margin-top:5px">Mes a mes, día por día, con tus totales y el histórico. Se puede imprimir.</div></div>
       <div style="font:400 20px/1 var(--sans);color:var(--t3)">›</div>
     </div>
     ${esAdmin() ? '<div class="row g8" style="margin-bottom:14px"><button class="pill grow" data-a="exportar" style="padding:13px;text-align:center;background:var(--tinta);color:#fff">Exportar CSV</button><button class="pill grow" data-a="copia" style="padding:13px;text-align:center">Copia de seguridad</button></div>' : ''}
@@ -2358,9 +2417,15 @@ function vPlanilla() {
   const d12 = new Date(); d12.setMonth(d12.getMonth() - 12);
   const total12 = horasEmpleadoDesde(userId, d12.toISOString());
   const porMes = resumenPorMes(userId, 12);
+  // Solo Administración corrige días. Un empleado ve su propio registro,
+  // pero de solo lectura: es su comprobante, no algo que pueda retocar.
+  const editable = esAdmin();
+  const propia = userId === V.user.id;
   return `<div class="hdr-dark">
-    <div class="back" data-a="abrirEmpleado" data-id="${userId}">‹ ${esc(u.nombre)}</div>
-    <div style="font:600 23px/1.1 var(--cond)">Planilla de horas</div>
+    ${propia && !esAdmin()
+      ? '<div class="back" data-a="ir" data-v="horas">‹ Horas</div>'
+      : `<div class="back" data-a="abrirEmpleado" data-id="${userId}">‹ ${esc(u.nombre)}</div>`}
+    <div style="font:600 23px/1.1 var(--cond)">${propia && !esAdmin() ? 'Mi registro de jornada' : 'Planilla de horas'}</div>
     <div class="row" style="justify-content:space-between;align-items:center;margin-top:14px">
       <button class="pill" data-a="planMesNav" data-d="-1" style="background:rgba(255,255,255,.14);color:#fff">‹</button>
       <div style="font:600 16px var(--cond);text-transform:capitalize">${mesLargo(mes)}</div>
@@ -2381,12 +2446,13 @@ function vPlanilla() {
       <div class="row" style="padding:9px 12px;background:rgba(20,23,15,.04);font:600 10px var(--mono);text-transform:uppercase;letter-spacing:.06em;color:var(--t2)">
         <div style="width:38px">Día</div><div class="grow">Entrada / Salida</div><div style="width:52px;text-align:right">Horas</div>
       </div>
-      ${pl.dias.map((x) => `<div class="row" style="padding:9px 12px;border-top:1px solid var(--l1)">
+      ${pl.dias.map((x) => `<div class="row" ${editable ? `data-a="planDia" data-fecha="${x.fecha}"` : ''} style="padding:9px 12px;border-top:1px solid var(--l1)${editable ? ';cursor:pointer' : ''}">
         <div style="width:38px;font:500 13px var(--mono)">${String(x.dd).padStart(2, '0')}</div>
         <div class="grow" style="font:400 13px var(--sans)">${x.min != null || x.estado === 'En curso'
           ? hhmm(x.entrada) + ' – ' + (x.salida ? hhmm(x.salida) : '—')
           : `<span style="color:var(--t3)">${x.estado}</span>`}</div>
         <div style="width:52px;text-align:right;font:500 13px var(--mono)">${x.min != null ? horasLargas(x.min) : (x.estado === 'En curso' ? '…' : '—')}</div>
+        ${editable ? '<div style="width:14px;text-align:right;font:400 15px var(--sans);color:var(--t3)">›</div>' : ''}
       </div>`).join('')}
     </div>
     <div class="card" style="margin-top:12px">
@@ -2814,6 +2880,43 @@ function sheet() {
       </div>
     </div></div>`;
   }
+  if (s.tipo === 'diaFichajes') {
+    const n = userById(s.userId).nombre;
+    const fs = S.fichajes
+      .filter((f) => f.userId === s.userId && fechaLocal(f.entrada) === s.fecha)
+      .sort((a, b) => a.entrada.localeCompare(b.entrada));
+    return `<div class="sheet"><div>
+      <div style="font:600 23px/1.15 var(--cond)">${fechaLarga(s.fecha)}</div>
+      <div class="sub" style="margin-top:4px">${esc(n)}</div>
+      <div class="col g8" style="margin-top:16px;max-height:210px;overflow-y:auto">
+        ${fs.length ? fs.map((f) => `<div class="card row" style="padding:11px 13px">
+          <div class="grow"><div style="font:500 15px var(--sans)">${hhmm(f.entrada)} – ${f.salida ? hhmm(f.salida) : '—'}</div>
+          <div class="tiny" style="margin-top:3px">${f.salida ? durMin(minEntre(f.entrada, f.salida)) : 'jornada abierta'}</div></div>
+          <button class="pill" data-a="abrirCorregirFichaje" data-id="${f.id}">Corregir</button>
+          <button class="pill pill-rojo" data-a="borrarFichaje" data-id="${f.id}">Borrar</button>
+        </div>`).join('') : '<div class="tiny">No hay ningún fichaje este día.</div>'}
+      </div>
+      <button class="btn btn-gris" data-a="altaFichaje" data-id="${s.userId}" data-fecha="${s.fecha}" style="border-radius:14px;margin-top:14px">+ Añadir fichaje</button>
+      <button class="btn btn-gris" data-a="cerrarSheet" style="border-radius:99px;margin-top:8px;opacity:.7">Cerrar</button>
+    </div></div>`;
+  }
+  if (s.tipo === 'altaFichaje') {
+    const n = userById(s.userId).nombre;
+    return `<div class="sheet"><div>
+      <div style="font:600 23px/1.15 var(--cond)">Añadir fichaje (admin)</div>
+      <div class="sub" style="margin-top:6px">${esc(n)} · ${fechaLarga(s.fecha)}</div>
+      <div class="lbl" style="margin:18px 0 7px">Entrada</div>
+      <input class="inp" data-f="corrEntrada" type="datetime-local" value="${s.entrada}">
+      <div class="lbl" style="margin:14px 0 7px">Salida</div>
+      <input class="inp" data-f="corrSalida" type="datetime-local" value="${s.salida}">
+      <div class="tiny" style="margin-top:8px">Corrección administrativa: pon las horas reales de ese día. Queda registrado como fichaje de ${esc(n)}.</div>
+      ${s.err ? `<div class="tiny" style="margin-top:8px;color:var(--rojo)">${esc(s.err)}</div>` : ''}
+      <div class="row g8" style="margin-top:20px">
+        <button class="btn btn-gris" data-a="cerrarSheet" style="border-radius:99px">Cancelar</button>
+        <button class="btn btn-verde" data-a="altaGuardar" style="font-size:14px" ${s.busy ? 'disabled' : ''}>${s.busy ? 'Guardando…' : 'Añadir fichaje'}</button>
+      </div>
+    </div></div>`;
+  }
   if (s.tipo === 'corregirFichaje') {
     const n = userById(s.userId).nombre;
     return `<div class="sheet"><div>
@@ -3075,6 +3178,10 @@ document.addEventListener('click', (e) => {
   if (a === 'adminFichar') { e.stopPropagation(); return A.adminFichar(d.id); }
   if (a === 'adminConfirmarFichaje') return A.adminConfirmarFichaje();
   if (a === 'abrirCorregirFichaje') { e.stopPropagation(); return A.abrirCorregirFichaje(d.id); }
+  if (a === 'planDia') return A.planDia(d.fecha);
+  if (a === 'altaFichaje') return A.altaFichaje(d.id, d.fecha);
+  if (a === 'altaGuardar') return A.altaGuardar();
+  if (a === 'borrarFichaje') { e.stopPropagation(); return A.borrarFichaje(d.id); }
   if (a === 'corrGuardar') return A.corrGuardar();
   if (a === 'abrirPlanilla') { e.stopPropagation(); return A.abrirPlanilla(d.id); }
   if (a === 'planMesNav') return A.planMesNav(d.d);

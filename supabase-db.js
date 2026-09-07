@@ -111,6 +111,23 @@ export async function corregirFichaje(fichajeId, { entrada, salida }) {
     .select().single());
 }
 
+// Alta manual de un fichaje ya cerrado (corrección administrativa: el
+// empleado olvidó fichar ese día). Se inserta y acto seguido se le ponen las
+// horas reales, porque el trigger del servidor fija la entrada al insertar.
+export async function crearFichajeManual(empleadoId, { entrada, salida }) {
+  const nuevo = unwrap(await supabase
+    .from('fichajes')
+    .insert({ empleado_id: empleadoId, obra_id: null })
+    .select().single());
+  return corregirFichaje(nuevo.id, { entrada, salida });
+}
+
+// Borrar un fichaje mal cargado (duplicado, día equivocado). Solo jefe/admin
+// por RLS.
+export async function borrarFichaje(fichajeId) {
+  return unwrap(await supabase.from('fichajes').delete().eq('id', fichajeId).select());
+}
+
 export async function fichajesDelDia(dia) {
   const desde = dia + 'T00:00:00';
   const hasta = dia + 'T23:59:59.999';
@@ -237,7 +254,8 @@ export default {
   listarEmpleados, crearEmpleado, actualizarEmpleado,
   listarObras, crearObra, actualizarObra,
   empleadosDeObra, listarAsignaciones, asignarEmpleadoAObra, quitarEmpleadoDeObra,
-  fichajeAbierto, ficharEntrada, ficharSalida, corregirFichaje, fichajesDelDia, listarFichajes, escucharFichajes,
+  fichajeAbierto, ficharEntrada, ficharSalida, corregirFichaje, crearFichajeManual, borrarFichaje,
+  fichajesDelDia, listarFichajes, escucharFichajes,
   listarPartes, crearParte, actualizarParte, guardarHorasParte, guardarMaterialesParte,
   listarHorasPartes, listarMaterialesPartes,
   listarIncidencias, crearIncidencia,
