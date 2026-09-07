@@ -1582,11 +1582,10 @@ function vObra() {
     <div class="back" data-a="ir" data-v="obras">‹ Obras</div>
     <div style="font:600 27px/1.1 var(--cond)">${esc(o.cliente)}</div>
     <div class="sub" style="color:rgba(255,255,255,.5);margin-top:6px">${esc(o.dir || '')}${o.contacto ? ' · ' + esc(o.contacto) : ''}</div>
-    <div class="row g8" style="margin-top:16px">
-      ${puedeCrear() ? `<button class="pill pill-verde grow" data-a="nuevoParte" data-id="${o.id}" style="padding:14px">Nuevo parte</button>` : ''}
-      <button class="pill grow" data-a="activarObra" style="padding:14px;background:rgba(255,255,255,.12);color:#fff">Fichar aquí</button>
-      ${puedeCrear() ? `<button class="pill" data-a="editarObra" data-id="${o.id}" style="padding:14px;background:rgba(255,255,255,.12);color:#fff">Editar</button>` : ''}
-    </div>
+    ${puedeCrear() ? `<div class="row g8" style="margin-top:16px">
+      <button class="pill pill-verde grow" data-a="nuevoParte" data-id="${o.id}" style="padding:14px">Nuevo parte</button>
+      <button class="pill grow" data-a="editarObra" data-id="${o.id}" style="padding:14px;background:rgba(255,255,255,.12);color:#fff">Editar</button>
+    </div>` : ''}
   </div>
   <div class="scroll pad pb-nav">
     <div class="row" style="justify-content:space-between;align-items:baseline;margin-bottom:10px">
