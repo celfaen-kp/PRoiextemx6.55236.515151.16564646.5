@@ -590,6 +590,9 @@ A.pinTecla = (k) => {
 };
 A.salir = () => {
   V.user = null;
+  V.sheet = null; // si se sale desde el menú del avatar, ese sheet usa yo()
+  // (depende de V.user); sin cerrarlo, el render de después revienta al
+  // intentar leer los datos de un usuario que ya no existe.
   try { sessionStorage.removeItem('ch_user'); } catch (e) {}
   V.view = 'login'; render();
   sysAuth.logout().catch(() => {});
@@ -727,6 +730,7 @@ A.impGrupoObra = (id) => { V.impGrupoObraId = id || null; render(); };
 A.impGrupoReloj = (minutos) => { V.impGrupoMin = Math.max(0, Math.round(Number(minutos) / 15) * 15); render(); };
 A.impGrupoAplicar = async () => {
   if (!puedeCrear() || V.impGrupoBusy) return;
+  sincronizarRuedas();
   if (!navigator.onLine) { toast('Sin conexión — no se ha guardado'); return; }
   const fecha = V.impFecha;
   const cat = V.impGrupoCat || 'obra';
@@ -796,6 +800,7 @@ A.impDelLinea = (i) => {
 };
 A.impGuardar = async () => {
   if (!puedeCrear()) return;
+  sincronizarRuedas();
   if (!navigator.onLine) { toast('Sin conexión — no se ha guardado'); return; }
   const empId = empIdDeUser(V.impEmp);
   if (!empId) { toast('Empleado no vinculado en Supabase.'); return; }
@@ -1101,6 +1106,7 @@ A.pedirFichaje = (userId) => {
   render();
 };
 A.cerrarSheet = () => { V.sheet = null; render(); };
+A.menuUsuario = () => { V.sheet = { tipo: 'menuUsuario' }; render(); };
 
 async function empIdParaFichar(nombre) {
   if (!Object.keys(empIdPorNombre).length) { try { await cargarMapaEmpleados(); } catch (e) {} }
@@ -1223,6 +1229,35 @@ A.horaReloj = (id, minutos) => {
   if (h > 0 && !V.draft.incluidos.includes(id)) V.draft.incluidos.push(id);
   render();
 };
+// "Mismas horas a varios": para el caso típico de que varias personas van y
+// vuelven juntas de la misma obra y hacen las mismas horas — evita poner el
+// mismo número reloj por reloj, persona por persona.
+A.abrirHorasGrupo = () => {
+  V.horasGrupoSel = [...V.draft.incluidos];
+  V.horasGrupoMin = 0;
+  V.sheet = { tipo: 'horasGrupo' };
+  render();
+};
+A.horasGrupoToggle = (id) => {
+  const sel = V.horasGrupoSel || (V.horasGrupoSel = []);
+  const i = sel.indexOf(id);
+  if (i < 0) sel.push(id); else sel.splice(i, 1);
+  render();
+};
+A.horasGrupoReloj = (minutos) => { V.horasGrupoMin = Math.max(0, Math.round(Number(minutos) / 15) * 15); render(); };
+A.horasGrupoAplicar = () => {
+  sincronizarRuedas();
+  const sel = V.horasGrupoSel || [];
+  if (!sel.length) { toast('Selecciona al menos a una persona.'); return; }
+  const h = (V.horasGrupoMin || 0) / 60;
+  sel.forEach((id) => {
+    V.draft.horas[id] = h;
+    if (!V.draft.incluidos.includes(id)) V.draft.incluidos.push(id);
+  });
+  V.sheet = null;
+  toast('Horas aplicadas a ' + sel.length + (sel.length === 1 ? ' persona' : ' personas'));
+  render();
+};
 A.addMat = (nombre) => { V.draft.mats.push({ id: uid(), nombre: nombre || '', cant: '', importe: '', compra: true }); render(); };
 A.quitarMat = (id) => { V.draft.mats = V.draft.mats.filter((m) => m.id !== id); render(); };
 A.toggleCompra = (id) => { const m = V.draft.mats.find((x) => x.id === id); m.compra = !m.compra; render(); };
@@ -1268,6 +1303,7 @@ async function comprimir(file) {
   });
 }
 A.aPaso = (p) => {
+  sincronizarRuedas();
   if (p === 'p2' && !V.draft.desc.trim()) { toast('Describe los trabajos realizados.'); return; }
   if (p === 'p3' && !V.draft.firma) { toast('Falta la firma del cliente.'); return; }
   V.view = p; render();
@@ -1437,7 +1473,10 @@ function render() {
   else if (v === 'ok') html = vOk();
   if (V.user && ['hoy', 'obras', 'obra', 'partes', 'horas', 'imputar', 'empleados', 'ajustes'].includes(v)) html += nav(v);
   if (!navigator.onLine && V.user) html = '<div class="offline">Sin conexión — todo se guarda en el móvil</div>' + html;
-  if (V.sheet) html += sheet();
+  // Red de seguridad: si un sheet revienta al pintarse (p. ej. depende de
+  // datos que cambiaron justo antes, como el usuario tras salir), que se
+  // cierre solo en vez de dejar toda la pantalla congelada sin avisar.
+  if (V.sheet) { try { html += sheet(); } catch (e) { V.sheet = null; } }
   app.innerHTML = html;
   if (V.view === 'p2') montarFirma();
   if (V.view === 'imputarEmp' || V.view === 'imputarGrupo' || V.view === 'p1') montarRelojes();
@@ -1498,7 +1537,7 @@ function vHoy() {
       <div class="row g8"><span class="dot" style="background:${dentro ? '#fff' : 'var(--ambar)'}"></span><div class="lbl" style="color:${dentro ? 'rgba(255,255,255,.72)' : 'var(--ambar)'}">${dentro ? 'Estás dentro' : 'Estás fuera'}</div></div>
       <div class="row g8">
         ${u.rol === 'admin' ? '<span class="badge" style="background:rgba(20,23,15,.85);color:var(--ambar)">Admin</span>' : ''}
-        <div class="av" style="width:32px;height:32px;font-size:13px;background:rgba(255,255,255,.16);color:#fff">${esc(ini(u.nombre))}</div>
+        <div class="av" data-a="menuUsuario" style="width:32px;height:32px;font-size:13px;background:rgba(255,255,255,.16);color:#fff;cursor:pointer">${esc(ini(u.nombre))}</div>
       </div>
     </div>
     <div style="font:600 60px/1 var(--cond);margin-top:10px;color:#fff">${dentro ? durMin(minEntre(f.entrada, new Date().toISOString())) : hhmm(new Date().toISOString())}</div>
@@ -1550,7 +1589,7 @@ function vHoyAdmin(u) {
     ${marcaSysefen(true)}
     <div class="row" style="justify-content:space-between">
       <div class="lbl" style="color:var(--ambar)">Administración</div>
-      <div class="av" style="width:32px;height:32px;font-size:13px;background:rgba(255,255,255,.16);color:#fff">${esc(ini(u.nombre))}</div>
+      <div class="av" data-a="menuUsuario" style="width:32px;height:32px;font-size:13px;background:rgba(255,255,255,.16);color:#fff;cursor:pointer">${esc(ini(u.nombre))}</div>
     </div>
     <div style="font:600 44px/1.05 var(--cond);margin-top:14px;color:#fff">${dentroN} <span style="font:400 16px var(--sans);color:rgba(255,255,255,.5)">de ${equipo().length} fichados ahora</span></div>
     <div style="font:400 13px/1.4 var(--sans);margin-top:8px;color:rgba(255,255,255,.55)">Gestión. No necesitas fichar. Puedes consultar y corregir los fichajes del equipo.</div>
@@ -1823,22 +1862,50 @@ function relojHTML(scope, key, valMin, maxMin, editable, paso) {
     </div>
   </div>`;
 }
+// Item más cercano al centro visible de una columna de rueda (el "elegido").
+function ruedaCentrado(col) {
+  const centro = col.scrollTop + col.clientHeight / 2;
+  let best = null, bestD = Infinity;
+  col.querySelectorAll('.rueda-item').forEach((it) => {
+    const d = Math.abs((it.offsetTop + it.offsetHeight / 2) - centro);
+    if (d < bestD) { bestD = d; best = it; }
+  });
+  return best;
+}
+// Aplica el valor de una rueda al sitio de V donde vive (mismo destino que el
+// commit de montarRelojes, pero sin pasar por A.*: lo usa sincronizarRuedas
+// para escribir directo en el draft sin disparar un render a mitad de otra
+// acción que ya va a renderizar por su cuenta).
+function ruedaEscribir(el, v) {
+  const scope = el.dataset.scope, key = el.dataset.key;
+  if (scope === 'imp') { const l = V.impDraft && V.impDraft[+key]; if (l) l.minutos = v; }
+  else if (scope === 'impGrupo') V.impGrupoMin = v;
+  else if (scope === 'parte') { if (V.draft) V.draft.horas[key] = v / 60; }
+  else if (scope === 'parteGrupo') V.horasGrupoMin = v;
+}
+// Fuerza a leer AHORA MISMO la posición real de cada rueda montada y la
+// vuelca a su sitio en V, sin esperar los 140ms de "asentado" del scroll.
+// Se llama justo antes de cualquier acción que lea esos valores para actuar
+// (Guardar, Aplicar, Continuar...): si el usuario arrastró la rueda y tocó
+// ese botón enseguida, sin esto se leería el valor de ANTES de arrastrar.
+function sincronizarRuedas() {
+  document.querySelectorAll('.rueda:not(.ro)').forEach((el) => {
+    const max = +el.dataset.max;
+    const [colH, colM] = el.querySelectorAll('.rueda-col');
+    if (!colH || !colM) return;
+    const hEl = ruedaCentrado(colH), mEl = ruedaCentrado(colM);
+    if (!hEl || !mEl) return;
+    const v = Math.max(0, Math.min(max, (+hEl.dataset.v) * 60 + (+mEl.dataset.v)));
+    ruedaEscribir(el, v);
+  });
+}
 function montarRelojes() {
   document.querySelectorAll('.rueda:not(.ro)').forEach((el) => {
     const max = +el.dataset.max;
     const [colH, colM] = el.querySelectorAll('.rueda-col');
     if (!colH || !colM) return;
-    const centrado = (col) => {
-      const centro = col.scrollTop + col.clientHeight / 2;
-      let best = null, bestD = Infinity;
-      col.querySelectorAll('.rueda-item').forEach((it) => {
-        const d = Math.abs((it.offsetTop + it.offsetHeight / 2) - centro);
-        if (d < bestD) { bestD = d; best = it; }
-      });
-      return best;
-    };
     const pintar = () => [colH, colM].forEach((col) => {
-      const activo = centrado(col);
+      const activo = ruedaCentrado(col);
       col.querySelectorAll('.rueda-item').forEach((it) => it.classList.toggle('on', it === activo));
     });
     const posicionar = (col, v) => {
@@ -1853,7 +1920,14 @@ function montarRelojes() {
       pintar();
       clearTimeout(t);
       t = setTimeout(() => {
-        const h = +centrado(colH).dataset.v, m = +centrado(colM).dataset.v;
+        // Si mientras se esperaba este ajuste (140ms) ya hubo otro render
+        // (p. ej. "+ Añadir categoría"), esta rueda quedó desmontada del
+        // documento: seguir y confirmar un valor leído de un elemento
+        // suelto pisaría con un dato erróneo la línea que ya se había
+        // guardado bien. Si ya no está en el documento, no hacer nada: el
+        // valor correcto ya quedó fijado por el render que la reemplazó.
+        if (!colH.isConnected || !colM.isConnected) return;
+        const h = +ruedaCentrado(colH).dataset.v, m = +ruedaCentrado(colM).dataset.v;
         const v = Math.max(0, Math.min(max, h * 60 + m));
         posicionar(colH, Math.min(Math.floor(max / 60), Math.floor(v / 60)));
         posicionar(colM, v % 60);
@@ -1861,6 +1935,7 @@ function montarRelojes() {
         if (el.dataset.scope === 'imp') A.impReloj(+el.dataset.key, v);
         else if (el.dataset.scope === 'impGrupo') A.impGrupoReloj(v);
         else if (el.dataset.scope === 'parte') A.horaReloj(el.dataset.key, v);
+        else if (el.dataset.scope === 'parteGrupo') A.horasGrupoReloj(v);
       }, 140);
     };
     colH.addEventListener('scroll', onScroll, { passive: true });
@@ -2389,8 +2464,12 @@ function vP1() {
     <div class="lbl" style="margin-bottom:8px">Trabajos realizados</div>
     <textarea class="inp" data-f="desc" rows="4" placeholder="Qué se ha hecho hoy en la obra...">${esc(d.desc)}</textarea>
 
-    <div class="row" style="justify-content:space-between;margin:22px 0 8px">
-      <div class="lbl">Personal y horas</div><div class="tiny">pasos de 15 min</div>
+    <div class="row" style="justify-content:space-between;margin:22px 0 8px;align-items:baseline">
+      <div class="lbl">Personal y horas</div>
+      <div class="row g8">
+        <div data-a="abrirHorasGrupo" style="font:500 12px var(--sans);color:var(--verde-o);cursor:pointer">Mismas horas a varios</div>
+        <div class="tiny">pasos de 15 min</div>
+      </div>
     </div>
     <div class="card" style="padding:0;overflow:hidden">
       ${equipo().map((uu, i) => { const id = uu.id; const on = d.incluidos.includes(id); return `<div style="padding:12px 13px;${i ? 'border-top:1px solid var(--l1)' : ''}">
@@ -2573,6 +2652,37 @@ function nav(v) {
 /* --- sheets --- */
 function sheet() {
   const s = V.sheet;
+  if (s.tipo === 'menuUsuario') {
+    const u = yo();
+    return `<div class="sheet"><div>
+      <div class="av" style="width:52px;height:52px;font-size:22px;background:rgba(20,23,15,.08);color:var(--tinta)">${esc(ini(u.nombre))}</div>
+      <div style="font:600 22px/1.15 var(--cond);margin-top:14px">${esc(u.nombre)}</div>
+      <div class="sub" style="margin-top:4px">${u.rol === 'admin' ? 'Administración' : u.rol === 'jefe' ? 'Jefe de obra' : 'Operario'}</div>
+      <div class="row g8" style="margin-top:20px">
+        <button class="btn btn-gris" data-a="cerrarSheet" style="border-radius:99px">Cancelar</button>
+        <button class="btn btn-rojo" data-a="salir" style="font-size:14px">Salir</button>
+      </div>
+    </div></div>`;
+  }
+  if (s.tipo === 'horasGrupo') {
+    const sel = V.horasGrupoSel || [];
+    const min = V.horasGrupoMin || 0;
+    return `<div class="sheet"><div>
+      <div style="font:600 22px/1.15 var(--cond)">Mismas horas para varios</div>
+      <div class="sub" style="margin-top:6px">Marca a quiénes les aplica y pon el tiempo una sola vez.</div>
+      <div class="col g8" style="margin-top:14px;max-height:180px;overflow-y:auto">
+        ${equipo().map((uu) => { const on = sel.includes(uu.id); return `<div class="row" data-a="horasGrupoToggle" data-id="${uu.id}" style="padding:9px 4px;cursor:pointer">
+          <div style="width:22px;height:22px;border-radius:7px;flex:none;display:flex;align-items:center;justify-content:center;font:700 12px var(--sans);color:#fff;background:${on ? 'var(--verde)' : 'transparent'};border:1.5px solid ${on ? 'var(--verde)' : 'rgba(20,23,15,.25)'}">${on ? '✓' : ''}</div>
+          <div class="grow" style="font:500 15px var(--sans)">${esc(uu.nombre)}</div>
+        </div>`; }).join('')}
+      </div>
+      ${relojHTML('parteGrupo', 0, min, RELOJ_MAX_DEFECTO, true, 15)}
+      <div class="row g8" style="margin-top:16px">
+        <button class="btn btn-gris" data-a="cerrarSheet" style="border-radius:99px">Cancelar</button>
+        <button class="btn btn-verde" data-a="horasGrupoAplicar" style="font-size:14px" ${sel.length ? '' : 'disabled'}>Aplicar a ${sel.length}</button>
+      </div>
+    </div></div>`;
+  }
   if (s.tipo === 'adminFichaje') {
     const n = userById(s.userId).nombre;
     const fx = fichajeAbierto(s.userId);
@@ -2800,6 +2910,10 @@ document.addEventListener('click', (e) => {
   if (a === 'nuevoParteElegir') return A.nuevoParteElegir();
   if (a === 'nuevoParte') { e.stopPropagation(); return A.nuevoParte(d.id); }
   if (a === 'togglePersona') return A.togglePersona(d.id);
+  if (a === 'abrirHorasGrupo') return A.abrirHorasGrupo();
+  if (a === 'horasGrupoToggle') return A.horasGrupoToggle(d.id);
+  if (a === 'horasGrupoAplicar') return A.horasGrupoAplicar();
+  if (a === 'menuUsuario') return A.menuUsuario();
   if (a === 'horaMas') return A.horaMas(d.id);
   if (a === 'horaMenos') return A.horaMenos(d.id);
   if (a === 'addMat') return A.addMat(d.n);
