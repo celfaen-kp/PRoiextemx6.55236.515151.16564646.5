@@ -203,7 +203,7 @@ import * as sysDB from './supabase-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '8.2'; // versión visible de la app (única fuente)
+const APP_VERSION = '8.3'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -1610,7 +1610,11 @@ function enviarEmail(p) {
     lineas.push('', 'MATERIALES UTILIZADOS', ...mats.map((m) => '- ' + m.nombre + (m.cant ? ' — ' + m.cant : '')));
   }
   if (p.nivel !== 'Sin incidencias') lineas.push('', 'INCIDENCIA (' + p.nivel + ')', p.inc || '—');
-  lineas.push('', 'Firmado por ' + (p.firmante || 'el cliente') + ' el ' + fechaLarga(p.fecha) + '.', '', 'Se adjunta el PDF del parte firmado.');
+  // No se promete un adjunto: esto es un `mailto:`, que abre el borrador en la
+  // app de correo del móvil y NO puede llevar archivos. Decir "se adjunta el
+  // PDF" hacía que el cliente recibiera un correo prometiendo algo que no iba.
+  // Cuando la app genere el PDF y lo envíe desde el servidor, irá de verdad.
+  lineas.push('', 'Firmado por ' + (p.firmante || 'el cliente') + ' el ' + fechaLarga(p.fecha) + '.', '', 'Si necesita el PDF firmado, respóndanos a este correo y se lo hacemos llegar.');
   const dest = [p.email, S.emailCopia].filter(Boolean).join(',');
   const url = 'mailto:' + encodeURIComponent(dest) + '?subject=' + encodeURIComponent('Parte de trabajo ' + p.ref + ' — ' + o.cliente) + '&body=' + encodeURIComponent(lineas.join('\n'));
   location.href = url;
@@ -3280,7 +3284,7 @@ function vOk() {
     <img src="logo-blanco.png" alt="" style="width:150px;max-width:52%;margin-bottom:26px">
     <div class="av" style="width:78px;height:78px;background:#fff;color:var(--verde-o);font-size:34px">✓</div>
     <div style="font:600 30px/1.1 var(--cond);color:#fff;margin-top:22px">Parte guardado</div>
-    <div style="font:400 15px/1.5 var(--sans);color:rgba(255,255,255,.85);margin-top:10px;max-width:260px">${esc(p.ref)} firmado por el cliente${p.estado === 'enviado' ? ' y enviado a ' + esc(p.email || 'el cliente') : ''}.</div>
+    <div style="font:400 15px/1.5 var(--sans);color:rgba(255,255,255,.85);margin-top:10px;max-width:260px">${esc(p.ref)} firmado por el cliente${p.estado === 'enviado' ? '. Te hemos abierto el correo con el borrador para ' + esc(p.email || 'el cliente') + ': revísalo y dale a enviar' : ''}.</div>
     <button class="pill" data-a="verPdf" data-id="${p.id}" style="margin-top:26px;padding:16px 24px;background:rgba(255,255,255,.22);color:#fff">Ver / guardar PDF</button>
     <button class="pill" data-a="ir" data-v="hoy" style="margin-top:10px;padding:16px 24px;background:rgba(255,255,255,.22);color:#fff">Volver al inicio</button>
   </div>`;
