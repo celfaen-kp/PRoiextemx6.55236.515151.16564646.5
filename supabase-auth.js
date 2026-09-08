@@ -88,6 +88,26 @@ export async function empleadoActual() {
   return data;
 }
 
+// Cambia el PIN de QUIEN TIENE LA SESIÓN ABIERTA. El PIN de verdad es la
+// contraseña de Supabase Auth, así que esto lo cambia realmente (la copia de
+// `S.users` en el móvil no pinta nada en el login).
+// Se pide el PIN actual a propósito: el móvil suele quedar desbloqueado.
+//
+// Cambiar el PIN de OTRA persona no se puede desde aquí: con la clave pública
+// (anon) Supabase solo deja tocar la contraseña propia. Hace falta la clave
+// service_role, que no debe vivir nunca en la app — sería una función de
+// servidor (Edge Function) o hacerlo a mano en el panel de Supabase.
+export async function cambiarPinPropio(pinActual, pinNuevo) {
+  if (!/^\d{4}$/.test(String(pinNuevo).trim())) throw new Error('El PIN nuevo son 4 números.');
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user || !user.email) throw new Error('No hay sesión abierta.');
+  const prueba = await supabase.auth.signInWithPassword({ email: user.email, password: claveInterna(pinActual) });
+  if (prueba.error) throw new Error('El PIN actual no es correcto.');
+  const { error } = await supabase.auth.updateUser({ password: claveInterna(pinNuevo) });
+  if (error) throw new Error(error.message);
+  return true;
+}
+
 // cb(session) cada vez que cambia la sesión (login/logout/refresh).
 // Devuelve función para cancelar la suscripción.
 export function onAuthChange(cb) {
@@ -104,5 +124,6 @@ export default {
   sesionActual,
   usuarioActual,
   empleadoActual,
+  cambiarPinPropio,
   onAuthChange,
 };

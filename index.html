@@ -130,6 +130,10 @@ a:hover{color:var(--tinta)}
 @keyframes fade{from{opacity:0}}
 @keyframes up{from{transform:translateY(18px)}}
 .toast{position:fixed;left:20px;right:20px;top:calc(56px + var(--safe-t));max-width:520px;margin:0 auto;background:var(--tinta);color:#fff;padding:14px 16px;border-radius:14px;font:500 14px/1.4 var(--sans);z-index:70;box-shadow:0 8px 24px rgba(0,0,0,.25);animation:toastIn .2s ease-out}
+/* Aviso de error: rojo, más grande y con temblor, para que no pase inadvertido
+   cuando bloquea una acción (falta la descripción, falta la firma…). */
+.toast.err{background:var(--rojo);font:600 15px/1.35 var(--sans);padding:15px 17px;box-shadow:0 10px 30px rgba(168,64,42,.45);display:flex;gap:10px;align-items:flex-start}
+.toast.err::before{content:'!';flex:none;width:21px;height:21px;border-radius:99px;background:#fff;color:var(--rojo);font:700 14px/21px var(--sans);text-align:center}
 @keyframes toastIn{from{opacity:0;transform:translateY(-10px)}}
 .offline{flex:none;background:var(--ambar);color:var(--tinta);font:500 12px/1 var(--sans);text-align:center;padding:7px}
 
@@ -199,7 +203,7 @@ import * as sysDB from './supabase-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '7.5'; // versión visible de la app (única fuente)
+const APP_VERSION = '7.6'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -245,7 +249,7 @@ function save() {
   clearTimeout(guardando);
   guardando = setTimeout(() => {
     try { localStorage.setItem(KEY, JSON.stringify(Object.assign({}, S, { fichajes: [], obras: [], imputaciones: [], partes: [] }))); }
-    catch (e) { toast('No hay espacio en el móvil. Borra algún adjunto antiguo.'); }
+    catch (e) { avisar('No hay espacio en el móvil. Borra algún adjunto antiguo.'); }
   }, 120);
 }
 
@@ -585,7 +589,7 @@ A.pinTecla = (k) => {
       refrescarDatos().then(render);
     }).catch((err) => {
       V.pinBusy = false; V.err = true; V.pin = '';
-      if (err && err.message && !/PIN incorrecto/.test(err.message)) toast(err.message);
+      if (err && err.message && !/PIN incorrecto/.test(err.message)) avisar(err.message);
       render();
       setTimeout(() => { V.err = false; render(); }, 400);
     });
@@ -773,17 +777,17 @@ A.impGrupoReloj = (i, minutos) => {
 A.impGrupoGuardar = async () => {
   if (!puedeCrear() || V.impGrupoBusy) return;
   sincronizarRuedas();
-  if (!navigator.onLine) { toast('Sin conexión — no se ha guardado'); return; }
+  if (!navigator.onLine) { avisar('Sin conexión — no se ha guardado'); return; }
   const fecha = V.impFecha;
   const lineas = (V.impGrupoLineas || []).filter((l) => (l.minutos || 0) > 0);
-  if (!lineas.length) { toast('Pon algo de tiempo en alguna categoría.'); return; }
-  if (lineas.some((l) => l.categoria === 'obra' && !l.obraId)) { toast('Elige la obra en las líneas de tipo Obra.'); return; }
+  if (!lineas.length) { avisar('Pon algo de tiempo en alguna categoría.'); return; }
+  if (lineas.some((l) => l.categoria === 'obra' && !l.obraId)) { avisar('Elige la obra en las líneas de tipo Obra.'); return; }
   const cand = impGrupoCandidatos(fecha);
   const seleccionados = cand.filter((x) => (V.impGrupoSel || []).includes(x.u.id));
-  if (!seleccionados.length) { toast('Selecciona al menos a una persona.'); return; }
+  if (!seleccionados.length) { avisar('Selecciona al menos a una persona.'); return; }
   const total = lineas.reduce((t, l) => t + l.minutos, 0);
   const excede = seleccionados.find((x) => total > x.restante);
-  if (excede) { toast(excede.u.nombre + ' solo tiene ' + durMin(excede.restante) + ' pendiente.'); return; }
+  if (excede) { avisar(excede.u.nombre + ' solo tiene ' + durMin(excede.restante) + ' pendiente.'); return; }
   const mio = miEmpId();
   const filas = [];
   seleccionados.forEach((x) => {
@@ -805,7 +809,7 @@ A.impGrupoGuardar = async () => {
     V.impGrupoSel = (V.impGrupoSel || []).filter((id) => cand2.some((x) => x.u.id === id));
     impGrupoReiniciarLineas();
   } catch (e) {
-    toast('No se pudo guardar: ' + (e && e.message ? e.message : 'error'));
+    avisar('No se pudo guardar: ' + (e && e.message ? e.message : 'error'));
   } finally {
     V.impGrupoBusy = false; render();
   }
@@ -841,15 +845,15 @@ A.impDelLinea = (i) => {
 A.impGuardar = async () => {
   if (!puedeCrear()) return;
   sincronizarRuedas();
-  if (!navigator.onLine) { toast('Sin conexión — no se ha guardado'); return; }
+  if (!navigator.onLine) { avisar('Sin conexión — no se ha guardado'); return; }
   const empId = empIdDeUser(V.impEmp);
-  if (!empId) { toast('Empleado no vinculado en Supabase.'); return; }
+  if (!empId) { avisar('Empleado no vinculado en Supabase.'); return; }
   const lineas = V.impDraft || [];
-  if (lineas.some((l) => l.categoria === 'obra' && !l.obraId)) { toast('Elige la obra en las líneas de tipo Obra.'); return; }
+  if (lineas.some((l) => l.categoria === 'obra' && !l.obraId)) { avisar('Elige la obra en las líneas de tipo Obra.'); return; }
   const disp = disponibleImputar(V.impEmp, V.impFecha);
-  if (disp <= 0) { toast('Ese empleado no tiene jornada fichada y cerrada ese día.'); return; }
+  if (disp <= 0) { avisar('Ese empleado no tiene jornada fichada y cerrada ese día.'); return; }
   const total = lineas.reduce((t, l) => t + (l.minutos || 0), 0);
-  if (total > disp) { toast('Excede la disponibilidad en ' + durMin(total - disp) + '. Disponible: ' + durMin(disp) + '.'); return; }
+  if (total > disp) { avisar('Excede la disponibilidad en ' + durMin(total - disp) + '. Disponible: ' + durMin(disp) + '.'); return; }
   const mio = miEmpId();
   // Estrategia simple y robusta frente al trigger de "no superar presencia":
   // se borran TODAS las líneas de ese empleado/día y se reinsertan las nuevas
@@ -877,7 +881,7 @@ A.impGuardar = async () => {
     A.volverImputar();
   } catch (e) {
     V.impBusy = false;
-    toast('No se pudo guardar: ' + (e && e.message ? e.message : 'error'));
+    avisar('No se pudo guardar: ' + (e && e.message ? e.message : 'error'));
     await refrescarDatos(); render();
   }
 };
@@ -905,8 +909,8 @@ A.empToggleActivo = () => { if (V.empDraft) { V.empDraft.activo = !V.empDraft.ac
 A.empGuardar = async () => {
   if (!esAdmin()) return;
   const d = V.empDraft; if (!d) return;
-  if (!d.nombre.trim()) { toast('Pon el nombre.'); return; }
-  if (!navigator.onLine) { toast('Sin conexión — no se ha guardado.'); return; }
+  if (!d.nombre.trim()) { avisar('Pon el nombre.'); return; }
+  if (!navigator.onLine) { avisar('Sin conexión — no se ha guardado.'); return; }
   if (d.nuevo && !d.email.trim()) d.email = emailSugerido(d.nombre);
   const campos = {
     nombre: d.nombre.trim(),
@@ -933,7 +937,7 @@ A.empGuardar = async () => {
     V.view = 'empleados'; V.empEmp = null; V.empDraft = null; render();
   } catch (e) {
     V.empBusy = false;
-    toast('No se pudo guardar: ' + (e && e.message ? e.message : 'error'));
+    avisar('No se pudo guardar: ' + (e && e.message ? e.message : 'error'));
     render();
   }
 };
@@ -948,26 +952,26 @@ A.adminFichar = (userId) => {
 A.adminConfirmarFichaje = async () => {
   const { userId, salida } = V.sheet;
   V.sheet = null; render();
-  if (!navigator.onLine) { toast('Sin conexión.'); return; }
+  if (!navigator.onLine) { avisar('Sin conexión.'); return; }
   const empId = empIdDeUser(userId);
-  if (!empId) { toast('Empleado no vinculado.'); return; }
+  if (!empId) { avisar('Empleado no vinculado.'); return; }
   try {
     if (salida) {
       const abierto = await Sysefen.db.fichajeAbierto(empId);
-      if (!abierto) { toast('Ese empleado no tiene ningún fichaje abierto.'); await refrescarDatos(); return render(); }
+      if (!abierto) { avisar('Ese empleado no tiene ningún fichaje abierto.'); await refrescarDatos(); return render(); }
       const cerrado = await Sysefen.db.ficharSalida(abierto.id);
       await refrescarDatos();
       toast(userById(userId).nombre + ' — salida registrada ' + hhmm(cerrado.salida));
     } else {
       const abierto = await Sysefen.db.fichajeAbierto(empId);
-      if (abierto) { toast('Ese empleado ya tiene un fichaje abierto.'); await refrescarDatos(); return render(); }
+      if (abierto) { avisar('Ese empleado ya tiene un fichaje abierto.'); await refrescarDatos(); return render(); }
       const nuevo = await Sysefen.db.ficharEntrada(empId, null);
       await refrescarDatos();
       toast(userById(userId).nombre + ' — entrada registrada ' + hhmm(nuevo.entrada));
     }
     render();
   } catch (e) {
-    toast('No se pudo registrar el fichaje: ' + (e && e.message ? e.message : 'error'));
+    avisar('No se pudo registrar el fichaje: ' + (e && e.message ? e.message : 'error'));
     await refrescarDatos(); render();
   }
 };
@@ -993,7 +997,7 @@ A.corrGuardar = async () => {
   if (!s.entrada) { s.err = 'Falta la hora de entrada.'; return render(); }
   if (s.salida && s.salida <= s.entrada) { s.err = 'La salida tiene que ser después de la entrada.'; return render(); }
   s.err = ''; s.busy = true; render();
-  if (!navigator.onLine) { s.busy = false; toast('Sin conexión — no se ha guardado'); return render(); }
+  if (!navigator.onLine) { s.busy = false; avisar('Sin conexión — no se ha guardado'); return render(); }
   try {
     await Sysefen.db.corregirFichaje(s.id, {
       entrada: new Date(s.entrada).toISOString(),
@@ -1005,7 +1009,7 @@ A.corrGuardar = async () => {
     render();
   } catch (e) {
     s.busy = false;
-    toast('No se pudo guardar: ' + (e && e.message ? e.message : 'error'));
+    avisar('No se pudo guardar: ' + (e && e.message ? e.message : 'error'));
     await refrescarDatos(); render();
   }
 };
@@ -1033,7 +1037,7 @@ A.altaGuardar = async () => {
   const empId = empIdDeUser(s.userId);
   if (!empId) { s.err = 'Empleado no vinculado en Supabase.'; return render(); }
   s.err = ''; s.busy = true; render();
-  if (!navigator.onLine) { s.busy = false; toast('Sin conexión — no se ha guardado'); return render(); }
+  if (!navigator.onLine) { s.busy = false; avisar('Sin conexión — no se ha guardado'); return render(); }
   try {
     await Sysefen.db.crearFichajeManual(empId, {
       entrada: new Date(s.entrada).toISOString(),
@@ -1054,13 +1058,13 @@ A.altaGuardar = async () => {
 };
 A.borrarFichaje = async (id) => {
   if (!esAdmin()) return;
-  if (!navigator.onLine) { toast('Sin conexión — no se ha borrado'); return; }
+  if (!navigator.onLine) { avisar('Sin conexión — no se ha borrado'); return; }
   try {
     await Sysefen.db.borrarFichaje(id);
     await refrescarDatos();
     toast('Fichaje borrado');
     render();
-  } catch (e) { toast('No se pudo borrar: ' + (e && e.message ? e.message : 'error')); }
+  } catch (e) { avisar('No se pudo borrar: ' + (e && e.message ? e.message : 'error')); }
 };
 
 /* --- Planilla mensual de horas reales. Admin la ve de cualquiera; un
@@ -1085,11 +1089,15 @@ A.abrirRangoPlanilla = (modo) => { V.sheet = { tipo: 'rangoPlanilla', modo }; re
 A.planillaSalida = (rango) => {
   const modo = V.sheet && V.sheet.modo;
   V.planRango = rango;
-  V.sheet = null;
+  if (modo === 'csv') { V.sheet = null; render(); return A.exportarPlanillaCSV(); }
+  // El PDF es un documento que se firma: antes de imprimir, el trabajador
+  // firma en pantalla. El sello de la empresa va puesto de serie.
+  V.planFirma = '';
+  V.sheet = { tipo: 'firmaPlanilla' };
   render();
-  if (modo === 'csv') A.exportarPlanillaCSV();
-  else A.imprimirPlanilla();
 };
+A.repetirFirmaPlanilla = () => { V.planFirma = ''; render(); };
+A.imprimirPlanillaFirmada = () => { V.sheet = null; render(); imprimirPlanilla(V.planEmp, V.planMes); };
 A.imprimirPlanilla = () => { imprimirPlanilla(V.planEmp, V.planMes); };
 // Lista de meses 'YYYY-MM' que cubre el rango elegido (mes / año / historial).
 // 'ano': todo el año del mes que se está viendo, sin pasarse del mes actual.
@@ -1203,9 +1211,9 @@ function resumenCategorias(rango) {
 
 // FICHAJE SIN OBRA: entrada y salida solo registran presencia. No se pregunta obra.
 A.pedirFichaje = (userId) => {
-  if (esAdmin()) { toast('Administración no ficha. Puedes ver y corregir los fichajes del equipo.'); return; }
+  if (esAdmin()) { avisar('Administración no ficha. Puedes ver y corregir los fichajes del equipo.'); return; }
   const uu = userById(userId);
-  if (uu && uu.activo === false) { toast('Empleado inactivo: no puede fichar.'); return; }
+  if (uu && uu.activo === false) { avisar('Empleado inactivo: no puede fichar.'); return; }
   const f = fichajeAbierto(userId);
   V.sheet = { tipo: 'fichaje', userId, salida: !!f, propio: userId === V.user.id };
   render();
@@ -1223,13 +1231,13 @@ A.confirmarFichaje = async () => {
   const { userId, salida } = V.sheet;
   const nombre = userById(userId).nombre;
   V.sheet = null; render();
-  if (!navigator.onLine) { toast('Sin conexión — el fichaje no se ha guardado'); return; }
+  if (!navigator.onLine) { avisar('Sin conexión — el fichaje no se ha guardado'); return; }
   const empId = await empIdParaFichar(nombre);
-  if (!empId) { toast('Ese empleado no está vinculado en Supabase.'); return; }
+  if (!empId) { avisar('Ese empleado no está vinculado en Supabase.'); return; }
   try {
     if (salida) {
       const abierto = await Sysefen.db.fichajeAbierto(empId);
-      if (!abierto) { toast('No hay ningún fichaje abierto.'); await refrescarDatos(); return render(); }
+      if (!abierto) { avisar('No hay ningún fichaje abierto.'); await refrescarDatos(); return render(); }
       const cerrado = await Sysefen.db.ficharSalida(abierto.id);
       await refrescarDatos();
       toast(nombre + ' — salida ' + hhmm(cerrado.salida));
@@ -1242,7 +1250,7 @@ A.confirmarFichaje = async () => {
     }
     render();
   } catch (e) {
-    toast('No se pudo fichar: ' + (e && e.message ? e.message : 'error'));
+    avisar('No se pudo fichar: ' + (e && e.message ? e.message : 'error'));
     await refrescarDatos(); render();
   }
 };
@@ -1252,8 +1260,8 @@ A.nuevaObra = () => { V.draft = { cliente: '', dir: '', email: '' }; V.view = 'a
 A.editarObra = (id) => { const o = obraById(id); if (!o) return; V.draft = { id: o.id, cliente: o.cliente, dir: o.dir, email: o.email }; V.view = 'alta'; render(); };
 A.guardarObra = async () => {
   const d = V.draft;
-  if (!d.cliente.trim()) { toast('Pon al menos el nombre del cliente.'); return; }
-  if (!navigator.onLine) { toast('Sin conexión — la obra no se ha guardado'); return; }
+  if (!d.cliente.trim()) { avisar('Pon al menos el nombre del cliente.'); return; }
+  if (!navigator.onLine) { avisar('Sin conexión — la obra no se ha guardado'); return; }
   const campos = { nombre: d.cliente.trim(), direccion: d.dir || null, email_cliente: d.email || null };
   try {
     if (d.id) {
@@ -1265,15 +1273,15 @@ A.guardarObra = async () => {
     await sincronizarObras();
     V.draft = null; V.view = 'obras'; toast('Obra guardada'); render();
   } catch (e) {
-    toast('No se pudo guardar la obra: ' + (e && e.message ? e.message : 'error'));
+    avisar('No se pudo guardar la obra: ' + (e && e.message ? e.message : 'error'));
   }
 };
 A.cerrarObra = async (id) => {
   const o = obraById(id); if (!o) return;
-  if (!navigator.onLine) { toast('Sin conexión — no se ha cambiado el estado'); return; }
+  if (!navigator.onLine) { avisar('Sin conexión — no se ha cambiado el estado'); return; }
   const nuevo = o.estado === 'Cerrada' ? 'En curso' : 'Cerrada';
   try { await Sysefen.db.actualizarObra(id, { estado: nuevo }); await sincronizarObras(); render(); }
-  catch (e) { toast('No se pudo cambiar el estado: ' + (e && e.message ? e.message : 'error')); }
+  catch (e) { avisar('No se pudo cambiar el estado: ' + (e && e.message ? e.message : 'error')); }
 };
 A.imprimirHorasObra = () => { imprimirHorasObra(V.obraId, V.obraRango || 'total'); };
 A.exportarHorasObraCSV = () => {
@@ -1295,7 +1303,7 @@ A.exportarHorasObraCSV = () => {
 // Elegir obra para el parte desde la sección Partes (sin pasar por Home).
 A.nuevoParteElegir = () => {
   const abiertas = S.obras.filter((o) => o.estado !== 'Cerrada');
-  if (!abiertas.length) { toast('Crea primero una obra.'); return; }
+  if (!abiertas.length) { avisar('Crea primero una obra.'); return; }
   if (abiertas.length === 1) return A.nuevoParte(abiertas[0].id);
   V.sheet = { tipo: 'nuevoParteObra' }; render();
 };
@@ -1312,7 +1320,7 @@ function horasDeObraEnFecha(oid, fecha) {
 A.nuevoParte = (obraId) => {
   V.sheet = null;
   const oid = obraId || S.obraActiva || (S.obras[0] && S.obras[0].id);
-  if (!oid) { toast('Crea primero una obra.'); return; }
+  if (!oid) { avisar('Crea primero una obra.'); return; }
   const o = obraById(oid);
   const fecha = hoyISO(); // por defecto, siempre el día en curso
   const horas = horasDeObraEnFecha(oid, fecha);
@@ -1380,7 +1388,7 @@ A.horasGrupoReloj = (minutos) => { V.horasGrupoMin = Math.max(0, Math.round(Numb
 A.horasGrupoAplicar = () => {
   sincronizarRuedas();
   const sel = V.horasGrupoSel || [];
-  if (!sel.length) { toast('Selecciona al menos a una persona.'); return; }
+  if (!sel.length) { avisar('Selecciona al menos a una persona.'); return; }
   const h = (V.horasGrupoMin || 0) / 60;
   sel.forEach((id) => {
     V.draft.horas[id] = h;
@@ -1407,7 +1415,7 @@ async function añadirArchivo(file) {
     const esImg = /^image\//.test(file.type);
     const data = esImg ? await comprimir(file) : await leerDataURL(file);
     const peso = data.length * 0.75;
-    if (peso > 1.6e6 && !esImg) { toast('El archivo es muy grande (máx ~1,5 MB).'); return; }
+    if (peso > 1.6e6 && !esImg) { avisar('El archivo es muy grande (máx ~1,5 MB).'); return; }
     V.draft.adjuntos.push({
       id: uid(), nombre: file.name || 'foto.jpg',
       ext: (file.name.split('.').pop() || (esImg ? 'jpg' : 'file')).toUpperCase().slice(0, 4),
@@ -1415,7 +1423,7 @@ async function añadirArchivo(file) {
       img: esImg, data,
     });
     render();
-  } catch (e) { toast('No se pudo adjuntar ese archivo.'); }
+  } catch (e) { avisar('No se pudo adjuntar ese archivo.'); }
 }
 const leerDataURL = (file) => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(file); });
 async function comprimir(file) {
@@ -1436,8 +1444,8 @@ async function comprimir(file) {
 }
 A.aPaso = (p) => {
   sincronizarRuedas();
-  if (p === 'p2' && !V.draft.desc.trim()) { toast('Describe los trabajos realizados.'); return; }
-  if (p === 'p3' && !V.draft.firma) { toast('Falta la firma del cliente.'); return; }
+  if (p === 'p2' && !V.draft.desc.trim()) { avisar('Describe los trabajos realizados.'); return; }
+  if (p === 'p3' && !V.draft.firma) { avisar('Falta la firma del cliente.'); return; }
   V.view = p; render();
 };
 A.borrarFirma = () => { V.draft.firma = null; render(); };
@@ -1446,7 +1454,7 @@ A.borrarFirma = () => { V.draft.firma = null; render(); };
 // envían. La referencia visible (PT-MMDD-XXXX) se deriva al leer, no se guarda.
 A.guardarEnviar = async (enviar) => {
   const d = V.draft; if (!d) return;
-  if (!navigator.onLine) { toast('Sin conexión — el parte no se ha guardado'); return; }
+  if (!navigator.onLine) { avisar('Sin conexión — el parte no se ha guardado'); return; }
   const empId = empIdDeUser(V.user.id);
   const ahora = new Date().toISOString();
   const campos = {
@@ -1480,7 +1488,7 @@ A.guardarEnviar = async (enviar) => {
     if (enviar && p) enviarEmail(p);
     V.view = 'ok'; render();
   } catch (e) {
-    toast('No se pudo guardar el parte: ' + (e && e.message ? e.message : 'error'));
+    avisar('No se pudo guardar el parte: ' + (e && e.message ? e.message : 'error'));
     render();
   }
 };
@@ -1517,14 +1525,14 @@ A.anular = (id) => { V.sheet = { tipo: 'anular', id }; render(); };
 A.confirmarAnular = async () => {
   const id = V.sheet.id;
   V.sheet = null; render();
-  if (!navigator.onLine) { toast('Sin conexión — no se ha anulado'); return; }
+  if (!navigator.onLine) { avisar('Sin conexión — no se ha anulado'); return; }
   try {
     await Sysefen.db.actualizarParte(id, { estado: 'anulado', actualizado_en: new Date().toISOString() });
     await sincronizarPartes();
     toast('Parte anulado (queda en el historial)');
     render();
   } catch (e) {
-    toast('No se pudo anular: ' + (e && e.message ? e.message : 'error'));
+    avisar('No se pudo anular: ' + (e && e.message ? e.message : 'error'));
     await sincronizarPartes(); render();
   }
 };
@@ -1534,17 +1542,32 @@ const totalMats = (p) => p.mats.reduce((t, m) => t + (parseFloat(String(m.import
 /* ajustes admin */
 A.toggleOpt = (k) => { S.opts[k] = !S.opts[k]; save(); render(); };
 A.cambiarRol = (id) => { const u = S.users.find((x) => x.id === id); u.rol = u.rol === 'jefe' ? 'operario' : 'jefe'; save(); render(); };
-A.editarPin = (id) => { V.sheet = { tipo: 'pin', id, val: '' }; render(); };
-A.guardarPin = () => {
-  const v = V.sheet.val;
-  if (!/^\d{4}$/.test(v)) { toast('El PIN son 4 números.'); return; }
-  S.users.find((u) => u.id === V.sheet.id).pin = v; save(); V.sheet = null; toast('PIN actualizado'); render();
+// El PIN real es la contraseña de Supabase Auth. Con la clave pública solo se
+// puede cambiar el PIN PROPIO; el de otra persona exige la clave service_role,
+// que no puede estar en la app. Por eso la hoja se comporta distinto según de
+// quién sea el PIN, en vez de fingir que lo cambia.
+A.editarPin = (id) => { V.sheet = { tipo: 'pin', id, actual: '', val: '', val2: '', busy: false }; render(); };
+A.guardarPin = async () => {
+  const s = V.sheet;
+  if (s.busy) return;
+  if (!/^\d{4}$/.test(s.actual)) { avisar('Escribe tu PIN actual (4 números).'); return; }
+  if (!/^\d{4}$/.test(s.val)) { avisar('El PIN nuevo son 4 números.'); return; }
+  if (s.val !== s.val2) { avisar('Los dos PIN nuevos no coinciden.'); return; }
+  if (s.val === s.actual) { avisar('El PIN nuevo es igual al actual.'); return; }
+  if (!navigator.onLine) { avisar('Sin conexión — el PIN no se ha cambiado.'); return; }
+  s.busy = true; render();
+  try {
+    await sysAuth.cambiarPinPropio(s.actual, s.val);
+    V.sheet = null; toast('PIN cambiado. Úsalo la próxima vez que entres.'); render();
+  } catch (e) {
+    s.busy = false; avisar(e && e.message ? e.message : 'No se pudo cambiar el PIN.'); render();
+  }
 };
 A.addUser = () => { V.sheet = { tipo: 'user', nombre: '', pin: '' }; render(); };
 A.guardarUser = () => {
   const { nombre, pin } = V.sheet;
-  if (!nombre.trim()) { toast('Pon el nombre.'); return; }
-  if (!/^\d{4}$/.test(pin)) { toast('El PIN son 4 números.'); return; }
+  if (!nombre.trim()) { avisar('Pon el nombre.'); return; }
+  if (!/^\d{4}$/.test(pin)) { avisar('El PIN son 4 números.'); return; }
   S.users.splice(S.users.length - 1, 0, { id: uid(), nombre: nombre.trim(), rol: 'operario', pin });
   save(); V.sheet = null; render();
 };
@@ -1566,14 +1589,9 @@ A.copia = () => {
   a.download = 'copia-partes-' + hoyISO() + '.json'; a.click();
   toast('Copia de seguridad descargada');
 };
-A.restaurar = () => {
-  const inp = document.createElement('input'); inp.type = 'file'; inp.accept = '.json';
-  inp.onchange = async () => {
-    try { S = Object.assign(semilla(), JSON.parse(await inp.files[0].text())); save(); toast('Copia restaurada'); render(); }
-    catch (e) { toast('Ese archivo no vale.'); }
-  };
-  inp.click();
-};
+// (Sin "Restaurar copia": los datos reales viven en Supabase, así que volcar un
+// JSON viejo encima solo pisaba la copia local y volvía a llenarse al
+// sincronizar. La copia descargable sigue estando, para el archivo legal.)
 A.instalar = async () => {
   if (deferredPrompt) { deferredPrompt.prompt(); deferredPrompt = null; return; }
   V.sheet = { tipo: 'instalar' }; render();
@@ -1611,6 +1629,7 @@ function render() {
   if (V.sheet) { try { html += sheet(); } catch (e) { V.sheet = null; } }
   app.innerHTML = html;
   if (V.view === 'p2') montarFirma();
+  if (V.sheet && V.sheet.tipo === 'firmaPlanilla') montarFirmaPlanilla();
   if (V.view === 'imputarEmp' || V.view === 'imputarGrupo' || V.view === 'p1') montarRelojes();
   const sc = app.querySelector('.scroll,.hoja'); if (sc && scrollMemo[V.view] != null) sc.scrollTop = scrollMemo[V.view];
 }
@@ -2376,7 +2395,13 @@ function vEmpleado() {
       <div class="sw" style="background:${d.activo ? 'var(--verde)' : 'rgba(20,23,15,.16)'};justify-content:${d.activo ? 'flex-end' : 'flex-start'}"><i></i></div>
     </div>
 
-    ${!d.nuevo ? `<div class="tiny" style="margin-top:14px">${row && row.creado_en ? 'Alta: ' + fechaCorta(row.creado_en) : ''}${row && row.fecha_baja ? ' · Baja: ' + fechaCorta(row.fecha_baja + 'T12:00') : ''}</div>
+    ${!d.nuevo ? `<div class="card row" data-a="editarPin" data-id="${V.empEmp}" style="margin-top:18px;cursor:pointer">
+      <div class="grow"><div style="font:500 15px var(--sans)">PIN de acceso</div>
+      <div class="sub" style="font-size:12px;margin-top:4px">${V.empEmp === (yo() || {}).id ? 'Cambia aquí tu PIN de entrada.' : 'Cómo restablecer el PIN de ' + esc(d.nombre) + '.'}</div></div>
+      <div style="font:400 20px/1 var(--sans);color:var(--t3)">›</div>
+    </div>
+
+    <div class="tiny" style="margin-top:14px">${row && row.creado_en ? 'Alta: ' + fechaCorta(row.creado_en) : ''}${row && row.fecha_baja ? ' · Baja: ' + fechaCorta(row.fecha_baja + 'T12:00') : ''}</div>
     <button class="btn btn-gris" data-a="abrirPlanilla" data-id="${V.empEmp}" style="margin-top:16px;border-radius:14px">Ver planilla de horas</button>` : `<div class="tiny" style="margin-top:16px">Al guardar se crea el perfil. Para que pueda iniciar sesión hay que crear su acceso (te lo indicaremos).</div>`}
   </div>`;
 }
@@ -2499,6 +2524,12 @@ function imprimirPlanilla(userId, mesBase) {
   const totalGeneral = bloques.reduce((t, b) => t + b.pl.totalMin, 0);
   const diasGeneral = bloques.reduce((t, b) => t + b.pl.diasTrab, 0);
   const tituloRango = rango === 'mes' ? mesLargo(mesBase) : rango === 'ano' ? 'Año ' + mesBase.slice(0, 4) : 'Historial completo';
+  const firmaTrab = V.planFirma || '';
+  // El sello de la empresa va siempre; si quien saca el papel es jefe o
+  // administración, además firma con su nombre. Si el propio operario imprime
+  // su planilla, el sello queda a nombre de la empresa (él no puede validarse).
+  const quien = yo();
+  const selloNombre = quien && quien.id !== userId && (quien.rol === 'admin' || quien.rol === 'jefe') ? quien.nombre : '';
   const el = $('#print');
   el.innerHTML = `<div style="font-family:var(--sans);color:#14170f;max-width:180mm;position:relative;z-index:0">
     <img src="logo-trans.png" alt="" style="position:absolute;top:130mm;left:50%;transform:translate(-50%,-50%);width:120mm;opacity:.11;z-index:-1;pointer-events:none">
@@ -2542,9 +2573,25 @@ function imprimirPlanilla(userId, mesBase) {
     </div>` : ''}
     <div style="font:400 10px var(--sans);color:#666;margin-top:14px">Horas reales de presencia según los fichajes registrados. Los días sin fichaje no se contabilizan como 0 h a la espera de definir su estado (vacaciones, festivo, ausencia…).</div>
     <div style="display:flex;gap:24px;margin-top:26px">
-      <div style="flex:1"><div style="font:600 10px var(--mono);text-transform:uppercase;color:#666">El trabajador</div><div style="height:20mm"></div><div style="border-top:1px solid #14170f;padding-top:4px;font:400 11px var(--sans)">${esc(u.nombre)}</div></div>
-      <div style="flex:1"><div style="font:600 10px var(--mono);text-transform:uppercase;color:#666">Por ${esc(S.empresa)}</div><div style="height:20mm"></div><div style="border-top:1px solid #14170f;padding-top:4px;font:400 11px var(--sans)">&nbsp;</div></div>
+      <div style="flex:1"><div style="font:600 10px var(--mono);text-transform:uppercase;color:#666">El trabajador</div>
+        ${firmaTrab
+          ? `<div style="height:20mm;display:flex;align-items:flex-end;justify-content:center"><img src="${firmaTrab}" alt="" style="max-height:19mm;max-width:100%;object-fit:contain"></div>`
+          : '<div style="height:20mm"></div>'}
+        <div style="border-top:1px solid #14170f;padding-top:4px;font:400 11px var(--sans)">${esc(u.nombre)}</div></div>
+      <div style="flex:1"><div style="font:600 10px var(--mono);text-transform:uppercase;color:#666">Por ${esc(S.empresa)}</div>
+        <div style="height:20mm;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1mm">
+          ${selloNombre ? `<div style="font:500 26px var(--script);color:#14170f;line-height:1;padding-bottom:2px">${esc(selloNombre)}</div>` : ''}
+          <div style="display:flex;align-items:center;gap:4px">
+            <img src="logo-trans.png" alt="" style="height:8mm;opacity:.92">
+            <div style="text-align:left;line-height:1.15">
+              <div style="font:700 8px var(--cond);letter-spacing:.05em">SYSEFEN</div>
+              <div style="font:400 6px var(--mono);color:#666;letter-spacing:.05em;text-transform:uppercase">Eficiencia Energética</div>
+            </div>
+          </div>
+        </div>
+        <div style="border-top:1px solid #14170f;padding-top:4px;font:400 11px var(--sans)">${esc(selloNombre || S.empresa)}</div></div>
     </div>
+    <div style="font:400 6px var(--mono);color:#999;letter-spacing:.05em;text-transform:uppercase;margin-top:4px;text-align:center">Documento generado por la app · ${fechaCorta(new Date().toISOString())}</div>
   </div>`;
   setTimeout(() => window.print(), 60);
 }
@@ -2601,6 +2648,12 @@ function vAjustes() {
       <button class="pill" data-a="salir">Salir</button>
     </div>
 
+    <div class="card row" data-a="editarPin" data-id="${u.id}" style="margin-bottom:12px;cursor:pointer">
+      <div class="grow"><div style="font:600 15px var(--sans)">Cambiar mi PIN</div>
+      <div class="sub" style="font-size:12px;margin-top:4px">Los 4 números con los que entras. Hace falta el actual.</div></div>
+      <div style="font:400 20px/1 var(--sans);color:var(--t3)">›</div>
+    </div>
+
     ${esAdmin() ? `<div class="card" style="margin-bottom:12px">
       <div class="row" style="gap:12px;margin-bottom:12px"><img src="logo-trans.png" alt="" style="height:38px"><div class="lbl grow">Empresa</div></div>
       <input class="inp" data-f="empresa" value="${esc(S.empresa)}" placeholder="Nombre de la empresa">
@@ -2622,10 +2675,7 @@ function vAjustes() {
     </div>
 
     <div class="lbl" style="font-weight:600;font-size:12px;color:var(--t2);margin:22px 0 10px">Datos</div>
-    <div class="row g8">
-      <button class="pill grow" data-a="copia" style="padding:14px;text-align:center">Descargar copia</button>
-      <button class="pill grow" data-a="restaurar" style="padding:14px;text-align:center">Restaurar copia</button>
-    </div>
+    <button class="pill" data-a="copia" style="width:100%;padding:14px;text-align:center">Descargar copia</button>
     <div class="sub" style="font-size:12px;margin-top:10px">La ley obliga a conservar el registro de jornada 4 años. Descarga la copia una vez al mes y guárdala fuera del móvil.</div>` : ''}
 
     <button class="btn btn-gris" data-a="instalar" style="margin-top:20px;border-radius:99px">Instalar en la pantalla de inicio</button>
@@ -2752,22 +2802,42 @@ function vP2() {
     <button class="btn" data-a="aPaso" data-p="p3" ${d.firma ? '' : 'disabled'}>${d.firma ? 'Revisar y enviar' : 'Falta la firma del cliente'}</button>
   </div>`;
 }
-function montarFirma() {
-  const c = $('#firma'); if (!c) return;
+// Lienzo de firma reutilizable: el parte lo usa para la firma del cliente y la
+// planilla de horas para la del trabajador. `leer`/`guardar` dicen dónde vive
+// el trazo, y `alFirmar` reacciona al primer garabato (habilitar el botón…).
+function montarLienzo(sel, leer, guardar, alFirmar) {
+  const c = $(sel); if (!c) return;
   const ctx = c.getContext('2d');
   const r = c.getBoundingClientRect();
   c.width = Math.round(r.width * 2); c.height = 380;
   ctx.lineWidth = 5; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.strokeStyle = '#14170f';
-  if (V.draft.firma) { const img = new Image(); img.onload = () => ctx.drawImage(img, 0, 0, c.width, c.height); img.src = V.draft.firma; }
+  const previo = leer();
+  if (previo) { const img = new Image(); img.onload = () => ctx.drawImage(img, 0, 0, c.width, c.height); img.src = previo; }
   let dib = false, movido = false;
   const pos = (e) => { const b = c.getBoundingClientRect(); return [(e.clientX - b.left) * (c.width / b.width), (e.clientY - b.top) * (c.height / b.height)]; };
   c.addEventListener('pointerdown', (e) => { e.preventDefault(); dib = true; c.setPointerCapture(e.pointerId); const [x, y] = pos(e); ctx.beginPath(); ctx.moveTo(x, y); });
   c.addEventListener('pointermove', (e) => { if (!dib) return; e.preventDefault(); const [x, y] = pos(e); ctx.lineTo(x, y); ctx.stroke(); movido = true; });
   const fin = () => {
     if (!dib) return; dib = false;
-    if (movido) { V.draft.firma = c.toDataURL('image/png'); const b = $('.btn[data-a="aPaso"]'); if (b) { b.removeAttribute('disabled'); b.textContent = 'Revisar y enviar'; } const ph = document.querySelector('.firma-box .ph'); if (ph) ph.remove(); }
+    if (movido) {
+      guardar(c.toDataURL('image/png'));
+      const ph = c.parentElement && c.parentElement.querySelector('.ph'); if (ph) ph.remove();
+      if (alFirmar) alFirmar();
+    }
   };
   c.addEventListener('pointerup', fin); c.addEventListener('pointercancel', fin); c.addEventListener('pointerleave', fin);
+}
+function montarFirma() {
+  montarLienzo('#firma', () => V.draft.firma, (dato) => { V.draft.firma = dato; }, () => {
+    const b = $('.btn[data-a="aPaso"]'); if (b) { b.removeAttribute('disabled'); b.textContent = 'Revisar y enviar'; }
+  });
+}
+// Firma del trabajador en la planilla de horas (registro de jornada).
+function montarFirmaPlanilla() {
+  montarLienzo('#firmaPlan', () => V.planFirma, (dato) => { V.planFirma = dato; }, () => {
+    const b = $('.btn[data-a="imprimirPlanillaFirmada"]'); if (b) b.textContent = 'Imprimir con la firma';
+    const q = $('#firmaPlanAviso'); if (q) q.remove();
+  });
 }
 
 /* --- paso 3: vista previa --- */
@@ -2912,6 +2982,28 @@ function sheet() {
       <button class="btn btn-gris" data-a="cerrarSheet" style="border-radius:99px;margin-top:14px;opacity:.7">Cancelar</button>
     </div></div>`;
   }
+  if (s.tipo === 'firmaPlanilla') {
+    const u = userById(V.planEmp);
+    const firmado = !!V.planFirma;
+    return `<div class="sheet"><div>
+      <div style="font:600 23px/1.15 var(--cond)">Firma del trabajador</div>
+      <div class="sub" style="margin-top:4px">${esc(u ? u.nombre : '')} conforma con su firma las horas de este registro de jornada. El sello de ${esc(S.empresa)} ya va puesto.</div>
+      <div class="row" style="justify-content:space-between;align-items:center;margin:14px 0 8px">
+        <div class="lbl">Firme con el dedo</div>
+        ${firmado ? '<div data-a="repetirFirmaPlanilla" style="font:500 12px var(--sans);color:var(--verde-o);cursor:pointer">Repetir</div>' : ''}
+      </div>
+      <div class="firma-box">
+        <canvas id="firmaPlan" width="700" height="380"></canvas>
+        ${firmado ? '' : '<div class="ph">Dibuje su firma con el dedo</div>'}
+        <div class="linea"></div>
+      </div>
+      ${firmado ? '' : '<div id="firmaPlanAviso" class="tiny" style="margin-top:10px">Si prefiere firmar a mano en el papel, imprima sin firmar y quedará el renglón en blanco.</div>'}
+      <div class="row g8" style="margin-top:16px">
+        <button class="btn btn-gris" data-a="cerrarSheet" style="border-radius:99px">Cancelar</button>
+        <button class="btn btn-verde" data-a="imprimirPlanillaFirmada" style="font-size:14px">${firmado ? 'Imprimir con la firma' : 'Imprimir sin firmar'}</button>
+      </div>
+    </div></div>`;
+  }
   if (s.tipo === 'diaFichajes') {
     const n = userById(s.userId).nombre;
     const fs = S.fichajes
@@ -3024,13 +3116,39 @@ function sheet() {
     </div></div>`;
   }
   if (s.tipo === 'pin') {
+    const u = userById(s.id);
+    const propio = yo() && s.id === yo().id;
+    const est = 'font:600 22px var(--cond);text-align:center;letter-spacing:.3em';
+    if (!propio) {
+      // Cambiar el PIN de otro exige la clave service_role del proyecto, que no
+      // puede estar dentro de la app: cualquiera podría sacarla del móvil y
+      // saltarse todos los permisos. Se hace en el panel de Supabase.
+      const em = (empRowById(empIdDeUser(s.id)) || {}).email || emailSugerido(u.nombre) || 'nombre@sysefen.app';
+      return `<div class="sheet"><div>
+        <div style="font:600 25px/1.15 var(--cond)">PIN de ${esc(u.nombre)}</div>
+        <div class="sub" style="margin-top:8px">Desde la app no se puede cambiar el PIN de otra persona: haría falta la clave maestra de Supabase, y tenerla dentro del móvil dejaría el sistema abierto. Se hace en el panel, en un minuto:</div>
+        <div class="card" style="margin-top:12px;background:rgba(20,23,15,.04)">
+          <div class="tiny">1. Supabase → Authentication → Users</div>
+          <div class="tiny" style="margin-top:6px">2. Busca <b>${esc(em)}</b> → menú <b>···</b> → <b>Reset password</b> o <b>Update user</b></div>
+          <div class="tiny" style="margin-top:6px">3. Password: <b>&lt;PIN de 4 cifras&gt;sysefen</b> (ej. <b>5678sysefen</b>)</div>
+          <div class="tiny" style="margin-top:6px">4. Dile el PIN nuevo en persona, no por WhatsApp.</div>
+        </div>
+        <div class="tiny" style="margin-top:8px">Cada persona sí puede cambiarse el suyo desde Ajustes → Cambiar mi PIN.</div>
+        <button class="btn btn-verde" data-a="cerrarSheet" style="margin-top:16px">Entendido</button>
+      </div></div>`;
+    }
     return `<div class="sheet"><div>
-      <div style="font:600 25px/1.15 var(--cond)">PIN de ${esc(userById(s.id).nombre)}</div>
-      <div class="sub" style="margin-top:8px">Cuatro números. Dile el nuevo PIN en persona, no por WhatsApp.</div>
-      <input class="inp" data-f="sheetVal" inputmode="numeric" maxlength="4" value="${esc(s.val)}" placeholder="0000" style="margin-top:16px;font:600 24px var(--cond);text-align:center;letter-spacing:.3em">
-      <div class="row g8" style="margin-top:16px">
+      <div style="font:600 25px/1.15 var(--cond)">Cambiar mi PIN</div>
+      <div class="sub" style="margin-top:8px">Cuatro números. A partir del cambio entras con el nuevo en todos tus dispositivos.</div>
+      <div class="lbl" style="margin:16px 0 6px">PIN actual</div>
+      <input class="inp" data-f="pinActual" type="password" inputmode="numeric" maxlength="4" value="${esc(s.actual)}" placeholder="0000" style="${est}">
+      <div class="lbl" style="margin:12px 0 6px">PIN nuevo</div>
+      <input class="inp" data-f="pinNuevo" type="password" inputmode="numeric" maxlength="4" value="${esc(s.val)}" placeholder="0000" style="${est}">
+      <div class="lbl" style="margin:12px 0 6px">Repite el PIN nuevo</div>
+      <input class="inp" data-f="pinNuevo2" type="password" inputmode="numeric" maxlength="4" value="${esc(s.val2)}" placeholder="0000" style="${est}">
+      <div class="row g8" style="margin-top:18px">
         <button class="btn btn-gris" data-a="cerrarSheet" style="border-radius:99px">Cancelar</button>
-        <button class="btn btn-verde" data-a="guardarPin" style="font-size:14px">Guardar PIN</button>
+        <button class="btn btn-verde" data-a="guardarPin" style="font-size:14px" ${s.busy ? 'disabled' : ''}>${s.busy ? 'Cambiando…' : 'Cambiar PIN'}</button>
       </div>
     </div></div>`;
   }
@@ -3061,12 +3179,18 @@ function sheet() {
 
 /* --- toast --- */
 let toastT;
-function toast(msg) {
+function toast(msg, tipo) {
   const old = document.querySelector('.toast'); if (old) old.remove();
-  const d = document.createElement('div'); d.className = 'toast'; d.textContent = msg;
+  const err = tipo === 'err';
+  const d = document.createElement('div');
+  d.className = 'toast' + (err ? ' err shake' : '');
+  d.textContent = msg;
   document.body.appendChild(d);
-  clearTimeout(toastT); toastT = setTimeout(() => d.remove(), 2600);
+  clearTimeout(toastT); toastT = setTimeout(() => d.remove(), err ? 4200 : 2600);
 }
+// Avisos que BLOQUEAN algo (falta un dato, no hay conexión, falló el guardado):
+// se ven en rojo y duran más. Los mensajes de "ha ido bien" siguen con toast().
+function avisar(msg) { toast(msg, 'err'); }
 
 /* --- PDF --- */
 function imprimirParte(p) {
@@ -3220,6 +3344,8 @@ document.addEventListener('click', (e) => {
   if (a === 'planRango') return A.planRango(d.r);
   if (a === 'abrirRangoPlanilla') return A.abrirRangoPlanilla(d.m);
   if (a === 'planillaSalida') return A.planillaSalida(d.r);
+  if (a === 'repetirFirmaPlanilla') return A.repetirFirmaPlanilla();
+  if (a === 'imprimirPlanillaFirmada') return A.imprimirPlanillaFirmada();
   if (a === 'imprimirPlanilla') return A.imprimirPlanilla();
   if (a === 'exportarPlanillaCSV') return A.exportarPlanillaCSV();
   if (a === 'toggleOpt') return A.toggleOpt(d.k);
@@ -3230,7 +3356,6 @@ document.addEventListener('click', (e) => {
   if (a === 'guardarUser') return A.guardarUser();
   if (a === 'exportar') return A.exportar();
   if (a === 'copia') return A.copia();
-  if (a === 'restaurar') return A.restaurar();
   if (a === 'salir') return A.salir();
   if (a === 'instalar') return A.instalar();
 });
@@ -3251,6 +3376,9 @@ document.addEventListener('input', (e) => {
   if (f === 'sheetVal') { V.sheet.val = t.value.replace(/\D/g, '').slice(0, 4); return; }
   if (f === 'sheetNombre') { V.sheet.nombre = t.value; return; }
   if (f === 'sheetPin') { V.sheet.pin = t.value.replace(/\D/g, '').slice(0, 4); return; }
+  if (f === 'pinActual') { V.sheet.actual = t.value.replace(/\D/g, '').slice(0, 4); return; }
+  if (f === 'pinNuevo') { V.sheet.val = t.value.replace(/\D/g, '').slice(0, 4); return; }
+  if (f === 'pinNuevo2') { V.sheet.val2 = t.value.replace(/\D/g, '').slice(0, 4); return; }
   if (f === 'corrEntrada') { V.sheet.entrada = t.value; return; }
   if (f === 'corrSalida') { V.sheet.salida = t.value; return; }
   if (['empresa', 'cif', 'emailCopia'].includes(f)) { S[f] = t.value; save(); return; }
