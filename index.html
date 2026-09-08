@@ -203,7 +203,7 @@ import * as sysDB from './supabase-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '8.1'; // versión visible de la app (única fuente)
+const APP_VERSION = '8.2'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -1565,12 +1565,20 @@ A.guardarEnviar = async (enviar) => {
     // entero a la basura: se guarda igual y se dice cuántas no subieron, que
     // es mejor que perder el trabajo escrito por una foto.
     const fallos = [];
+    let motivo = '';
     for (const adj of (d.adjuntos || [])) {
       try { await Sysefen.db.subirAdjunto(nuevo.id, adj); }
-      catch (err) { fallos.push(adj.nombre || 'archivo'); }
+      catch (err) { fallos.push(adj.nombre || 'archivo'); motivo = motivo || (err && err.message) || ''; }
     }
     await sincronizarPartes();
-    if (fallos.length) avisar('El parte se guardó, pero no subieron ' + fallos.length + (fallos.length === 1 ? ' foto' : ' fotos') + '. Vuelve a adjuntarla desde el parte.');
+    if (fallos.length) {
+      // Decir POR QUÉ. Y no prometer "vuelve a adjuntarla desde el parte": en un
+      // parte ya guardado todavía no se pueden añadir fotos.
+      const sinAlmacen = /bucket not found|does not exist|PGRST205|schema cache/i.test(motivo);
+      avisar(sinAlmacen
+        ? 'El parte se guardó, pero las fotos no tienen dónde guardarse: falta ejecutar sql/etapa12_adjuntos.sql en Supabase.'
+        : 'El parte se guardó, pero no subió ' + fallos.length + (fallos.length === 1 ? ' foto' : ' fotos') + (motivo ? ': ' + motivo : '.'));
+    }
     const p = S.partes.find((x) => x.id === nuevo.id);
     V.verParte = nuevo.id; V.draft = null;
     if (enviar && p) enviarEmail(p);
