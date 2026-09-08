@@ -41,16 +41,30 @@ romper nada.
 | `etapa7_empleados_planilla.sql` | alta/baja de empleados |
 | `etapa8_redondeo_15.sql` | imputaciones en tramos de 15 min |
 | `etapa9_importar_historico.sql` | **alta de fichajes con hora real (importación del histórico)** |
+| `etapa10_pin_admin.sql` | **Administración cambia el PIN de otra persona sin saber el anterior** |
 
 `etapa9` hace falta para el botón *Ajustes → Importar CSV*. Sin ella la app se
 niega a importar y no escribe nada, porque el servidor pisaría todas las horas
 con la fecha de hoy.
 
+## Cambiar el PIN de otra persona
+
+Cada uno se cambia el suyo desde *Ajustes → Cambiar mi PIN*, pero eso pide el
+PIN anterior. Para el caso de "se me ha olvidado", Administración tiene que
+poder ponerlo de nuevo sin conocer el viejo, y eso necesita algo en el servidor.
+Hay dos vías y la app las prueba en este orden:
+
+1. **`sql/etapa10_pin_admin.sql`** — se pega en el SQL Editor y funciona al
+   momento. Es la vía corta. Solo cambia PINes de gente que ya tiene acceso.
+2. **La Edge Function `admin-usuarios`** (abajo) — además crea accesos nuevos.
+
+Con cualquiera de las dos, *Empleados → una persona → PIN de acceso* pasa a
+cambiar el PIN de verdad. Sin ninguna, la app enseña los pasos manuales.
+
 ## Función de servidor `admin-usuarios`
 
-Es lo que permite que **Administración cambie el PIN de otra persona** y **cree
-el acceso de un empleado nuevo** desde la propia app. Sin desplegar, la app
-sigue funcionando: enseña los pasos para hacerlo a mano en el panel.
+Permite además **crear el acceso de un empleado nuevo** desde la propia app
+(y también cambia PINes, si prefieres una sola vía en vez del SQL de arriba).
 
 La clave maestra (`service_role`) **nunca sale de Supabase**: la función la lee
 de una variable de entorno que Supabase inyecta sola. No hay que copiarla ni

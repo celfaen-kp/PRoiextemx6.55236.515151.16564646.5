@@ -203,7 +203,7 @@ import * as sysDB from './supabase-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '7.7'; // versión visible de la app (única fuente)
+const APP_VERSION = '7.8'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -3401,9 +3401,12 @@ function sheet() {
       // La Edge Function no está desplegada: se explican los pasos a mano.
       const em = (row || {}).email || emailSugerido(u.nombre) || 'nombre@sysefen.app';
       return `<div class="sheet"><div>
-        <div style="font:600 25px/1.15 var(--cond)">Hazlo desde el panel</div>
-        <div class="sub" style="margin-top:8px">Todavía no está desplegada la función de servidor que hace esto desde la app (<b>admin-usuarios</b>). Mientras tanto, en Supabase:</div>
-        <div class="card" style="margin-top:12px;background:rgba(20,23,15,.04)">
+        <div style="font:600 25px/1.15 var(--cond)">Falta activarlo</div>
+        <div class="sub" style="margin-top:8px">${sinAcceso
+          ? 'Crear accesos desde la app necesita la función <b>admin-usuarios</b> desplegada en Supabase (Edge Functions → Deploy → pegar <b>supabase/functions/admin-usuarios/index.ts</b>).'
+          : 'Para cambiar PINes desde aquí falta ejecutar <b>sql/etapa10_pin_admin.sql</b> en Supabase → SQL Editor. Se pega y ya está: no hay que desplegar nada.'}</div>
+        <div class="lbl" style="margin:14px 0 6px">Mientras tanto, a mano</div>
+        <div class="card" style="background:rgba(20,23,15,.04)">
           <div class="tiny">1. Supabase → Authentication → Users</div>
           <div class="tiny" style="margin-top:6px">2. ${sinAcceso ? '<b>Add user</b> con el email <b>' + esc(em) + '</b>, marcando <b>Auto Confirm User</b>' : 'Busca <b>' + esc(em) + '</b> → menú <b>···</b> → <b>Reset password</b>'}</div>
           <div class="tiny" style="margin-top:6px">3. Password: <b>${esc(s.val || '<PIN>')}sysefen</b></div>

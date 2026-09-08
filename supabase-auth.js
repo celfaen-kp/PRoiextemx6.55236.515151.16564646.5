@@ -144,10 +144,31 @@ async function llamarAdmin(cuerpo) {
   return data;
 }
 
-// Administración cambia el PIN de otra persona.
+// ¿El error de una RPC es "esa función no existe"? PostgREST lo devuelve como
+// PGRST202 (no la encuentra en el esquema) o 42883 (no existe en Postgres).
+const rpcAusente = (error) =>
+  !!error && (error.code === 'PGRST202' || error.code === '42883'
+    || /could not find the function|does not exist/i.test(error.message || ''));
+
+// Administración cambia el PIN de otra persona (sin saber el anterior).
+//
+// Dos vías, se prueban en este orden:
+//   1. La función SQL `admin_cambiar_pin` (sql/etapa10_pin_admin.sql). Es la
+//      que basta pegar en el SQL Editor, así que es la que suele estar.
+//   2. La Edge Function `admin-usuarios`, si está desplegada.
+// Si no hay ninguna, el error sale con `noDesplegada` para que la app enseñe
+// los pasos manuales en vez de dejar al usuario sin explicación.
 export async function adminCambiarPin(empleadoId, pin) {
-  if (!/^\d{4}$/.test(String(pin).trim())) throw new Error('El PIN son 4 números.');
-  return llamarAdmin({ accion: 'cambiar_pin', empleado_id: empleadoId, pin: String(pin).trim() });
+  const p = String(pin).trim();
+  if (!/^\d{4}$/.test(p)) throw new Error('El PIN son 4 números.');
+
+  const { data, error } = await supabase.rpc('admin_cambiar_pin', { p_empleado: empleadoId, p_pin: p });
+  if (!error) return { ok: true, nombre: data };
+  // Un error de permisos o de datos es una respuesta de verdad: se cuenta tal
+  // cual. Solo si la función NO EXISTE se prueba la otra vía.
+  if (!rpcAusente(error)) throw new Error(error.message);
+
+  return llamarAdmin({ accion: 'cambiar_pin', empleado_id: empleadoId, pin: p });
 }
 
 // Administración crea el acceso (usuario de Auth) de un empleado ya dado de alta.
