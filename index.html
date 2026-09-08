@@ -203,7 +203,7 @@ import * as sysDB from './supabase-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '8.0'; // versión visible de la app (única fuente)
+const APP_VERSION = '8.1'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -458,7 +458,7 @@ let sincPartes = false;
 // nunca se guarda en Supabase. Mismo resultado en cualquier dispositivo.
 const refDeParte = (row) => 'PT-' + String(row.fecha || '').slice(5, 7) + String(row.fecha || '').slice(8, 10) + '-' + String(row.id || '').slice(0, 4).toUpperCase();
 
-function mapParteDeDB(row, horasFilas, matsFilas) {
+function mapParteDeDB(row, horasFilas, matsFilas, adjFilas) {
   const horas = {};
   (horasFilas || []).forEach((h) => {
     const local = localPorNombre(nombrePorEmpId[h.empleado_id]);
@@ -476,7 +476,14 @@ function mapParteDeDB(row, horasFilas, matsFilas) {
     horas, mats,
     nivel: row.nivel_incidencia || 'Sin incidencias',
     inc: row.incidencia || '',
-    adjuntos: [], // el esquema real no tiene columna para adjuntos: no se persisten (ver informe)
+    // Las fotos viven en Supabase Storage (Etapa 12). Aquí solo llega la
+    // ficha: la imagen se pide con un enlace firmado cuando hace falta verla.
+    adjuntos: (adjFilas || []).map((a) => ({
+      id: a.id, ruta: a.ruta, nombre: a.nombre || 'foto.jpg',
+      ext: (a.nombre && a.nombre.includes('.') ? a.nombre.split('.').pop() : 'JPG').toUpperCase().slice(0, 4),
+      peso: a.bytes ? (a.bytes / 1024 > 900 ? (a.bytes / 1048576).toFixed(1) + ' MB' : Math.round(a.bytes / 1024) + ' KB') : '',
+      img: a.es_imagen !== false, data: null,
+    })),
     importe: '',  // `partes` no tiene columna importe
     obs: row.observaciones || '',
     firmante: row.firmante || '',
@@ -493,15 +500,19 @@ async function sincronizarPartes() {
   sincPartes = true;
   try {
     if (!Object.keys(empIdPorNombre).length) await cargarMapaEmpleados();
-    const [filas, horasFilas, matsFilas] = await Promise.all([
+    const [filas, horasFilas, matsFilas, adjFilas] = await Promise.all([
       Sysefen.db.listarPartes(),
       Sysefen.db.listarHorasPartes(),
       Sysefen.db.listarMaterialesPartes(),
+      // Si falta la Etapa 12 la tabla no existe: se sigue sin adjuntos en vez
+      // de dejar la lista de partes en blanco.
+      Sysefen.db.listarAdjuntosPartes().catch(() => []),
     ]);
     const horasPorParte = {}; (horasFilas || []).forEach((h) => { (horasPorParte[h.parte_id] = horasPorParte[h.parte_id] || []).push(h); });
     const matsPorParte = {}; (matsFilas || []).forEach((m) => { (matsPorParte[m.parte_id] = matsPorParte[m.parte_id] || []).push(m); });
+    const adjPorParte = {}; (adjFilas || []).forEach((a) => { (adjPorParte[a.parte_id] = adjPorParte[a.parte_id] || []).push(a); });
     S.partes = (filas || [])
-      .map((row) => mapParteDeDB(row, horasPorParte[row.id], matsPorParte[row.id]))
+      .map((row) => mapParteDeDB(row, horasPorParte[row.id], matsPorParte[row.id], adjPorParte[row.id]))
       .sort((a, b) => String(b.creado || '').localeCompare(String(a.creado || '')));
   } catch (e) { /* sin conexión / RLS: se mantiene lo que haya */ }
   finally { sincPartes = false; }
@@ -1550,7 +1561,16 @@ A.guardarEnviar = async (enviar) => {
     const nuevo = await Sysefen.db.crearParte(campos);
     if (horasFilas.length) await Sysefen.db.guardarHorasParte(nuevo.id, horasFilas);
     if (matsFilas.length) await Sysefen.db.guardarMaterialesParte(nuevo.id, matsFilas);
+    // Las fotos van a Supabase Storage. Si alguna falla no se tira el parte
+    // entero a la basura: se guarda igual y se dice cuántas no subieron, que
+    // es mejor que perder el trabajo escrito por una foto.
+    const fallos = [];
+    for (const adj of (d.adjuntos || [])) {
+      try { await Sysefen.db.subirAdjunto(nuevo.id, adj); }
+      catch (err) { fallos.push(adj.nombre || 'archivo'); }
+    }
     await sincronizarPartes();
+    if (fallos.length) avisar('El parte se guardó, pero no subieron ' + fallos.length + (fallos.length === 1 ? ' foto' : ' fotos') + '. Vuelve a adjuntarla desde el parte.');
     const p = S.partes.find((x) => x.id === nuevo.id);
     V.verParte = nuevo.id; V.draft = null;
     if (enviar && p) enviarEmail(p);
@@ -1588,7 +1608,31 @@ function enviarEmail(p) {
   location.href = url;
 }
 A.reenviar = (id) => enviarEmail(S.partes.find((p) => p.id === id));
-A.verPdf = (id) => { imprimirParte(S.partes.find((p) => p.id === id)); };
+// Las fotos de un parte guardado viven en Supabase Storage, así que hay que
+// traerlas ANTES de imprimir: si se pusieran como enlace, el navegador podría
+// mandar el papel a la impresora con los huecos todavía en blanco.
+async function cargarFotosParte(p) {
+  const pendientes = (p.adjuntos || []).filter((a) => a.img && a.ruta && !a.data);
+  if (!pendientes.length) return true;
+  let fallos = 0;
+  for (const a of pendientes) {
+    try {
+      const blob = await Sysefen.db.descargarAdjunto(a.ruta);
+      a.data = await new Promise((res, rej) => {
+        const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(blob);
+      });
+    } catch (e) { fallos++; }
+  }
+  return fallos === 0;
+}
+A.verPdf = async (id) => {
+  const p = S.partes.find((x) => x.id === id); if (!p) return;
+  const conFotos = (p.adjuntos || []).some((a) => a.img && a.ruta && !a.data);
+  if (conFotos) toast('Preparando el PDF con las fotos…');
+  const todas = await cargarFotosParte(p);
+  if (!todas) avisar('Alguna foto no se pudo descargar: saldrá sin ella.');
+  imprimirParte(p);
+};
 A.anular = (id) => { V.sheet = { tipo: 'anular', id }; render(); };
 A.confirmarAnular = async () => {
   const id = V.sheet.id;
@@ -3592,7 +3636,7 @@ function imprimirParte(p) {
       </div>
     </div>
     ${p.adjuntos.filter((a) => a.img).length ? `<div style="font:600 10px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:#666;margin:22px 0 6px">Adjuntos</div>
-      <div style="display:flex;flex-wrap:wrap;gap:6px">${p.adjuntos.filter((a) => a.img).map((a) => `<img src="${a.data}" style="width:52mm;border-radius:3px">`).join('')}</div>` : ''}
+      <div style="display:flex;flex-wrap:wrap;gap:6px">${p.adjuntos.filter((a) => a.img && a.data).map((a) => `<img src="${a.data}" style="width:52mm;border-radius:3px">`).join('')}</div>` : ''}
     ${p.adjuntos.filter((a) => !a.img).length ? `<div style="font:400 10px var(--mono);color:#666;margin-top:8px">Otros adjuntos: ${p.adjuntos.filter((a) => !a.img).map((a) => esc(a.nombre)).join(', ')}</div>` : ''}
     ${p.estado === 'anulado' ? '<div style="margin-top:20px;font:700 14px var(--sans);color:#a8402a">PARTE ANULADO</div>' : ''}
   </div>`;

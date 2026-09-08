@@ -217,6 +217,84 @@ export async function listarMaterialesPartes(parteId) {
   return unwrap(await q);
 }
 
+/* ---------------- adjuntos de partes (fotos) ---------------- */
+// Requiere sql/etapa12_adjuntos.sql: bucket privado `partes` + tabla
+// public.parte_adjuntos. El bucket es PRIVADO porque son fotos de obras de
+// clientes: se miran con enlaces firmados que caducan, no con una URL abierta.
+
+const BUCKET = 'partes';
+
+// dataURL ("data:image/jpeg;base64,...") -> Blob, sin pasar por fetch().
+function blobDeDataURL(dataURL) {
+  const [cabecera, datos] = String(dataURL).split(',');
+  const tipo = (cabecera.match(/data:([^;]+)/) || [])[1] || 'application/octet-stream';
+  const bin = atob(datos);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return new Blob([bytes], { type: tipo });
+}
+
+// Sube un adjunto y deja constancia en la tabla. Si la fila falla, se borra el
+// archivo: más vale no dejar nada que dejar un archivo que nadie ve ni puede
+// borrar desde la app.
+export async function subirAdjunto(parteId, adj) {
+  const blob = adj.blob || blobDeDataURL(adj.data);
+  const ext = (adj.nombre && adj.nombre.includes('.') ? adj.nombre.split('.').pop() : (adj.img ? 'jpg' : 'bin'))
+    .toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 5) || 'bin';
+  const ruta = `${parteId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+
+  const subida = await supabase.storage.from(BUCKET)
+    .upload(ruta, blob, { contentType: blob.type, upsert: false });
+  if (subida.error) throw new Error(subida.error.message);
+
+  const { data, error } = await supabase.from('parte_adjuntos').insert({
+    parte_id: parteId,
+    ruta,
+    nombre: adj.nombre || 'foto.jpg',
+    tipo: blob.type,
+    bytes: blob.size,
+    es_imagen: !!adj.img,
+  }).select().single();
+  if (error) {
+    await supabase.storage.from(BUCKET).remove([ruta]);
+    throw new Error(error.message);
+  }
+  return data;
+}
+
+// Filas de adjuntos visibles (RLS las acota). Sin parteId, todas.
+export async function listarAdjuntosPartes(parteId) {
+  let q = supabase.from('parte_adjuntos').select('*').order('creado_en', { ascending: true });
+  if (parteId) q = q.eq('parte_id', parteId);
+  return unwrap(await q);
+}
+
+// Enlaces temporales para mirar las fotos. Una hora por defecto: suficiente
+// para ver el parte o imprimirlo, y no vale como URL permanente.
+export async function urlsFirmadas(rutas, segundos = 3600) {
+  if (!rutas || !rutas.length) return {};
+  const { data, error } = await supabase.storage.from(BUCKET).createSignedUrls(rutas, segundos);
+  if (error) throw new Error(error.message);
+  const out = {};
+  (data || []).forEach((x) => { if (x.signedUrl && !x.error) out[x.path] = x.signedUrl; });
+  return out;
+}
+
+// Descarga el archivo. Se usa para incrustar la foto en el PDF: así el papel
+// no depende de que el enlace siga vivo cuando el navegador vaya a imprimir.
+export async function descargarAdjunto(ruta) {
+  const { data, error } = await supabase.storage.from(BUCKET).download(ruta);
+  if (error) throw new Error(error.message);
+  return data; // Blob
+}
+
+export async function borrarAdjunto(id, ruta) {
+  const { error } = await supabase.from('parte_adjuntos').delete().eq('id', id);
+  if (error) throw new Error(error.message);
+  await supabase.storage.from(BUCKET).remove([ruta]);
+  return true;
+}
+
 /* ---------------- incidencias ---------------- */
 
 export async function listarIncidencias() {
@@ -281,6 +359,7 @@ export default {
   fichajesDelDia, listarFichajes, escucharFichajes,
   listarPartes, crearParte, actualizarParte, guardarHorasParte, guardarMaterialesParte,
   listarHorasPartes, listarMaterialesPartes,
+  subirAdjunto, listarAdjuntosPartes, urlsFirmadas, descargarAdjunto, borrarAdjunto,
   listarIncidencias, crearIncidencia,
   presenciaDiaria, listarImputaciones, proponerImputaciones, guardarImputaciones, borrarImputacion,
 };

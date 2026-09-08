@@ -42,6 +42,8 @@ romper nada.
 | `etapa8_redondeo_15.sql` | imputaciones en tramos de 15 min |
 | `etapa9_importar_historico.sql` | **alta de fichajes con hora real (importación del histórico)** |
 | `etapa10_pin_admin.sql` | **Administración cambia el PIN de otra persona sin saber el anterior** |
+| `etapa11_nombre_completo_alta.sql` | **nombre completo y fecha de alta real en las planillas** |
+| `etapa12_adjuntos.sql` | **las fotos de los partes se guardan (bucket privado + tabla)** |
 
 `etapa9` hace falta para el botón *Ajustes → Importar CSV*. Sin ella la app se
 niega a importar y no escribe nada, porque el servidor pisaría todas las horas
