@@ -108,6 +108,54 @@ export async function cambiarPinPropio(pinActual, pinNuevo) {
   return true;
 }
 
+// --- Acciones de Administración sobre el acceso de OTRAS personas -----------
+// Van contra la Edge Function `admin-usuarios`, que es quien tiene la clave
+// service_role (dentro de Supabase, nunca en la app). Ver
+// supabase/functions/admin-usuarios/index.ts y PUBLICAR.md.
+//
+// Si la función todavía no está desplegada, el error que sale lleva
+// `noDesplegada = true` para que la app pueda enseñar los pasos manuales.
+async function errorDeFuncion(error, porDefecto) {
+  const ctx = error && error.context;
+  const nombre = (error && error.name) || '';
+  let msg = (error && error.message) || porDefecto;
+  // Sin desplegar, supabase-js no llega ni a hablar con la función: devuelve
+  // FunctionsFetchError (el subdominio de functions no responde) o un 404.
+  let noDesplegada = nombre === 'FunctionsFetchError' || nombre === 'FunctionsRelayError'
+    || /failed to fetch|networkerror|failed to send a request/i.test(msg);
+  try {
+    if (ctx && typeof ctx.status === 'number') {
+      noDesplegada = ctx.status === 404;
+      if (typeof ctx.clone === 'function') {
+        const cuerpo = await ctx.clone().json();
+        if (cuerpo && cuerpo.error) msg = cuerpo.error;
+      }
+    }
+  } catch (_) { /* el cuerpo no era JSON: nos quedamos con el mensaje suelto */ }
+  const e = new Error(noDesplegada ? 'La función de servidor no está desplegada todavía.' : msg);
+  e.noDesplegada = noDesplegada;
+  return e;
+}
+
+async function llamarAdmin(cuerpo) {
+  const { data, error } = await supabase.functions.invoke('admin-usuarios', { body: cuerpo });
+  if (error) throw await errorDeFuncion(error, 'No se pudo completar la operación.');
+  if (data && data.error) throw new Error(data.error);
+  return data;
+}
+
+// Administración cambia el PIN de otra persona.
+export async function adminCambiarPin(empleadoId, pin) {
+  if (!/^\d{4}$/.test(String(pin).trim())) throw new Error('El PIN son 4 números.');
+  return llamarAdmin({ accion: 'cambiar_pin', empleado_id: empleadoId, pin: String(pin).trim() });
+}
+
+// Administración crea el acceso (usuario de Auth) de un empleado ya dado de alta.
+export async function adminCrearAcceso(empleadoId, email, pin) {
+  if (!/^\d{4}$/.test(String(pin).trim())) throw new Error('El PIN son 4 números.');
+  return llamarAdmin({ accion: 'crear_acceso', empleado_id: empleadoId, email, pin: String(pin).trim() });
+}
+
 // cb(session) cada vez que cambia la sesión (login/logout/refresh).
 // Devuelve función para cancelar la suscripción.
 export function onAuthChange(cb) {
@@ -125,5 +173,7 @@ export default {
   usuarioActual,
   empleadoActual,
   cambiarPinPropio,
+  adminCambiarPin,
+  adminCrearAcceso,
   onAuthChange,
 };

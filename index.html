@@ -203,7 +203,7 @@ import * as sysDB from './supabase-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '7.6'; // versión visible de la app (única fuente)
+const APP_VERSION = '7.7'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -899,7 +899,7 @@ A.abrirEmpleado = (userId) => {
 };
 A.empNuevo = () => {
   V.empEmp = null;
-  V.empDraft = { nombre: '', email: '', telefono: '', rol: 'operario', activo: true, nuevo: true };
+  V.empDraft = { nombre: '', email: '', telefono: '', rol: 'operario', activo: true, pin: '', nuevo: true };
   V.view = 'empleado'; render();
 };
 A.volverEmpleados = () => { V.empEmp = null; V.empDraft = null; V.view = 'empleados'; render(); };
@@ -923,10 +923,25 @@ A.empGuardar = async () => {
   V.empBusy = true; render();
   try {
     if (d.nuevo) {
-      await Sysefen.db.crearEmpleado(campos);
+      const pin = (d.pin || '').trim();
+      if (pin && !/^\d{4}$/.test(pin)) { V.empBusy = false; avisar('El PIN son 4 números (o déjalo en blanco).'); return render(); }
+      const creado = await Sysefen.db.crearEmpleado(campos);
       mapaEmpPromesa = null; await cargarMapaEmpleados();
-      toast('Empleado creado. Falta darle acceso (ver aviso).');
-      V.sheet = { tipo: 'accesoEmpleado', nombre: campos.nombre, email: campos.email };
+      if (pin) {
+        // Alta completa: perfil + acceso, en un solo paso.
+        try {
+          await sysAuth.adminCrearAcceso(creado.id, campos.email, pin);
+          mapaEmpPromesa = null; await cargarMapaEmpleados();
+          toast(campos.nombre + ' ya puede entrar con su PIN.');
+        } catch (e) {
+          // El perfil sí quedó creado: se dice qué falta y cómo hacerlo a mano.
+          toast('Perfil creado. Falta el acceso (ver aviso).');
+          V.sheet = { tipo: 'accesoEmpleado', nombre: campos.nombre, email: campos.email, pin, motivo: e && e.noDesplegada ? '' : (e && e.message) || '' };
+        }
+      } else {
+        toast('Empleado creado. Falta darle acceso (ver aviso).');
+        V.sheet = { tipo: 'accesoEmpleado', nombre: campos.nombre, email: campos.email };
+      }
     } else {
       const empId = empIdDeUser(V.empEmp);
       await Sysefen.db.actualizarEmpleado(empId, campos);
@@ -1546,21 +1561,42 @@ A.cambiarRol = (id) => { const u = S.users.find((x) => x.id === id); u.rol = u.r
 // puede cambiar el PIN PROPIO; el de otra persona exige la clave service_role,
 // que no puede estar en la app. Por eso la hoja se comporta distinto según de
 // quién sea el PIN, en vez de fingir que lo cambia.
-A.editarPin = (id) => { V.sheet = { tipo: 'pin', id, actual: '', val: '', val2: '', busy: false }; render(); };
+A.editarPin = (id) => { V.sheet = { tipo: 'pin', id, actual: '', val: '', val2: '', busy: false, manual: false }; render(); };
 A.guardarPin = async () => {
   const s = V.sheet;
   if (s.busy) return;
-  if (!/^\d{4}$/.test(s.actual)) { avisar('Escribe tu PIN actual (4 números).'); return; }
+  const propio = yo() && s.id === yo().id;
+  if (propio && !/^\d{4}$/.test(s.actual)) { avisar('Escribe tu PIN actual (4 números).'); return; }
   if (!/^\d{4}$/.test(s.val)) { avisar('El PIN nuevo son 4 números.'); return; }
   if (s.val !== s.val2) { avisar('Los dos PIN nuevos no coinciden.'); return; }
-  if (s.val === s.actual) { avisar('El PIN nuevo es igual al actual.'); return; }
+  if (propio && s.val === s.actual) { avisar('El PIN nuevo es igual al actual.'); return; }
   if (!navigator.onLine) { avisar('Sin conexión — el PIN no se ha cambiado.'); return; }
+  const row = empRowById(empIdDeUser(s.id));
   s.busy = true; render();
   try {
-    await sysAuth.cambiarPinPropio(s.actual, s.val);
-    V.sheet = null; toast('PIN cambiado. Úsalo la próxima vez que entres.'); render();
+    if (propio) {
+      // El propio PIN se cambia con la sesión abierta: no hace falta servidor.
+      await sysAuth.cambiarPinPropio(s.actual, s.val);
+      V.sheet = null; toast('PIN cambiado. Úsalo la próxima vez que entres.'); render();
+      return;
+    }
+    if (!row) throw new Error('Empleado no vinculado en Supabase.');
+    if (row.user_id) {
+      await sysAuth.adminCambiarPin(row.id, s.val);
+      V.sheet = null; toast('PIN de ' + userById(s.id).nombre + ' cambiado.'); render();
+    } else {
+      const email = (row.email || emailSugerido(userById(s.id).nombre) || '').trim();
+      if (!email) throw new Error('Falta el email de acceso de esa persona.');
+      await sysAuth.adminCrearAcceso(row.id, email, s.val);
+      mapaEmpPromesa = null; await cargarMapaEmpleados();
+      V.sheet = null; toast('Acceso creado. Ya puede entrar con su PIN.'); render();
+    }
   } catch (e) {
-    s.busy = false; avisar(e && e.message ? e.message : 'No se pudo cambiar el PIN.'); render();
+    s.busy = false;
+    // Si la Edge Function todavía no está desplegada, no dejamos al usuario
+    // colgado: se le enseñan los pasos para hacerlo a mano en el panel.
+    if (e && e.noDesplegada) { s.manual = true; render(); return; }
+    avisar(e && e.message ? e.message : 'No se pudo cambiar el PIN.'); render();
   }
 };
 A.addUser = () => { V.sheet = { tipo: 'user', nombre: '', pin: '' }; render(); };
@@ -1592,6 +1628,175 @@ A.copia = () => {
 // (Sin "Restaurar copia": los datos reales viven en Supabase, así que volcar un
 // JSON viejo encima solo pisaba la copia local y volvía a llenarse al
 // sincronizar. La copia descargable sigue estando, para el archivo legal.)
+/* ---------- Importar el registro de jornada anterior a la app ----------
+   Transcribe a la app las horas que ya estaban anotadas en otro sitio (partes
+   en papel, cuadrante, nóminas). Una fila por TRAMO: si hay parada para comer,
+   son dos filas del mismo día, igual que si se hubiera fichado cuatro veces.
+   Los días sin fila no se inventan: quedan como "Sin fichaje", que es lo
+   honesto para vacaciones, festivos o bajas. */
+const sinTildes = (s) => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
+
+A.descargarPlantilla = () => {
+  const gente = S.users.filter((u) => u.rol !== 'admin');
+  const ej = (gente[0] || { nombre: 'Nombre' }).nombre;
+  const filas = [
+    'empleado;fecha;entrada;salida',
+    '# Una fila por tramo. Las líneas que empiezan por # se ignoran: bórralas o déjalas.',
+    '# La fecha admite 2026-01-08 o 08/01/2026. Las horas, HH:MM en reloj de 24 h.',
+    '# Si ese día se paró a comer, son DOS filas (mañana y tarde), como en el ejemplo.',
+    '# Los días que no se trabajó no se ponen: quedan en blanco en la planilla.',
+    `# ${ej};2026-01-08;07:58;13:02`,
+    `# ${ej};2026-01-08;14:05;17:31`,
+    `# ${ej};2026-01-09;08:03;16:59`,
+  ];
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob(['\uFEFF' + filas.join('\n')], { type: 'text/csv' }));
+  a.download = 'plantilla-registro-jornada.csv'; a.click();
+  toast('Plantilla descargada');
+};
+
+// Parte el CSV en filas ya validadas. No toca la base de datos: solo decide qué
+// entraría y qué no, y por qué, para poder enseñarlo antes de escribir nada.
+function analizarCSV(texto) {
+  const limpio = String(texto).replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n');
+  const lineas = limpio.split('\n').map((l) => l.trim()).filter((l) => l && !l.startsWith('#'));
+  if (!lineas.length) return { error: 'El archivo está vacío.' };
+
+  const sep = [';', ',', '\t'].map((s) => [s, lineas[0].split(s).length]).sort((a, b) => b[1] - a[1])[0];
+  if (sep[1] < 4) return { error: 'No encuentro las 4 columnas (empleado, fecha, entrada, salida). Revisa el separador.' };
+  const parte = (l) => l.split(sep[0]).map((c) => c.trim().replace(/^"|"$/g, ''));
+
+  const cab = parte(lineas[0]).map(sinTildes);
+  const col = {};
+  ['empleado', 'fecha', 'entrada', 'salida'].forEach((n) => { col[n] = cab.indexOf(n); });
+  const falta = Object.keys(col).filter((n) => col[n] < 0);
+  if (falta.length) return { error: 'Faltan columnas en la cabecera: ' + falta.join(', ') + '.' };
+
+  // Índice de personas por nombre y por email, sin tildes ni mayúsculas.
+  const porNombre = {};
+  S.users.forEach((u) => {
+    porNombre[sinTildes(u.nombre)] = u;
+    const row = empRowById(empIdDeUser(u.id));
+    if (row && row.email) porNombre[sinTildes(row.email)] = u;
+  });
+
+  const aFecha = (v) => {
+    const s = String(v).trim();
+    let m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (m) return m[1] + '-' + m[2] + '-' + m[3];
+    m = s.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{4})$/);
+    if (m) return m[3] + '-' + String(m[2]).padStart(2, '0') + '-' + String(m[1]).padStart(2, '0');
+    return null;
+  };
+  const aHora = (v) => {
+    const m = String(v).trim().match(/^(\d{1,2})[:.h](\d{2})(?::\d{2})?$/);
+    if (!m) return null;
+    const h = +m[1], mi = +m[2];
+    if (h > 23 || mi > 59) return null;
+    return String(h).padStart(2, '0') + ':' + m[2];
+  };
+
+  const hoy = hoyISO();
+  const ok = [], mal = [];
+  const vistas = {};                       // duplicados dentro del propio CSV
+  const yaEnBase = {};                     // duplicados contra lo ya cargado
+  S.fichajes.forEach((f) => { yaEnBase[f.userId + '|' + new Date(f.entrada).getTime()] = true; });
+  const tramos = {};                       // solapes por persona y día
+
+  lineas.slice(1).forEach((linea, i) => {
+    const n = i + 2;                       // nº de línea en el archivo, para el aviso
+    const c = parte(linea);
+    const crudo = c.join(' · ');
+    const rechaza = (motivo) => mal.push({ n, crudo, motivo });
+
+    const u = porNombre[sinTildes(c[col.empleado])];
+    if (!u) return rechaza('No hay ningún empleado que se llame "' + (c[col.empleado] || '') + '"');
+    const empId = empIdDeUser(u.id);
+    if (!empId) return rechaza(u.nombre + ' no está vinculado en Supabase');
+
+    const fecha = aFecha(c[col.fecha]);
+    if (!fecha) return rechaza('Fecha no válida: "' + (c[col.fecha] || '') + '"');
+    if (fecha > hoy) return rechaza('Fecha en el futuro: ' + fecha);
+
+    const h1 = aHora(c[col.entrada]), h2 = aHora(c[col.salida]);
+    if (!h1) return rechaza('Hora de entrada no válida: "' + (c[col.entrada] || '') + '"');
+    if (!h2) return rechaza('Hora de salida no válida: "' + (c[col.salida] || '') + '"');
+    if (h2 <= h1) return rechaza('La salida (' + h2 + ') no es posterior a la entrada (' + h1 + ')');
+
+    const entrada = new Date(fecha + 'T' + h1);
+    const salida = new Date(fecha + 'T' + h2);
+    const min = Math.round((salida - entrada) / 60000);
+    if (min > 16 * 60) return rechaza('Más de 16 h seguidas (' + durMin(min) + '): revisa esa fila');
+
+    const clave = u.id + '|' + entrada.getTime();
+    if (vistas[clave]) return rechaza('Repetida en el propio archivo');
+    if (yaEnBase[clave]) return rechaza('Ya estaba cargada en la app');
+    vistas[clave] = true;
+
+    const k = u.id + '|' + fecha;
+    tramos[k] = tramos[k] || [];
+    if (tramos[k].some((t) => h1 < t.h2 && h2 > t.h1)) return rechaza('Se solapa con otro tramo de ' + u.nombre + ' ese mismo día');
+    tramos[k].push({ h1, h2 });
+
+    ok.push({ userId: u.id, empleado_id: empId, nombre: u.nombre, fecha, h1, h2, min, entrada: entrada.toISOString(), salida: salida.toISOString() });
+  });
+
+  // Resumen por persona: lo que de verdad va a quedar en la planilla.
+  const porPersona = {};
+  ok.forEach((f) => {
+    const p = porPersona[f.userId] = porPersona[f.userId] || { nombre: f.nombre, tramos: 0, min: 0, dias: {}, desde: f.fecha, hasta: f.fecha };
+    p.tramos++; p.min += f.min; p.dias[f.fecha] = true;
+    if (f.fecha < p.desde) p.desde = f.fecha;
+    if (f.fecha > p.hasta) p.hasta = f.fecha;
+  });
+  return { ok, mal, personas: Object.values(porPersona).map((p) => ({ ...p, dias: Object.keys(p.dias).length })) };
+}
+
+A.abrirImportar = () => {
+  if (!esAdmin()) return;
+  const inp = document.createElement('input'); inp.type = 'file'; inp.accept = '.csv,text/csv,text/plain';
+  inp.onchange = async () => {
+    try {
+      const res = analizarCSV(await inp.files[0].text());
+      if (res.error) { avisar(res.error); return; }
+      V.imp = { ...res, archivo: inp.files[0].name, busy: false, hechas: 0, verMal: false };
+      V.view = 'importar'; render();
+    } catch (e) { avisar('No se pudo leer ese archivo.'); }
+  };
+  inp.click();
+};
+A.volverDeImportar = () => { V.imp = null; V.view = 'ajustes'; render(); };
+A.impVerMal = () => { if (V.imp) { V.imp.verMal = !V.imp.verMal; render(); } };
+A.importarConfirmar = async () => {
+  const im = V.imp; if (!im || im.busy || !im.ok.length) return;
+  if (!navigator.onLine) { avisar('Sin conexión — no se ha importado nada.'); return; }
+  im.busy = true; im.hechas = 0; render();
+  const LOTE = 100;
+  try {
+    for (let i = 0; i < im.ok.length; i += LOTE) {
+      const trozo = im.ok.slice(i, i + LOTE);
+      await Sysefen.db.importarFichajes(trozo.map((f) => ({ empleado_id: f.empleado_id, entrada: f.entrada, salida: f.salida })));
+      im.hechas = Math.min(i + LOTE, im.ok.length); render();
+    }
+    await refrescarDatos();
+    const n = im.hechas;
+    V.imp = null; V.view = 'ajustes';
+    toast(n + (n === 1 ? ' fichaje importado' : ' fichajes importados'));
+    render();
+  } catch (e) {
+    im.busy = false;
+    const msg = e && e.message ? e.message : 'error';
+    if (msg === 'FALTA_ETAPA9') {
+      im.error = 'Falta ejecutar sql/etapa9_importar_historico.sql en Supabase: sin esa migración el servidor pisaría todas las horas con la fecha de hoy. No se ha guardado nada.';
+    } else if (/fichajes_empleado_entrada_uk|duplicate key/i.test(msg)) {
+      im.error = 'Hay filas que ya estaban cargadas. Vuelve a exportar el CSV solo con lo que falte, o recarga la app para que se vea lo que ya hay.';
+    } else {
+      im.error = 'No se pudo importar: ' + msg + (im.hechas ? ' (se guardaron las ' + im.hechas + ' primeras)' : '');
+    }
+    render();
+  }
+};
+
 A.instalar = async () => {
   if (deferredPrompt) { deferredPrompt.prompt(); deferredPrompt = null; return; }
   V.sheet = { tipo: 'instalar' }; render();
@@ -1616,6 +1821,7 @@ function render() {
   else if (v === 'empleados' && esAdmin()) html = vEmpleados();
   else if (v === 'empleado' && esAdmin()) html = vEmpleado();
   else if (v === 'planilla' && (esAdmin() || V.planEmp === V.user.id)) html = vPlanilla();
+  else if (v === 'importar' && esAdmin()) html = vImportar();
   else if (v === 'ajustes') html = vAjustes();
   else if (v === 'p1') html = vP1();
   else if (v === 'p2') html = vP2();
@@ -2386,6 +2592,9 @@ function vEmpleado() {
     <input class="inp" data-f="empEmail" value="${esc(d.email)}" type="email" inputmode="email" autocapitalize="off" placeholder="${d.nuevo ? esc(emailSugerido(d.nombre) || 'nombre@sysefen.app') : 'nombre@sysefen.app'}">
     <div class="lbl" style="margin:14px 0 7px">Teléfono</div>
     <input class="inp" data-f="empTelefono" value="${esc(d.telefono)}" type="tel" inputmode="tel" placeholder="Opcional">
+    ${d.nuevo ? `<div class="lbl" style="margin:14px 0 7px">PIN de entrada</div>
+    <input class="inp" data-f="empPin" inputmode="numeric" maxlength="4" value="${esc(d.pin || '')}" placeholder="4 números" style="font:600 20px var(--cond);letter-spacing:.25em">
+    <div class="sub" style="font-size:12px;margin-top:6px">Con esto ya puede entrar. Si lo dejas en blanco se crea solo el perfil y le das el acceso después.</div>` : ''}
     <div class="lbl" style="margin:18px 0 9px">Rol</div>
     <div class="wrap">${ROLES.map(([r, l]) => `<div class="chip ${d.rol === r ? 'on' : ''}" data-a="empRol" data-r="${r}">${l}</div>`).join('')}</div>
 
@@ -2397,7 +2606,11 @@ function vEmpleado() {
 
     ${!d.nuevo ? `<div class="card row" data-a="editarPin" data-id="${V.empEmp}" style="margin-top:18px;cursor:pointer">
       <div class="grow"><div style="font:500 15px var(--sans)">PIN de acceso</div>
-      <div class="sub" style="font-size:12px;margin-top:4px">${V.empEmp === (yo() || {}).id ? 'Cambia aquí tu PIN de entrada.' : 'Cómo restablecer el PIN de ' + esc(d.nombre) + '.'}</div></div>
+      <div class="sub" style="font-size:12px;margin-top:4px">${V.empEmp === (yo() || {}).id
+        ? 'Cambia aquí tu PIN de entrada.'
+        : row && row.user_id
+          ? 'Ponle un PIN nuevo a ' + esc(d.nombre) + '.'
+          : esc(d.nombre) + ' todavía no puede entrar: crea su acceso.'}</div></div>
       <div style="font:400 20px/1 var(--sans);color:var(--t3)">›</div>
     </div>
 
@@ -2676,10 +2889,73 @@ function vAjustes() {
 
     <div class="lbl" style="font-weight:600;font-size:12px;color:var(--t2);margin:22px 0 10px">Datos</div>
     <button class="pill" data-a="copia" style="width:100%;padding:14px;text-align:center">Descargar copia</button>
-    <div class="sub" style="font-size:12px;margin-top:10px">La ley obliga a conservar el registro de jornada 4 años. Descarga la copia una vez al mes y guárdala fuera del móvil.</div>` : ''}
+    <div class="sub" style="font-size:12px;margin-top:10px">La ley obliga a conservar el registro de jornada 4 años. Descarga la copia una vez al mes y guárdala fuera del móvil.</div>
+
+    <div class="lbl" style="font-weight:600;font-size:12px;color:var(--t2);margin:22px 0 10px">Registro anterior a la app</div>
+    <div class="row g8">
+      <button class="pill grow" data-a="descargarPlantilla" style="padding:14px;text-align:center">Plantilla CSV</button>
+      <button class="pill grow" data-a="abrirImportar" style="padding:14px;text-align:center;background:var(--tinta);color:#fff">Importar CSV</button>
+    </div>
+    <div class="sub" style="font-size:12px;margin-top:10px">Para pasar a la app las horas que ya tenías anotadas fuera. Antes de guardar nada verás qué entra y qué se descarta.</div>` : ''}
 
     <button class="btn btn-gris" data-a="instalar" style="margin-top:20px;border-radius:99px">Instalar en la pantalla de inicio</button>
     <div class="lbl" style="text-align:center;margin-top:18px">Versión ${APP_VERSION} · datos sincronizados</div>
+  </div>`;
+}
+
+/* --- Importar registro de jornada: qué va a entrar, antes de escribir nada --- */
+function vImportar() {
+  const im = V.imp; if (!im) { V.view = 'ajustes'; return vAjustes(); }
+  const totalMin = im.personas.reduce((t, p) => t + p.min, 0);
+  const pct = im.ok.length ? Math.round((im.hechas / im.ok.length) * 100) : 0;
+  return `<div class="hdr row g12">
+    <div data-a="volverDeImportar" class="volver">‹ Ajustes</div>
+    <div class="grow" style="text-align:center;font:600 16px var(--sans)">Importar jornada</div>
+  </div>
+  <div class="scroll pad" style="padding-bottom:130px">
+    <div class="tiny" style="margin-bottom:12px">${esc(im.archivo)}</div>
+
+    ${im.error ? `<div class="card" style="background:var(--rojo-cl);border:1px solid var(--rojo);margin-bottom:14px">
+      <div style="font:600 14px var(--sans);color:var(--rojo)">No se ha importado</div>
+      <div class="sub" style="font-size:13px;margin-top:6px;color:var(--rojo)">${esc(im.error)}</div>
+    </div>` : ''}
+
+    <div class="card" style="margin-bottom:14px">
+      <div class="row" style="justify-content:space-between;align-items:baseline">
+        <div style="font:700 30px/1 var(--cond)">${im.ok.length}</div>
+        <div class="lbl">tramos a cargar</div>
+      </div>
+      <div class="sub" style="font-size:13px;margin-top:8px">${im.personas.length} ${im.personas.length === 1 ? 'persona' : 'personas'} · ${horasLargas(totalMin)} en total${im.mal.length ? ' · <b style="color:var(--rojo)">' + im.mal.length + ' fila' + (im.mal.length === 1 ? '' : 's') + ' descartada' + (im.mal.length === 1 ? '' : 's') + '</b>' : ''}</div>
+    </div>
+
+    ${im.personas.length ? `<div class="lbl" style="font-weight:600;font-size:12px;color:var(--t2);margin-bottom:8px">Por persona</div>
+    <div class="card" style="padding:0;overflow:hidden;margin-bottom:14px">
+      ${im.personas.map((p, i) => `<div class="row" style="padding:12px 14px;${i ? 'border-top:1px solid var(--l1)' : ''}">
+        <div class="grow"><div style="font:500 15px/1.2 var(--sans)">${esc(p.nombre)}</div>
+        <div class="tiny" style="margin-top:3px">${p.dias} ${p.dias === 1 ? 'día' : 'días'} · ${p.tramos} ${p.tramos === 1 ? 'tramo' : 'tramos'} · ${fechaCorta(p.desde + 'T12:00')} → ${fechaCorta(p.hasta + 'T12:00')}</div></div>
+        <div class="num" style="font-size:16px">${horasLargas(p.min)}</div>
+      </div>`).join('')}
+    </div>` : '<div class="card" style="margin-bottom:14px"><div class="sub">Ninguna fila del archivo se puede cargar. Mira los motivos abajo y vuelve a intentarlo.</div></div>'}
+
+    ${im.mal.length ? `<div class="card row" data-a="impVerMal" style="cursor:pointer;margin-bottom:${im.verMal ? '8px' : '14px'}">
+      <div class="grow"><div style="font:600 15px var(--sans);color:var(--rojo)">${im.mal.length} fila${im.mal.length === 1 ? '' : 's'} descartada${im.mal.length === 1 ? '' : 's'}</div>
+      <div class="sub" style="font-size:12px;margin-top:4px">No se cargan. Corrígelas en el CSV y vuelve a importar solo esas.</div></div>
+      <div style="font:400 18px/1 var(--sans);color:var(--t3)">${im.verMal ? '⌃' : '⌄'}</div>
+    </div>
+    ${im.verMal ? `<div class="card" style="padding:0;overflow:hidden;margin-bottom:14px">
+      ${im.mal.slice(0, 100).map((m, i) => `<div style="padding:11px 14px;${i ? 'border-top:1px solid var(--l1)' : ''}">
+        <div class="tiny">Línea ${m.n} · ${esc(m.crudo).slice(0, 70)}</div>
+        <div style="font:500 13px/1.3 var(--sans);color:var(--rojo);margin-top:3px">${esc(m.motivo)}</div>
+      </div>`).join('')}
+      ${im.mal.length > 100 ? `<div class="tiny" style="padding:11px 14px;border-top:1px solid var(--l1)">…y ${im.mal.length - 100} más.</div>` : ''}
+    </div>` : ''}` : ''}
+
+    <div class="sub" style="font-size:12px">Los días que no aparecen en el archivo quedan como <b>Sin fichaje</b> en la planilla: es lo correcto para fines de semana, festivos, vacaciones o bajas. No se rellenan solos.</div>
+  </div>
+  <div style="position:fixed;left:0;right:0;bottom:0;padding:14px 20px calc(14px + var(--safe-b));background:rgba(247,246,243,.96);border-top:1px solid var(--l1)">
+    ${im.busy ? `<div class="lbl" style="text-align:center;margin-bottom:8px">Cargando ${im.hechas} de ${im.ok.length} (${pct}%)</div>
+      <div style="height:6px;border-radius:99px;background:rgba(20,23,15,.1);overflow:hidden"><div style="height:100%;width:${pct}%;background:var(--verde)"></div></div>` : ''}
+    <button class="btn" data-a="importarConfirmar" ${im.busy || !im.ok.length ? 'disabled' : ''} style="${im.busy ? 'margin-top:12px' : ''}">${im.busy ? 'Cargando…' : 'Cargar ' + im.ok.length + ' ' + (im.ok.length === 1 ? 'tramo' : 'tramos')}</button>
   </div>`;
 }
 
@@ -3061,14 +3337,14 @@ function sheet() {
   if (s.tipo === 'accesoEmpleado') {
     return `<div class="sheet"><div>
       <div style="font:600 25px/1.15 var(--cond)">Falta crear el acceso</div>
-      <div class="sub" style="margin-top:8px">El perfil de <b>${esc(s.nombre)}</b> ya está creado. Para que pueda iniciar sesión, un administrador debe crear su usuario en Supabase (por seguridad esto no se hace desde la app):</div>
+      <div class="sub" style="margin-top:8px">El perfil de <b>${esc(s.nombre)}</b> ya está creado, pero todavía no puede entrar.${s.motivo ? ' ' + esc(s.motivo) : ' Falta desplegar la función <b>admin-usuarios</b>; mientras tanto se hace en el panel:'}</div>
       <div class="card" style="margin-top:12px;background:rgba(20,23,15,.04)">
         <div class="tiny">1. Supabase → Authentication → Users → <b>Add user</b></div>
         <div class="tiny" style="margin-top:6px">2. Email: <b>${esc(s.email || 'nombre@sysefen.app')}</b></div>
-        <div class="tiny" style="margin-top:6px">3. Password: <b>&lt;PIN de 4 cifras&gt;sysefen</b> (ej. <b>5678sysefen</b>)</div>
+        <div class="tiny" style="margin-top:6px">3. Password: <b>${esc(s.pin || '<PIN de 4 cifras>')}sysefen</b></div>
         <div class="tiny" style="margin-top:6px">4. Marca <b>Auto Confirm User</b> → Create user</div>
       </div>
-      <div class="tiny" style="margin-top:8px">El vínculo con el perfil es automático. Más adelante se automatizará con una función de servidor segura.</div>
+      <div class="tiny" style="margin-top:8px">El vínculo con el perfil es automático por el email.</div>
       <button class="btn btn-verde" data-a="cerrarSheet" style="margin-top:16px">Entendido</button>
     </div></div>`;
   }
@@ -3119,36 +3395,39 @@ function sheet() {
     const u = userById(s.id);
     const propio = yo() && s.id === yo().id;
     const est = 'font:600 22px var(--cond);text-align:center;letter-spacing:.3em';
-    if (!propio) {
-      // Cambiar el PIN de otro exige la clave service_role del proyecto, que no
-      // puede estar dentro de la app: cualquiera podría sacarla del móvil y
-      // saltarse todos los permisos. Se hace en el panel de Supabase.
-      const em = (empRowById(empIdDeUser(s.id)) || {}).email || emailSugerido(u.nombre) || 'nombre@sysefen.app';
+    const row = empRowById(empIdDeUser(s.id));
+    const sinAcceso = !propio && (!row || !row.user_id);
+    if (!propio && s.manual) {
+      // La Edge Function no está desplegada: se explican los pasos a mano.
+      const em = (row || {}).email || emailSugerido(u.nombre) || 'nombre@sysefen.app';
       return `<div class="sheet"><div>
-        <div style="font:600 25px/1.15 var(--cond)">PIN de ${esc(u.nombre)}</div>
-        <div class="sub" style="margin-top:8px">Desde la app no se puede cambiar el PIN de otra persona: haría falta la clave maestra de Supabase, y tenerla dentro del móvil dejaría el sistema abierto. Se hace en el panel, en un minuto:</div>
+        <div style="font:600 25px/1.15 var(--cond)">Hazlo desde el panel</div>
+        <div class="sub" style="margin-top:8px">Todavía no está desplegada la función de servidor que hace esto desde la app (<b>admin-usuarios</b>). Mientras tanto, en Supabase:</div>
         <div class="card" style="margin-top:12px;background:rgba(20,23,15,.04)">
           <div class="tiny">1. Supabase → Authentication → Users</div>
-          <div class="tiny" style="margin-top:6px">2. Busca <b>${esc(em)}</b> → menú <b>···</b> → <b>Reset password</b> o <b>Update user</b></div>
-          <div class="tiny" style="margin-top:6px">3. Password: <b>&lt;PIN de 4 cifras&gt;sysefen</b> (ej. <b>5678sysefen</b>)</div>
-          <div class="tiny" style="margin-top:6px">4. Dile el PIN nuevo en persona, no por WhatsApp.</div>
+          <div class="tiny" style="margin-top:6px">2. ${sinAcceso ? '<b>Add user</b> con el email <b>' + esc(em) + '</b>, marcando <b>Auto Confirm User</b>' : 'Busca <b>' + esc(em) + '</b> → menú <b>···</b> → <b>Reset password</b>'}</div>
+          <div class="tiny" style="margin-top:6px">3. Password: <b>${esc(s.val || '<PIN>')}sysefen</b></div>
+          <div class="tiny" style="margin-top:6px">4. Dile el PIN en persona, no por WhatsApp.</div>
         </div>
-        <div class="tiny" style="margin-top:8px">Cada persona sí puede cambiarse el suyo desde Ajustes → Cambiar mi PIN.</div>
         <button class="btn btn-verde" data-a="cerrarSheet" style="margin-top:16px">Entendido</button>
       </div></div>`;
     }
     return `<div class="sheet"><div>
-      <div style="font:600 25px/1.15 var(--cond)">Cambiar mi PIN</div>
-      <div class="sub" style="margin-top:8px">Cuatro números. A partir del cambio entras con el nuevo en todos tus dispositivos.</div>
-      <div class="lbl" style="margin:16px 0 6px">PIN actual</div>
-      <input class="inp" data-f="pinActual" type="password" inputmode="numeric" maxlength="4" value="${esc(s.actual)}" placeholder="0000" style="${est}">
-      <div class="lbl" style="margin:12px 0 6px">PIN nuevo</div>
+      <div style="font:600 25px/1.15 var(--cond)">${propio ? 'Cambiar mi PIN' : sinAcceso ? 'Crear el acceso de ' + esc(u.nombre) : 'PIN de ' + esc(u.nombre)}</div>
+      <div class="sub" style="margin-top:8px">${propio
+        ? 'Cuatro números. A partir del cambio entras con el nuevo en todos tus dispositivos.'
+        : sinAcceso
+          ? 'Todavía no puede entrar. Ponle un PIN de 4 números y quedará dado de alta.'
+          : 'Cuatro números. Entrará con el nuevo la próxima vez. Díselo en persona, no por WhatsApp.'}</div>
+      ${propio ? `<div class="lbl" style="margin:16px 0 6px">PIN actual</div>
+      <input class="inp" data-f="pinActual" type="password" inputmode="numeric" maxlength="4" value="${esc(s.actual)}" placeholder="0000" style="${est}">` : ''}
+      <div class="lbl" style="margin:${propio ? '12px' : '16px'} 0 6px">PIN nuevo</div>
       <input class="inp" data-f="pinNuevo" type="password" inputmode="numeric" maxlength="4" value="${esc(s.val)}" placeholder="0000" style="${est}">
       <div class="lbl" style="margin:12px 0 6px">Repite el PIN nuevo</div>
       <input class="inp" data-f="pinNuevo2" type="password" inputmode="numeric" maxlength="4" value="${esc(s.val2)}" placeholder="0000" style="${est}">
       <div class="row g8" style="margin-top:18px">
         <button class="btn btn-gris" data-a="cerrarSheet" style="border-radius:99px">Cancelar</button>
-        <button class="btn btn-verde" data-a="guardarPin" style="font-size:14px" ${s.busy ? 'disabled' : ''}>${s.busy ? 'Cambiando…' : 'Cambiar PIN'}</button>
+        <button class="btn btn-verde" data-a="guardarPin" style="font-size:14px" ${s.busy ? 'disabled' : ''}>${s.busy ? 'Guardando…' : sinAcceso ? 'Crear acceso' : 'Cambiar PIN'}</button>
       </div>
     </div></div>`;
   }
@@ -3356,6 +3635,11 @@ document.addEventListener('click', (e) => {
   if (a === 'guardarUser') return A.guardarUser();
   if (a === 'exportar') return A.exportar();
   if (a === 'copia') return A.copia();
+  if (a === 'descargarPlantilla') return A.descargarPlantilla();
+  if (a === 'abrirImportar') return A.abrirImportar();
+  if (a === 'volverDeImportar') return A.volverDeImportar();
+  if (a === 'impVerMal') return A.impVerMal();
+  if (a === 'importarConfirmar') return A.importarConfirmar();
   if (a === 'salir') return A.salir();
   if (a === 'instalar') return A.instalar();
 });
@@ -3373,6 +3657,7 @@ document.addEventListener('input', (e) => {
   if (f === 'empNombre') { A.empCampo('nombre', t.value); return; }
   if (f === 'empEmail') { A.empCampo('email', t.value); return; }
   if (f === 'empTelefono') { A.empCampo('telefono', t.value); return; }
+  if (f === 'empPin') { t.value = t.value.replace(/\D/g, '').slice(0, 4); A.empCampo('pin', t.value); return; }
   if (f === 'sheetVal') { V.sheet.val = t.value.replace(/\D/g, '').slice(0, 4); return; }
   if (f === 'sheetNombre') { V.sheet.nombre = t.value; return; }
   if (f === 'sheetPin') { V.sheet.pin = t.value.replace(/\D/g, '').slice(0, 4); return; }

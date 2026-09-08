@@ -1,54 +1,90 @@
-# Sysefen · Publicar la app — 15 minutos
+# Sysefen · Publicar y mantener
 
-## 1. Descarga la carpeta `app/`
-Contiene: `index.html`, `manifest.webmanifest`, `sw.js`, los iconos (`icon-*.png`) y los logos (`logo-trans.png`, `logo-blanco.png`).
-**No cambies los nombres ni la estructura.**
+## Cómo se publica hoy
 
-## 2. Súbela a internet (elige una)
+El repositorio está conectado a **Netlify**: cada `git push` a `main` despliega solo.
 
-### Opción A — Netlify Drop (la más rápida, gratis)
-1. Entra en **app.netlify.com/drop**
-2. Arrastra la carpeta `app` a la ventana.
-3. En 20 segundos te da una dirección tipo `https://algo-random.netlify.app`.
-4. En *Site configuration → Change site name* ponle algo tuyo: `sysefen-partes` → `https://sysefen-partes.netlify.app`.
+    git add -A
+    git commit -m "lo que sea"
+    git push
 
-Para actualizar la app más adelante: vuelves a arrastrar la carpeta.
+En 1-2 minutos está en <https://peppy-sopapillas-6a412c.netlify.app>.
 
-### Opción B — GitHub Pages (gratis, si ya usas GitHub)
-1. Crea un repositorio nuevo, sube los archivos de `app/` en la raíz.
-2. *Settings → Pages → Source: Deploy from a branch → main / (root)*.
-3. Queda en `https://tuusuario.github.io/turepo/`.
+**En cada publicación hay que subir dos números**, o los móviles siguen viendo la
+versión vieja:
 
-### Opción C — tu propio dominio
-Sube los 6 archivos por FTP a una carpeta del hosting. **Requisito: tiene que ir por HTTPS**, si no, no funciona el modo offline ni la instalación.
+- `APP_VERSION` en `index.html` (se ve al final de Ajustes).
+- `CACHE` en `sw.js` (`ch-v7-7` → `ch-v7-8`…). Es lo que obliga al service
+  worker a tirar el caché anterior.
 
-## 3. Instalar en los móviles del equipo
-Manda el enlace por WhatsApp a Bayron, Jaime, David y Ale.
+Si alguien dice que no ve un cambio: que cierre la app instalada **del todo**
+(no minimizada) y la vuelva a abrir.
 
-- **iPhone:** abrir el enlace **en Safari** (no en el navegador de dentro de WhatsApp: dale a "Abrir en Safari") → botón **Compartir** → **Añadir a pantalla de inicio**.
-- **Android:** abrir en Chrome → menú **⋮** → **Instalar aplicación**.
+## Instalar en los móviles del equipo
 
-Queda un icono como cualquier otra app, a pantalla completa, y funciona sin cobertura.
+- **iPhone:** abrir el enlace **en Safari** (si llega por WhatsApp, "Abrir en
+  Safari") → **Compartir** → **Añadir a pantalla de inicio**.
+- **Android:** abrir en Chrome → **⋮** → **Instalar aplicación**.
 
-## 4. Primer arranque (hazlo tú, 5 minutos)
-1. Entra como **Administración**, PIN `9999`.
-2. En **Ajustes** comprueba el nombre (Sysefen), pon el CIF y el email de copia de la gestoría. El logo ya va puesto y sale en el PDF de cada parte.
-3. Cambia los 5 PIN (botón **PIN** en cada empleado). Dilos en persona.
-4. Ve a **Obras → + Nueva** y da de alta las obras en curso, con el email del cliente.
-5. Marca una como obra de hoy (**Fichar aquí**) para que el equipo pueda fichar.
+## Base de datos (Supabase)
 
-PIN de fábrica: Bayron `1111` · Jaime `2222` · David `3333` · Ale `4444` · Administración `9999`.
+Los `.sql` de `sql/` son migraciones idempotentes: se pegan en
+*Supabase → SQL Editor → Run*, en orden, y se pueden volver a ejecutar sin
+romper nada.
 
-## Cómo se manda el informe al cliente
-En el paso 3 del parte, **Firmar y enviar informe** abre el correo del móvil con todo el parte escrito y el cliente en el destinatario. Para adjuntar el PDF: botón **Ver / guardar PDF** → en la ventana de impresión elige *Guardar en Archivos / PDF* → vuelve al correo y adjúntalo.
+| Archivo | Para qué |
+|---|---|
+| `etapa2_seguridad.sql` | RLS y funciones `es_admin()` / `es_jefe()` |
+| `etapa4_obras_fichaje.sql` | quién puede fichar en qué obra |
+| `etapa5_fichaje_libre.sql` | corrección de fichajes por jefe/admin |
+| `etapa6_presencia_cerrada.sql` | vista de presencia diaria |
+| `etapa7_empleados_planilla.sql` | alta/baja de empleados |
+| `etapa8_redondeo_15.sql` | imputaciones en tramos de 15 min |
+| `etapa9_importar_historico.sql` | **alta de fichajes con hora real (importación del histórico)** |
 
-Desde **Partes** puedes volver a sacar el PDF o reenviar cualquier parte antiguo.
+`etapa9` hace falta para el botón *Ajustes → Importar CSV*. Sin ella la app se
+niega a importar y no escribe nada, porque el servidor pisaría todas las horas
+con la fecha de hoy.
 
-## Lo que hay que saber de la v1.0
-- **Cada móvil guarda sus propios datos.** El móvil de Bayron no ve los partes del de Jaime. Recomendación para esta semana: los partes se hacen desde un solo móvil (el del jefe de la obra), y cada operario ficha en el suyo.
-- **Haz copia una vez a la semana.** Ajustes → *Descargar copia*. Guarda el archivo en Drive o en el correo. Es lo único que protege los datos si se pierde el móvil.
-- **Registro de jornada:** la ley obliga a conservarlo 4 años y a poder mostrarlo a Inspección. Exporta el CSV cada mes (Ajustes → Exportar CSV) y guárdalo. Comenta con tu gestoría que el registro lo lleváis así.
-- Las fotos se guardan reducidas para que quepan. Aun así, no metas 20 fotos por parte.
+## Función de servidor `admin-usuarios`
 
-## v1.1 — sincronización entre móviles
-Cuando quieras que todos vean lo mismo hace falta una base de datos en la nube. Abre una cuenta gratuita en **supabase.com**, pásame la URL del proyecto y la clave pública (*anon key*), y conecto la app: mismo diseño, mismos PIN, pero los datos compartidos, con envío automático del PDF por email y sin depender de un solo móvil.
+Es lo que permite que **Administración cambie el PIN de otra persona** y **cree
+el acceso de un empleado nuevo** desde la propia app. Sin desplegar, la app
+sigue funcionando: enseña los pasos para hacerlo a mano en el panel.
+
+La clave maestra (`service_role`) **nunca sale de Supabase**: la función la lee
+de una variable de entorno que Supabase inyecta sola. No hay que copiarla ni
+pegarla en ningún sitio, y no está dentro de la app.
+
+### Desplegarla desde el panel (sin instalar nada)
+
+1. Supabase → **Edge Functions** → **Deploy a new function** → *Via Editor*.
+2. Nombre: **`admin-usuarios`** (exactamente así).
+3. Pega el contenido de `supabase/functions/admin-usuarios/index.ts`.
+4. **Deploy**.
+
+### O con la CLI
+
+    npx supabase login
+    npx supabase link --project-ref <ref-del-proyecto>
+    npx supabase functions deploy admin-usuarios
+
+Para comprobar que va: en la app, *Empleados → una persona → PIN de acceso*.
+Si sale el formulario y el PIN cambia, está desplegada; si sale "Hazlo desde el
+panel", todavía no.
+
+## Importar el registro de jornada anterior a la app
+
+*Ajustes → Registro anterior a la app*.
+
+1. **Plantilla CSV** descarga `plantilla-registro-jornada.csv` con la cabecera
+   `empleado;fecha;entrada;salida` y las instrucciones comentadas con `#`.
+2. Se rellena una fila **por tramo**: si ese día se paró a comer, son dos filas
+   del mismo día. Los días no trabajados no se ponen — quedan como *Sin
+   fichaje*, que es lo correcto para festivos, vacaciones o bajas.
+3. **Importar CSV** enseña primero qué entraría, agrupado por persona, y qué
+   filas se descartan y por qué (nombre desconocido, fecha futura, solapes,
+   duplicados). No escribe nada hasta confirmar.
+
+El índice único `(empleado_id, entrada)` de `etapa9` impide duplicar el
+histórico si se importa dos veces el mismo archivo.

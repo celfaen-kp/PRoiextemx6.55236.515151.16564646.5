@@ -122,6 +122,29 @@ export async function crearFichajeManual(empleadoId, { entrada, salida }) {
   return corregirFichaje(nuevo.id, { entrada, salida });
 }
 
+// Importación del histórico: inserta muchos fichajes YA CERRADOS de una vez.
+// `filas` = [{ empleado_id, entrada, salida }] con entrada/salida en ISO.
+//
+// Requiere sql/etapa9_importar_historico.sql: sin esa migración el trigger
+// pisa la entrada con now() y se cargarían todos los días con la fecha de hoy.
+// Por eso se comprueba la primera fila devuelta y, si no coincide con lo que se
+// mandó, se deshace el lote y se avisa en vez de dejar basura en la tabla.
+export async function importarFichajes(filas) {
+  if (!filas || !filas.length) return [];
+  const puestos = unwrap(await supabase
+    .from('fichajes')
+    .insert(filas.map((f) => ({ empleado_id: f.empleado_id, obra_id: null, entrada: f.entrada, salida: f.salida })))
+    .select());
+  // Se comparan los mínimos, no fila a fila: así no depende del orden en que
+  // Postgres devuelva las filas.
+  const minimo = (xs) => Math.min(...xs.map((x) => new Date(x.entrada).getTime()));
+  if (!puestos.length || Math.abs(minimo(puestos) - minimo(filas)) > 60000) {
+    await supabase.from('fichajes').delete().in('id', puestos.map((p) => p.id));
+    throw new Error('FALTA_ETAPA9');
+  }
+  return puestos;
+}
+
 // Borrar un fichaje mal cargado (duplicado, día equivocado). Solo jefe/admin
 // por RLS.
 export async function borrarFichaje(fichajeId) {
@@ -254,7 +277,7 @@ export default {
   listarEmpleados, crearEmpleado, actualizarEmpleado,
   listarObras, crearObra, actualizarObra,
   empleadosDeObra, listarAsignaciones, asignarEmpleadoAObra, quitarEmpleadoDeObra,
-  fichajeAbierto, ficharEntrada, ficharSalida, corregirFichaje, crearFichajeManual, borrarFichaje,
+  fichajeAbierto, ficharEntrada, ficharSalida, corregirFichaje, crearFichajeManual, importarFichajes, borrarFichaje,
   fichajesDelDia, listarFichajes, escucharFichajes,
   listarPartes, crearParte, actualizarParte, guardarHorasParte, guardarMaterialesParte,
   listarHorasPartes, listarMaterialesPartes,
