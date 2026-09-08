@@ -203,7 +203,7 @@ import * as sysDB from './supabase-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '7.8'; // versión visible de la app (única fuente)
+const APP_VERSION = '7.9'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -326,6 +326,23 @@ async function cargarMapaEmpleados() {
   try { await mapaEmpPromesa; } finally { mapaEmpPromesa = null; }
 }
 const empRowById = (empId) => empRows.find((e) => e.id === empId) || null;
+// ¿Existe ya esa columna en public.empleados? Las de la Etapa 11
+// (nombre_completo, fecha_alta) son opcionales: si la migración no está
+// ejecutada, la app tira del nombre corto y de creado_en en vez de fallar.
+const columnaEmp = (k) => !!(empRows.length && Object.prototype.hasOwnProperty.call(empRows[0], k));
+// Nombre para DOCUMENTOS (planilla, PDF, CSV): nombre y apellidos si constan.
+// En pantalla y en el login se sigue usando el nombre corto.
+const nombreLegal = (userId) => {
+  const row = empRowById(empIdDeUser(userId));
+  const largo = row && row.nombre_completo && String(row.nombre_completo).trim();
+  return largo || (userById(userId) || {}).nombre || '—';
+};
+// Alta REAL como trabajador. `creado_en` solo dice cuándo se creó la ficha.
+const altaEmp = (row) => {
+  if (!row) return null;
+  if (row.fecha_alta) return String(row.fecha_alta).slice(0, 10) + 'T12:00';
+  return row.creado_en || null;
+};
 
 function mapFichajeDeDB(row) {
   const local = localPorNombre(nombrePorEmpId[row.empleado_id]);
@@ -543,6 +560,11 @@ function fechaLarga(iso) {
 function fechaCorta(iso) {
   const d = new Date(iso);
   return d.toLocaleDateString('es-ES', { day: '2-digit', month: 'short' });
+}
+// Con año: para altas, bajas y cualquier fecha de un documento que puede
+// abarcar varios años. fechaCorta() se queda para listas del día a día.
+function fechaConAnio(iso) {
+  return new Date(iso).toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 function durMin(min) { return Math.floor(min / 60) + ':' + String(min % 60).padStart(2, '0'); }
 function minEntre(a, b) { return Math.max(0, Math.round((new Date(b) - new Date(a)) / 60000)); }
@@ -894,12 +916,18 @@ A.abrirEmpleados = () => { V.empEmp = null; V.empDraft = null; V.view = 'emplead
 A.abrirEmpleado = (userId) => {
   const u = userById(userId);
   V.empEmp = userId;
-  V.empDraft = { nombre: u.nombre || '', email: u.email || '', telefono: u.telefono || '', rol: u.rol || 'operario', activo: u.activo !== false, nuevo: false };
+  const row = empRowById(empIdDeUser(userId)) || {};
+  V.empDraft = {
+    nombre: u.nombre || '', email: u.email || '', telefono: u.telefono || '',
+    rol: u.rol || 'operario', activo: u.activo !== false, nuevo: false,
+    nombreCompleto: row.nombre_completo || '',
+    fechaAlta: row.fecha_alta ? String(row.fecha_alta).slice(0, 10) : '',
+  };
   V.view = 'empleado'; render();
 };
 A.empNuevo = () => {
   V.empEmp = null;
-  V.empDraft = { nombre: '', email: '', telefono: '', rol: 'operario', activo: true, pin: '', nuevo: true };
+  V.empDraft = { nombre: '', email: '', telefono: '', rol: 'operario', activo: true, pin: '', nombreCompleto: '', fechaAlta: '', nuevo: true };
   V.view = 'empleado'; render();
 };
 A.volverEmpleados = () => { V.empEmp = null; V.empDraft = null; V.view = 'empleados'; render(); };
@@ -920,6 +948,10 @@ A.empGuardar = async () => {
     activo: d.activo,
     fecha_baja: d.activo ? null : (empRowById(empIdDeUser(V.empEmp)) || {}).fecha_baja || hoyISO(),
   };
+  // Solo se mandan si la Etapa 11 está ejecutada: si no, PostgREST rechazaría
+  // la fila entera por columnas desconocidas y no se podría guardar nada.
+  if (columnaEmp('nombre_completo')) campos.nombre_completo = (d.nombreCompleto || '').trim() || null;
+  if (columnaEmp('fecha_alta')) campos.fecha_alta = (d.fechaAlta || '').trim() || null;
   V.empBusy = true; render();
   try {
     if (d.nuevo) {
@@ -1133,11 +1165,16 @@ function mesesEnRango(userId, rango, mesBase) {
   if (rango === 'historial') {
     const empId = empIdDeUser(userId);
     const row = empId ? empRowById(empId) : null;
-    let desde = row && row.creado_en ? row.creado_en.slice(0, 7) : null;
-    if (!desde) {
-      const fs = S.fichajes.filter((f) => f.userId === userId);
-      desde = fs.length ? fs.reduce((min, f) => (f.entrada < min ? f.entrada : min), fs[0].entrada).slice(0, 7) : mesBase;
-    }
+    // Se arranca por lo MÁS ANTIGUO entre el alta y el primer fichaje. Si solo
+    // se mirara el alta, un histórico importado de antes de crear la ficha se
+    // quedaría fuera del papel sin que nadie se diera cuenta.
+    const alta = altaEmp(row);
+    const fs = S.fichajes.filter((f) => f.userId === userId);
+    const primerFichaje = fs.length
+      ? fs.reduce((min, f) => (f.entrada < min ? f.entrada : min), fs[0].entrada).slice(0, 7)
+      : null;
+    const candidatos = [alta ? alta.slice(0, 7) : null, primerFichaje].filter(Boolean);
+    const desde = candidatos.length ? candidatos.sort()[0] : mesBase;
     const out = [];
     let [y, m] = desde.split('-').map(Number);
     const [hy, hm] = hoy.split('-').map(Number);
@@ -1155,16 +1192,32 @@ A.exportarPlanillaCSV = () => {
   const rango = V.planRango || 'mes';
   const mesBase = V.planMes || hoyISO().slice(0, 7);
   const meses = mesesEnRango(userId, rango, mesBase);
-  const filas = [['Fecha', 'Entrada', 'Salida', 'Horas', 'Estado']];
+  const row = empRowById(empIdDeUser(userId));
+  // Cabecera: el CSV salía sin decir de quién era. Un registro de jornada tiene
+  // que identificar a la persona y a la empresa por sí solo.
+  const filas = [
+    ['REGISTRO DE JORNADA'],
+    ['Empresa', S.empresa + (S.cif ? ' · ' + S.cif : '')],
+    ['Empleado', nombreLegal(userId)],
+  ];
+  if (altaEmp(row)) filas.push(['Fecha de alta', fechaConAnio(altaEmp(row))]);
+  if (row && row.fecha_baja) filas.push(['Fecha de baja', fechaConAnio(row.fecha_baja + 'T12:00')]);
+  filas.push(['Periodo', rango === 'mes' ? mesLargo(mesBase) : rango === 'ano' ? 'Año ' + mesBase.slice(0, 4) : 'Historial completo']);
+  filas.push([]);
+  filas.push(['Fecha', 'Entrada', 'Salida', 'Horas', 'Estado']);
+  let totalMin = 0;
   meses.forEach((mes) => {
     planillaMes(userId, mes).dias.forEach((x) => {
+      if (x.min != null) totalMin += x.min;
       filas.push([mes + '-' + String(x.dd).padStart(2, '0'), x.entrada ? hhmm(x.entrada) : '', x.salida ? hhmm(x.salida) : '', x.min != null ? horasLargas(x.min) : '', x.estado]);
     });
   });
+  filas.push([]);
+  filas.push(['Total', '', '', horasLargas(totalMin), '']);
   const csv = '\uFEFF' + filas.map((r) => r.map((c) => '"' + String(c).replace(/"/g, '""') + '"').join(';')).join('\n');
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
-  a.download = 'planilla-' + (u.nombre || 'empleado').toLowerCase().replace(/\s+/g, '-') + '-' + rango + '-' + hoyISO() + '.csv';
+  a.download = 'planilla-' + sinTildes(nombreLegal(userId) || 'empleado').replace(/\s+/g, '-') + '-' + rango + '-' + hoyISO() + '.csv';
   a.click();
   toast('Planilla exportada en CSV');
 };
@@ -2586,8 +2639,14 @@ function vEmpleado() {
       </div>`).join('')}
     </div>` : ''}
 
-    <div class="lbl" style="margin-bottom:7px">Nombre</div>
-    <input class="inp" data-f="empNombre" value="${esc(d.nombre)}" placeholder="Nombre y apellidos">
+    <div class="lbl" style="margin-bottom:7px">Nombre en la app</div>
+    <input class="inp" data-f="empNombre" value="${esc(d.nombre)}" placeholder="Como sale en la pantalla de entrada">
+    ${columnaEmp('nombre_completo') ? `<div class="lbl" style="margin:14px 0 7px">Nombre completo</div>
+    <input class="inp" data-f="empNombreCompleto" value="${esc(d.nombreCompleto || '')}" placeholder="Nombre y apellidos">
+    <div class="sub" style="font-size:12px;margin-top:6px">El que sale en la planilla de horas y en los PDF. En la app se le sigue llamando ${esc(d.nombre || 'por el nombre corto')}.</div>` : ''}
+    ${columnaEmp('fecha_alta') ? `<div class="lbl" style="margin:14px 0 7px">Fecha de alta</div>
+    <input class="inp" data-f="empFechaAlta" type="date" value="${esc(d.fechaAlta || '')}">
+    <div class="sub" style="font-size:12px;margin-top:6px">Cuándo empezó a trabajar, no cuándo se creó su ficha aquí.</div>` : ''}
     <div class="lbl" style="margin:14px 0 7px">Email (acceso)</div>
     <input class="inp" data-f="empEmail" value="${esc(d.email)}" type="email" inputmode="email" autocapitalize="off" placeholder="${d.nuevo ? esc(emailSugerido(d.nombre) || 'nombre@sysefen.app') : 'nombre@sysefen.app'}">
     <div class="lbl" style="margin:14px 0 7px">Teléfono</div>
@@ -2614,7 +2673,7 @@ function vEmpleado() {
       <div style="font:400 20px/1 var(--sans);color:var(--t3)">›</div>
     </div>
 
-    <div class="tiny" style="margin-top:14px">${row && row.creado_en ? 'Alta: ' + fechaCorta(row.creado_en) : ''}${row && row.fecha_baja ? ' · Baja: ' + fechaCorta(row.fecha_baja + 'T12:00') : ''}</div>
+    <div class="tiny" style="margin-top:14px">${altaEmp(row) ? 'Alta: ' + fechaConAnio(altaEmp(row)) : ''}${row && row.fecha_baja ? ' · Baja: ' + fechaConAnio(row.fecha_baja + 'T12:00') : ''}</div>
     <button class="btn btn-gris" data-a="abrirPlanilla" data-id="${V.empEmp}" style="margin-top:16px;border-radius:14px">Ver planilla de horas</button>` : `<div class="tiny" style="margin-top:16px">Al guardar se crea el perfil. Para que pueda iniciar sesión hay que crear su acceso (te lo indicaremos).</div>`}
   </div>`;
 }
@@ -2742,7 +2801,7 @@ function imprimirPlanilla(userId, mesBase) {
   // administración, además firma con su nombre. Si el propio operario imprime
   // su planilla, el sello queda a nombre de la empresa (él no puede validarse).
   const quien = yo();
-  const selloNombre = quien && quien.id !== userId && (quien.rol === 'admin' || quien.rol === 'jefe') ? quien.nombre : '';
+  const selloNombre = quien && quien.id !== userId && (quien.rol === 'admin' || quien.rol === 'jefe') ? nombreLegal(quien.id) : '';
   const el = $('#print');
   el.innerHTML = `<div style="font-family:var(--sans);color:#14170f;max-width:180mm;position:relative;z-index:0">
     <img src="logo-trans.png" alt="" style="position:absolute;top:130mm;left:50%;transform:translate(-50%,-50%);width:120mm;opacity:.11;z-index:-1;pointer-events:none">
@@ -2754,9 +2813,9 @@ function imprimirPlanilla(userId, mesBase) {
     </div>
     <div style="height:2px;background:#14170f;margin:10px 0 12px"></div>
     <table style="width:100%;font:400 12px var(--sans);border-collapse:collapse">
-      <tr><td style="padding:2px 0;color:#666;width:28%">Empleado</td><td style="font-weight:600">${esc(u.nombre)}</td></tr>
-      ${row && row.creado_en ? `<tr><td style="padding:2px 0;color:#666">Fecha de alta</td><td>${fechaCorta(row.creado_en)}</td></tr>` : ''}
-      ${row && row.fecha_baja ? `<tr><td style="padding:2px 0;color:#666">Fecha de baja</td><td>${fechaCorta(row.fecha_baja + 'T12:00')}</td></tr>` : ''}
+      <tr><td style="padding:2px 0;color:#666;width:28%">Empleado</td><td style="font-weight:600">${esc(nombreLegal(userId))}</td></tr>
+      ${altaEmp(row) ? `<tr><td style="padding:2px 0;color:#666">Fecha de alta</td><td>${fechaConAnio(altaEmp(row))}</td></tr>` : ''}
+      ${row && row.fecha_baja ? `<tr><td style="padding:2px 0;color:#666">Fecha de baja</td><td>${fechaConAnio(row.fecha_baja + 'T12:00')}</td></tr>` : ''}
     </table>
     ${bloques.map((b) => `
     <div style="margin-top:18px;break-inside:avoid">
@@ -2790,7 +2849,7 @@ function imprimirPlanilla(userId, mesBase) {
         ${firmaTrab
           ? `<div style="height:20mm;display:flex;align-items:flex-end;justify-content:center"><img src="${firmaTrab}" alt="" style="max-height:19mm;max-width:100%;object-fit:contain"></div>`
           : '<div style="height:20mm"></div>'}
-        <div style="border-top:1px solid #14170f;padding-top:4px;font:400 11px var(--sans)">${esc(u.nombre)}</div></div>
+        <div style="border-top:1px solid #14170f;padding-top:4px;font:400 11px var(--sans)">${esc(nombreLegal(userId))}</div></div>
       <div style="flex:1"><div style="font:600 10px var(--mono);text-transform:uppercase;color:#666">Por ${esc(S.empresa)}</div>
         <div style="height:20mm;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1mm">
           ${selloNombre ? `<div style="font:500 26px var(--script);color:#14170f;line-height:1;padding-bottom:2px">${esc(selloNombre)}</div>` : ''}
@@ -3661,6 +3720,8 @@ document.addEventListener('input', (e) => {
   if (f === 'empEmail') { A.empCampo('email', t.value); return; }
   if (f === 'empTelefono') { A.empCampo('telefono', t.value); return; }
   if (f === 'empPin') { t.value = t.value.replace(/\D/g, '').slice(0, 4); A.empCampo('pin', t.value); return; }
+  if (f === 'empNombreCompleto') { A.empCampo('nombreCompleto', t.value); return; }
+  if (f === 'empFechaAlta') { A.empCampo('fechaAlta', t.value); return; }
   if (f === 'sheetVal') { V.sheet.val = t.value.replace(/\D/g, '').slice(0, 4); return; }
   if (f === 'sheetNombre') { V.sheet.nombre = t.value; return; }
   if (f === 'sheetPin') { V.sheet.pin = t.value.replace(/\D/g, '').slice(0, 4); return; }
