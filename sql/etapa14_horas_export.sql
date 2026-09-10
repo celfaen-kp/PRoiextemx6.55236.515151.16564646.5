@@ -18,16 +18,27 @@
 --   4. Los permisos del rol de solo lectura del automatismo (el rol se crea
 --      en `etapa14b_rol_integracion.sql`, que es una sola línea).
 --
--- DECISIÓN IMPORTANTE:
---   Las vistas NO llevan security_invoker: se ejecutan con los permisos de su
---   dueño, así que ven todo. Por eso NO se conceden a `authenticated` — un
---   operario podría leer las horas de todos y saltarse las políticas. Solo las
---   ve el rol de integración, que no puede hacer nada más.
+-- DÓNDE VIVEN LAS VISTAS, Y POR QUÉ NO EN `public`:
+--   Se ejecutan con los permisos de su dueño (sin security_invoker), así que
+--   ven las horas de todo el mundo. La primera versión las puso en `public`
+--   confiando en no concederlas a nadie... y quedaron abiertas a internet: en
+--   Supabase hay permisos por defecto que ceden cualquier objeto nuevo de
+--   `public` a `anon` y `authenticated`. Cualquiera con la clave pública podía
+--   leerlas sin ni siquiera iniciar sesión.
+--   Por eso viven en el esquema `integracion`, que la API NO publica. Ahí no es
+--   cuestión de permisos: PostgREST ni las ve. Los permisos son la segunda
+--   barrera, no la única.
 --
 -- Idempotente y no destructivo.
 -- =============================================================================
 
 begin;
+
+-- ---------------------------------------------------------------------------
+-- 0 · Esquema privado para lo que solo consume el automatismo
+-- ---------------------------------------------------------------------------
+create schema if not exists integracion;
+revoke all on schema integracion from anon, authenticated, public;
 
 -- ---------------------------------------------------------------------------
 -- 1 · Referencias al sistema externo
@@ -61,7 +72,7 @@ create index if not exists imputaciones_pendientes_idx
 -- ---------------------------------------------------------------------------
 -- 2 · Horas POR OBRA / categoría (lo que se manda como tiempo de proyecto)
 -- ---------------------------------------------------------------------------
-create or replace view public.v_horas_export as
+create or replace view integracion.v_horas_export as
 select
   i.id                                   as imputacion_id,
   i.fecha,
@@ -93,7 +104,7 @@ from public.imputaciones i
 join public.empleados e on e.id = i.empleado_id
 left join public.obras o on o.id = i.obra_id;
 
-comment on view public.v_horas_export is
+comment on view integracion.v_horas_export is
   'Horas repartidas por obra/categoría, listas para enviar fuera. `pendiente` = aún no enviada o cambiada después del último envío.';
 
 -- ---------------------------------------------------------------------------
@@ -101,7 +112,7 @@ comment on view public.v_horas_export is
 --     Incluye cuánto de esa jornada está repartido y cuánto queda suelto: es
 --     lo que dice si el dato de proyecto está completo o a medias.
 -- ---------------------------------------------------------------------------
-create or replace view public.v_jornadas_export as
+create or replace view integracion.v_jornadas_export as
 select
   p.fecha,
   e.id                                   as empleado_id,
@@ -135,7 +146,7 @@ left join (
    group by empleado_id, fecha
 ) im on im.empleado_id = p.empleado_id and im.fecha = p.fecha;
 
-comment on view public.v_jornadas_export is
+comment on view integracion.v_jornadas_export is
   'Una fila por empleado y día trabajado: horas reales de fichaje y cuánto de eso está repartido por obra.';
 
 -- ---------------------------------------------------------------------------
@@ -153,8 +164,9 @@ do $$
 begin
   if exists (select 1 from pg_roles where rolname = 'sysefen_integracion') then
     execute 'grant usage on schema public to sysefen_integracion';
-    execute 'grant select on public.v_horas_export    to sysefen_integracion';
-    execute 'grant select on public.v_jornadas_export to sysefen_integracion';
+    execute 'grant usage on schema integracion to sysefen_integracion';
+    execute 'grant select on integracion.v_horas_export    to sysefen_integracion';
+    execute 'grant select on integracion.v_jornadas_export to sysefen_integracion';
     -- `select (id)` hace falta porque sin poder leer el id no puede ni
     -- localizar la fila que va a marcar. No se le da el resto de columnas.
     execute 'grant select (id) on public.imputaciones to sysefen_integracion';
@@ -178,8 +190,11 @@ commit;
 
 -- Comprobación rápida (opcional):
 --   select count(*) filter (where pendiente) as pendientes, count(*) as total
---     from public.v_horas_export;
---   select * from public.v_jornadas_export order by fecha desc limit 10;
+--     from integracion.v_horas_export;
+--   select * from integracion.v_jornadas_export order by fecha desc limit 10;
+--
+-- Y que NO se vean desde fuera (debe dar 404):
+--   curl "https://<ref>.supabase.co/rest/v1/v_horas_export?select=*" -H "apikey: <clave publica>"
 
 -- =============================================================================
 -- CÓMO SE CONECTA MAKE (a decidir cuando llegue el momento)
