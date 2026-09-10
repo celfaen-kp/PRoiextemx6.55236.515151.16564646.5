@@ -203,7 +203,7 @@ import * as sysDB from './supabase-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '8.3'; // versión visible de la app (única fuente)
+const APP_VERSION = '8.5'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -591,9 +591,10 @@ function minutosSemana(uid_) {
   return S.fichajes.filter((f) => f.userId === uid_ && new Date(f.entrada) >= lunes)
     .reduce((t, f) => t + minEntre(f.entrada, f.salida || new Date().toISOString()), 0);
 }
-// Horas de obra = SIEMPRE desde imputaciones (el fichaje no tiene obra).
+// Horas de obra: partes firmados + imputaciones, sin contar dos veces.
+// (El fichaje no lleva obra, por eso no entra aquí.) Ver minutosObraRango.
 function minutosObra(obraId, uid_) {
-  return minutosObraImp(obraId, uid_);
+  return minutosObraRango(obraId, uid_, 'total');
 }
 function minutosMes(uid_) {
   const m = hoyISO().slice(0, 7);
@@ -1263,13 +1264,41 @@ function rangoFechas(rango) {
 }
 // Igual que minutosObraImp, pero por período (hoy/semana/mes) en vez de un
 // único día. Base de "Horas de obra" con desglose diario/semanal/mensual/total.
+// Horas dedicadas a una obra. Salen de DOS sitios y hay que sumarlos sin
+// contar nada dos veces:
+//   1. Los PARTES de trabajo, que ya dicen obra, persona y horas, y además
+//      están firmados por el cliente. Es la fuente fuerte.
+//   2. Las IMPUTACIONES de categoría 'obra', para el tiempo que se dedicó a la
+//      obra sin llegar a hacer parte (media mañana, un recado, un remate).
+// Regla: si para una persona y un día ya hay parte de esa obra, manda el parte
+// y se ignora la imputación de ese día. Si no, cuenta la imputación.
+//
+// Antes esto solo miraba las imputaciones, así que una obra con diez partes
+// firmados podía aparecer con cero horas.
 function minutosObraRango(obraId, userId, rango) {
   const r = rangoFechas(rango);
-  return S.imputaciones
+  const enRango = (f) => !r || (f >= r.desde && f <= r.hasta);
+  const conParte = new Set();
+  let total = 0;
+
+  S.partes
+    .filter((p) => p.obraId === obraId && p.estado !== 'anulado' && enRango(p.fecha))
+    .forEach((p) => {
+      Object.keys(p.horas || {}).forEach((uid) => {
+        if (userId && uid !== userId) return;
+        total += Math.round((p.horas[uid] || 0) * 60);
+        conParte.add(uid + '|' + p.fecha);
+      });
+    });
+
+  S.imputaciones
     .filter((i) => i.categoria === 'obra' && i.obraId === obraId
-      && (!userId || i.userId === userId)
-      && (!r || (i.fecha >= r.desde && i.fecha <= r.hasta)))
-    .reduce((t, i) => t + (i.minutos || 0), 0);
+      && (!userId || i.userId === userId) && enRango(i.fecha))
+    .forEach((i) => {
+      if (!conParte.has(i.userId + '|' + i.fecha)) total += i.minutos || 0;
+    });
+
+  return total;
 }
 // Resumen de imputaciones por categoría (Obra/Despacho/Preparación/Desplazamiento/
 // Otros) en un período, para el gráfico de "Horas" > "Resumen por categoría".
@@ -2113,9 +2142,16 @@ function vObra() {
   if (!o) { V.view = 'obras'; return vObras(); }
   const partes = S.partes.filter((p) => p.obraId === o.id);
   const rango = V.obraRango || 'total';
-  const filas = empleadosDeObra(o.id)
+  // Se listan los asignados MÁS cualquiera que tenga horas en esta obra: si
+  // alguien echó horas sin estar asignado, sus horas están igual de firmadas y
+  // no pueden desaparecer del reparto.
+  const conHoras = equipoTodos().filter((x) => minutosObraRango(o.id, x.id, rango) > 0);
+  const gente = empleadosDeObra(o.id).slice();
+  conHoras.forEach((x) => { if (!gente.some((g) => g.id === x.id)) gente.push(x); });
+  const filas = gente
     .map((x) => ({ x, m: minutosObraRango(o.id, x.id, rango) }))
-    .filter((f) => rango === 'total' || f.m > 0);
+    .filter((f) => rango === 'total' || f.m > 0)
+    .sort((a, b) => b.m - a.m);
   const total = filas.reduce((t, f) => t + f.m, 0) || 1;
   return `<div class="hdr-dark">
     <div class="back" data-a="ir" data-v="obras">‹ Obras</div>
