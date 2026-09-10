@@ -295,6 +295,20 @@ export async function borrarAdjunto(id, ruta) {
   return true;
 }
 
+// Borrar un parte del todo. Se limpian primero los archivos del almacén: las
+// filas se van solas en cascada, pero las fotos se quedarían huérfanas ocupando
+// sitio sin que nadie pueda verlas ni borrarlas desde la app.
+export async function borrarParte(parteId) {
+  try {
+    const adj = await listarAdjuntosPartes(parteId);
+    const rutas = (adj || []).map((a) => a.ruta);
+    if (rutas.length) await supabase.storage.from(BUCKET).remove(rutas);
+  } catch (e) { /* si no hay adjuntos o falta la tabla, seguimos */ }
+  await supabase.from('parte_materiales').delete().eq('parte_id', parteId);
+  await supabase.from('parte_horas').delete().eq('parte_id', parteId);
+  return unwrap(await supabase.from('partes').delete().eq('id', parteId).select());
+}
+
 /* ---------------- ausencias (vacaciones, festivos, bajas) ---------------- */
 // sql/etapa17. Marcan un día completo sin trabajo. No tocan los fichajes: un
 // día puede tener las dos cosas (media jornada y luego permiso), y la planilla
@@ -438,7 +452,7 @@ export default {
   fichajeAbierto, ficharEntrada, ficharSalida, corregirFichaje, crearFichajeManual, importarFichajes, borrarFichaje,
   fichajesDelDia, listarFichajes, escucharFichajes,
   listarPartes, crearParte, actualizarParte, guardarHorasParte, guardarMaterialesParte,
-  listarHorasPartes, listarMaterialesPartes,
+  listarHorasPartes, listarMaterialesPartes, borrarParte,
   subirAdjunto, listarAdjuntosPartes, urlsFirmadas, descargarAdjunto, borrarAdjunto,
   subirAvatar, urlsFirmadasAvatar, guardarMiAvatar, guardarAvatarDe, borrarAvatar,
   listarAusencias, marcarAusencia, quitarAusencia,

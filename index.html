@@ -204,7 +204,7 @@ import * as sysDB from './supabase-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '9.2'; // versión visible de la app (única fuente)
+const APP_VERSION = '9.3'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -1918,21 +1918,25 @@ A.verPdf = async (id) => {
   if (!todas) avisar('Alguna foto no se pudo descargar: saldrá sin ella.');
   imprimirParte(p);
 };
-A.anular = (id) => { V.sheet = { tipo: 'anular', id }; render(); };
-A.confirmarAnular = async () => {
+A.borrarParte = (id) => { V.sheet = { tipo: 'borrarParte', id }; render(); };
+A.confirmarBorrarParte = async () => {
   const id = V.sheet.id;
-  V.sheet = null; render();
-  if (!navigator.onLine) { avisar('Sin conexión — no se ha anulado'); return; }
+  if (!esAdmin()) return;
+  if (!navigator.onLine) { avisar('Sin conexión — no se ha borrado'); return; }
   try {
-    await Sysefen.db.actualizarParte(id, { estado: 'anulado', actualizado_en: new Date().toISOString() });
+    await Sysefen.db.borrarParte(id);
     await sincronizarPartes();
-    toast('Parte anulado (queda en el historial)');
+    V.sheet = null;
+    if (V.verParte === id) V.verParte = null;
+    toast('Parte borrado');
     render();
   } catch (e) {
-    avisar('No se pudo anular: ' + (e && e.message ? e.message : 'error'));
-    await sincronizarPartes(); render();
+    avisar('No se pudo borrar: ' + (e && e.message ? e.message : 'error'));
+    render();
   }
 };
+// (Sin "anular": un parte anulado se quedaba en la lista sin poder abrirse ni
+// revisarse siquiera. Ahora se borra del todo — ver A.borrarParte.)
 const totalHoras = (p) => Object.keys(p.horas).reduce((t, k) => t + p.horas[k], 0);
 const totalMats = (p) => p.mats.reduce((t, m) => t + (parseFloat(String(m.importe).replace(',', '.')) || 0), 0);
 
@@ -2456,10 +2460,10 @@ function cardParte(p) {
       <div class="grow"></div>
       ${p.importe && (puedeCrear() || S.opts.importesOperario) ? `<div class="num" style="font-size:17px">${esc(p.importe)} €</div>` : ''}
     </div>
-    ${puedeCrear() && p.estado !== 'anulado' ? `<div class="row g8" style="margin-top:12px">
+    ${puedeCrear() ? `<div class="row g8" style="margin-top:12px">
       <button class="pill grow" data-a="verPdf" data-id="${p.id}" style="padding:11px;text-align:center">PDF</button>
-      <button class="pill grow" data-a="reenviar" data-id="${p.id}" style="padding:11px;text-align:center">Reenviar</button>
-      ${esAdmin() ? `<button class="pill pill-rojo grow" data-a="anular" data-id="${p.id}" style="padding:11px;text-align:center">Anular</button>` : ''}
+      ${p.estado !== 'anulado' ? `<button class="pill grow" data-a="reenviar" data-id="${p.id}" style="padding:11px;text-align:center">Reenviar</button>` : ''}
+      ${esAdmin() ? `<button class="pill pill-rojo grow" data-a="borrarParte" data-id="${p.id}" style="padding:11px;text-align:center">Borrar</button>` : ''}
     </div>` : ''}
   </div>`;
 }
@@ -3827,13 +3831,15 @@ function sheet() {
       </div>
     </div></div>`;
   }
-  if (s.tipo === 'anular') {
+  if (s.tipo === 'borrarParte') {
+    const p = S.partes.find((x) => x.id === s.id);
     return `<div class="sheet"><div>
-      <div style="font:600 25px/1.15 var(--cond)">¿Anular este parte?</div>
-      <div class="sub" style="margin-top:8px">No se borra: queda marcado como anulado en el historial, con tu nombre y la fecha. Las horas fichadas no cambian.</div>
+      <div style="font:600 25px/1.15 var(--cond)">¿Borrar este parte?</div>
+      <div class="sub" style="margin-top:8px">${p ? esc(p.ref) + ' · ' + esc((obraById(p.obraId) || {}).cliente || '') + '. ' : ''}Se borra del todo, con sus horas, materiales y fotos. <b>No se puede deshacer.</b></div>
+      <div class="sub" style="margin-top:8px">Las horas fichadas del equipo no cambian: viven aparte, en el registro de jornada.</div>
       <div class="row g8" style="margin-top:20px">
         <button class="btn btn-gris" data-a="cerrarSheet" style="border-radius:99px">Cancelar</button>
-        <button class="btn btn-rojo" data-a="confirmarAnular" style="font-size:14px">Sí, anular</button>
+        <button class="btn btn-rojo" data-a="confirmarBorrarParte" style="font-size:14px">Sí, borrar</button>
       </div>
     </div></div>`;
   }
@@ -4033,8 +4039,8 @@ document.addEventListener('click', (e) => {
   if (a === 'guardarEnviar') return A.guardarEnviar(!!d.enviar);
   if (a === 'verPdf') { e.stopPropagation(); return A.verPdf(d.id); }
   if (a === 'reenviar') { e.stopPropagation(); return A.reenviar(d.id); }
-  if (a === 'anular') { e.stopPropagation(); return A.anular(d.id); }
-  if (a === 'confirmarAnular') return A.confirmarAnular();
+  if (a === 'borrarParte') { e.stopPropagation(); return A.borrarParte(d.id); }
+  if (a === 'confirmarBorrarParte') return A.confirmarBorrarParte();
   if (a === 'tabHoras') return A.tabHoras(d.t);
   if (a === 'abrirImputar') return A.abrirImputar();
   if (a === 'abrirResumenImp') return A.abrirResumenImp();
