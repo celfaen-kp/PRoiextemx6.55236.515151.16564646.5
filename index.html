@@ -204,7 +204,7 @@ import * as sysDB from './supabase-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '9.1'; // versión visible de la app (única fuente)
+const APP_VERSION = '9.2'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -554,6 +554,23 @@ const ETIQ_AUSENCIA = { vacaciones: 'Vacaciones', festivo: 'Festivo', baja: 'Baj
 // Para un festivo del calendario común se enseña su nombre ("Fiesta del
 // Trabajo"), que dice más que un "Festivo" a secas.
 const etiqAusencia = (au) => (au && au.comun && au.nota) ? au.nota : ETIQ_AUSENCIA[au.tipo];
+
+// Colores por tipo, para que en la planilla no se confundan de un vistazo con
+// un "Sin fichaje" cualquiera.
+const COLOR_AUSENCIA = {
+  vacaciones: ['#8a5a00', 'rgba(224,168,58,.22)'],
+  festivo:    ['#1e5b2a', 'rgba(45,122,62,.16)'],
+  baja:       ['#8a2f1c', 'rgba(168,64,42,.16)'],
+  permiso:    ['#3b3a6b', 'rgba(70,68,140,.14)'],
+};
+function insignia(tipo, texto) {
+  const [tinta, fondo] = COLOR_AUSENCIA[tipo] || ['var(--t2)', 'rgba(20,23,15,.08)'];
+  return `<span style="display:inline-block;padding:2px 8px;border-radius:99px;background:${fondo};color:${tinta};font:600 11px var(--sans)">${esc(texto || ETIQ_AUSENCIA[tipo])}</span>`;
+}
+// Día de la semana abreviado y si cae en fin de semana.
+const DIAS_SEM = ['dom', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb'];
+const diaSemana = (fecha) => DIAS_SEM[new Date(fecha + 'T12:00').getDay()];
+const finde = (fecha) => [0, 6].includes(new Date(fecha + 'T12:00').getDay());
 // Días de un tipo dentro de un rango de meses ('YYYY-MM').
 function diasAusencia(userId, tipo, desde, hasta) {
   return (S.ausencias || []).filter((a) => a.userId === userId && a.tipo === tipo
@@ -3073,28 +3090,15 @@ function vPlanilla() {
       <button class="pill grow" data-a="abrirRangoPlanilla" data-m="csv" style="padding:12px;text-align:center">Exportar CSV</button>
     </div>
     ${editable ? '<div class="tiny" style="margin-bottom:10px">Toca cualquier día para corregir sus horas, añadir un fichaje o marcarlo como vacaciones.</div>' : ''}
-    ${(() => {
-      const anio = mes.slice(0, 4);
-      const vacAnio = diasAusencia(userId, 'vacaciones', anio + '-01', anio + '-12');
-      const delMes = pl.ausencias || {};
-      const hayMes = Object.keys(delMes).some((k) => delMes[k] > 0);
-      if (!vacAnio && !hayMes) return '';
-      return `<div class="card row" style="margin-bottom:12px;background:var(--ambar-cl, rgba(224,168,58,.14))">
-        <div class="grow"><div class="lbl">Vacaciones en ${anio}</div>
-        <div style="font:700 22px/1 var(--cond);margin-top:5px">${vacAnio} ${vacAnio === 1 ? 'día' : 'días'}</div></div>
-        ${hayMes ? `<div style="text-align:right"><div class="lbl">Este mes</div>
-          <div class="tiny" style="margin-top:5px">${resumenAusencias(delMes).replace(/^ · /, '')}</div></div>` : ''}
-      </div>`;
-    })()}
     <div class="card" style="padding:0;overflow:hidden">
       <div class="row" style="padding:9px 12px;background:rgba(20,23,15,.04);font:600 10px var(--mono);text-transform:uppercase;letter-spacing:.06em;color:var(--t2)">
-        <div style="width:38px">Día</div><div class="grow">Entrada / Salida</div><div style="width:52px;text-align:right">Horas</div>
+        <div style="width:58px">Día</div><div class="grow">Entrada / Salida</div><div style="width:52px;text-align:right">Horas</div>
       </div>
       ${pl.dias.map((x) => `<div class="row" ${editable ? `data-a="planDia" data-fecha="${x.fecha}"` : ''} style="padding:9px 12px;border-top:1px solid var(--l1)${editable ? ';cursor:pointer' : ''}">
-        <div style="width:38px;font:500 13px var(--mono)">${String(x.dd).padStart(2, '0')}</div>
+        <div style="width:58px;font:500 13px var(--mono);${finde(x.fecha) ? 'opacity:.5' : ''}">${String(x.dd).padStart(2, '0')} <span style="font:400 11px var(--sans);color:var(--t3)">${diaSemana(x.fecha)}</span></div>
         <div class="grow" style="font:400 13px var(--sans)">${x.min != null || x.estado === 'En curso'
-          ? hhmm(x.entrada) + ' – ' + (x.salida ? hhmm(x.salida) : '—')
-          : `<span style="color:var(--t3)">${x.estado}</span>`}</div>
+          ? hhmm(x.entrada) + ' – ' + (x.salida ? hhmm(x.salida) : '—') + (x.ausencia ? ' ' + insignia(x.ausencia) : '')
+          : (x.ausencia ? insignia(x.ausencia, x.estado) : `<span style="color:var(--t3)">${x.estado}</span>`)}</div>
         <div style="width:52px;text-align:right;font:500 13px var(--mono)">${x.min != null ? horasLargas(x.min) : (x.estado === 'En curso' ? '…' : '—')}</div>
         ${editable ? '<div style="width:14px;text-align:right;font:400 15px var(--sans);color:var(--t3)">›</div>' : ''}
       </div>`).join('')}
@@ -3102,10 +3106,12 @@ function vPlanilla() {
     <div class="card" style="margin-top:12px">
       <div class="row" style="justify-content:space-between"><div class="sub">Horas trabajadas</div><div class="num" style="font-size:17px">${horasLargas(pl.totalMin)}</div></div>
       <div class="row" style="justify-content:space-between;margin-top:6px"><div class="sub">Días trabajados</div><div class="num" style="font-size:17px">${pl.diasTrab}</div></div>
-      <div class="row" style="justify-content:space-between;margin-top:6px"><div class="sub">Días de vacaciones</div><div class="num" style="font-size:17px;color:var(--t3)">0</div></div>
-      <div class="row" style="justify-content:space-between;margin-top:6px"><div class="sub">Festivos</div><div class="num" style="font-size:17px;color:var(--t3)">0</div></div>
-      <div class="row" style="justify-content:space-between;margin-top:6px"><div class="sub">Otros estados</div><div class="num" style="font-size:17px;color:var(--t3)">0</div></div>
-      <div class="tiny" style="margin-top:8px">Vacaciones, festivos y otros estados: pendientes de implementar.</div>
+      <div class="row" style="justify-content:space-between;margin-top:6px"><div class="sub">Días de vacaciones</div><div class="num" style="font-size:17px;color:${(pl.ausencias.vacaciones || 0) ? 'var(--ambar-o, #a8792a)' : 'var(--t3)'}">${pl.ausencias.vacaciones || 0}</div></div>
+      <div class="row" style="justify-content:space-between;margin-top:6px"><div class="sub">Festivos</div><div class="num" style="font-size:17px;color:${(pl.ausencias.festivo || 0) ? 'var(--verde-o)' : 'var(--t3)'}">${pl.ausencias.festivo || 0}</div></div>
+      <div class="row" style="justify-content:space-between;margin-top:6px"><div class="sub">Bajas y permisos</div><div class="num" style="font-size:17px;color:var(--t3)">${(pl.ausencias.baja || 0) + (pl.ausencias.permiso || 0)}</div></div>
+      <div class="hr"></div>
+      <div class="row" style="justify-content:space-between"><div class="sub"><b>Vacaciones en ${mes.slice(0, 4)}</b></div>
+        <div class="num" style="font-size:19px">${diasAusencia(userId, 'vacaciones', mes.slice(0, 4) + '-01', mes.slice(0, 4) + '-12')} días</div></div>
     </div>
     <div class="lbl" style="font-weight:600;font-size:12px;color:var(--t2);margin:22px 0 10px">Resumen histórico</div>
     <div class="row g10">
