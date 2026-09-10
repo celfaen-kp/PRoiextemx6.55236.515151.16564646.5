@@ -295,6 +295,50 @@ export async function borrarAdjunto(id, ruta) {
   return true;
 }
 
+/* ---------------- avatares ---------------- */
+// Bucket privado `avatares` (sql/etapa16). Una foto por persona, en su propia
+// carpeta: las políticas de Storage solo dejan escribir en la carpeta propia
+// (o a administración), así que nadie puede cambiarle la foto a otro.
+
+export async function subirAvatar(empleadoId, dataURL) {
+  const blob = blobDeDataURL(dataURL);
+  const ruta = `${empleadoId}/avatar.jpg`;
+  const { error } = await supabase.storage.from('avatares')
+    .upload(ruta, blob, { contentType: blob.type, upsert: true });
+  if (error) throw new Error(error.message);
+  return ruta;
+}
+
+export async function urlsFirmadasAvatar(rutas, segundos = 3600) {
+  if (!rutas || !rutas.length) return {};
+  const { data, error } = await supabase.storage.from('avatares').createSignedUrls(rutas, segundos);
+  if (error) throw new Error(error.message);
+  const out = {};
+  (data || []).forEach((x) => { if (x.signedUrl && !x.error) out[x.path] = x.signedUrl; });
+  return out;
+}
+
+// Cada uno cambia SOLO el suyo, por función del servidor: si se abriera el
+// update de `empleados`, se podría tocar también el rol.
+export async function guardarMiAvatar(emoji, foto) {
+  const { error } = await supabase.rpc('guardar_mi_avatar', { p_emoji: emoji || null, p_foto: foto || null });
+  if (error) throw new Error(error.message);
+  return true;
+}
+
+// Administración puede cambiar el de cualquiera (su política ya lo permite).
+export async function guardarAvatarDe(empleadoId, emoji, foto) {
+  return unwrap(await supabase.from('empleados')
+    .update({ avatar_emoji: emoji || null, avatar_foto: foto || null })
+    .eq('id', empleadoId).select().single());
+}
+
+export async function borrarAvatar(ruta) {
+  if (!ruta) return true;
+  await supabase.storage.from('avatares').remove([ruta]);
+  return true;
+}
+
 /* ---------------- incidencias ---------------- */
 
 export async function listarIncidencias() {
@@ -360,6 +404,7 @@ export default {
   listarPartes, crearParte, actualizarParte, guardarHorasParte, guardarMaterialesParte,
   listarHorasPartes, listarMaterialesPartes,
   subirAdjunto, listarAdjuntosPartes, urlsFirmadas, descargarAdjunto, borrarAdjunto,
+  subirAvatar, urlsFirmadasAvatar, guardarMiAvatar, guardarAvatarDe, borrarAvatar,
   listarIncidencias, crearIncidencia,
   presenciaDiaria, listarImputaciones, proponerImputaciones, guardarImputaciones, borrarImputacion,
 };

@@ -75,7 +75,8 @@ a:hover{color:var(--tinta)}
 .inp-lg{font:600 22px var(--cond)}
 .dot{width:9px;height:9px;border-radius:99px;flex:none}
 .badge{font:600 9px/1 var(--mono);letter-spacing:.08em;text-transform:uppercase;padding:6px 8px;border-radius:99px;flex:none}
-.av{border-radius:99px;flex:none;display:flex;align-items:center;justify-content:center;font-weight:600;font-family:var(--sans)}
+.av{border-radius:99px;flex:none;display:flex;align-items:center;justify-content:center;font-weight:600;font-family:var(--sans);overflow:hidden;background-size:cover;background-position:center}
+.av.emoji{font-weight:400;line-height:1}
 .sw{width:44px;height:26px;border-radius:99px;flex:none;padding:3px;display:flex;transition:.15s}
 .sw i{width:20px;height:20px;border-radius:99px;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.2)}
 .hr{height:1px;background:var(--l2);margin:14px 0}
@@ -203,7 +204,7 @@ import * as sysDB from './supabase-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '8.8'; // versión visible de la app (única fuente)
+const APP_VERSION = '8.9'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -516,7 +517,7 @@ async function sincronizarPartes() {
   finally { sincPartes = false; }
 }
 
-const refrescarDatos = () => Promise.all([sincronizarFichajes(), sincronizarObras(), sincronizarImputaciones(), sincronizarPartes()]);
+const refrescarDatos = () => Promise.all([sincronizarFichajes(), sincronizarObras(), sincronizarImputaciones(), sincronizarPartes(), cargarAvatares()]);
 
 // Presencia CERRADA (jornada terminada) de un empleado en un día, desde S.fichajes.
 // Minutos REALES exactos. NO se redondea aquí.
@@ -543,6 +544,37 @@ const equipo = () => S.users.filter((u) => u.rol !== 'admin' && u.activo !== fal
 const equipoTodos = () => S.users.filter((u) => u.rol !== 'admin');
 const userById = (id) => S.users.find((u) => u.id === id) || { nombre: '—' };
 const ini = (n) => n.trim().slice(0, 1).toUpperCase();
+
+// --- Avatares -------------------------------------------------------------
+// Cada persona puede poner un emoji o una foto; si no, sus iniciales. Las fotos
+// viven en el bucket privado `avatares`, así que se piden enlaces firmados una
+// vez por sesión y se guardan aquí. En la pantalla de entrada todavía no hay
+// sesión: allí siempre salen las iniciales.
+const urlAvatar = {};   // empleado_id -> enlace firmado
+
+async function cargarAvatares() {
+  try {
+    const rutas = empRows.filter((e) => e.avatar_foto).map((e) => e.avatar_foto);
+    if (!rutas.length) return;
+    const urls = await Sysefen.db.urlsFirmadasAvatar(rutas);
+    empRows.forEach((e) => { if (e.avatar_foto && urls[e.avatar_foto]) urlAvatar[e.id] = urls[e.avatar_foto]; });
+  } catch (e) { /* sin avatares: se ven las iniciales, que no es un fallo grave */ }
+}
+
+// `estilo` trae el color y el tamaño que ya usaba cada sitio; `attrs` permite
+// colgarle un data-a para que se pueda pulsar.
+function avatarHTML(userId, estilo, attrs) {
+  const u = userById(userId) || { nombre: '—' };
+  const row = empRowById(empIdDeUser(userId));
+  const a = attrs ? ' ' + attrs : '';
+  if (row && row.avatar_foto && urlAvatar[row.id]) {
+    return `<div class="av"${a} style="${estilo};background-image:url('${urlAvatar[row.id]}')"></div>`;
+  }
+  if (row && row.avatar_emoji) {
+    return `<div class="av emoji"${a} style="${estilo}">${esc(row.avatar_emoji)}</div>`;
+  }
+  return `<div class="av"${a} style="${estilo}">${esc(ini(u.nombre))}</div>`;
+}
 // Marca pequeña (logo oficial + "Sysefen") para cabeceras internas. Reutiliza
 // icon-512.png (el mismo icono ya usado como icono de la app/PWA).
 const marcaSysefen = (oscuro) => `<div class="row g8" style="margin-bottom:9px">
@@ -1337,6 +1369,73 @@ A.pedirFichaje = (userId) => {
 A.cerrarSheet = () => { V.sheet = null; render(); };
 A.menuUsuario = () => { V.sheet = { tipo: 'menuUsuario' }; render(); };
 
+// Emojis para el avatar: oficios y cosas de obra, más algunas caras. Es una
+// lista corta a propósito — un teclado de emojis entero en el móvil es peor.
+const EMOJIS_AVATAR = ['👷','🧑‍🔧','⚡','🔧','🔩','🪛','🔌','💡','🪜','🚚','🧰','📐','🏠','☀️','🔥','💧','😎','🙂','💪','🐺','🦊','🐻','🚀','⭐'];
+
+A.abrirAvatar = () => { V.sheet = { tipo: 'avatar', busy: false }; render(); };
+
+const guardarAvatar = async (emoji, foto) => {
+  await Sysefen.db.guardarMiAvatar(emoji, foto);
+  mapaEmpPromesa = null; await cargarMapaEmpleados();
+  await cargarAvatares();
+};
+
+A.ponerEmoji = async (e) => {
+  if (!navigator.onLine) { avisar('Sin conexión — no se ha guardado.'); return; }
+  const row = empRowById(empIdDeUser(V.user.id)) || {};
+  try {
+    // Al poner emoji se borra la foto: solo se enseña una cosa, y dejar el
+    // archivo suelto en el almacén sería basura que nadie ve ni puede borrar.
+    if (row.avatar_foto) await Sysefen.db.borrarAvatar(row.avatar_foto);
+    await guardarAvatar(e, null);
+    toast('Listo'); render();
+  } catch (err) { avisar(mensajeAvatar(err)); }
+};
+
+// Si falta sql/etapa16 no existen ni la función ni el bucket: decirlo, en vez
+// de soltar el error crudo de Postgres.
+const mensajeAvatar = (err) => {
+  const m = (err && err.message) || '';
+  return /guardar_mi_avatar|schema cache|Bucket not found|does not exist/i.test(m)
+    ? 'Falta ejecutar sql/etapa16_avatar.sql en Supabase.'
+    : (m || 'No se pudo guardar.');
+};
+
+A.quitarAvatar = async () => {
+  const row = empRowById(empIdDeUser(V.user.id)) || {};
+  try {
+    if (row.avatar_foto) await Sysefen.db.borrarAvatar(row.avatar_foto);
+    await guardarAvatar(null, null);
+    toast('Vuelves a tus iniciales'); render();
+  } catch (err) { avisar(mensajeAvatar(err)); }
+};
+
+A.subirAvatar = () => {
+  const inp = document.createElement('input');
+  inp.type = 'file'; inp.accept = 'image/*';
+  inp.onchange = async () => {
+    const file = inp.files[0]; if (!file) return;
+    if (!navigator.onLine) { avisar('Sin conexión — no se ha guardado.'); return; }
+    const s = V.sheet; if (s) { s.busy = true; render(); }
+    try {
+      // Un avatar se ve a 76 px como mucho: 256 px sobran y pesan ~15 KB en vez
+      // de los 200 KB de una foto de parte.
+      const data = await comprimir(file, 256, 0.7);
+      const empId = empIdDeUser(V.user.id);
+      const ruta = await Sysefen.db.subirAvatar(empId, data);
+      await guardarAvatar(null, ruta);
+      if (V.sheet) V.sheet.busy = false;
+      toast('Foto guardada'); render();
+    } catch (err) {
+      if (V.sheet) V.sheet.busy = false;
+      avisar(mensajeAvatar(err));
+      render();
+    }
+  };
+  inp.click();
+};
+
 async function empIdParaFichar(nombre) {
   if (!Object.keys(empIdPorNombre).length) { try { await cargarMapaEmpleados(); } catch (e) {} }
   return empIdPorNombre[nombre];
@@ -1543,17 +1642,18 @@ async function añadirArchivo(file) {
   } catch (e) { avisar('No se pudo adjuntar ese archivo.'); }
 }
 const leerDataURL = (file) => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(file); });
-async function comprimir(file) {
+// `max` y `calidad` con valores por defecto para las fotos de parte; el avatar
+// pide 256 px, que es de sobra para un círculo de 76.
+async function comprimir(file, max = 1100, calidad = 0.72) {
   const url = await leerDataURL(file);
   return new Promise((res) => {
     const img = new Image();
     img.onload = () => {
-      const max = 1100;
       const k = Math.min(1, max / Math.max(img.width, img.height));
       const c = document.createElement('canvas');
       c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
       c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
-      res(c.toDataURL('image/jpeg', 0.72));
+      res(c.toDataURL('image/jpeg', calidad));
     };
     img.onerror = () => res(url);
     img.src = url;
@@ -2040,7 +2140,7 @@ function vHoy() {
       <div class="row g8"><span class="dot" style="background:${dentro ? '#fff' : 'var(--ambar)'}"></span><div class="lbl" style="color:${dentro ? 'rgba(255,255,255,.72)' : 'var(--ambar)'}">${dentro ? 'Estás dentro' : 'Estás fuera'}</div></div>
       <div class="row g8">
         ${u.rol === 'admin' ? '<span class="badge" style="background:rgba(20,23,15,.85);color:var(--ambar)">Admin</span>' : ''}
-        <div class="av" data-a="menuUsuario" style="width:32px;height:32px;font-size:13px;background:rgba(255,255,255,.16);color:#fff;cursor:pointer">${esc(ini(u.nombre))}</div>
+        ${avatarHTML(u.id, 'width:32px;height:32px;font-size:13px;background:rgba(255,255,255,.16);color:#fff;cursor:pointer', 'data-a="menuUsuario"')}
       </div>
     </div>
     <div style="font:600 60px/1 var(--cond);margin-top:10px;color:#fff">${dentro ? durMin(minEntre(f.entrada, new Date().toISOString())) : hhmm(new Date().toISOString())}</div>
@@ -2087,7 +2187,7 @@ function vHoyAdmin(u) {
     ${marcaSysefen(true)}
     <div class="row" style="justify-content:space-between">
       <div class="lbl" style="color:var(--ambar)">Administración</div>
-      <div class="av" data-a="menuUsuario" style="width:32px;height:32px;font-size:13px;background:rgba(255,255,255,.16);color:#fff;cursor:pointer">${esc(ini(u.nombre))}</div>
+      ${avatarHTML(u.id, 'width:32px;height:32px;font-size:13px;background:rgba(255,255,255,.16);color:#fff;cursor:pointer', 'data-a="menuUsuario"')}
     </div>
     <div style="font:600 44px/1.05 var(--cond);margin-top:14px;color:#fff">${dentroN} <span style="font:400 16px var(--sans);color:rgba(255,255,255,.5)">de ${equipo().length} fichados ahora</span></div>
     <div style="font:400 13px/1.4 var(--sans);margin-top:8px;color:rgba(255,255,255,.55)">Gestión. No necesitas fichar. Puedes consultar y corregir los fichajes del equipo.</div>
@@ -2692,7 +2792,7 @@ function vEmpleados() {
   </div>
   <div class="scroll pad pb-nav">
     ${lista.map((u) => `<div class="card row" data-a="abrirEmpleado" data-id="${u.id}" style="margin-bottom:9px;cursor:pointer${u.activo === false ? ';opacity:.6' : ''}">
-      <div class="av" style="width:38px;height:38px;font-size:15px;background:${u.rol === 'admin' ? 'var(--ambar);color:var(--tinta)' : u.rol === 'jefe' ? 'var(--verde-c);color:#fff' : 'rgba(20,23,15,.08);color:var(--tinta)'}">${esc(ini(u.nombre))}</div>
+      ${avatarHTML(u.id, `width:38px;height:38px;font-size:15px;background:${u.rol === 'admin' ? 'var(--ambar);color:var(--tinta)' : u.rol === 'jefe' ? 'var(--verde-c);color:#fff' : 'rgba(20,23,15,.08);color:var(--tinta)'}`)}
       <div class="grow"><div style="font:600 15px/1.1 var(--sans)">${esc(u.nombre)}</div>
       <div class="row g8" style="margin-top:5px"><span class="dot" style="background:${u.activo === false ? 'rgba(20,23,15,.25)' : 'var(--verde)'}"></span><div class="lbl">${rolLabel(u.rol)} · ${u.activo === false ? 'Inactivo' : 'Activo'}</div></div></div>
       <div style="font:400 20px/1 var(--sans);color:var(--t3)">›</div>
@@ -3009,7 +3109,7 @@ function vAjustes() {
       <div class="tiny" style="margin-top:3px">Eficiencia Energética</div></div>
     </div>
     <div class="card row" style="margin-bottom:12px">
-      <div class="av" style="width:46px;height:46px;font-size:18px;background:${u.rol === 'admin' ? 'var(--ambar);color:var(--tinta)' : u.rol === 'jefe' ? 'var(--verde-c);color:#fff' : 'rgba(20,23,15,.08);color:var(--tinta)'}">${esc(ini(u.nombre))}</div>
+      ${avatarHTML(u.id, `width:46px;height:46px;font-size:18px;background:${u.rol === 'admin' ? 'var(--ambar);color:var(--tinta)' : u.rol === 'jefe' ? 'var(--verde-c);color:#fff' : 'rgba(20,23,15,.08);color:var(--tinta)'}`)}
       <div class="grow"><div style="font:600 18px/1.1 var(--sans)">${esc(u.nombre)}</div>
       <div class="lbl" style="margin-top:5px">${u.rol === 'admin' ? 'Administración' : u.rol === 'jefe' ? 'Jefe de obra' : 'Operario'}</div></div>
       <button class="pill" data-a="salir">Salir</button>
@@ -3349,13 +3449,31 @@ function sheet() {
   if (s.tipo === 'menuUsuario') {
     const u = yo();
     return `<div class="sheet"><div>
-      <div class="av" style="width:52px;height:52px;font-size:22px;background:rgba(20,23,15,.08);color:var(--tinta)">${esc(ini(u.nombre))}</div>
+      ${avatarHTML(u.id, 'width:52px;height:52px;font-size:22px;background:rgba(20,23,15,.08);color:var(--tinta)')}
       <div style="font:600 22px/1.15 var(--cond);margin-top:14px">${esc(u.nombre)}</div>
       <div class="sub" style="margin-top:4px">${u.rol === 'admin' ? 'Administración' : u.rol === 'jefe' ? 'Jefe de obra' : 'Operario'}</div>
-      <div class="row g8" style="margin-top:20px">
+      <button class="btn btn-gris" data-a="abrirAvatar" style="margin-top:18px;border-radius:14px">Cambiar mi foto</button>
+      <div class="row g8" style="margin-top:8px">
         <button class="btn btn-gris" data-a="cerrarSheet" style="border-radius:99px">Cancelar</button>
         <button class="btn btn-rojo" data-a="salir" style="font-size:14px">Salir</button>
       </div>
+    </div></div>`;
+  }
+  if (s.tipo === 'avatar') {
+    const u = yo();
+    const row = empRowById(empIdDeUser(u.id)) || {};
+    const tiene = !!(row.avatar_emoji || row.avatar_foto);
+    return `<div class="sheet"><div>
+      <div style="font:600 23px/1.15 var(--cond)">Tu foto</div>
+      <div class="sub" style="margin-top:4px">Elige un emoji o sube una foto. Si no pones nada, salen tus iniciales.</div>
+      <div style="display:flex;justify-content:center;margin:16px 0">
+        ${avatarHTML(u.id, 'width:76px;height:76px;font-size:32px;background:rgba(20,23,15,.08);color:var(--tinta)')}
+      </div>
+      <button class="btn btn-verde" data-a="subirAvatar" ${s.busy ? 'disabled' : ''}>${s.busy ? 'Subiendo…' : 'Subir una foto'}</button>
+      <div class="lbl" style="margin:16px 0 8px">O un emoji</div>
+      <div class="wrap">${EMOJIS_AVATAR.map((e) => `<div class="chip ${row.avatar_emoji === e ? 'on' : ''}" data-a="ponerEmoji" data-e="${e}" style="font-size:20px;padding:8px 12px">${e}</div>`).join('')}</div>
+      ${tiene ? '<button class="btn btn-gris" data-a="quitarAvatar" style="margin-top:16px;border-radius:14px">Quitar y volver a las iniciales</button>' : ''}
+      <button class="btn btn-gris" data-a="cerrarSheet" style="border-radius:99px;margin-top:8px;opacity:.7">Cerrar</button>
     </div></div>`;
   }
   if (s.tipo === 'horasGrupo') {
@@ -3724,6 +3842,10 @@ document.addEventListener('click', (e) => {
   if (a === 'horasGrupoToggle') return A.horasGrupoToggle(d.id);
   if (a === 'horasGrupoAplicar') return A.horasGrupoAplicar();
   if (a === 'menuUsuario') return A.menuUsuario();
+  if (a === 'abrirAvatar') return A.abrirAvatar();
+  if (a === 'subirAvatar') return A.subirAvatar();
+  if (a === 'ponerEmoji') return A.ponerEmoji(d.e);
+  if (a === 'quitarAvatar') return A.quitarAvatar();
   if (a === 'horaMas') return A.horaMas(d.id);
   if (a === 'horaMenos') return A.horaMenos(d.id);
   if (a === 'addMat') return A.addMat(d.n);
