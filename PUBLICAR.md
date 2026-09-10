@@ -104,3 +104,30 @@ panel", todavía no.
 
 El índice único `(empleado_id, entrada)` de `etapa9` impide duplicar el
 histórico si se importa dos veces el mismo archivo.
+
+## Copias de seguridad (importante: el plan gratuito no las hace)
+
+Supabase gratis **no guarda copias automáticas**. No hay "restaurar a ayer". La
+copia hay que hacerla, y hacerla antes de cada cambio en el backend:
+
+    python3 herramientas/copia-seguridad.py Administración <PIN>
+
+Deja en `~/Desktop/copias-sysefen/` una carpeta con fecha y hora y, dentro,
+cada tabla en JSON (copia fiel) y en CSV (para abrir en Excel). No instala nada
+y el PIN no se guarda en ningún sitio.
+
+Hazla **el día 1 de cada mes** y **siempre antes de ejecutar un .sql nuevo**.
+
+Con esto y los `.sql` de `sql/` (que están en Git) se puede levantar el
+proyecto entero desde cero: los .sql ponen la estructura, la copia los datos.
+
+### Copia completa de verdad (opcional, más fiel)
+
+La de arriba copia los datos. Para una copia que incluya también estructura,
+índices y políticas, usa `pg_dump` con la cadena de conexión de
+*Supabase → Settings → Database*:
+
+    pg_dump "postgresql://postgres:TU_CLAVE@db.<ref>.supabase.co:5432/postgres" > sysefen.sql
+
+Esa clave es la de la base de datos: no la pegues en ningún chat ni la subas al
+repositorio.
