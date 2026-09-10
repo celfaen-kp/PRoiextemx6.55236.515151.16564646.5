@@ -204,7 +204,7 @@ import * as sysDB from './supabase-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '9.5'; // versión visible de la app (única fuente)
+const APP_VERSION = '9.6'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -943,6 +943,21 @@ A.impGrupoReloj = (i, minutos) => {
   l.minutos = Math.max(0, Math.round(Number(minutos) / 15) * 15);
   render();
 };
+// La base solo admite UNA línea por (empleado, día, categoría, obra). Si se
+// ponen dos desplazamientos el mismo día, chocan. En vez de soltar el error y
+// obligar a sumar a mano, se funden en una sola sumando los minutos.
+function fundirLineas(lineas) {
+  const porClave = new Map();
+  (lineas || []).forEach((l) => {
+    if (!(l.minutos > 0)) return;
+    const clave = l.categoria + '|' + (l.categoria === 'obra' ? (l.obraId || '') : '');
+    const ya = porClave.get(clave);
+    if (ya) ya.minutos += l.minutos;
+    else porClave.set(clave, { categoria: l.categoria, obraId: l.obraId || null, minutos: l.minutos });
+  });
+  return [...porClave.values()];
+}
+
 A.impGrupoGuardar = async () => {
   if (!puedeCrear() || V.impGrupoBusy) return;
   sincronizarRuedas();
@@ -958,20 +973,31 @@ A.impGrupoGuardar = async () => {
   const excede = seleccionados.find((x) => total > x.restante);
   if (excede) { avisar(excede.u.nombre + ' solo tiene ' + durMin(excede.restante) + ' pendiente.'); return; }
   const mio = miEmpId();
-  const filas = [];
-  seleccionados.forEach((x) => {
+  // Para cada persona se junta lo que ya tenía ese día con lo nuevo y se
+  // reescribe el conjunto: si ya tenía desplazamiento, se le suma en vez de
+  // intentar meter una segunda línea igual (que la base rechaza).
+  const porPersona = seleccionados.map((x) => {
     const empId = empIdDeUser(x.u.id);
-    if (!empId) return;
-    lineas.forEach((l) => filas.push({
+    if (!empId) return null;
+    const previas = S.imputaciones
+      .filter((i) => i.userId === x.u.id && i.fecha === fecha && !i.bloqueado)
+      .map((i) => ({ categoria: i.categoria, obraId: i.obraId || null, minutos: i.minutos || 0 }));
+    const idsPrevios = S.imputaciones
+      .filter((i) => i.userId === x.u.id && i.fecha === fecha && !i.bloqueado).map((i) => i.id);
+    const filas = fundirLineas([...previas, ...lineas]).map((l) => ({
       empleado_id: empId, fecha, categoria: l.categoria,
       obra_id: l.categoria === 'obra' ? l.obraId : null,
       minutos: l.minutos, origen: 'manual',
       creado_por: mio, actualizado_por: mio,
     }));
-  });
+    return { idsPrevios, filas };
+  }).filter(Boolean);
   V.impGrupoBusy = true; render();
   try {
-    await Sysefen.db.guardarImputaciones(filas);
+    for (const p of porPersona) {
+      for (const id of p.idsPrevios) await Sysefen.db.borrarImputacion(id);
+      for (const fila of p.filas) await Sysefen.db.guardarImputaciones([fila]);
+    }
     await sincronizarImputaciones();
     toast(lineas.length + (lineas.length === 1 ? ' categoría' : ' categorías') + ' a ' + seleccionados.length + (seleccionados.length === 1 ? ' persona' : ' personas'));
     const cand2 = impGrupoCandidatos(fecha);
@@ -1030,7 +1056,7 @@ A.impGuardar = async () => {
   const idsPrevios = S.imputaciones
     .filter((i) => i.userId === V.impEmp && i.fecha === V.impFecha && !i.bloqueado)
     .map((i) => i.id);
-  const nuevas = lineas.filter((l) => (l.minutos || 0) > 0).map((l) => ({
+  const nuevas = fundirLineas(lineas).map((l) => ({
     empleado_id: empId,
     fecha: V.impFecha,
     categoria: l.categoria,
