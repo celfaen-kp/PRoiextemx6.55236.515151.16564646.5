@@ -203,7 +203,7 @@ import * as sysDB from './supabase-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '8.6'; // versión visible de la app (única fuente)
+const APP_VERSION = '8.7'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -1004,6 +1004,11 @@ A.empGuardar = async () => {
 /* --- ADMINISTRACIÓN: fichar entrada/salida de OTRO empleado (solo presencia) --- */
 A.adminFichar = (userId) => {
   if (!esAdmin()) return;
+  // Administración no tiene jornada que registrar: revisa y corrige, no trabaja
+  // en obra. Fichar a esa cuenta ensuciaría el registro con horas que no son de
+  // nadie.
+  const u = userById(userId);
+  if (u && u.rol === 'admin') { avisar('Administración no ficha: no es una jornada de trabajo.'); return; }
   const f = fichajeAbierto(userId);
   V.sheet = { tipo: 'adminFichaje', userId, salida: !!f };
   render();
@@ -1956,9 +1961,9 @@ function render() {
   else if (v === 'partes') html = vPartes();
   else if (v === 'horas') html = vHoras();
   else if (v === 'resumenImp') html = vResumenImp();
-  else if (v === 'imputar') html = vImputar();
-  else if (v === 'imputarGrupo') html = vImputarGrupo();
-  else if (v === 'imputarEmp') html = vImputarEmpleado();
+  else if (v === 'imputar' && puedeCrear()) html = vImputar();
+  else if (v === 'imputarGrupo' && puedeCrear()) html = vImputarGrupo();
+  else if (v === 'imputarEmp' && puedeCrear()) html = vImputarEmpleado();
   else if (v === 'empleados' && esAdmin()) html = vEmpleados();
   else if (v === 'empleado' && esAdmin()) html = vEmpleado();
   else if (v === 'planilla' && (esAdmin() || V.planEmp === V.user.id)) html = vPlanilla();
@@ -2292,11 +2297,11 @@ function vHoras() {
     </div>` : '<div style="height:16px"></div>'}
   </div>
   <div class="scroll pad pb-nav">
-    <div class="card row" data-a="abrirImputar" style="margin-bottom:12px;cursor:pointer;background:var(--tinta)">
-      <div class="grow"><div style="font:600 15px/1 var(--sans);color:#fff">${puedeCrear() ? 'Imputar / repartir horas' : 'Mis imputaciones'}</div>
-      <div class="tiny" style="color:rgba(255,255,255,.5);margin-top:5px">${puedeCrear() ? 'Distribuir la jornada por obra, despacho, desplazamiento…' : 'Consulta cómo se ha repartido tu jornada'}</div></div>
+    ${puedeCrear() ? `<div class="card row" data-a="abrirImputar" style="margin-bottom:12px;cursor:pointer;background:var(--tinta)">
+      <div class="grow"><div style="font:600 15px/1 var(--sans);color:#fff">Imputar / repartir horas</div>
+      <div class="tiny" style="color:rgba(255,255,255,.5);margin-top:5px">Distribuir la jornada por obra, despacho, desplazamiento…</div></div>
       <div class="av" style="width:28px;height:28px;background:var(--ambar);color:var(--tinta);font-size:15px">→</div>
-    </div>
+    </div>` : ''}
     <div class="card row" data-a="abrirResumenImp" style="margin-bottom:12px;cursor:pointer">
       <div class="grow"><div style="font:600 15px/1 var(--sans)">Resumen por categoría</div>
       <div class="tiny" style="margin-top:5px">Cuánto se usó en obra, despacho, desplazamiento… por día, semana, mes o año</div></div>
@@ -2715,7 +2720,7 @@ function vEmpleado() {
     <div data-a="empGuardar" style="font:600 13px var(--sans);color:var(--verde-o);cursor:pointer">${V.empBusy ? '…' : 'Guardar'}</div>
   </div>
   <div class="scroll pad pb-nav">
-    ${!d.nuevo && V.empEmp ? `<div class="card" style="margin-bottom:14px;background:${fx ? 'var(--verde-o)' : 'var(--tinta)'};color:#fff">
+    ${!d.nuevo && V.empEmp && d.rol !== 'admin' ? `<div class="card" style="margin-bottom:14px;background:${fx ? 'var(--verde-o)' : 'var(--tinta)'};color:#fff">
       <div class="row" style="justify-content:space-between;align-items:center">
         <div><div class="lbl" style="color:rgba(255,255,255,.6)">Fichaje de hoy</div>
         <div style="font:600 15px var(--sans);margin-top:4px">${fx ? 'Entrada ' + hhmm(fx.entrada) + ' · dentro' : (minutosDia(V.empEmp, hoyISO()) ? 'Hoy ' + durMin(minutosDia(V.empEmp, hoyISO())) + ' · fuera' : 'Sin fichar hoy')}</div></div>
