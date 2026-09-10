@@ -32,6 +32,12 @@ create table if not exists integracion.export_obra_dia (
   primary key (obra_id, fecha)
 );
 
+-- Aunque esta tabla vive en un esquema que la API no publica, se activa RLS
+-- igualmente: si algún día alguien expusiera `integracion`, la tabla ya estaría
+-- protegida en vez de quedar abierta. Es la lección de las vistas de la etapa
+-- anterior, que se dieron por seguras solo porque nadie les daba permiso.
+alter table integracion.export_obra_dia enable row level security;
+
 create or replace view integracion.v_obra_dia as
 with imp as (
   select obra_id, fecha, empleado_id, sum(minutos)::int as minutos
@@ -87,6 +93,11 @@ begin
     execute 'grant usage on schema integracion to sysefen_integracion';
     execute 'grant select on integracion.v_obra_dia to sysefen_integracion';
     execute 'grant select, insert, update, delete on integracion.export_obra_dia to sysefen_integracion';
+    -- Con RLS activado hace falta una regla, o el propio usuario de Make se
+    -- quedaría fuera y no podría marcar lo ya enviado.
+    execute 'drop policy if exists export_obra_dia_integracion on integracion.export_obra_dia';
+    execute 'create policy export_obra_dia_integracion on integracion.export_obra_dia
+               for all to sysefen_integracion using (true) with check (true)';
   else
     raise notice 'Falta el rol sysefen_integracion.';
   end if;
