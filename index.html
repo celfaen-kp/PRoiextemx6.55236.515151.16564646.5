@@ -203,7 +203,7 @@ import * as sysDB from './supabase-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '8.7'; // versión visible de la app (única fuente)
+const APP_VERSION = '8.8'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -228,7 +228,6 @@ function semilla() {
     imputaciones: [],
     partes: [],
     seq: 1,
-    obraActiva: null,
     bienvenida: true,
   };
 }
@@ -390,7 +389,6 @@ async function sincronizarObras() {
   try {
     const filas = await Sysefen.db.listarObras();
     S.obras = (filas || []).map(mapObraDeDB);
-    if (S.obraActiva && !S.obras.some((o) => o.id === S.obraActiva)) { S.obraActiva = null; save(); }
   } catch (e) { /* sin conexión / RLS: se mantiene el estado actual */ }
   finally { sincObras = false; }
 }
@@ -643,7 +641,9 @@ A.salir = () => {
 A.ir = (v) => { V.view = v; render(); if (['hoy', 'obras', 'obra', 'partes', 'horas'].includes(v)) refrescarDatos().then(render); };
 A.verObra = (id) => { V.obraId = id; V.obraRango = 'total'; V.view = 'obra'; render(); refrescarDatos().then(render); };
 A.obraRango = (r) => { V.obraRango = r; render(); };
-A.activarObra = () => { const o = obraById(V.obraId); if (!o) return; S.obraActiva = V.obraId; save(); toast('Obra de hoy: ' + o.cliente); V.view = 'hoy'; render(); };
+// (Sin "obra de hoy": el fichaje NUNCA lleva obra — se guarda con obraId null —
+// así que preseleccionar una solo hacía creer que las horas se estaban
+// asignando ahí. La obra se decide al imputar o al hacer el parte.)
 A.tabHoras = (t) => { V.tabHoras = t; render(); };
 A.abrirResumenImp = () => { V.resumenRango = 'mes'; V.view = 'resumenImp'; render(); refrescarDatos().then(render); };
 A.resumenRango = (r) => { V.resumenRango = r; render(); };
@@ -1383,8 +1383,7 @@ A.guardarObra = async () => {
     if (d.id) {
       await Sysefen.db.actualizarObra(d.id, campos);
     } else {
-      const nueva = await Sysefen.db.crearObra(campos);
-      if (!S.obraActiva) { S.obraActiva = nueva.id; save(); }
+      await Sysefen.db.crearObra(campos);
     }
     await sincronizarObras();
     V.draft = null; V.view = 'obras'; toast('Obra guardada'); render();
@@ -1435,8 +1434,10 @@ function horasDeObraEnFecha(oid, fecha) {
 }
 A.nuevoParte = (obraId) => {
   V.sheet = null;
-  const oid = obraId || S.obraActiva || (S.obras[0] && S.obras[0].id);
-  if (!oid) { avisar('Crea primero una obra.'); return; }
+  // Sin obra por defecto: un parte que sale con una obra puesta "porque sí" se
+  // firma sin mirar y acaba con las horas en el cliente equivocado.
+  const oid = obraId;
+  if (!oid) { A.nuevoParteElegir(); return; }
   const o = obraById(oid);
   const fecha = hoyISO(); // por defecto, siempre el día en curso
   const horas = horasDeObraEnFecha(oid, fecha);
@@ -2031,7 +2032,6 @@ function vHoy() {
   if (esAdmin()) return vHoyAdmin(u);
   const f = fichajeAbierto(u.id);
   const dentro = !!f;
-  const oAct = obraById(S.obraActiva) || S.obras[0] || null;
   const mins = minutosDia(u.id, hoyISO());
   const dentroN = equipo().filter((x) => fichajeAbierto(x.id)).length;
   return `<div class="semaforo" style="background:${dentro ? 'var(--verde)' : 'var(--tinta)'}">
@@ -2049,12 +2049,7 @@ function vHoy() {
     ${S.opts.gps ? `<div class="row" style="justify-content:center;gap:7px;margin-top:12px"><span class="dot" style="width:6px;height:6px;background:rgba(255,255,255,.6)"></span><span class="tiny" style="color:rgba(255,255,255,.5)">Ubicación registrada al fichar</span></div>` : ''}
   </div>
   <div class="hoja"><div class="hoja-contenido">
-    ${oAct ? `<div class="card row" data-a="ir" data-v="obras" style="cursor:pointer">
-      <div class="grow"><div class="lbl">Obra de hoy</div>
-      <div class="h2" style="margin-top:6px">${esc(oAct.cliente)}</div>
-      <div class="sub" style="margin-top:3px">${esc(oAct.tipo || oAct.dir || '')}</div></div>
-      <div style="font:500 13px var(--sans);color:var(--verde-o);flex:none">Cambiar</div>
-    </div>` : `<div class="card"><div class="h2">Todavía no hay obras</div><div class="sub" style="margin-top:6px">Crea la primera para poder fichar y hacer partes.</div>
+    ${S.obras.length ? '' : `<div class="card"><div class="h2">Todavía no hay obras</div><div class="sub" style="margin-top:6px">Se pueden crear más adelante: para fichar no hacen falta.</div>
       ${puedeCrear() ? '<button class="btn btn-verde" data-a="nuevaObra" style="margin-top:14px">Crear obra</button>' : ''}</div>`}
 
     <div class="row g10" style="margin-top:12px">
@@ -2132,7 +2127,7 @@ function vObras() {
   <div class="scroll pad pb-nav">
     ${lista.length ? lista.map((o) => `<div class="card" data-a="verObra" data-id="${o.id}" style="margin-bottom:11px;cursor:pointer">
       <div class="row g8"><span class="dot" style="width:8px;height:8px;background:${o.estado === 'Cerrada' ? 'rgba(20,23,15,.22)' : 'var(--verde)'}"></span><span class="lbl">${esc(o.estado)}</span>
-      ${S.obraActiva === o.id ? '<span class="badge" style="background:rgba(20,23,15,.07);color:var(--t2)">Obra de hoy</span>' : ''}</div>
+</div>
       <div class="h2" style="margin-top:9px">${esc(o.cliente)}</div>
       <div class="sub" style="margin-top:4px">${esc(o.tipo || o.dir || '')}</div>
       <div class="row" style="align-items:flex-end;gap:18px;margin-top:13px;padding-top:12px;border-top:1px solid var(--l1)">
@@ -3711,7 +3706,6 @@ document.addEventListener('click', (e) => {
   if (a === 'volverLogin') return A.volverLogin();
   if (a === 'ir') return A.ir(d.v);
   if (a === 'verObra') return A.verObra(d.id);
-  if (a === 'activarObra') return A.activarObra();
   if (a === 'nuevaObra') return A.nuevaObra();
   if (a === 'editarObra') { e.stopPropagation(); return A.editarObra(d.id); }
   if (a === 'guardarObra') return A.guardarObra();
