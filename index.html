@@ -204,7 +204,7 @@ import * as sysDB from './supabase-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '9.6'; // versión visible de la app (única fuente)
+const APP_VERSION = '9.7'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -383,8 +383,12 @@ let sincObras = false;
 function mapObraDeDB(row) {
   return {
     id: row.id,
-    cliente: row.nombre,               // título que muestra toda la interfaz
-    nombre: row.nombre,
+    // Tres cosas distintas: la obra ("Selva"), el cliente ("Frank") y la calle.
+    // Antes el nombre del cliente se metía en `nombre` y la columna `cliente`
+    // no se usaba, así que en pantalla salía el cliente donde va la obra.
+    nombre: row.nombre || '',
+    cliente: row.cliente || '',
+    titulo: row.nombre || row.cliente || '—',
     dir: row.direccion || '',
     email: row.email_cliente || '',
     estado: row.estado || 'En curso',
@@ -1658,12 +1662,17 @@ A.confirmarFichaje = async () => {
 
 /* alta de obra (public.obras). La obra NO tiene lista de empleados. */
 A.nuevaObra = () => { V.draft = { cliente: '', dir: '', email: '' }; V.view = 'alta'; render(); };
-A.editarObra = (id) => { const o = obraById(id); if (!o) return; V.draft = { id: o.id, cliente: o.cliente, dir: o.dir, email: o.email }; V.view = 'alta'; render(); };
+A.editarObra = (id) => { const o = obraById(id); if (!o) return; V.draft = { id: o.id, nombre: o.nombre, cliente: o.cliente, dir: o.dir, email: o.email }; V.view = 'alta'; render(); };
 A.guardarObra = async () => {
   const d = V.draft;
-  if (!d.cliente.trim()) { avisar('Pon al menos el nombre del cliente.'); return; }
+  if (!(d.nombre || '').trim() && !(d.cliente || '').trim()) { avisar('Pon al menos el nombre de la obra o el cliente.'); return; }
   if (!navigator.onLine) { avisar('Sin conexión — la obra no se ha guardado'); return; }
-  const campos = { nombre: d.cliente.trim(), direccion: d.dir || null, email_cliente: d.email || null };
+  const campos = {
+    nombre: (d.nombre || '').trim() || (d.cliente || '').trim(),
+    cliente: (d.cliente || '').trim() || null,
+    direccion: d.dir || null,
+    email_cliente: d.email || null,
+  };
   try {
     if (d.id) {
       await Sysefen.db.actualizarObra(d.id, campos);
@@ -1694,7 +1703,7 @@ A.exportarHorasObraCSV = () => {
   const csv = '\uFEFF' + filas.map((r) => r.map((c) => '"' + String(c).replace(/"/g, '""') + '"').join(';')).join('\n');
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
-  a.download = 'horas-' + o.cliente.toLowerCase().replace(/\s+/g, '-') + '-' + rango + '-' + hoyISO() + '.csv';
+  a.download = 'horas-' + o.titulo.toLowerCase().replace(/\s+/g, '-') + '-' + rango + '-' + hoyISO() + '.csv';
   a.click();
   toast('Horas de la obra exportadas en CSV');
 };
@@ -1918,7 +1927,8 @@ function enviarEmail(p) {
     S.empresa,
     'Parte de trabajo ' + p.ref,
     '',
-    'Cliente: ' + o.cliente,
+    'Obra: ' + o.titulo,
+    ...(o.cliente ? ['Cliente: ' + o.cliente] : []),
     'Obra: ' + (o.dir || '—'),
     'Fecha: ' + fechaLarga(p.fecha),
     '',
@@ -1940,7 +1950,7 @@ function enviarEmail(p) {
   // Cuando la app genere el PDF y lo envíe desde el servidor, irá de verdad.
   lineas.push('', 'Firmado por ' + (p.firmante || 'el cliente') + ' el ' + fechaLarga(p.fecha) + '.', '', 'Si necesita el PDF firmado, respóndanos a este correo y se lo hacemos llegar.');
   const dest = [p.email, S.emailCopia].filter(Boolean).join(',');
-  const url = 'mailto:' + encodeURIComponent(dest) + '?subject=' + encodeURIComponent('Parte de trabajo ' + p.ref + ' — ' + o.cliente) + '&body=' + encodeURIComponent(lineas.join('\n'));
+  const url = 'mailto:' + encodeURIComponent(dest) + '?subject=' + encodeURIComponent('Parte de trabajo ' + p.ref + ' — ' + o.titulo) + '&body=' + encodeURIComponent(lineas.join('\n'));
   location.href = url;
 }
 A.reenviar = (id) => enviarEmail(S.partes.find((p) => p.id === id));
@@ -2418,8 +2428,8 @@ function vObras() {
     ${lista.length ? lista.map((o) => `<div class="card" data-a="verObra" data-id="${o.id}" style="margin-bottom:11px;cursor:pointer">
       <div class="row g8"><span class="dot" style="width:8px;height:8px;background:${o.estado === 'Cerrada' ? 'rgba(20,23,15,.22)' : 'var(--verde)'}"></span><span class="lbl">${esc(o.estado)}</span>
 </div>
-      <div class="h2" style="margin-top:9px">${esc(o.cliente)}</div>
-      <div class="sub" style="margin-top:4px">${esc(o.tipo || o.dir || '')}</div>
+      <div class="h2" style="margin-top:9px">${esc(o.titulo)}</div>
+      <div class="sub" style="margin-top:4px">${esc([o.cliente, o.dir].filter(Boolean).join(' · ') || '')}</div>
       <div class="row" style="align-items:flex-end;gap:18px;margin-top:13px;padding-top:12px;border-top:1px solid var(--l1)">
         <div><div class="lbl">Horas</div><div class="num" style="font-size:18px;margin-top:5px">${durMin(minutosObra(o.id))}</div></div>
         <div><div class="lbl">Partes</div><div class="num" style="font-size:18px;margin-top:5px">${S.partes.filter((p) => p.obraId === o.id && p.estado !== 'anulado').length}</div></div>
@@ -2448,8 +2458,8 @@ function vObra() {
   const total = filas.reduce((t, f) => t + f.m, 0) || 1;
   return `<div class="hdr-dark">
     <div class="back" data-a="ir" data-v="obras">‹ Obras</div>
-    <div style="font:600 27px/1.1 var(--cond)">${esc(o.cliente)}</div>
-    <div class="sub" style="color:rgba(255,255,255,.5);margin-top:6px">${esc(o.dir || '')}${o.contacto ? ' · ' + esc(o.contacto) : ''}</div>
+    <div style="font:600 27px/1.1 var(--cond)">${esc(o.titulo)}</div>
+    <div class="sub" style="color:rgba(255,255,255,.5);margin-top:6px">${esc([o.cliente, o.dir].filter(Boolean).join(' · ') || 'Sin cliente ni dirección')}</div>
     ${puedeCrear() ? `<div class="row g8" style="margin-top:16px">
       <button class="pill pill-verde grow" data-a="nuevoParte" data-id="${o.id}" style="padding:14px">Nuevo parte</button>
       <button class="pill grow" data-a="editarObra" data-id="${o.id}" style="padding:14px;background:rgba(255,255,255,.12);color:#fff">Editar</button>
@@ -2480,7 +2490,12 @@ function vObra() {
 }
 function vAlta() {
   const d = V.draft;
-  const campos = [['cliente', 'Cliente', 'Comunidad, empresa o particular'], ['dir', 'Dirección de la obra', 'Calle, número, población'], ['email', 'Email para los informes', 'cliente@correo.es']];
+  const campos = [
+    ['nombre', 'Nombre de la obra', 'Selva, Inca, Can Concos…'],
+    ['cliente', 'Cliente', 'Comunidad, empresa o particular'],
+    ['dir', 'Dirección de la obra', 'Calle, número, población'],
+    ['email', 'Email para los informes', 'cliente@correo.es'],
+  ];
   return `<div class="hdr row g12">
     <div data-a="ir" data-v="obras" class="volver">Cancelar</div>
     <div class="grow" style="text-align:center;font:600 16px var(--sans)">${d.id ? 'Editar obra' : 'Nueva obra'}</div>
@@ -2495,7 +2510,7 @@ function vAlta() {
 
 /* --- partes --- */
 function cardParte(p) {
-  const o = obraById(p.obraId) || { cliente: '—' };
+  const o = obraById(p.obraId) || { titulo: '—', cliente: '' };
   const bg = { enviado: ['rgba(20,23,15,.07)', 'var(--t2)', 'Enviado'], firmado: ['#e3efe5', 'var(--verde-o)', 'Firmado'], anulado: ['var(--rojo-cl)', 'var(--rojo)', 'Anulado'] }[p.estado];
   const inc = p.nivel !== 'Sin incidencias';
   return `<div class="card" style="margin-bottom:10px;${p.estado === 'anulado' ? 'opacity:.62' : ''}">
@@ -2503,7 +2518,7 @@ function cardParte(p) {
       <div class="tiny" style="letter-spacing:.08em">${esc(p.ref)} · ${fechaCorta(p.creado)}</div>
       <span class="badge" style="background:${bg[0]};color:${bg[1]}">${bg[2]}</span>
     </div>
-    <div class="h2" style="margin-top:9px">${esc(o.cliente)}</div>
+    <div class="h2" style="margin-top:9px">${esc(o.titulo)}</div>
     <div class="sub" style="margin-top:4px">${esc(p.desc.slice(0, 90))}${p.desc.length > 90 ? '…' : ''}</div>
     ${inc ? `<div class="row" style="gap:7px;margin-top:9px"><span class="dot" style="width:7px;height:7px;background:var(--rojo)"></span><span style="font:500 12px/1.35 var(--sans);color:var(--rojo)">${esc(p.nivel)}${p.inc ? ' · ' + esc(p.inc.slice(0, 46)) : ''}</span></div>` : ''}
     <div class="row" style="align-items:baseline;gap:12px;margin-top:12px;padding-top:11px;border-top:1px solid var(--l1)">
@@ -2566,7 +2581,7 @@ function vHoras() {
         det: puedeCrear() ? detalleHoy(u) : null,
       }))
     : S.obras.map((o) => ({
-        nombre: o.cliente, total: durMin(minutosObra(o.id)),
+        nombre: o.titulo, total: durMin(minutosObra(o.id)),
         sub: o.estado + ' · ' + S.partes.filter((p) => p.obraId === o.id).length + ' partes',
         barras: dias.map((d) => minutosObraImp(o.id, null, d)),
         pie: empleadosDeObra(o.id).map((x) => x.nombre).join(' · ') || '—',
@@ -2911,7 +2926,7 @@ function vImputarGrupo() {
     ${lineas.map((l, i) => `<div class="card" style="margin-bottom:10px">
       <div class="wrap">${IMP_CATS.map(([c, lab]) => `<div class="chip ${l.categoria === c ? 'on' : ''}" data-a="impGrupoCat" data-i="${i}" data-c="${c}">${lab}</div>`).join('')}</div>
       ${l.categoria === 'obra' ? `<div class="lbl" style="margin:12px 0 7px">Obra</div>
-        <div class="wrap">${obras.length ? obras.map((o) => `<div class="chip ${l.obraId === o.id ? 'on' : ''}" data-a="impGrupoObra" data-i="${i}" data-id="${o.id}">${esc(o.cliente)}</div>`).join('') : '<div class="tiny">No hay obras abiertas.</div>'}</div>` : ''}
+        <div class="wrap">${obras.length ? obras.map((o) => `<div class="chip ${l.obraId === o.id ? 'on' : ''}" data-a="impGrupoObra" data-i="${i}" data-id="${o.id}">${esc(o.titulo)}</div>`).join('') : '<div class="tiny">No hay obras abiertas.</div>'}</div>` : ''}
       ${relojHTML('impGrupo', i, l.minutos || 0, RELOJ_MAX_DEFECTO, seleccionados.length > 0, 15)}
       ${lineas.length > 1 ? `<button class="pill pill-rojo" data-a="impGrupoDelLinea" data-i="${i}" style="display:block;margin:2px auto 0">Quitar línea</button>` : ''}
     </div>`).join('')}
@@ -2954,7 +2969,7 @@ function vImputarEmpleado() {
     ${disp > 0 ? (draft.length ? draft.map((l, i) => `<div class="card" style="margin-bottom:10px">
       <div class="wrap">${IMP_CATS.map(([c, lab]) => `<div class="chip ${l.categoria === c ? 'on' : ''}" ${editable ? `data-a="impCat" data-i="${i}" data-c="${c}"` : ''}>${lab}</div>`).join('')}</div>
       ${l.categoria === 'obra' ? `<div class="lbl" style="margin:12px 0 7px">Obra</div>
-        <div class="wrap">${obras.length ? obras.map((o) => `<div class="chip ${l.obraId === o.id ? 'on' : ''}" ${editable ? `data-a="impObra" data-i="${i}" data-id="${o.id}"` : ''}>${esc(o.cliente)}</div>`).join('') : '<div class="tiny">No hay obras abiertas.</div>'}</div>` : ''}
+        <div class="wrap">${obras.length ? obras.map((o) => `<div class="chip ${l.obraId === o.id ? 'on' : ''}" ${editable ? `data-a="impObra" data-i="${i}" data-id="${o.id}"` : ''}>${esc(o.titulo)}</div>`).join('') : '<div class="tiny">No hay obras abiertas.</div>'}</div>` : ''}
       ${relojHTML('imp', i, l.minutos || 0, RELOJ_MAX_DEFECTO, editable, 15)}
       ${editable ? `<button class="pill pill-rojo" data-a="impDelLinea" data-i="${i}" style="display:block;margin:2px auto 0">Quitar línea</button>` : ''}
     </div>`).join('') : '<div class="card"><div class="sub">Sin líneas. Añade las categorías donde estuvo.</div></div>') : ''}
@@ -3311,7 +3326,8 @@ function imprimirHorasObra(obraId, rango) {
     </div>
     <div style="height:2px;background:#14170f;margin:10px 0 12px"></div>
     <table style="width:100%;font:400 12px var(--sans);border-collapse:collapse">
-      <tr><td style="padding:2px 0;color:#666;width:28%">Obra</td><td style="font-weight:600">${esc(o.cliente)}</td></tr>
+      <tr><td style="padding:2px 0;color:#666;width:28%">Obra</td><td style="font-weight:600">${esc(o.titulo)}</td></tr>
+      ${o.cliente ? `<tr><td style="padding:2px 0;color:#666">Cliente</td><td>${esc(o.cliente)}</td></tr>` : ''}
       <tr><td style="padding:2px 0;color:#666">Dirección</td><td>${esc(o.dir || '—')}</td></tr>
       <tr><td style="padding:2px 0;color:#666">Estado</td><td>${esc(o.estado)}</td></tr>
     </table>
@@ -3456,7 +3472,7 @@ function vP1() {
       <div class="tiny" style="color:rgba(255,255,255,.45)">1/3</div>
     </div>
     <div class="pasos"><i class="on"></i><i></i><i></i></div>
-    <div style="font:600 21px/1.15 var(--cond);margin-top:16px">${esc(o.cliente)}</div>
+    <div style="font:600 21px/1.15 var(--cond);margin-top:16px">${esc(o.titulo)}</div>
     <div class="tiny" style="color:rgba(255,255,255,.5);margin-top:5px">${esc(o.dir || '')} · ${fechaLarga(d.fecha)}</div>
   </div>
   <div class="scroll pad" style="padding-bottom:110px">
@@ -3620,7 +3636,7 @@ function vP3() {
         <img src="logo-trans.png" alt="" style="height:34px">
       </div>
       <div class="hr"></div>
-      <div style="font:600 16px/1.2 var(--sans)">${esc(o.cliente)}</div>
+      <div style="font:600 16px/1.2 var(--sans)">${esc(o.titulo)}</div>
       <div class="sub" style="font-size:12px;margin-top:4px">${esc(o.dir || '')} · ${fechaLarga(d.fecha)} · ${esc(yo().nombre)}</div>
       <div style="font:400 13px/1.5 var(--sans);color:rgba(20,23,15,.78);margin-top:12px">${esc(d.desc)}</div>
       <div class="hr"></div>
@@ -3880,7 +3896,7 @@ function sheet() {
     return `<div class="sheet"><div>
       <div style="font:600 25px/1.15 var(--cond)">¿De qué obra es el parte?</div>
       <div class="col g8" style="margin-top:18px">
-        ${abiertas.map((o) => `<button class="btn btn-gris" data-a="nuevoParte" data-id="${o.id}">${esc(o.cliente)}</button>`).join('')}
+        ${abiertas.map((o) => `<button class="btn btn-gris" data-a="nuevoParte" data-id="${o.id}">${esc(o.titulo)}</button>`).join('')}
       </div>
       <button class="btn btn-gris" data-a="cerrarSheet" style="border-radius:99px;margin-top:14px;opacity:.6">Cancelar</button>
     </div></div>`;
@@ -3994,7 +4010,7 @@ function avisar(msg) { toast(msg, 'err'); }
 
 /* --- PDF --- */
 function imprimirParte(p) {
-  const o = obraById(p.obraId) || { cliente: '—' };
+  const o = obraById(p.obraId) || { titulo: '—', cliente: '' };
   const el = $('#print');
   el.innerHTML = `<div style="font-family:var(--sans);color:#14170f;max-width:180mm;position:relative;z-index:0">
     <img src="logo-trans.png" alt="" style="position:absolute;top:110mm;left:50%;transform:translate(-50%,-50%);width:120mm;opacity:.11;z-index:-1;pointer-events:none">
@@ -4006,7 +4022,8 @@ function imprimirParte(p) {
     </div>
     <div style="height:2px;background:#14170f;margin:10px 0 14px"></div>
     <table style="width:100%;font:400 12px var(--sans);border-collapse:collapse">
-      <tr><td style="padding:3px 0;color:#666;width:32%">Cliente</td><td style="font-weight:600">${esc(o.cliente)}</td></tr>
+      <tr><td style="padding:3px 0;color:#666;width:32%">Obra</td><td style="font-weight:600">${esc(o.titulo)}</td></tr>
+      ${o.cliente ? `<tr><td style="padding:3px 0;color:#666">Cliente</td><td>${esc(o.cliente)}</td></tr>` : ''}
       <tr><td style="padding:3px 0;color:#666">Obra</td><td>${esc(o.dir || '—')}</td></tr>
       <tr><td style="padding:3px 0;color:#666">Fecha</td><td>${fechaLarga(p.fecha)}</td></tr>
       <tr><td style="padding:3px 0;color:#666">Responsable</td><td>${esc(userById(p.autorId).nombre)}</td></tr>

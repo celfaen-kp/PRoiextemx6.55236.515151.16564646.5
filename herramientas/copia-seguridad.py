@@ -43,6 +43,8 @@ TABLAS = [
     'parte_materiales',
     'parte_adjuntos',   # puede no existir todavía (etapa12)
     'documentos',       # puede no existir todavía (etapa13)
+    'ausencias',        # vacaciones, bajas y permisos (etapa17)
+    'festivos',         # calendario común (etapa17)
     'incidencias',
 ]
 
