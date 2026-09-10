@@ -203,7 +203,7 @@ import * as sysDB from './supabase-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '8.5'; // versión visible de la app (única fuente)
+const APP_VERSION = '8.6'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -1266,36 +1266,39 @@ function rangoFechas(rango) {
 // único día. Base de "Horas de obra" con desglose diario/semanal/mensual/total.
 // Horas dedicadas a una obra. Salen de DOS sitios y hay que sumarlos sin
 // contar nada dos veces:
-//   1. Los PARTES de trabajo, que ya dicen obra, persona y horas, y además
-//      están firmados por el cliente. Es la fuente fuerte.
-//   2. Las IMPUTACIONES de categoría 'obra', para el tiempo que se dedicó a la
-//      obra sin llegar a hacer parte (media mañana, un recado, un remate).
-// Regla: si para una persona y un día ya hay parte de esa obra, manda el parte
-// y se ignora la imputación de ese día. Si no, cuenta la imputación.
+//   1. Las IMPUTACIONES de categoría 'obra'. Es la fuente PRINCIPAL, y no por
+//      costumbre: el servidor no deja imputar más minutos de los que esa
+//      persona tiene realmente fichados ese día, así que reparten la jornada
+//      real y cuadran con el registro horario.
+//   2. Los PARTES de trabajo, como red de seguridad. Sus horas se escriben
+//      libres, sin tope de presencia, así que solo se cuentan cuando esa
+//      persona NO imputó nada a esa obra ese día: si no, esas horas se
+//      perderían por no haber hecho el segundo paso.
 //
-// Antes esto solo miraba las imputaciones, así que una obra con diez partes
-// firmados podía aparecer con cero horas.
+// Antes esto solo miraba las imputaciones, así que una obra con partes hechos y
+// sin imputar aparecía con cero horas.
 function minutosObraRango(obraId, userId, rango) {
   const r = rangoFechas(rango);
   const enRango = (f) => !r || (f >= r.desde && f <= r.hasta);
-  const conParte = new Set();
+  const imputado = new Set();
   let total = 0;
+
+  S.imputaciones
+    .filter((i) => i.categoria === 'obra' && i.obraId === obraId
+      && (!userId || i.userId === userId) && enRango(i.fecha))
+    .forEach((i) => {
+      total += i.minutos || 0;
+      imputado.add(i.userId + '|' + i.fecha);
+    });
 
   S.partes
     .filter((p) => p.obraId === obraId && p.estado !== 'anulado' && enRango(p.fecha))
     .forEach((p) => {
       Object.keys(p.horas || {}).forEach((uid) => {
         if (userId && uid !== userId) return;
+        if (imputado.has(uid + '|' + p.fecha)) return;
         total += Math.round((p.horas[uid] || 0) * 60);
-        conParte.add(uid + '|' + p.fecha);
       });
-    });
-
-  S.imputaciones
-    .filter((i) => i.categoria === 'obra' && i.obraId === obraId
-      && (!userId || i.userId === userId) && enRango(i.fecha))
-    .forEach((i) => {
-      if (!conParte.has(i.userId + '|' + i.fecha)) total += i.minutos || 0;
     });
 
   return total;
