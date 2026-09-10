@@ -2,23 +2,35 @@
 
 ## Cómo se publica hoy
 
-El repositorio está conectado a **Netlify**: cada `git push` a `main` despliega solo.
+El repositorio está en **GitHub Pages**: cada `git push` a `main` publica solo.
 
     git add -A
     git commit -m "lo que sea"
     git push
 
-En 1-2 minutos está en <https://peppy-sopapillas-6a412c.netlify.app>.
+En 1-2 minutos está en
+<https://celfaen-kp.github.io/PRoiextemx6.55236.515151.16564646.5/>
+
+Se puede seguir la construcción en la pestaña **Actions** del repositorio
+("pages build and deployment"). Tarda alrededor de un minuto.
+
+**COMPROBAR SIEMPRE que la versión publicada es la nueva**, no dar por hecho que
+subió:
+
+    curl -s "https://celfaen-kp.github.io/PRoiextemx6.55236.515151.16564646.5/index.html?x=1" | grep APP_VERSION
+
+Antes esto estaba en Netlify y se quedó sin créditos: dejó de construir en
+silencio y el sitio siguió sirviendo una versión de siete publicaciones atrás
+sin que nadie se enterara. De ahí la comprobación.
 
 **En cada publicación hay que subir dos números**, o los móviles siguen viendo la
 versión vieja:
 
 - `APP_VERSION` en `index.html` (se ve al final de Ajustes).
-- `CACHE` en `sw.js` (`ch-v7-7` → `ch-v7-8`…). Es lo que obliga al service
-  worker a tirar el caché anterior.
+- `CACHE` en `sw.js` (`ch-v8-7` → `ch-v8-8`…).
 
-Si alguien dice que no ve un cambio: que cierre la app instalada **del todo**
-(no minimizada) y la vuelva a abrir.
+El archivo `.nojekyll` de la raíz evita que GitHub procese los archivos: tiene
+que seguir ahí.
 
 ## Instalar en los móviles del equipo
 
