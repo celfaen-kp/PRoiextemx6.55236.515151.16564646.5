@@ -295,6 +295,42 @@ export async function borrarAdjunto(id, ruta) {
   return true;
 }
 
+/* ---------------- ausencias (vacaciones, festivos, bajas) ---------------- */
+// sql/etapa17. Marcan un día completo sin trabajo. No tocan los fichajes: un
+// día puede tener las dos cosas (media jornada y luego permiso), y la planilla
+// enseña ambas.
+
+export async function listarAusencias(empleadoId) {
+  let q = supabase.from('ausencias').select('*').order('fecha', { ascending: true });
+  if (empleadoId) q = q.eq('empleado_id', empleadoId);
+  return unwrap(await q);
+}
+
+export async function marcarAusencia(empleadoId, fecha, tipo, nota) {
+  return unwrap(await supabase.from('ausencias')
+    .upsert({ empleado_id: empleadoId, fecha, tipo: tipo || 'vacaciones', nota: nota || null },
+            { onConflict: 'empleado_id,fecha' })
+    .select().single());
+}
+
+export async function quitarAusencia(empleadoId, fecha) {
+  return unwrap(await supabase.from('ausencias').delete()
+    .eq('empleado_id', empleadoId).eq('fecha', fecha).select());
+}
+
+// Calendario de festivos: común a todo el equipo.
+export async function listarFestivos() {
+  return unwrap(await supabase.from('festivos').select('*').order('fecha', { ascending: true }));
+}
+export async function ponerFestivo(fecha, nombre, ambito) {
+  return unwrap(await supabase.from('festivos')
+    .upsert({ fecha, nombre: nombre || 'Festivo', ambito: ambito || 'local' }, { onConflict: 'fecha' })
+    .select().single());
+}
+export async function quitarFestivo(fecha) {
+  return unwrap(await supabase.from('festivos').delete().eq('fecha', fecha).select());
+}
+
 /* ---------------- avatares ---------------- */
 // Bucket privado `avatares` (sql/etapa16). Una foto por persona, en su propia
 // carpeta: las políticas de Storage solo dejan escribir en la carpeta propia
@@ -405,6 +441,8 @@ export default {
   listarHorasPartes, listarMaterialesPartes,
   subirAdjunto, listarAdjuntosPartes, urlsFirmadas, descargarAdjunto, borrarAdjunto,
   subirAvatar, urlsFirmadasAvatar, guardarMiAvatar, guardarAvatarDe, borrarAvatar,
+  listarAusencias, marcarAusencia, quitarAusencia,
+  listarFestivos, ponerFestivo, quitarFestivo,
   listarIncidencias, crearIncidencia,
   presenciaDiaria, listarImputaciones, proponerImputaciones, guardarImputaciones, borrarImputacion,
 };

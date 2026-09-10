@@ -204,7 +204,7 @@ import * as sysDB from './supabase-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '9.0'; // versión visible de la app (única fuente)
+const APP_VERSION = '9.1'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -216,6 +216,8 @@ function semilla() {
     empresa: 'Sysefen',
     cif: '',
     emailCopia: '',
+    ausencias: [],
+    festivos: [],
     opts: { gps: true, recordatorio: true, importesOperario: false },
     users: [
       { id: 'u1', nombre: 'Bayron', rol: 'jefe', pin: '1111' },
@@ -248,7 +250,7 @@ let guardando = null;
 function save() {
   clearTimeout(guardando);
   guardando = setTimeout(() => {
-    try { localStorage.setItem(KEY, JSON.stringify(Object.assign({}, S, { fichajes: [], obras: [], imputaciones: [], partes: [] }))); }
+    try { localStorage.setItem(KEY, JSON.stringify(Object.assign({}, S, { fichajes: [], obras: [], imputaciones: [], partes: [], ausencias: [], festivos: [] }))); }
     catch (e) { avisar('No hay espacio en el móvil. Borra algún adjunto antiguo.'); }
   }, 120);
 }
@@ -523,7 +525,40 @@ async function sincronizarPartes() {
   finally { sincPartes = false; }
 }
 
-const refrescarDatos = () => Promise.all([sincronizarFichajes(), sincronizarObras(), sincronizarImputaciones(), sincronizarPartes(), cargarAvatares()]);
+async function sincronizarAusencias() {
+  try {
+    if (!empRows.length) await cargarMapaEmpleados();
+    const filas = await Sysefen.db.listarAusencias();
+    S.ausencias = (filas || []).map((a) => ({
+      id: a.id, userId: (localPorNombre(nombrePorEmpId[a.empleado_id]) || {}).id,
+      fecha: a.fecha, tipo: a.tipo, nota: a.nota,
+    })).filter((a) => a.userId);
+    S.festivos = (await Sysefen.db.listarFestivos()) || [];
+  } catch (e) { /* si falta la etapa17, la app sigue sin vacaciones ni festivos */ }
+}
+const refrescarDatos = () => Promise.all([sincronizarFichajes(), sincronizarObras(), sincronizarImputaciones(), sincronizarPartes(), cargarAvatares(), sincronizarAusencias()]);
+
+// Ausencia de una persona en un día concreto (o null).
+// Un día puede estar marcado por dos vías: la ausencia PERSONAL (vacaciones de
+// esa persona) o el calendario COMÚN de festivos, que vale para todo el equipo.
+// La personal manda: si alguien está de vacaciones el 1 de mayo, lo que cuenta
+// para su cómputo son las vacaciones.
+const festivoDe = (fecha) => (S.festivos || []).find((f) => f.fecha === fecha) || null;
+const ausenciaDe = (userId, fecha) => {
+  const propia = (S.ausencias || []).find((a) => a.userId === userId && a.fecha === fecha);
+  if (propia) return propia;
+  const f = festivoDe(fecha);
+  return f ? { userId, fecha, tipo: 'festivo', nota: f.nombre, comun: true } : null;
+};
+const ETIQ_AUSENCIA = { vacaciones: 'Vacaciones', festivo: 'Festivo', baja: 'Baja', permiso: 'Permiso' };
+// Para un festivo del calendario común se enseña su nombre ("Fiesta del
+// Trabajo"), que dice más que un "Festivo" a secas.
+const etiqAusencia = (au) => (au && au.comun && au.nota) ? au.nota : ETIQ_AUSENCIA[au.tipo];
+// Días de un tipo dentro de un rango de meses ('YYYY-MM').
+function diasAusencia(userId, tipo, desde, hasta) {
+  return (S.ausencias || []).filter((a) => a.userId === userId && a.tipo === tipo
+    && a.fecha.slice(0, 7) >= desde && a.fecha.slice(0, 7) <= hasta).length;
+}
 
 // Presencia CERRADA (jornada terminada) de un empleado en un día, desde S.fichajes.
 // Minutos REALES exactos. NO se redondea aquí.
@@ -1146,6 +1181,53 @@ A.planDia = (fecha) => {
   V.sheet = { tipo: 'diaFichajes', userId: V.planEmp, fecha };
   render();
 };
+A.ponerFestivo = async (fecha) => {
+  if (!puedeCrear()) return;
+  if (!navigator.onLine) { avisar('Sin conexión — no se ha guardado.'); return; }
+  try {
+    await Sysefen.db.ponerFestivo(fecha, 'Festivo', 'local');
+    await sincronizarAusencias();
+    toast('Festivo para todo el equipo'); render();
+  } catch (e) { avisar(mensajeAusencia(e)); }
+};
+A.quitarFestivo = async (fecha) => {
+  if (!puedeCrear()) return;
+  if (!navigator.onLine) { avisar('Sin conexión — no se ha guardado.'); return; }
+  try {
+    await Sysefen.db.quitarFestivo(fecha);
+    await sincronizarAusencias();
+    toast('Festivo quitado del calendario'); render();
+  } catch (e) { avisar(mensajeAusencia(e)); }
+};
+A.marcarAusencia = async (userId, fecha, tipo) => {
+  if (!puedeCrear()) return;
+  if (!navigator.onLine) { avisar('Sin conexión — no se ha guardado.'); return; }
+  const empId = empIdDeUser(userId);
+  if (!empId) { avisar('Empleado no vinculado en Supabase.'); return; }
+  try {
+    await Sysefen.db.marcarAusencia(empId, fecha, tipo);
+    await sincronizarAusencias();
+    toast(ETIQ_AUSENCIA[tipo] + ' · ' + fechaCorta(fecha + 'T12:00'));
+    render();
+  } catch (e) { avisar(mensajeAusencia(e)); }
+};
+A.quitarAusencia = async (userId, fecha) => {
+  if (!puedeCrear()) return;
+  if (!navigator.onLine) { avisar('Sin conexión — no se ha guardado.'); return; }
+  const empId = empIdDeUser(userId);
+  try {
+    await Sysefen.db.quitarAusencia(empId, fecha);
+    await sincronizarAusencias();
+    toast('Marca quitada'); render();
+  } catch (e) { avisar(mensajeAusencia(e)); }
+};
+const mensajeAusencia = (err) => {
+  const m = (err && err.message) || '';
+  return /ausencias|festivos|schema cache|does not exist/i.test(m)
+    ? 'Falta ejecutar sql/etapa17_vacaciones.sql en Supabase.'
+    : (m || 'No se pudo guardar.');
+};
+
 A.altaFichaje = (userId, fecha) => {
   if (!esAdmin()) return;
   // Se deja la hora en 00:00 a propósito: que la ponga quien sabe cuál fue.
@@ -1283,14 +1365,22 @@ A.exportarPlanillaCSV = () => {
   filas.push([]);
   filas.push(['Fecha', 'Entrada', 'Salida', 'Horas', 'Estado']);
   let totalMin = 0;
+  const ausCsv = {};
   meses.forEach((mes) => {
-    planillaMes(userId, mes).dias.forEach((x) => {
+    const pl = planillaMes(userId, mes);
+    Object.keys(pl.ausencias || {}).forEach((t) => { ausCsv[t] = (ausCsv[t] || 0) + pl.ausencias[t]; });
+    pl.dias.forEach((x) => {
       if (x.min != null) totalMin += x.min;
       filas.push([mes + '-' + String(x.dd).padStart(2, '0'), x.entrada ? hhmm(x.entrada) : '', x.salida ? hhmm(x.salida) : '', x.min != null ? horasLargas(x.min) : '', x.estado]);
     });
   });
   filas.push([]);
   filas.push(['Total', '', '', horasLargas(totalMin), '']);
+  ['vacaciones', 'festivo', 'baja', 'permiso'].forEach((t) => {
+    if (ausCsv[t]) filas.push([ETIQ_AUSENCIA[t] + ' en el periodo', ausCsv[t] + ' días', '', '', '']);
+  });
+  const anioCsv = (meses[meses.length - 1] || hoyISO()).slice(0, 4);
+  filas.push(['Vacaciones en ' + anioCsv, diasAusencia(userId, 'vacaciones', anioCsv + '-01', anioCsv + '-12') + ' días', '', '', '']);
   const csv = '\uFEFF' + filas.map((r) => r.map((c) => '"' + String(c).replace(/"/g, '""') + '"').join(';')).join('\n');
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
@@ -2911,16 +3001,25 @@ function planillaMes(userId, mes) {
     const fecha = mes + '-' + String(dd).padStart(2, '0');
     const fs = S.fichajes.filter((f) => f.userId === userId && fechaLocal(f.entrada) === fecha)
       .sort((a, b) => a.entrada.localeCompare(b.entrada));
-    if (!fs.length) { dias.push({ fecha, dd, estado: 'Sin fichaje', min: null }); continue; }
+    const au = ausenciaDe(userId, fecha);
+    if (!fs.length) {
+      dias.push({ fecha, dd, estado: au ? etiqAusencia(au) : 'Sin fichaje', min: null, ausencia: au ? au.tipo : null });
+      continue;
+    }
     const entrada = fs[0].entrada;
     const cerrados = fs.filter((f) => f.salida);
     const salida = cerrados.length ? cerrados[cerrados.length - 1].salida : null;
     const min = fs.reduce((t, f) => t + (f.salida ? minEntre(f.entrada, f.salida) : 0), 0);
     const abierto = fs.some((f) => !f.salida);
     if (min > 0) { totalMin += min; diasTrab++; }
-    dias.push({ fecha, dd, estado: abierto ? 'En curso' : 'Trabajado', entrada, salida, min: abierto ? null : min });
+    // Un día puede tener las dos cosas: media jornada y luego permiso.
+    const base = abierto ? 'En curso' : 'Trabajado';
+    dias.push({ fecha, dd, estado: au ? base + ' · ' + etiqAusencia(au) : base,
+                entrada, salida, min: abierto ? null : min, ausencia: au ? au.tipo : null });
   }
-  return { dias, totalMin, diasTrab, ultimo };
+  const ausencias = {};
+  dias.forEach((d) => { if (d.ausencia) ausencias[d.ausencia] = (ausencias[d.ausencia] || 0) + 1; });
+  return { dias, totalMin, diasTrab, ultimo, ausencias };
 }
 function horasEmpleadoDesde(userId, desdeISO) {
   return S.fichajes
@@ -2973,7 +3072,20 @@ function vPlanilla() {
       <button class="pill grow" data-a="abrirRangoPlanilla" data-m="pdf" style="padding:12px;text-align:center;background:var(--tinta);color:#fff">Imprimir PDF</button>
       <button class="pill grow" data-a="abrirRangoPlanilla" data-m="csv" style="padding:12px;text-align:center">Exportar CSV</button>
     </div>
-    ${editable ? '<div class="tiny" style="margin-bottom:10px">Toca cualquier día para corregir sus horas o añadir un fichaje que falte.</div>' : ''}
+    ${editable ? '<div class="tiny" style="margin-bottom:10px">Toca cualquier día para corregir sus horas, añadir un fichaje o marcarlo como vacaciones.</div>' : ''}
+    ${(() => {
+      const anio = mes.slice(0, 4);
+      const vacAnio = diasAusencia(userId, 'vacaciones', anio + '-01', anio + '-12');
+      const delMes = pl.ausencias || {};
+      const hayMes = Object.keys(delMes).some((k) => delMes[k] > 0);
+      if (!vacAnio && !hayMes) return '';
+      return `<div class="card row" style="margin-bottom:12px;background:var(--ambar-cl, rgba(224,168,58,.14))">
+        <div class="grow"><div class="lbl">Vacaciones en ${anio}</div>
+        <div style="font:700 22px/1 var(--cond);margin-top:5px">${vacAnio} ${vacAnio === 1 ? 'día' : 'días'}</div></div>
+        ${hayMes ? `<div style="text-align:right"><div class="lbl">Este mes</div>
+          <div class="tiny" style="margin-top:5px">${resumenAusencias(delMes).replace(/^ · /, '')}</div></div>` : ''}
+      </div>`;
+    })()}
     <div class="card" style="padding:0;overflow:hidden">
       <div class="row" style="padding:9px 12px;background:rgba(20,23,15,.04);font:600 10px var(--mono);text-transform:uppercase;letter-spacing:.06em;color:var(--t2)">
         <div style="width:38px">Día</div><div class="grow">Entrada / Salida</div><div style="width:52px;text-align:right">Horas</div>
@@ -3009,6 +3121,13 @@ function vPlanilla() {
     ${row ? `<div class="tiny" style="margin-top:12px">Alta: ${row.creado_en ? fechaCorta(row.creado_en) : '—'}${row.fecha_baja ? ' · Baja: ' + fechaCorta(row.fecha_baja + 'T12:00') : ''} · Registro basado en fichajes reales (no imputaciones).</div>` : ''}
   </div>`;
 }
+// "3 vacaciones · 1 festivo" a partir del recuento por tipo. Cadena vacía si no
+// hay ninguna, para no ensuciar la línea de totales.
+function resumenAusencias(a) {
+  const ks = Object.keys(a || {}).filter((k) => a[k] > 0);
+  if (!ks.length) return '';
+  return ' · ' + ks.map((k) => a[k] + ' ' + ETIQ_AUSENCIA[k].toLowerCase()).join(' · ');
+}
 function imprimirPlanilla(userId, mesBase) {
   const rango = V.planRango || 'mes';
   const meses = mesesEnRango(userId, rango, mesBase);
@@ -3019,6 +3138,12 @@ function imprimirPlanilla(userId, mesBase) {
   const totalGeneral = bloques.reduce((t, b) => t + b.pl.totalMin, 0);
   const diasGeneral = bloques.reduce((t, b) => t + b.pl.diasTrab, 0);
   const tituloRango = rango === 'mes' ? mesLargo(mesBase) : rango === 'ano' ? 'Año ' + mesBase.slice(0, 4) : 'Historial completo';
+  // Recuento de ausencias: por mes, del periodo entero, y las vacaciones del
+  // año natural, que es como se cuentan y como las pide la gestoría.
+  const ausTotal = {};
+  bloques.forEach((b) => Object.keys(b.pl.ausencias || {}).forEach((t) => { ausTotal[t] = (ausTotal[t] || 0) + b.pl.ausencias[t]; }));
+  const anioPlanilla = (meses[meses.length - 1] || hoyISO()).slice(0, 4);
+  const vacacionesAnio = diasAusencia(userId, 'vacaciones', anioPlanilla + '-01', anioPlanilla + '-12');
   const firmaTrab = V.planFirma || '';
   // El sello de la empresa va siempre; si quien saca el papel es jefe o
   // administración, además firma con su nombre. Si el propio operario imprime
@@ -3060,12 +3185,13 @@ function imprimirPlanilla(userId, mesBase) {
         </tr>`).join('')}
         <tr><td colspan="3" style="padding:6px 0;font-weight:700">Total del mes</td>
           <td style="padding:6px 0;text-align:right;font-weight:700;font-family:var(--mono)">${horasLargas(b.pl.totalMin)}</td>
-          <td style="padding:6px 6px">${b.pl.diasTrab} días</td></tr>
+          <td style="padding:6px 6px">${b.pl.diasTrab} días${resumenAusencias(b.pl.ausencias)}</td></tr>
       </table>
     </div>`).join('')}
     ${bloques.length > 1 ? `<div style="margin-top:16px;padding-top:10px;border-top:2px solid #14170f;display:flex;justify-content:space-between;font:700 13px var(--sans)">
-      <div>Total del periodo (${bloques.length} meses)</div><div>${horasLargas(totalGeneral)} · ${diasGeneral} días</div>
+      <div>Total del periodo (${bloques.length} meses)</div><div>${horasLargas(totalGeneral)} · ${diasGeneral} días${resumenAusencias(ausTotal)}</div>
     </div>` : ''}
+    <div style="font:400 11px var(--sans);margin-top:10px">Vacaciones tomadas en ${anioPlanilla}: <b>${vacacionesAnio} ${vacacionesAnio === 1 ? 'día' : 'días'}</b></div>
     <div style="font:400 10px var(--sans);color:#666;margin-top:14px">Horas reales de presencia según los fichajes registrados. Los días sin fichaje no se contabilizan como 0 h a la espera de definir su estado (vacaciones, festivo, ausencia…).</div>
     <div style="display:flex;gap:24px;margin-top:26px">
       <div style="flex:1"><div style="font:600 10px var(--mono);text-transform:uppercase;color:#666">El trabajador</div>
@@ -3597,7 +3723,21 @@ function sheet() {
         </div>`).join('') : '<div class="tiny">No hay ningún fichaje este día.</div>'}
       </div>
       <button class="btn btn-gris" data-a="altaFichaje" data-id="${s.userId}" data-fecha="${s.fecha}" style="border-radius:14px;margin-top:14px">+ Añadir fichaje</button>
-      <button class="btn btn-gris" data-a="cerrarSheet" style="border-radius:99px;margin-top:8px;opacity:.7">Cerrar</button>
+      ${(() => {
+        const au = ausenciaDe(s.userId, s.fecha);
+        const propia = au && !au.comun;
+        const cabecera = au ? `<div class="card row" style="margin-top:10px;background:var(--ambar);color:var(--tinta)">
+          <div class="grow"><div style="font:600 14px var(--sans)">${esc(etiqAusencia(au))}</div>
+          <div class="tiny" style="color:rgba(20,23,15,.65);margin-top:3px">${au.comun ? 'Festivo del calendario, para todo el equipo.' : 'Marcado solo para esta persona.'}</div></div>
+          <button class="pill" data-a="${au.comun ? 'quitarFestivo' : 'quitarAusencia'}" data-id="${s.userId}" data-fecha="${s.fecha}" style="background:#fff">Quitar</button>
+        </div>` : '';
+        const tipos = ['vacaciones', 'baja', 'permiso'].filter(() => !propia);
+        return cabecera + (propia ? '' : `<div class="lbl" style="margin:14px 0 7px">Marcar el día como</div>
+        <div class="wrap">${tipos.map((t) =>
+          `<div class="chip" data-a="marcarAusencia" data-id="${s.userId}" data-fecha="${s.fecha}" data-t="${t}">${ETIQ_AUSENCIA[t]}</div>`).join('')}
+          ${au && au.comun ? '' : `<div class="chip" data-a="ponerFestivo" data-fecha="${s.fecha}">Festivo (todo el equipo)</div>`}</div>`);
+      })()}
+      <button class="btn btn-gris" data-a="cerrarSheet" style="border-radius:99px;margin-top:14px;opacity:.7">Cerrar</button>
     </div></div>`;
   }
   if (s.tipo === 'altaFichaje') {
@@ -3921,6 +4061,10 @@ document.addEventListener('click', (e) => {
   if (a === 'abrirCorregirFichaje') { e.stopPropagation(); return A.abrirCorregirFichaje(d.id); }
   if (a === 'planDia') return A.planDia(d.fecha);
   if (a === 'altaFichaje') return A.altaFichaje(d.id, d.fecha);
+  if (a === 'marcarAusencia') return A.marcarAusencia(d.id, d.fecha, d.t);
+  if (a === 'quitarAusencia') return A.quitarAusencia(d.id, d.fecha);
+  if (a === 'ponerFestivo') return A.ponerFestivo(d.fecha);
+  if (a === 'quitarFestivo') return A.quitarFestivo(d.fecha);
   if (a === 'altaGuardar') return A.altaGuardar();
   if (a === 'borrarFichaje') { e.stopPropagation(); return A.borrarFichaje(d.id); }
   if (a === 'corrGuardar') return A.corrGuardar();
