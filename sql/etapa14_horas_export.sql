@@ -114,7 +114,20 @@ select
   coalesce(im.minutos_imputados, 0)      as minutos_imputados,
   round(coalesce(im.minutos_imputados, 0) / 60.0, 2) as horas_imputadas,
   p.minutos_presencia - coalesce(im.minutos_imputados, 0) as minutos_sin_repartir
-from public.v_presencia_diaria p
+-- La presencia se calcula AQUÍ y no se reutiliza `v_presencia_diaria`: esa vista
+-- lleva `security_invoker = true`, así que aplicaría las políticas del rol que
+-- consulta. El rol de integración no tiene ninguna sobre `fichajes`, de modo que
+-- habría visto cero jornadas y Make se habría llevado una tabla vacía sin dar
+-- ningún error. Este cálculo es el mismo, pero con los permisos del dueño.
+from (
+  select
+    f.empleado_id,
+    (f.entrada at time zone 'Europe/Madrid')::date as fecha,
+    round(sum(extract(epoch from (f.salida - f.entrada)) / 60.0))::int as minutos_presencia
+  from public.fichajes f
+  where f.salida is not null
+  group by f.empleado_id, (f.entrada at time zone 'Europe/Madrid')::date
+) p
 join public.empleados e on e.id = p.empleado_id
 left join (
   select empleado_id, fecha, sum(minutos) as minutos_imputados
