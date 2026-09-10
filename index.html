@@ -204,7 +204,7 @@ import * as sysDB from './supabase-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '8.9'; // versión visible de la app (única fuente)
+const APP_VERSION = '9.0'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -314,6 +314,12 @@ async function cargarMapaEmpleados() {
         S.users.push(local);
       }
       local.nombre = e.nombre;
+      // Copia local del avatar: la pantalla de entrada se pinta SIN sesión, así
+      // que no puede preguntarle nada a Supabase. Este espejo es lo que permite
+      // que cada móvil enseñe las caras de quienes ya han entrado en él.
+      local.avatarEmoji = e.avatar_emoji || null;
+      local.avatarRuta = e.avatar_foto || null;
+      if (!e.avatar_foto) local.avatarFoto = null;
       local.rol = e.rol || local.rol;
       local.activo = e.activo !== false;
       local.email = e.email || null;
@@ -552,28 +558,50 @@ const ini = (n) => n.trim().slice(0, 1).toUpperCase();
 // sesión: allí siempre salen las iniciales.
 const urlAvatar = {};   // empleado_id -> enlace firmado
 
+let avataresBajados = false;   // una vez por apertura de la app, no por sincronización
 async function cargarAvatares() {
   try {
+    // Igual que las demás sincronizaciones: sin el mapa de empleados cargado,
+    // `empRows` está vacío y esto se salía sin hacer nada.
+    if (!empRows.length) await cargarMapaEmpleados();
     const rutas = empRows.filter((e) => e.avatar_foto).map((e) => e.avatar_foto);
     if (!rutas.length) return;
     const urls = await Sysefen.db.urlsFirmadasAvatar(rutas);
     empRows.forEach((e) => { if (e.avatar_foto && urls[e.avatar_foto]) urlAvatar[e.id] = urls[e.avatar_foto]; });
+    if (avataresBajados) return;
+    avataresBajados = true;
+    // Y se deja una copia en el móvil para la pantalla de entrada. Son ~15 KB
+    // por persona. Se refresca una vez por apertura, así que un cambio de foto
+    // se ve en los demás móviles la próxima vez que abran la app.
+    for (const e of empRows) {
+      if (!e.avatar_foto || !urlAvatar[e.id]) continue;
+      const local = S.users.find((x) => x.empId === e.id || x.nombre === e.nombre);
+      if (!local) continue;
+      try {
+        const blob = await (await fetch(urlAvatar[e.id])).blob();
+        local.avatarFoto = await new Promise((ok, mal) => {
+          const r = new FileReader(); r.onload = () => ok(r.result); r.onerror = mal; r.readAsDataURL(blob);
+        });
+      } catch (_) { /* si no baja, quedan las iniciales */ }
+    }
+    save();
   } catch (e) { /* sin avatares: se ven las iniciales, que no es un fallo grave */ }
 }
 
 // `estilo` trae el color y el tamaño que ya usaba cada sitio; `attrs` permite
 // colgarle un data-a para que se pueda pulsar.
-function avatarHTML(userId, estilo, attrs) {
+function avatarHTML(userId, estilo, attrs, clases) {
   const u = userById(userId) || { nombre: '—' };
   const row = empRowById(empIdDeUser(userId));
   const a = attrs ? ' ' + attrs : '';
-  if (row && row.avatar_foto && urlAvatar[row.id]) {
-    return `<div class="av"${a} style="${estilo};background-image:url('${urlAvatar[row.id]}')"></div>`;
-  }
-  if (row && row.avatar_emoji) {
-    return `<div class="av emoji"${a} style="${estilo}">${esc(row.avatar_emoji)}</div>`;
-  }
-  return `<div class="av"${a} style="${estilo}">${esc(ini(u.nombre))}</div>`;
+  const cl = 'av' + (clases ? ' ' + clases : '');
+  // Con sesión: enlace firmado, siempre al día. Sin sesión (pantalla de
+  // entrada): la copia guardada en este móvil.
+  const foto = (row && urlAvatar[row.id]) || u.avatarFoto || null;
+  if (foto) return `<div class="${cl}"${a} style="${estilo};background-image:url('${foto}')"></div>`;
+  const emoji = (row && row.avatar_emoji) || u.avatarEmoji || null;
+  if (emoji) return `<div class="${cl} emoji"${a} style="${estilo}">${esc(emoji)}</div>`;
+  return `<div class="${cl}"${a} style="${estilo}">${esc(ini(u.nombre))}</div>`;
 }
 // Marca pequeña (logo oficial + "Sysefen") para cabeceras internas. Reutiliza
 // icon-512.png (el mismo icono ya usado como icono de la app/PWA).
@@ -2100,7 +2128,7 @@ function vLogin() {
     <div class="lbl" style="color:rgba(255,255,255,.4);margin:30px 0 12px">¿Quién eres?</div>
     <div class="col g8">
       ${S.users.filter((u) => u.activo !== false).map((u) => `<div class="row" data-a="elegirUser" data-id="${u.id}" style="padding:14px;border-radius:16px;background:rgba(255,255,255,.07);cursor:pointer">
-        <div class="av" style="width:42px;height:42px;font-size:17px;${avc(u.rol)}">${esc(ini(u.nombre))}</div>
+        ${avatarHTML(u.id, `width:42px;height:42px;font-size:17px;${avc(u.rol)}`)}
         <div class="grow">
           <div style="font:600 17px/1.1 var(--sans);color:#fff">${esc(u.nombre)}</div>
           <div style="font:400 12px/1 var(--mono);letter-spacing:.06em;text-transform:uppercase;color:rgba(255,255,255,.45);margin-top:5px">${u.rol === 'admin' ? 'Administración' : u.rol === 'jefe' ? 'Jefe de obra' : 'Operario'}</div>
@@ -2117,7 +2145,7 @@ function vPin() {
   return `<div class="scroll" style="background:var(--tinta);padding:calc(44px + var(--safe-t)) 24px calc(26px + var(--safe-b))">
     <div class="volver" data-a="volverLogin" style="color:rgba(255,255,255,.6)">‹ Cambiar de usuario</div>
     <div class="col" style="align-items:center;margin-top:22px">
-      <div class="av ${V.err ? 'shake' : ''}" style="width:64px;height:64px;font-size:25px;background:${u.rol === 'admin' ? 'var(--ambar);color:var(--tinta)' : u.rol === 'jefe' ? 'var(--verde-c);color:#fff' : 'rgba(255,255,255,.16);color:#fff'}">${esc(ini(u.nombre))}</div>
+      ${avatarHTML(u.id, `width:64px;height:64px;font-size:25px;background:${u.rol === 'admin' ? 'var(--ambar);color:var(--tinta)' : u.rol === 'jefe' ? 'var(--verde-c);color:#fff' : 'rgba(255,255,255,.16);color:#fff'}`, '', V.err ? 'shake' : '')}
       <div style="font:600 25px/1.1 var(--cond);color:#fff;margin-top:14px">${esc(u.nombre)}</div>
       <div class="tiny" style="color:rgba(255,255,255,.45);margin-top:7px;letter-spacing:.1em;text-transform:uppercase">${V.err ? 'PIN incorrecto' : V.pinBusy ? 'Comprobando…' : 'Introduce tu PIN'}</div>
     </div>
