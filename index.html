@@ -204,7 +204,7 @@ import * as sysDB from './supabase-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '9.3'; // versión visible de la app (única fuente)
+const APP_VERSION = '9.5'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -572,6 +572,29 @@ const DIAS_SEM = ['dom', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb'];
 const diaSemana = (fecha) => DIAS_SEM[new Date(fecha + 'T12:00').getDay()];
 const finde = (fecha) => [0, 6].includes(new Date(fecha + 'T12:00').getDay());
 // Días de un tipo dentro de un rango de meses ('YYYY-MM').
+// Vacaciones GENERADAS en un año natural. Se prorratean por días: si alguien
+// entró el 1 de junio, ha generado la parte del año que lleva trabajada, no el
+// cupo entero. Y solo hasta hoy — lo que queda de año todavía no está generado.
+//
+// Días al año: los del convenio, guardados por persona (30 naturales es el
+// mínimo legal). Si no consta fecha de alta, se cuenta el año completo.
+function vacacionesGeneradas(userId, anio) {
+  const row = empRowById(empIdDeUser(userId));
+  const cupo = (row && row.vacaciones_anuales) || 30;
+  const DIA = 86400000;
+  const iniAnio = new Date(anio + '-01-01T12:00');
+  const finAnio = new Date(anio + '-12-31T12:00');
+  const hoy = new Date(hoyISO() + 'T12:00');
+  const alta = altaEmp(row) ? new Date(String(altaEmp(row)).slice(0, 10) + 'T12:00') : null;
+  const desde = alta && alta > iniAnio ? alta : iniAnio;
+  const hasta = hoy < finAnio ? hoy : finAnio;
+  if (hasta < desde) return 0;
+  const diasAnio = Math.round((finAnio - iniAnio) / DIA) + 1;
+  const diasCon = Math.round((hasta - desde) / DIA) + 1;
+  return Math.round((cupo * diasCon / diasAnio) * 10) / 10;
+}
+const nDias = (n) => (Math.round(n * 10) / 10).toString().replace('.', ',');
+
 function diasAusencia(userId, tipo, desde, hasta) {
   return (S.ausencias || []).filter((a) => a.userId === userId && a.tipo === tipo
     && a.fecha.slice(0, 7) >= desde && a.fecha.slice(0, 7) <= hasta).length;
@@ -1046,12 +1069,13 @@ A.abrirEmpleado = (userId) => {
     rol: u.rol || 'operario', activo: u.activo !== false, nuevo: false,
     nombreCompleto: row.nombre_completo || '',
     fechaAlta: row.fecha_alta ? String(row.fecha_alta).slice(0, 10) : '',
+    vacacionesAnuales: row.vacaciones_anuales != null ? row.vacaciones_anuales : 30,
   };
   V.view = 'empleado'; render();
 };
 A.empNuevo = () => {
   V.empEmp = null;
-  V.empDraft = { nombre: '', email: '', telefono: '', rol: 'operario', activo: true, pin: '', nombreCompleto: '', fechaAlta: '', nuevo: true };
+  V.empDraft = { nombre: '', email: '', telefono: '', rol: 'operario', activo: true, pin: '', nombreCompleto: '', fechaAlta: '', vacacionesAnuales: 30, nuevo: true };
   V.view = 'empleado'; render();
 };
 A.volverEmpleados = () => { V.empEmp = null; V.empDraft = null; V.view = 'empleados'; render(); };
@@ -1076,6 +1100,7 @@ A.empGuardar = async () => {
   // la fila entera por columnas desconocidas y no se podría guardar nada.
   if (columnaEmp('nombre_completo')) campos.nombre_completo = (d.nombreCompleto || '').trim() || null;
   if (columnaEmp('fecha_alta')) campos.fecha_alta = (d.fechaAlta || '').trim() || null;
+  if (columnaEmp('vacaciones_anuales')) campos.vacaciones_anuales = parseInt(d.vacacionesAnuales, 10) || 30;
   V.empBusy = true; render();
   try {
     if (d.nuevo) {
@@ -1273,8 +1298,8 @@ A.altaGuardar = async () => {
   } catch (e) {
     s.busy = false;
     const msg = e && e.message ? e.message : 'error';
-    s.err = /un_abierto_por_empleado/.test(msg)
-      ? 'Esa persona tiene ahora mismo un fichaje abierto. Ciérralo primero y vuelve a intentarlo.'
+    s.err = (msg === 'FALTA_ETAPA9' || /un_abierto_por_empleado/.test(msg))
+      ? 'Falta ejecutar sql/etapa9_importar_historico.sql en Supabase. Sin esa migración el servidor no acepta fichajes con horas de días pasados.'
       : msg;
     render();
   }
@@ -2980,7 +3005,10 @@ function vEmpleado() {
     <div class="sub" style="font-size:12px;margin-top:6px">El que sale en la planilla de horas y en los PDF. En la app se le sigue llamando ${esc(d.nombre || 'por el nombre corto')}.</div>` : ''}
     ${columnaEmp('fecha_alta') ? `<div class="lbl" style="margin:14px 0 7px">Fecha de alta</div>
     <input class="inp" data-f="empFechaAlta" type="date" value="${esc(d.fechaAlta || '')}">
-    <div class="sub" style="font-size:12px;margin-top:6px">Cuándo empezó a trabajar, no cuándo se creó su ficha aquí.</div>` : ''}
+    <div class="sub" style="font-size:12px;margin-top:6px">Cuándo empezó a trabajar, no cuándo se creó su ficha aquí. Con esto se prorratean las vacaciones.</div>` : ''}
+    ${columnaEmp('vacaciones_anuales') ? `<div class="lbl" style="margin:14px 0 7px">Vacaciones al año</div>
+    <input class="inp" data-f="empVacaciones" inputmode="numeric" value="${esc(String(d.vacacionesAnuales != null ? d.vacacionesAnuales : 30))}">
+    <div class="sub" style="font-size:12px;margin-top:6px">Días <b>naturales</b> según convenio. 30 es el mínimo legal; pon los de tu convenio si son más.</div>` : ''}
     <div class="lbl" style="margin:14px 0 7px">Email (acceso)</div>
     <input class="inp" data-f="empEmail" value="${esc(d.email)}" type="email" inputmode="email" autocapitalize="off" placeholder="${d.nuevo ? esc(emailSugerido(d.nombre) || 'nombre@sysefen.app') : 'nombre@sysefen.app'}">
     <div class="lbl" style="margin:14px 0 7px">Teléfono</div>
@@ -3114,8 +3142,20 @@ function vPlanilla() {
       <div class="row" style="justify-content:space-between;margin-top:6px"><div class="sub">Festivos</div><div class="num" style="font-size:17px;color:${(pl.ausencias.festivo || 0) ? 'var(--verde-o)' : 'var(--t3)'}">${pl.ausencias.festivo || 0}</div></div>
       <div class="row" style="justify-content:space-between;margin-top:6px"><div class="sub">Bajas y permisos</div><div class="num" style="font-size:17px;color:var(--t3)">${(pl.ausencias.baja || 0) + (pl.ausencias.permiso || 0)}</div></div>
       <div class="hr"></div>
-      <div class="row" style="justify-content:space-between"><div class="sub"><b>Vacaciones en ${mes.slice(0, 4)}</b></div>
-        <div class="num" style="font-size:19px">${diasAusencia(userId, 'vacaciones', mes.slice(0, 4) + '-01', mes.slice(0, 4) + '-12')} días</div></div>
+      ${(() => {
+        const anio = mes.slice(0, 4);
+        const gen = vacacionesGeneradas(userId, anio);
+        const dis = diasAusencia(userId, 'vacaciones', anio + '-01', anio + '-12');
+        const pend = Math.round((gen - dis) * 10) / 10;
+        return `<div class="lbl" style="font-weight:600;color:var(--t2);margin-bottom:8px">Vacaciones ${anio}</div>
+        <div class="row" style="justify-content:space-between"><div class="sub">Generadas</div>
+          <div class="num" style="font-size:17px">${nDias(gen)} días</div></div>
+        <div class="row" style="justify-content:space-between;margin-top:6px"><div class="sub">Disfrutadas</div>
+          <div class="num" style="font-size:17px;color:${dis ? 'var(--ambar-o, #a8792a)' : 'var(--t3)'}">${nDias(dis)} días</div></div>
+        <div class="row" style="justify-content:space-between;margin-top:6px"><div class="sub"><b>Pendientes a disfrutar</b></div>
+          <div class="num" style="font-size:19px;color:${pend < 0 ? 'var(--rojo)' : 'var(--verde-o)'}">${nDias(pend)} días</div></div>
+        <div class="tiny" style="margin-top:8px">Generadas a día de hoy, prorrateadas desde el alta sobre ${((empRowById(empIdDeUser(userId)) || {}).vacaciones_anuales) || 30} días naturales al año.</div>`;
+      })()}
     </div>
     <div class="lbl" style="font-weight:600;font-size:12px;color:var(--t2);margin:22px 0 10px">Resumen histórico</div>
     <div class="row g10">
@@ -4122,6 +4162,7 @@ document.addEventListener('input', (e) => {
   if (f === 'empPin') { t.value = t.value.replace(/\D/g, '').slice(0, 4); A.empCampo('pin', t.value); return; }
   if (f === 'empNombreCompleto') { A.empCampo('nombreCompleto', t.value); return; }
   if (f === 'empFechaAlta') { A.empCampo('fechaAlta', t.value); return; }
+  if (f === 'empVacaciones') { t.value = t.value.replace(/\D/g, '').slice(0, 3); A.empCampo('vacacionesAnuales', t.value); return; }
   if (f === 'sheetVal') { V.sheet.val = t.value.replace(/\D/g, '').slice(0, 4); return; }
   if (f === 'sheetNombre') { V.sheet.nombre = t.value; return; }
   if (f === 'sheetPin') { V.sheet.pin = t.value.replace(/\D/g, '').slice(0, 4); return; }

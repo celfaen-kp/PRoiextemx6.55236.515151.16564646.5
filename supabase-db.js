@@ -115,11 +115,26 @@ export async function corregirFichaje(fichajeId, { entrada, salida }) {
 // empleado olvidó fichar ese día). Se inserta y acto seguido se le ponen las
 // horas reales, porque el trigger del servidor fija la entrada al insertar.
 export async function crearFichajeManual(empleadoId, { entrada, salida }) {
-  const nuevo = unwrap(await supabase
-    .from('fichajes')
-    .insert({ empleado_id: empleadoId, obra_id: null })
-    .select().single());
-  return corregirFichaje(nuevo.id, { entrada, salida });
+  // Se inserta YA CERRADO, con las horas reales. Antes se creaba abierto y se
+  // corregía después, y eso fallaba si esa persona estaba fichada en ese
+  // momento: nacía una segunda jornada abierta y saltaba la restricción de
+  // "un solo fichaje abierto por empleado". Requiere sql/etapa9.
+  const ins = await supabase.from('fichajes')
+    .insert({ empleado_id: empleadoId, obra_id: null, entrada, salida })
+    .select().single();
+
+  if (ins.error) {
+    // Sin etapa9 el servidor anula la salida, así que el choque con la jornada
+    // abierta es el SÍNTOMA, no la causa. Se informa de la causa.
+    if (/un_abierto_por_empleado/i.test(ins.error.message)) throw new Error('FALTA_ETAPA9');
+    throw new Error(ins.error.message);
+  }
+  const respetada = Math.abs(new Date(ins.data.entrada) - new Date(entrada)) < 60000 && ins.data.salida;
+  if (respetada) return ins.data;
+
+  // El servidor pisó las horas: se deshace en vez de dejar un fichaje de hoy.
+  await supabase.from('fichajes').delete().eq('id', ins.data.id);
+  throw new Error('FALTA_ETAPA9');
 }
 
 // Importación del histórico: inserta muchos fichajes YA CERRADOS de una vez.
