@@ -180,6 +180,9 @@ a:hover{color:var(--tinta)}
 .rueda-item.on{color:var(--tinta);font:700 24px var(--cond)}
 
 #print{display:none}
+/* Para generar el PDF hay que "fotografiar" el parte, y html2canvas no puede
+   con un elemento oculto. Se saca fuera de la pantalla, con ancho de A4. */
+#print.capturando{display:block;position:fixed;left:-10000px;top:0;width:794px;background:#fff;padding:24px}
 @media print{
   html,body{overflow:visible;height:auto;background:#fff}
   #app,.toast,.sheet{display:none!important}
@@ -204,7 +207,7 @@ import * as sysDB from './supabase-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '9.7'; // versión visible de la app (única fuente)
+const APP_VERSION = '9.8'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -1953,6 +1956,8 @@ function enviarEmail(p) {
   const url = 'mailto:' + encodeURIComponent(dest) + '?subject=' + encodeURIComponent('Parte de trabajo ' + p.ref + ' — ' + o.titulo) + '&body=' + encodeURIComponent(lineas.join('\n'));
   location.href = url;
 }
+// El correo suelto (mailto:, sin adjunto) queda como último recurso desde
+// A.compartirParte cuando no hay hoja de compartir, p. ej. en un ordenador.
 A.reenviar = (id) => enviarEmail(S.partes.find((p) => p.id === id));
 // Las fotos de un parte guardado viven en Supabase Storage, así que hay que
 // traerlas ANTES de imprimir: si se pusieran como enlace, el navegador podría
@@ -1971,6 +1976,82 @@ async function cargarFotosParte(p) {
   }
   return fallos === 0;
 }
+// --- PDF de verdad, para compartirlo ---------------------------------------
+// El "enviar por correo" abría un borrador con el texto suelto: sin PDF, sin
+// firma y sin fotos, porque un enlace mailto: no admite adjuntos. Aquí se
+// genera el PDF en el propio móvil y se pasa a la hoja de compartir, que sí
+// deja adjuntarlo al correo, a WhatsApp o a lo que sea.
+//
+// Las librerías se cargan solo al pedirlo: son ~500 KB y no tiene sentido
+// bajarlas en cada arranque para algo que se usa de vez en cuando.
+let libsPdf = null;
+function cargarLibsPdf() {
+  if (libsPdf) return libsPdf;
+  const meter = (src) => new Promise((ok, mal) => {
+    const t = document.createElement('script');
+    t.src = src; t.onload = ok; t.onerror = () => mal(new Error('No se pudo cargar ' + src));
+    document.head.appendChild(t);
+  });
+  libsPdf = Promise.all([
+    meter('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js'),
+    meter('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js'),
+  ]).catch((e) => { libsPdf = null; throw e; });
+  return libsPdf;
+}
+
+async function pdfDelParte(p) {
+  await cargarLibsPdf();
+  const el = $('#print');
+  el.classList.add('capturando');
+  try {
+    const lienzo = await window.html2canvas(el, { scale: 2, backgroundColor: '#fff', useCORS: true });
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+    const anchoMM = 210, altoMM = 297;
+    const altoImgMM = (lienzo.height * anchoMM) / lienzo.width;
+    // Si no cabe en una hoja, se parte en páginas A4 en vez de encogerlo hasta
+    // que no se lea.
+    let restante = altoImgMM, y = 0;
+    const img = lienzo.toDataURL('image/jpeg', 0.92);
+    while (restante > 0) {
+      doc.addImage(img, 'JPEG', 0, -y, anchoMM, altoImgMM);
+      restante -= altoMM;
+      if (restante > 0) { doc.addPage(); y += altoMM; }
+    }
+    return doc.output('blob');
+  } finally {
+    el.classList.remove('capturando');
+  }
+}
+
+A.compartirParte = async (id) => {
+  const p = S.partes.find((x) => x.id === id); if (!p) return;
+  toast('Preparando el PDF…');
+  try {
+    await cargarFotosParte(p);
+    imprimirParteHTML(p);
+    const blob = await pdfDelParte(p);
+    const archivo = new File([blob], 'parte-' + p.ref + '.pdf', { type: 'application/pdf' });
+    const o = obraById(p.obraId) || {};
+    if (navigator.canShare && navigator.canShare({ files: [archivo] })) {
+      await navigator.share({
+        files: [archivo],
+        title: 'Parte ' + p.ref,
+        text: S.empresa + ' · Parte de trabajo ' + p.ref + (o.titulo ? ' · ' + o.titulo : ''),
+      });
+      return;
+    }
+    // En ordenador no hay hoja de compartir: se descarga y se abre el correo.
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = archivo.name; a.click();
+    toast('PDF descargado. Adjúntalo al correo.');
+    enviarEmail(p);
+  } catch (e) {
+    if (e && e.name === 'AbortError') return;   // canceló la hoja de compartir
+    avisar('No se pudo preparar el PDF: ' + (e && e.message ? e.message : 'error'));
+  }
+};
+
 A.verPdf = async (id) => {
   const p = S.partes.find((x) => x.id === id); if (!p) return;
   const conFotos = (p.adjuntos || []).some((a) => a.img && a.ruta && !a.data);
@@ -2528,7 +2609,7 @@ function cardParte(p) {
     </div>
     ${puedeCrear() ? `<div class="row g8" style="margin-top:12px">
       <button class="pill grow" data-a="verPdf" data-id="${p.id}" style="padding:11px;text-align:center">PDF</button>
-      ${p.estado !== 'anulado' ? `<button class="pill grow" data-a="reenviar" data-id="${p.id}" style="padding:11px;text-align:center">Reenviar</button>` : ''}
+      ${p.estado !== 'anulado' ? `<button class="pill grow" data-a="compartirParte" data-id="${p.id}" style="padding:11px;text-align:center;background:var(--verde-c);color:#fff">Enviar</button>` : ''}
       ${esAdmin() ? `<button class="pill pill-rojo grow" data-a="borrarParte" data-id="${p.id}" style="padding:11px;text-align:center">Borrar</button>` : ''}
     </div>` : ''}
   </div>`;
@@ -3670,7 +3751,8 @@ function vOk() {
     <div class="av" style="width:78px;height:78px;background:#fff;color:var(--verde-o);font-size:34px">✓</div>
     <div style="font:600 30px/1.1 var(--cond);color:#fff;margin-top:22px">Parte guardado</div>
     <div style="font:400 15px/1.5 var(--sans);color:rgba(255,255,255,.85);margin-top:10px;max-width:260px">${esc(p.ref)} firmado por el cliente${p.estado === 'enviado' ? '. Te hemos abierto el correo con el borrador para ' + esc(p.email || 'el cliente') + ': revísalo y dale a enviar' : ''}.</div>
-    <button class="pill" data-a="verPdf" data-id="${p.id}" style="margin-top:26px;padding:16px 24px;background:rgba(255,255,255,.22);color:#fff">Ver / guardar PDF</button>
+    <button class="pill" data-a="compartirParte" data-id="${p.id}" style="margin-top:26px;padding:16px 26px;background:#fff;color:var(--verde-o);font-weight:600">Enviar el parte</button>
+    <button class="pill" data-a="verPdf" data-id="${p.id}" style="margin-top:10px;padding:14px 24px;background:rgba(255,255,255,.22);color:#fff">Solo ver el PDF</button>
     <button class="pill" data-a="ir" data-v="hoy" style="margin-top:10px;padding:16px 24px;background:rgba(255,255,255,.22);color:#fff">Volver al inicio</button>
   </div>`;
 }
@@ -4009,7 +4091,13 @@ function toast(msg, tipo) {
 function avisar(msg) { toast(msg, 'err'); }
 
 /* --- PDF --- */
+// Se separa en dos: `imprimirParteHTML` solo pinta el parte en #print (lo que
+// necesita el generador de PDF) y `imprimirParte` además manda a imprimir.
 function imprimirParte(p) {
+  imprimirParteHTML(p);
+  setTimeout(() => window.print(), 60);
+}
+function imprimirParteHTML(p) {
   const o = obraById(p.obraId) || { titulo: '—', cliente: '' };
   const el = $('#print');
   el.innerHTML = `<div style="font-family:var(--sans);color:#14170f;max-width:180mm;position:relative;z-index:0">
@@ -4024,7 +4112,7 @@ function imprimirParte(p) {
     <table style="width:100%;font:400 12px var(--sans);border-collapse:collapse">
       <tr><td style="padding:3px 0;color:#666;width:32%">Obra</td><td style="font-weight:600">${esc(o.titulo)}</td></tr>
       ${o.cliente ? `<tr><td style="padding:3px 0;color:#666">Cliente</td><td>${esc(o.cliente)}</td></tr>` : ''}
-      <tr><td style="padding:3px 0;color:#666">Obra</td><td>${esc(o.dir || '—')}</td></tr>
+      ${o.dir ? `<tr><td style="padding:3px 0;color:#666">Dirección</td><td>${esc(o.dir)}</td></tr>` : ''}
       <tr><td style="padding:3px 0;color:#666">Fecha</td><td>${fechaLarga(p.fecha)}</td></tr>
       <tr><td style="padding:3px 0;color:#666">Responsable</td><td>${esc(userById(p.autorId).nombre)}</td></tr>
     </table>
@@ -4072,7 +4160,6 @@ function imprimirParte(p) {
     ${p.adjuntos.filter((a) => !a.img).length ? `<div style="font:400 10px var(--mono);color:#666;margin-top:8px">Otros adjuntos: ${p.adjuntos.filter((a) => !a.img).map((a) => esc(a.nombre)).join(', ')}</div>` : ''}
     ${p.estado === 'anulado' ? '<div style="margin-top:20px;font:700 14px var(--sans);color:#a8402a">PARTE ANULADO</div>' : ''}
   </div>`;
-  setTimeout(() => window.print(), 60);
 }
 
 /* ---------- eventos ---------- */
@@ -4122,6 +4209,7 @@ document.addEventListener('click', (e) => {
   if (a === 'guardarEnviar') return A.guardarEnviar(!!d.enviar);
   if (a === 'verPdf') { e.stopPropagation(); return A.verPdf(d.id); }
   if (a === 'reenviar') { e.stopPropagation(); return A.reenviar(d.id); }
+  if (a === 'compartirParte') { e.stopPropagation(); return A.compartirParte(d.id); }
   if (a === 'borrarParte') { e.stopPropagation(); return A.borrarParte(d.id); }
   if (a === 'confirmarBorrarParte') return A.confirmarBorrarParte();
   if (a === 'tabHoras') return A.tabHoras(d.t);
