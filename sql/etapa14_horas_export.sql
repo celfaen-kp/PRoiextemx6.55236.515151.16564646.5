@@ -15,7 +15,8 @@
 --   3. Dos vistas de salida, ya masticadas:
 --        v_horas_export      -> una fila por imputación (horas POR OBRA)
 --        v_jornadas_export   -> una fila por empleado y día (horas REALES)
---   4. Un rol de solo lectura para el automatismo, sin acceso a nada más.
+--   4. Los permisos del rol de solo lectura del automatismo (el rol se crea
+--      en `etapa14b_rol_integracion.sql`, que es una sola línea).
 --
 -- DECISIÓN IMPORTANTE:
 --   Las vistas NO llevan security_invoker: se ejecutan con los permisos de su
@@ -125,39 +126,40 @@ comment on view public.v_jornadas_export is
   'Una fila por empleado y día trabajado: horas reales de fichaje y cuánto de eso está repartido por obra.';
 
 -- ---------------------------------------------------------------------------
--- 4 · Rol de solo lectura para el automatismo
+-- 4 · Permisos para el rol del automatismo
 --
---     >>> CAMBIA 'PON_AQUI_UNA_CLAVE_LARGA' POR UNA CLAVE TUYA ANTES DE
---     >>> EJECUTAR. No la guardes en el repositorio: va solo en Make.
+--     El rol se CREA en el archivo aparte `etapa14b_rol_integracion.sql`, que
+--     es una sola línea con tu clave. Aquí solo se le dan los permisos, y si
+--     todavía no existe esta parte se salta sin romper nada.
 --
---     Este rol NO puede escribir, NO ve las tablas, y solo alcanza las dos
---     vistas de arriba. Si algún día se filtra, lo peor que se puede hacer con
---     él es leer horas.
+--     Se separó a propósito: tener que editar una clave dentro de un bloque
+--     `do $$` es la forma más fácil de romper el archivo entero por un
+--     descuido con una comilla.
 -- ---------------------------------------------------------------------------
 do $$
 begin
-  if not exists (select 1 from pg_roles where rolname = 'sysefen_integracion') then
-    create role sysefen_integracion login password 'PON_AQUI_UNA_CLAVE_LARGA';
+  if exists (select 1 from pg_roles where rolname = 'sysefen_integracion') then
+    execute 'grant usage on schema public to sysefen_integracion';
+    execute 'grant select on public.v_horas_export    to sysefen_integracion';
+    execute 'grant select on public.v_jornadas_export to sysefen_integracion';
+    -- `select (id)` hace falta porque sin poder leer el id no puede ni
+    -- localizar la fila que va a marcar. No se le da el resto de columnas.
+    execute 'grant select (id) on public.imputaciones to sysefen_integracion';
+    execute 'grant update (exportado_en, ref_externa) on public.imputaciones to sysefen_integracion';
+
+    -- La política también nombra al rol, así que va dentro de la condición: si
+    -- el rol no existe, crearla daría «role does not exist» y tumbaría todo.
+    --
+    -- Nada de `force row level security`: forzaría RLS también al dueño de la
+    -- tabla y dejaría fuera a los triggers y funciones SECURITY DEFINER que
+    -- validan las imputaciones. RLS ya está activo y se aplica a este rol.
+    execute 'drop policy if exists imputaciones_marcar_export on public.imputaciones';
+    execute 'create policy imputaciones_marcar_export on public.imputaciones
+               for update to sysefen_integracion using (true) with check (true)';
+  else
+    raise notice 'El rol sysefen_integracion todavía no existe. Ejecuta etapa14b_rol_integracion.sql y vuelve a pasar este archivo para darle los permisos.';
   end if;
 end $$;
-
-grant usage on schema public to sysefen_integracion;
-grant select on public.v_horas_export    to sysefen_integracion;
-grant select on public.v_jornadas_export to sysefen_integracion;
-
--- Para que pueda marcar lo ya enviado y guardar el id externo (y NADA más).
--- `select (id)` hace falta porque sin poder leer el id no puede ni localizar la
--- fila que va a marcar. No se le da lectura del resto de columnas.
-grant select (id) on public.imputaciones to sysefen_integracion;
-grant update (exportado_en, ref_externa) on public.imputaciones to sysefen_integracion;
-
--- Nada de `force row level security` aquí: forzaría RLS también al dueño de la
--- tabla y dejaría fuera a los triggers y funciones SECURITY DEFINER que validan
--- las imputaciones. RLS ya está activo y se aplica a este rol de todos modos.
-drop policy if exists imputaciones_marcar_export on public.imputaciones;
-create policy imputaciones_marcar_export on public.imputaciones
-  for update to sysefen_integracion
-  using (true) with check (true);
 
 commit;
 
