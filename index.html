@@ -207,7 +207,7 @@ import * as sysDB from './supabase-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '9.8'; // versión visible de la app (única fuente)
+const APP_VERSION = '9.9'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -2024,6 +2024,56 @@ async function pdfDelParte(p) {
   }
 }
 
+// --- Envío directo por correo (Resend) -------------------------------------
+// Abre una hoja con el correo del cliente ya puesto y la copia a la gestoría /
+// administración. Si la función del servidor aún no está, cae a compartir.
+A.abrirEnvioParte = (id) => {
+  const p = S.partes.find((x) => x.id === id); if (!p) return;
+  const o = obraById(p.obraId) || {};
+  V.sheet = { tipo: 'envioParte', id, para: p.email || o.email || '', copia: S.emailCopia || '', busy: false, err: '' };
+  render();
+};
+A.confirmarEnvioParte = async () => {
+  const s = V.sheet; if (!s || s.busy) return;
+  const p = S.partes.find((x) => x.id === s.id); if (!p) return;
+  const para = (s.para || '').split(/[,;\s]+/).filter(Boolean);
+  const copia = (s.copia || '').split(/[,;\s]+/).filter(Boolean);
+  const valido = (e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
+  if (!para.length || !para.every(valido)) { s.err = 'Pon un correo válido del cliente (o el tuyo).'; return render(); }
+  if (copia.length && !copia.every(valido)) { s.err = 'Algún correo de copia no es válido.'; return render(); }
+  if (!navigator.onLine) { s.err = 'Sin conexión: no se ha enviado.'; return render(); }
+  s.err = ''; s.busy = true; render();
+  try {
+    await cargarFotosParte(p);
+    imprimirParteHTML(p);
+    const pdfBlob = await pdfDelParte(p);
+    const o = obraById(p.obraId) || {};
+    await Sysefen.db.enviarParteCorreo({
+      para, copia,
+      asunto: 'Parte de trabajo ' + p.ref + (o.titulo ? ' — ' + o.titulo : ''),
+      texto: [
+        'Hola,', '',
+        'Adjuntamos el parte de trabajo ' + p.ref + (o.titulo ? ' de la obra ' + o.titulo : '') + ', del ' + fechaLarga(p.fecha) + ', firmado' + (p.firmante ? ' por ' + p.firmante : '') + '.',
+        '', 'Un saludo,', S.empresa,
+      ].join('\n'),
+      pdfBlob,
+      nombreArchivo: 'parte-' + p.ref + '.pdf',
+    });
+    V.sheet = null;
+    toast('Parte enviado a ' + para.join(', '));
+    render();
+  } catch (e) {
+    s.busy = false;
+    if (e && e.noDesplegada) {
+      V.sheet = null; render();
+      avisar('El envío directo aún no está activo. Te abro compartir para mandarlo tú.');
+      return A.compartirParte(p.id);
+    }
+    s.err = (e && e.message) || 'No se pudo enviar.';
+    render();
+  }
+};
+
 A.compartirParte = async (id) => {
   const p = S.partes.find((x) => x.id === id); if (!p) return;
   toast('Preparando el PDF…');
@@ -2609,7 +2659,7 @@ function cardParte(p) {
     </div>
     ${puedeCrear() ? `<div class="row g8" style="margin-top:12px">
       <button class="pill grow" data-a="verPdf" data-id="${p.id}" style="padding:11px;text-align:center">PDF</button>
-      ${p.estado !== 'anulado' ? `<button class="pill grow" data-a="compartirParte" data-id="${p.id}" style="padding:11px;text-align:center;background:var(--verde-c);color:#fff">Enviar</button>` : ''}
+      ${p.estado !== 'anulado' ? `<button class="pill grow" data-a="abrirEnvioParte" data-id="${p.id}" style="padding:11px;text-align:center;background:var(--verde-c);color:#fff">Enviar</button>` : ''}
       ${esAdmin() ? `<button class="pill pill-rojo grow" data-a="borrarParte" data-id="${p.id}" style="padding:11px;text-align:center">Borrar</button>` : ''}
     </div>` : ''}
   </div>`;
@@ -3751,7 +3801,7 @@ function vOk() {
     <div class="av" style="width:78px;height:78px;background:#fff;color:var(--verde-o);font-size:34px">✓</div>
     <div style="font:600 30px/1.1 var(--cond);color:#fff;margin-top:22px">Parte guardado</div>
     <div style="font:400 15px/1.5 var(--sans);color:rgba(255,255,255,.85);margin-top:10px;max-width:260px">${esc(p.ref)} firmado por el cliente${p.estado === 'enviado' ? '. Te hemos abierto el correo con el borrador para ' + esc(p.email || 'el cliente') + ': revísalo y dale a enviar' : ''}.</div>
-    <button class="pill" data-a="compartirParte" data-id="${p.id}" style="margin-top:26px;padding:16px 26px;background:#fff;color:var(--verde-o);font-weight:600">Enviar el parte</button>
+    <button class="pill" data-a="abrirEnvioParte" data-id="${p.id}" style="margin-top:26px;padding:16px 26px;background:#fff;color:var(--verde-o);font-weight:600">Enviar el parte</button>
     <button class="pill" data-a="verPdf" data-id="${p.id}" style="margin-top:10px;padding:14px 24px;background:rgba(255,255,255,.22);color:#fff">Solo ver el PDF</button>
     <button class="pill" data-a="ir" data-v="hoy" style="margin-top:10px;padding:16px 24px;background:rgba(255,255,255,.22);color:#fff">Volver al inicio</button>
   </div>`;
@@ -3995,6 +4045,23 @@ function sheet() {
       </div>
     </div></div>`;
   }
+  if (s.tipo === 'envioParte') {
+    const p = S.partes.find((x) => x.id === s.id) || {};
+    return `<div class="sheet"><div>
+      <div style="font:600 23px/1.15 var(--cond)">Enviar parte</div>
+      <div class="sub" style="margin-top:4px">${esc(p.ref || '')} · sale desde partes@sysefen.es con el PDF adjunto</div>
+      <div class="lbl" style="margin:16px 0 6px">Para</div>
+      <input class="inp" data-f="envPara" type="email" inputmode="email" autocapitalize="off" value="${esc(s.para)}" placeholder="cliente@correo.es">
+      <div class="lbl" style="margin:12px 0 6px">Copia a (opcional)</div>
+      <input class="inp" data-f="envCopia" type="email" inputmode="email" autocapitalize="off" value="${esc(s.copia)}" placeholder="tu correo, para reenviar o archivar">
+      ${s.err ? `<div class="tiny" style="margin-top:10px;color:var(--rojo)">${esc(s.err)}</div>` : ''}
+      <div class="row g8" style="margin-top:18px">
+        <button class="btn btn-gris" data-a="cerrarSheet" style="border-radius:99px">Cancelar</button>
+        <button class="btn btn-verde" data-a="confirmarEnvioParte" style="font-size:14px" ${s.busy ? 'disabled' : ''}>${s.busy ? 'Enviando…' : 'Enviar'}</button>
+      </div>
+      <div data-a="compartirParte" data-id="${esc(s.id)}" class="tiny" style="margin-top:12px;text-align:center;text-decoration:underline;cursor:pointer">O compartirlo yo (WhatsApp, otro correo…)</div>
+    </div></div>`;
+  }
   if (s.tipo === 'borrarParte') {
     const p = S.partes.find((x) => x.id === s.id);
     return `<div class="sheet"><div>
@@ -4209,7 +4276,9 @@ document.addEventListener('click', (e) => {
   if (a === 'guardarEnviar') return A.guardarEnviar(!!d.enviar);
   if (a === 'verPdf') { e.stopPropagation(); return A.verPdf(d.id); }
   if (a === 'reenviar') { e.stopPropagation(); return A.reenviar(d.id); }
-  if (a === 'compartirParte') { e.stopPropagation(); return A.compartirParte(d.id); }
+  if (a === 'compartirParte') { e.stopPropagation(); V.sheet = null; return A.compartirParte(d.id); }
+  if (a === 'abrirEnvioParte') { e.stopPropagation(); return A.abrirEnvioParte(d.id); }
+  if (a === 'confirmarEnvioParte') return A.confirmarEnvioParte();
   if (a === 'borrarParte') { e.stopPropagation(); return A.borrarParte(d.id); }
   if (a === 'confirmarBorrarParte') return A.confirmarBorrarParte();
   if (a === 'tabHoras') return A.tabHoras(d.t);
@@ -4290,6 +4359,8 @@ document.addEventListener('input', (e) => {
   if (f === 'empNombre') { A.empCampo('nombre', t.value); return; }
   if (f === 'empEmail') { A.empCampo('email', t.value); return; }
   if (f === 'empTelefono') { A.empCampo('telefono', t.value); return; }
+  if (f === 'envPara') { if (V.sheet) V.sheet.para = t.value; return; }
+  if (f === 'envCopia') { if (V.sheet) V.sheet.copia = t.value; return; }
   if (f === 'empPin') { t.value = t.value.replace(/\D/g, '').slice(0, 4); A.empCampo('pin', t.value); return; }
   if (f === 'empNombreCompleto') { A.empCampo('nombreCompleto', t.value); return; }
   if (f === 'empFechaAlta') { A.empCampo('fechaAlta', t.value); return; }

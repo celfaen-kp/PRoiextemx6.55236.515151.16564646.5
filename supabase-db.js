@@ -324,6 +324,36 @@ export async function borrarParte(parteId) {
   return unwrap(await supabase.from('partes').delete().eq('id', parteId).select());
 }
 
+/* ---------------- envío de partes por correo ---------------- */
+// Edge Function `enviar-parte` (Resend). El PDF viaja en base64.
+// Si la función no está desplegada, el error lleva `noDesplegada` para que la
+// app ofrezca compartir el PDF a mano en vez de dejar al usuario tirado.
+export async function enviarParteCorreo({ para, copia, asunto, texto, pdfBlob, nombreArchivo }) {
+  const buf = new Uint8Array(await pdfBlob.arrayBuffer());
+  let bin = '';
+  for (let i = 0; i < buf.length; i += 0x8000) bin += String.fromCharCode.apply(null, buf.subarray(i, i + 0x8000));
+  const { data, error } = await supabase.functions.invoke('enviar-parte', {
+    body: { para, copia, asunto, texto, pdf_base64: btoa(bin), nombre_archivo: nombreArchivo },
+  });
+  if (error) {
+    const ctx = error.context;
+    let msg = error.message || 'No se pudo enviar.';
+    let noDesplegada = error.name === 'FunctionsFetchError' || error.name === 'FunctionsRelayError';
+    try {
+      if (ctx && typeof ctx.status === 'number') {
+        noDesplegada = ctx.status === 404;
+        const cuerpo = await ctx.clone().json();
+        if (cuerpo && cuerpo.error) msg = cuerpo.error;
+      }
+    } catch (_) { /* cuerpo no JSON */ }
+    const e = new Error(noDesplegada ? 'La función enviar-parte no está desplegada todavía.' : msg);
+    e.noDesplegada = noDesplegada;
+    throw e;
+  }
+  if (data && data.error) throw new Error(data.error);
+  return data;
+}
+
 /* ---------------- ausencias (vacaciones, festivos, bajas) ---------------- */
 // sql/etapa17. Marcan un día completo sin trabajo. No tocan los fichajes: un
 // día puede tener las dos cosas (media jornada y luego permiso), y la planilla
@@ -467,7 +497,7 @@ export default {
   fichajeAbierto, ficharEntrada, ficharSalida, corregirFichaje, crearFichajeManual, importarFichajes, borrarFichaje,
   fichajesDelDia, listarFichajes, escucharFichajes,
   listarPartes, crearParte, actualizarParte, guardarHorasParte, guardarMaterialesParte,
-  listarHorasPartes, listarMaterialesPartes, borrarParte,
+  listarHorasPartes, listarMaterialesPartes, borrarParte, enviarParteCorreo,
   subirAdjunto, listarAdjuntosPartes, urlsFirmadas, descargarAdjunto, borrarAdjunto,
   subirAvatar, urlsFirmadasAvatar, guardarMiAvatar, guardarAvatarDe, borrarAvatar,
   listarAusencias, marcarAusencia, quitarAusencia,
