@@ -207,7 +207,7 @@ import * as sysDB from './supabase-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '10.1'; // versión visible de la app (única fuente)
+const APP_VERSION = '10.2'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -1872,16 +1872,28 @@ async function comprimir(file, max = 1100, calidad = 0.72) {
 A.aPaso = (p) => {
   sincronizarRuedas();
   if (p === 'p2' && !V.draft.desc.trim()) { avisar('Describe los trabajos realizados.'); return; }
-  if (p === 'p3' && !V.draft.firma) { avisar('Falta la firma del cliente.'); return; }
+  if (p === 'p3' && !V.draft.firma && !V.draft.clienteAusente) { avisar('Falta la firma del cliente, o marca «Cliente no presente».'); return; }
   V.view = p; render();
 };
 A.borrarFirma = () => { V.draft.firma = null; render(); };
+// Sin firma: no se guarda ni trazo ni nombre de firmante. Un parte guardado sin
+// firma significa "cliente no presente": antes era imposible guardarlo sin
+// firmar, así que no hace falta otra columna en la base de datos.
+A.toggleAusente = () => {
+  const d = V.draft; if (!d) return;
+  d.clienteAusente = !d.clienteAusente;
+  if (d.clienteAusente) { d.firma = null; d.firmante = ''; }
+  render();
+};
 // Crea el parte en Supabase (partes + parte_horas + parte_materiales).
 // La tabla `partes` NO tiene columna `ref`, `adjuntos` ni `importe`: no se
 // envían. La referencia visible (PT-MMDD-XXXX) se deriva al leer, no se guarda.
 A.guardarEnviar = async (enviar) => {
   const d = V.draft; if (!d) return;
+  // Dos toques seguidos creaban dos partes iguales.
+  if (V.parteBusy) return;
   if (!navigator.onLine) { avisar('Sin conexión — el parte no se ha guardado'); return; }
+  V.parteBusy = true; render();
   const empId = empIdDeUser(V.user.id);
   const ahora = new Date().toISOString();
   const campos = {
@@ -1892,10 +1904,10 @@ A.guardarEnviar = async (enviar) => {
     nivel_incidencia: d.nivel,
     incidencia: d.nivel !== 'Sin incidencias' ? (d.inc || null) : null,
     observaciones: d.obs || null,
-    firmante: d.firmante || null,
-    firma: d.firma || null,
+    firmante: d.clienteAusente ? null : (d.firmante || null),
+    firma: d.clienteAusente ? null : (d.firma || null),
     email_cliente: d.email || null,
-    estado: enviar ? 'enviado' : 'firmado',
+    estado: 'firmado',
     actualizado_en: ahora,
   };
   const horasFilas = d.incluidos
@@ -1928,10 +1940,38 @@ A.guardarEnviar = async (enviar) => {
         : 'El parte se guardó, pero no subió ' + fallos.length + (fallos.length === 1 ? ' foto' : ' fotos') + (motivo ? ': ' + motivo : '.'));
     }
     const p = S.partes.find((x) => x.id === nuevo.id);
-    V.verParte = nuevo.id; V.draft = null;
-    if (enviar && p) enviarEmail(p);
+    V.verParte = nuevo.id; V.draft = null; V.okEnvio = null;
+    // Si la obra no tenía correo del cliente y el parte sí, se le guarda: así el
+    // próximo parte de esa obra ya sale con el correo puesto.
+    const obra = obraById(campos.obra_id);
+    if (campos.email_cliente && obra && !obra.email) {
+      try { await Sysefen.db.actualizarObra(obra.id, { email_cliente: campos.email_cliente }); obra.email = campos.email_cliente; } catch (_) {}
+    }
+    V.parteBusy = false;
     V.view = 'ok'; render();
+    if (!enviar || !p) return;
+
+    // Antes esto abría la app de correo del móvil con un borrador sin PDF.
+    // Ahora se manda directamente por Resend al correo del parte.
+    const para = correosDe(campos.email_cliente);
+    if (!para.length || !para.every(esCorreo)) return A.abrirEnvioParte(p.id);   // falta el correo: se pide
+    const copia = correosDe(S.emailCopia).filter(esCorreo);
+    V.okEnvio = { enviando: true, a: para.join(', ') }; render();
+    try {
+      await enviarParteAhora(p, para, copia);
+      V.okEnvio = { ok: true, a: para.join(', ') };
+      toast('Parte enviado a ' + para.join(', '));
+    } catch (e) {
+      if (e && e.noDesplegada) {
+        V.okEnvio = null; render();
+        avisar('El envío directo no está activo. Te abro compartir para mandarlo tú.');
+        return A.compartirParte(p.id);
+      }
+      V.okEnvio = { ok: false, err: (e && e.message) || 'No se pudo enviar.' };
+    }
+    render();
   } catch (e) {
+    V.parteBusy = false;
     avisar('No se pudo guardar el parte: ' + (e && e.message ? e.message : 'error'));
     render();
   }
@@ -1963,7 +2003,7 @@ function enviarEmail(p) {
   // app de correo del móvil y NO puede llevar archivos. Decir "se adjunta el
   // PDF" hacía que el cliente recibiera un correo prometiendo algo que no iba.
   // Cuando la app genere el PDF y lo envíe desde el servidor, irá de verdad.
-  lineas.push('', 'Firmado por ' + (p.firmante || 'el cliente') + ' el ' + fechaLarga(p.fecha) + '.', '', 'Si necesita el PDF firmado, respóndanos a este correo y se lo hacemos llegar.');
+  lineas.push('', p.firma ? 'Firmado por ' + (p.firmante || 'el cliente') + ' el ' + fechaLarga(p.fecha) + '.' : 'Cliente no presente: parte emitido sin firma del cliente.', '', 'Si necesita el PDF, respóndanos a este correo y se lo hacemos llegar.');
   const dest = [p.email, S.emailCopia].filter(Boolean).join(',');
   const url = 'mailto:' + encodeURIComponent(dest) + '?subject=' + encodeURIComponent('Parte de trabajo ' + p.ref + ' — ' + o.titulo) + '&body=' + encodeURIComponent(lineas.join('\n'));
   location.href = url;
@@ -2036,6 +2076,37 @@ async function pdfDelParte(p) {
   }
 }
 
+// Envía por Resend un parte YA GUARDADO. La usan el botón "Firmar y enviar
+// informe" y la hoja de envío, para que los dos hagan exactamente lo mismo.
+// El parte solo pasa a "enviado" cuando el envío ha salido bien: antes se
+// marcaba al guardarlo, aunque luego no se mandara nada.
+async function enviarParteAhora(p, para, copia) {
+  await cargarFotosParte(p);
+  imprimirParteHTML(p);
+  const pdfBlob = await pdfDelParte(p);
+  const o = obraById(p.obraId) || {};
+  const r = await Sysefen.db.enviarParteCorreo({
+    para, copia,
+    asunto: 'Parte de trabajo ' + p.ref + (o.titulo ? ' — ' + o.titulo : ''),
+    texto: [
+      'Hola,', '',
+      'Adjuntamos el parte de trabajo ' + p.ref + (o.titulo ? ' de la obra ' + o.titulo : '') + ', del ' + fechaLarga(p.fecha) + (p.firma
+        ? ', firmado' + (p.firmante ? ' por ' + p.firmante : '') + '.'
+        : '. El cliente no estaba presente al finalizar los trabajos, por lo que el parte se emite sin su firma.'),
+      '', 'Un saludo,', S.empresa,
+    ].join('\n'),
+    pdfBlob,
+    nombreArchivo: 'parte-' + p.ref + '.pdf',
+  });
+  try {
+    await Sysefen.db.actualizarParte(p.id, { estado: 'enviado', actualizado_en: new Date().toISOString() });
+    p.estado = 'enviado';
+  } catch (_) { /* el correo ya salió; el estado se corrige en la próxima sincronización */ }
+  return r;
+}
+const correosDe = (txt) => (txt || '').split(/[,;\s]+/).filter(Boolean);
+const esCorreo = (e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
+
 // --- Envío directo por correo (Resend) -------------------------------------
 // Abre una hoja con el correo del cliente ya puesto y la copia a la gestoría /
 // administración. Si la función del servidor aún no está, cae a compartir.
@@ -2056,21 +2127,8 @@ A.confirmarEnvioParte = async () => {
   if (!navigator.onLine) { s.err = 'Sin conexión: no se ha enviado.'; return render(); }
   s.err = ''; s.busy = true; render();
   try {
-    await cargarFotosParte(p);
-    imprimirParteHTML(p);
-    const pdfBlob = await pdfDelParte(p);
-    const o = obraById(p.obraId) || {};
-    await Sysefen.db.enviarParteCorreo({
-      para, copia,
-      asunto: 'Parte de trabajo ' + p.ref + (o.titulo ? ' — ' + o.titulo : ''),
-      texto: [
-        'Hola,', '',
-        'Adjuntamos el parte de trabajo ' + p.ref + (o.titulo ? ' de la obra ' + o.titulo : '') + ', del ' + fechaLarga(p.fecha) + ', firmado' + (p.firmante ? ' por ' + p.firmante : '') + '.',
-        '', 'Un saludo,', S.empresa,
-      ].join('\n'),
-      pdfBlob,
-      nombreArchivo: 'parte-' + p.ref + '.pdf',
-    });
+    await enviarParteAhora(p, para, copia);
+    if (V.view === 'ok') V.okEnvio = { ok: true, a: para.join(', ') };
     V.sheet = null;
     toast('Parte enviado a ' + para.join(', '));
     render();
@@ -2654,7 +2712,8 @@ function vAlta() {
 /* --- partes --- */
 function cardParte(p) {
   const o = obraById(p.obraId) || { titulo: '—', cliente: '' };
-  const bg = { enviado: ['rgba(20,23,15,.07)', 'var(--t2)', 'Enviado'], firmado: ['#e3efe5', 'var(--verde-o)', 'Firmado'], anulado: ['var(--rojo-cl)', 'var(--rojo)', 'Anulado'] }[p.estado];
+  const bg0 = { enviado: ['rgba(20,23,15,.07)', 'var(--t2)', 'Enviado'], firmado: ['#e3efe5', 'var(--verde-o)', 'Firmado'], anulado: ['var(--rojo-cl)', 'var(--rojo)', 'Anulado'] }[p.estado];
+  const bg = bg0 && p.estado === 'firmado' && !p.firma ? [bg0[0], bg0[1], 'Sin firma'] : bg0;
   const inc = p.nivel !== 'Sin incidencias';
   return `<div class="card" style="margin-bottom:10px;${p.estado === 'anulado' ? 'opacity:.62' : ''}">
     <div class="row" style="align-items:baseline;justify-content:space-between;gap:10px">
@@ -3706,7 +3765,14 @@ function vP2() {
   <div class="scroll pad" style="padding-bottom:110px">
     <div class="lbl" style="margin-bottom:8px">Observaciones del cliente</div>
     <textarea class="inp" data-f="obs" rows="3" placeholder="Lo que el cliente quiera dejar por escrito...">${esc(d.obs)}</textarea>
-    <div class="lbl" style="margin:20px 0 8px">Nombre y DNI del firmante</div>
+    <div class="card row" data-a="toggleAusente" style="margin-top:18px;cursor:pointer">
+      <div class="grow"><div style="font:500 15px var(--sans)">Cliente no presente</div>
+      <div class="sub" style="font-size:12px;margin-top:4px">El parte se emite sin firma del cliente.</div></div>
+      <div class="sw" style="background:${d.clienteAusente ? 'var(--verde)' : 'rgba(20,23,15,.16)'};justify-content:${d.clienteAusente ? 'flex-end' : 'flex-start'}"><i></i></div>
+    </div>
+    ${d.clienteAusente ? `<div class="card" style="margin-top:12px;background:rgba(20,23,15,.04)">
+      <div class="sub" style="font-size:13px">Constará en el parte: <b>«Cliente no presente en la finalización de los trabajos. Parte emitido sin firma del cliente.»</b></div>
+    </div>` : `<div class="lbl" style="margin:20px 0 8px">Nombre y DNI del firmante</div>
     <input class="inp" data-f="firmante" value="${esc(d.firmante)}" placeholder="Ana Ruiz · 50123456K">
     <div class="row" style="justify-content:space-between;margin:22px 0 8px">
       <div class="lbl">Firma aquí</div>
@@ -3717,10 +3783,10 @@ function vP2() {
       ${!d.firma ? '<div class="ph">Dibuje su firma con el dedo</div>' : ''}
       <div class="linea"></div>
     </div>
-    <div class="sub" style="font-size:12px;margin-top:12px">Al firmar, el cliente conforma los trabajos, las horas y los materiales de este parte. Se guarda con fecha y hora.</div>
+    <div class="sub" style="font-size:12px;margin-top:12px">Al firmar, el cliente conforma los trabajos, las horas y los materiales de este parte. Se guarda con fecha y hora.</div>`}
   </div>
   <div style="flex:none;padding:14px 20px calc(14px + var(--safe-b));background:rgba(247,246,243,.96);border-top:1px solid var(--l1)">
-    <button class="btn" data-a="aPaso" data-p="p3" ${d.firma ? '' : 'disabled'}>${d.firma ? 'Revisar y enviar' : 'Falta la firma del cliente'}</button>
+    <button class="btn" data-a="aPaso" data-p="p3" ${d.firma || d.clienteAusente ? '' : 'disabled'}>${d.firma || d.clienteAusente ? 'Revisar y enviar' : 'Falta la firma del cliente'}</button>
   </div>`;
 }
 // Lienzo de firma reutilizable: el parte lo usa para la firma del cliente y la
@@ -3796,16 +3862,16 @@ function vP3() {
         <div class="wrap">${d.adjuntos.map((a) => a.img ? `<img src="${a.data}" style="width:64px;height:64px;object-fit:cover;border-radius:6px">` : `<div class="tiny" style="padding:8px 10px;background:#efede6;border-radius:6px">${esc(a.nombre)}</div>`).join('')}</div>` : ''}
       <div class="hr"></div>
       <div class="lbl">Conforme el cliente</div>
-      ${d.firma ? `<img src="${d.firma}" style="width:100%;max-height:90px;object-fit:contain;margin-top:4px">` : ''}
-      <div class="tiny" style="margin-top:2px">${esc(d.firmante || 'Firmado por el cliente')} · ${new Date().toLocaleString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</div>
+      ${d.clienteAusente ? '<div class="sub" style="font-size:13px;margin-top:4px">Cliente no presente en la finalización de los trabajos. Parte emitido sin firma del cliente.</div>' : (d.firma ? `<img src="${d.firma}" style="width:100%;max-height:90px;object-fit:contain;margin-top:4px">` : '')}
+      <div class="tiny" style="margin-top:2px">${d.clienteAusente ? 'Sin firma' : esc(d.firmante || 'Firmado por el cliente')} · ${new Date().toLocaleString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</div>
     </div>
     <div class="lbl" style="margin:20px 0 8px">Enviar PDF a</div>
     <input class="inp" data-f="email" value="${esc(d.email)}" type="email" inputmode="email" autocapitalize="off" placeholder="cliente@correo.es">
-    <div class="sub" style="font-size:12px;margin-top:10px">Se abrirá tu email con el parte escrito. Genera el PDF con “Ver PDF” y adjúntalo antes de enviar.</div>
-    <button class="btn btn-gris" data-a="guardarEnviar" data-enviar="" style="margin-top:14px;border-radius:99px">Guardar sin enviar</button>
+    <div class="sub" style="font-size:12px;margin-top:10px">Al pulsar «Firmar y enviar informe», el PDF firmado llega a este correo desde noreply@sysefen.com. Viene puesto el correo de la obra; si está vacío, escríbelo.</div>
+    <button class="btn btn-gris" data-a="guardarEnviar" data-enviar="" style="margin-top:14px;border-radius:99px" ${V.parteBusy ? 'disabled' : ''}>Guardar sin enviar</button>
   </div>
   <div style="flex:none;padding:14px 20px calc(14px + var(--safe-b));background:rgba(247,246,243,.96);border-top:1px solid var(--l1)">
-    <button class="btn btn-verde" data-a="guardarEnviar" data-enviar="1">Firmar y enviar informe</button>
+    <button class="btn btn-verde" data-a="guardarEnviar" data-enviar="1" ${V.parteBusy ? 'disabled' : ''}>${V.parteBusy ? 'Guardando…' : 'Firmar y enviar informe'}</button>
   </div>`;
 }
 function vOk() {
@@ -3814,7 +3880,11 @@ function vOk() {
     <img src="logo-blanco.png" alt="" style="width:150px;max-width:52%;margin-bottom:26px">
     <div class="av" style="width:78px;height:78px;background:#fff;color:var(--verde-o);font-size:34px">✓</div>
     <div style="font:600 30px/1.1 var(--cond);color:#fff;margin-top:22px">Parte guardado</div>
-    <div style="font:400 15px/1.5 var(--sans);color:rgba(255,255,255,.85);margin-top:10px;max-width:260px">${esc(p.ref)} firmado por el cliente${p.estado === 'enviado' ? '. Te hemos abierto el correo con el borrador para ' + esc(p.email || 'el cliente') + ': revísalo y dale a enviar' : ''}.</div>
+    <div style="font:400 15px/1.5 var(--sans);color:rgba(255,255,255,.85);margin-top:10px;max-width:260px">${esc(p.ref)} ${p.firma ? 'firmado por el cliente.' : 'guardado sin firma: cliente no presente.'}${
+      V.okEnvio && V.okEnvio.enviando ? '<br>Enviando a ' + esc(V.okEnvio.a) + '…'
+      : V.okEnvio && V.okEnvio.ok ? '<br><b>Enviado a ' + esc(V.okEnvio.a) + '.</b>'
+      : V.okEnvio && V.okEnvio.ok === false ? '<br><b>No se pudo enviar:</b> ' + esc(V.okEnvio.err) + '<br>Pulsa «Enviar el parte» para reintentar.'
+      : p.estado === 'enviado' ? '<br>Enviado.' : ''}</div>
     <button class="pill" data-a="abrirEnvioParte" data-id="${p.id}" style="margin-top:26px;padding:16px 26px;background:#fff;color:var(--verde-o);font-weight:600">Enviar el parte</button>
     <button class="pill" data-a="verPdf" data-id="${p.id}" style="margin-top:10px;padding:14px 24px;background:rgba(255,255,255,.22);color:#fff">Solo ver el PDF</button>
     <button class="pill" data-a="ir" data-v="hoy" style="margin-top:10px;padding:16px 24px;background:rgba(255,255,255,.22);color:#fff">Volver al inicio</button>
@@ -4082,7 +4152,7 @@ function sheet() {
     const p = S.partes.find((x) => x.id === s.id) || {};
     return `<div class="sheet"><div>
       <div style="font:600 23px/1.15 var(--cond)">Enviar parte</div>
-      <div class="sub" style="margin-top:4px">${esc(p.ref || '')} · sale desde partes@sysefen.es con el PDF adjunto</div>
+      <div class="sub" style="margin-top:4px">${esc(p.ref || '')} · sale desde noreply@sysefen.com con el PDF adjunto</div>
       <div class="lbl" style="margin:16px 0 6px">Para</div>
       <input class="inp" data-f="envPara" type="email" inputmode="email" autocapitalize="off" value="${esc(s.para)}" placeholder="cliente@correo.es">
       <div class="lbl" style="margin:12px 0 6px">Copia a (opcional)</div>
@@ -4236,8 +4306,8 @@ function imprimirParteHTML(p) {
     <div style="display:flex;gap:24px;margin-top:26px">
       <div style="flex:1">
         <div style="font:600 10px var(--mono);letter-spacing:.1em;text-transform:uppercase;color:#666">Conforme el cliente</div>
-        ${p.firma ? `<img src="${p.firma}" style="width:100%;max-height:26mm;object-fit:contain">` : '<div style="height:26mm"></div>'}
-        <div style="border-top:1px solid #14170f;padding-top:4px;font:400 11px var(--sans)">${esc(p.firmante || '')}</div>
+        ${p.firma ? `<img src="${p.firma}" style="width:100%;max-height:26mm;object-fit:contain">` : '<div style="height:26mm;display:flex;align-items:center;font:italic 400 11px/1.4 var(--sans);color:#444">Cliente no presente en la finalización de los trabajos. Parte emitido sin firma del cliente.</div>'}
+        <div style="border-top:1px solid #14170f;padding-top:4px;font:400 11px var(--sans)">${p.firma ? esc(p.firmante || '') : 'Sin firma'}</div>
       </div>
       <div style="flex:1">
         <div style="font:600 10px var(--mono);letter-spacing:.1em;text-transform:uppercase;color:#666">Por ${esc(S.empresa)}</div>
@@ -4312,6 +4382,7 @@ document.addEventListener('click', (e) => {
   if (a === 'compartirParte') { e.stopPropagation(); V.sheet = null; return A.compartirParte(d.id); }
   if (a === 'abrirEnvioParte') { e.stopPropagation(); return A.abrirEnvioParte(d.id); }
   if (a === 'obraRapida') { e.stopPropagation(); return A.obraRapida(d.o, d.i); }
+  if (a === 'toggleAusente') return A.toggleAusente();
   if (a === 'guardarObraRapida') return A.guardarObraRapida();
   if (a === 'confirmarEnvioParte') return A.confirmarEnvioParte();
   if (a === 'borrarParte') { e.stopPropagation(); return A.borrarParte(d.id); }
