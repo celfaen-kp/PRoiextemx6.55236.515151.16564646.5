@@ -237,7 +237,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '10.7'; // versión visible de la app (única fuente)
+const APP_VERSION = '10.8'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -297,6 +297,8 @@ if (V.user) V.view = 'hoy';
 const CUENTAS_AUTH = sysAuth.CUENTAS;
 const nombreDeEmail = (email) => Object.keys(CUENTAS_AUTH).find((n) => CUENTAS_AUTH[n].email === (email || '').toLowerCase()) || null;
 const localPorNombre = (nombre) => S.users.find((u) => u.nombre === nombre) || null;
+// Empleados dados de alta desde la app: no están en CUENTAS, se reconocen por email.
+const localPorEmail = (email) => (email ? S.users.find((u) => String(u.email || '').toLowerCase() === email) || null : null);
 
 // Restaura la sesión de Supabase existente al arrancar (funciona sin conexión:
 // lee el token persistido, no llama a la red).
@@ -306,7 +308,10 @@ async function restaurarSesion() {
     const authUser = session && session.user;
     const VISTAS_PRIVADAS = ['hoy', 'obras', 'obra', 'alta', 'partes', 'horas', 'ajustes', 'p1', 'p2', 'p3', 'ok'];
     if (authUser) {
-      const local = localPorNombre(nombreDeEmail(authUser.email));
+      const correo = String(authUser.email || '').toLowerCase();
+      let local = localPorNombre(nombreDeEmail(correo)) || localPorEmail(correo);
+      // Primera vez en este móvil: su ficha aún no está en la lista local.
+      if (!local) { try { mapaEmpPromesa = null; await cargarMapaEmpleados(); save(); } catch (e) {} local = localPorEmail(correo); }
       if (local) {
         V.user = { id: local.id };
         try { sessionStorage.setItem('ch_user', JSON.stringify(V.user)); } catch (e) {}
@@ -780,6 +785,16 @@ function minutosMes(uid_) {
 /* ---------- acciones ---------- */
 const A = {};
 A.elegirUser = (id) => { V.pinUser = S.users.find((u) => u.id === id); V.pin = ''; V.pinBusy = false; V.err = false; V.view = 'pin'; render(); };
+A.otroUsuario = () => { V.loginNombre = ''; V.view = 'otroUsuario'; render(); };
+A.otroUsuarioSeguir = () => {
+  const txt = String(V.loginNombre || '').trim();
+  if (!txt) { avisar('Escribe tu nombre.'); return; }
+  const email = txt.includes('@') ? txt.toLowerCase() : emailSugerido(txt);
+  const nombre = txt.includes('@') ? txt.split('@')[0] : txt;
+  const conocido = S.users.find((u) => u.activo !== false && (u.nombre.toLowerCase() === nombre.toLowerCase() || String(u.email || '').toLowerCase() === email));
+  if (conocido) return A.elegirUser(conocido.id);
+  V.pinUser = { id: null, nombre, email }; V.pin = ''; V.pinBusy = false; V.err = false; V.view = 'pin'; render();
+};
 A.volverLogin = () => { V.pinUser = null; V.pin = ''; V.pinBusy = false; V.err = false; V.view = 'login'; render(); };
 A.pinTecla = (k) => {
   if (V.pinBusy) return;
@@ -788,8 +803,11 @@ A.pinTecla = (k) => {
   if (V.pin.length === 4) {
     const pin = V.pin, pu = V.pinUser;
     V.pinBusy = true; render();
-    sysAuth.loginConPin(pu.nombre, pin, pu.email).then(() => {
-      const local = localPorNombre(pu.nombre) || pu;
+    sysAuth.loginConPin(pu.nombre, pin, pu.email).then(async (res) => {
+      const correo = String((res && res.user && res.user.email) || pu.email || '').toLowerCase();
+      let local = (pu.id && S.users.find((u) => u.id === pu.id)) || localPorNombre(pu.nombre) || localPorEmail(correo);
+      if (!local) { try { mapaEmpPromesa = null; await cargarMapaEmpleados(); save(); } catch (e) {} local = localPorEmail(correo) || localPorNombre(pu.nombre); }
+      if (!local) { sysAuth.logout().catch(() => {}); throw new Error('El PIN es correcto, pero no se encuentra tu ficha de empleado. Avisa a Administración.'); }
       V.user = { id: local.id };
       try { sessionStorage.setItem('ch_user', JSON.stringify(V.user)); } catch (e) {}
       V.pinUser = null; V.pin = ''; V.pinBusy = false; V.view = 'hoy';
@@ -2572,7 +2590,7 @@ function render() {
   const app = $('#app');
   const v = V.view;
   let html = '';
-  if (!V.user) html = v === 'pin' ? vPin() : vLogin();
+  if (!V.user) html = v === 'pin' ? vPin() : v === 'otroUsuario' ? vOtroUsuario() : vLogin();
   else if (v === 'hoy') html = vHoy();
   else if (v === 'obras') html = vObras();
   else if (v === 'obra') html = vObra();
@@ -2629,7 +2647,20 @@ function vLogin() {
         <div style="font:400 20px/1 var(--sans);color:rgba(255,255,255,.35)">›</div>
       </div>`).join('')}
     </div>
+    <div data-a="otroUsuario" style="margin-top:12px;padding:14px;border-radius:16px;border:1px dashed rgba(255,255,255,.22);text-align:center;font:500 14px/1.3 var(--sans);color:rgba(255,255,255,.7);cursor:pointer">¿No sales en la lista? Entra con tu nombre</div>
     <div style="text-align:center;margin-top:26px"><span class="tiny" data-a="instalar" style="color:rgba(255,255,255,.4);cursor:pointer;text-decoration:underline">Instalar en la pantalla de inicio</span></div>
+    <div class="tiny" style="text-align:center;margin-top:14px;color:rgba(255,255,255,.32)">Versión ${APP_VERSION}</div>
+  </div>`;
+}
+function vOtroUsuario() {
+  return `<div class="scroll" style="background:var(--tinta);padding:calc(44px + var(--safe-t)) 24px calc(26px + var(--safe-b))">
+    <div class="volver" data-a="volverLogin" style="color:rgba(255,255,255,.6)">‹ Volver</div>
+    <div style="font:600 27px/1.1 var(--cond);color:#fff;margin-top:18px">Entra con tu nombre</div>
+    <div class="sub" style="color:rgba(255,255,255,.5);margin-top:8px">Para la primera vez en este móvil. Después ya sales en la lista.</div>
+    <div class="lbl" style="color:rgba(255,255,255,.4);margin:26px 0 8px">Tu nombre o tu email</div>
+    <input class="inp" id="login-nombre" data-f="loginNombre" value="${esc(V.loginNombre || '')}" placeholder="Ramon" autocapitalize="words" autocomplete="off" style="background:rgba(255,255,255,.08);border-color:rgba(255,255,255,.16);color:#fff">
+    <button class="btn btn-verde" data-a="otroUsuarioSeguir" style="margin-top:16px">Seguir</button>
+    <div class="tiny" style="text-align:center;margin-top:22px;color:rgba(255,255,255,.32)">Versión ${APP_VERSION}</div>
   </div>`;
 }
 function vPin() {
@@ -2638,7 +2669,7 @@ function vPin() {
   return `<div class="scroll" style="background:var(--tinta);padding:calc(44px + var(--safe-t)) 24px calc(26px + var(--safe-b))">
     <div class="volver" data-a="volverLogin" style="color:rgba(255,255,255,.6)">‹ Cambiar de usuario</div>
     <div class="col" style="align-items:center;margin-top:22px">
-      ${avatarHTML(u.id, `width:64px;height:64px;font-size:25px;background:${u.rol === 'admin' ? 'var(--ambar);color:var(--tinta)' : u.rol === 'jefe' ? 'var(--verde-c);color:#fff' : 'rgba(255,255,255,.16);color:#fff'}`, '', V.err ? 'shake' : '')}
+      ${!u.id ? `<div class="av ${V.err ? 'shake' : ''}" style="width:64px;height:64px;font-size:25px;background:rgba(255,255,255,.16);color:#fff">${esc(ini(u.nombre || '?'))}</div>` : avatarHTML(u.id, `width:64px;height:64px;font-size:25px;background:${u.rol === 'admin' ? 'var(--ambar);color:var(--tinta)' : u.rol === 'jefe' ? 'var(--verde-c);color:#fff' : 'rgba(255,255,255,.16);color:#fff'}`, '', V.err ? 'shake' : '')}
       <div style="font:600 25px/1.1 var(--cond);color:#fff;margin-top:14px">${esc(u.nombre)}</div>
       <div class="tiny" style="color:rgba(255,255,255,.45);margin-top:7px;letter-spacing:.1em;text-transform:uppercase">${V.err ? 'PIN incorrecto' : V.pinBusy ? 'Comprobando…' : 'Introduce tu PIN'}</div>
     </div>
@@ -5402,6 +5433,8 @@ document.addEventListener('click', (e) => {
   if (a === 'elegirUser') return A.elegirUser(d.id);
   if (a === 'pinTecla') return A.pinTecla(d.k);
   if (a === 'volverLogin') return A.volverLogin();
+  if (a === 'otroUsuario') return A.otroUsuario();
+  if (a === 'otroUsuarioSeguir') return A.otroUsuarioSeguir();
   if (a === 'ir') return A.ir(d.v);
   if (a === 'verObra') return A.verObra(d.id);
   if (a === 'nuevaObra') return A.nuevaObra();
@@ -5528,6 +5561,7 @@ document.addEventListener('input', (e) => {
   }
   if (!f) return;
   if (f.startsWith('vf')) return A.vf(f, t.dataset, t.value);
+  if (f === 'loginNombre') { V.loginNombre = t.value; return; }
   if (f === 'visitaBuscar') return A.visitaBuscar(t.value);
   if (f === 'visitaCli') { const c = V.visitaDraft && V.visitaDraft._cliente; if (c) { c[t.dataset.k] = t.value; guardarBorradorVisita(); } return; }
   if (f === 'docProveedor') { if (V.sheet) V.sheet.proveedor = t.value; return; }
