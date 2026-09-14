@@ -1,4 +1,4 @@
-const CACHE = 'ch-v10-0';
+const CACHE = 'ch-v10-1';
 const ASSETS = ['./', './index.html', './manifest.webmanifest', './supabase-client.js', './supabase-auth.js', './supabase-db.js', './icon-192.png', './icon-512.png', './icon-maskable.png', './logo-trans.png', './logo-blanco.png'];
 
 self.addEventListener('install', (e) => {
@@ -37,7 +37,12 @@ self.addEventListener('fetch', (e) => {
 
   if (esCodigo(req, url)) {
     e.respondWith(
-      fetch(req)
+      // `cache: 'no-cache'` obliga a preguntar al servidor si hay versión nueva
+      // (una petición condicional con ETag, muy barata). Sin esto, GitHub Pages
+      // manda `max-age=600` y el navegador devolvía su copia de hasta 10
+      // minutos sin preguntar: la app nueva estaba publicada y el móvil seguía
+      // con la anterior.
+      fetch(req, { cache: 'no-cache' })
         .then((res) => {
           if (res && res.ok) caches.open(CACHE).then((c) => c.put(req, res.clone()));
           return res;

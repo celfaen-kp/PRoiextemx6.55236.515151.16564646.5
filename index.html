@@ -207,7 +207,7 @@ import * as sysDB from './supabase-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '10.0'; // versión visible de la app (única fuente)
+const APP_VERSION = '10.1'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -4428,7 +4428,24 @@ setInterval(() => {
 }, 30000);
 
 if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
-  window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+  // Si esta página ya estaba controlada por un service worker antiguo y entra
+  // uno nuevo, se recarga UNA vez para enseñar la versión nueva sin tener que
+  // cerrar y abrir la app. En la primera instalación no hay anterior y no se
+  // recarga.
+  const habiaAnterior = !!navigator.serviceWorker.controller;
+  let recargada = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!habiaAnterior || recargada) return;
+    recargada = true;
+    location.reload();
+  });
+  // updateViaCache: 'none' → al buscar si hay sw.js nuevo no se usa la caché
+  // del navegador. GitHub Pages lo sirve con max-age=600 y, sin esto, la
+  // comprobación podía tardar hasta 10 minutos en enterarse.
+  window.addEventListener('load', () => navigator.serviceWorker
+    .register('sw.js', { updateViaCache: 'none' })
+    .then((reg) => reg.update())
+    .catch(() => {}));
 }
 render();
 restaurarSesion();
