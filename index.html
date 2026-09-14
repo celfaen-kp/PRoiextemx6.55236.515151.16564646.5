@@ -237,7 +237,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '10.5'; // versión visible de la app (única fuente)
+const APP_VERSION = '10.6'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -3694,6 +3694,12 @@ function vAjustes() {
       <button class="pill" data-a="salir">Salir</button>
     </div>
 
+    ${esPresupuestos() ? `<div class="card row" data-a="abrirAvatar" style="margin-bottom:12px;cursor:pointer">
+      <div class="grow"><div style="font:600 15px var(--sans)">Cambiar mi foto</div>
+      <div class="sub" style="font-size:12px;margin-top:4px">Un emoji o una foto. Si no pones nada, salen tus iniciales.</div></div>
+      <div style="font:400 20px/1 var(--sans);color:var(--t3)">›</div>
+    </div>` : ''}
+
     <div class="card row" data-a="editarPin" data-id="${u.id}" style="margin-bottom:12px;cursor:pointer">
       <div class="grow"><div style="font:600 15px var(--sans)">Cambiar mi PIN</div>
       <div class="sub" style="font-size:12px;margin-top:4px">Los 4 números con los que entras. Hace falta el actual.</div></div>
@@ -4016,6 +4022,7 @@ function vOk() {
       : p.estado === 'enviado' ? '<br>Enviado.' : ''}</div>
     <button class="pill" data-a="abrirEnvioParte" data-id="${p.id}" style="margin-top:26px;padding:16px 26px;background:#fff;color:var(--verde-o);font-weight:600">Enviar el parte</button>
     <button class="pill" data-a="verPdf" data-id="${p.id}" style="margin-top:10px;padding:14px 24px;background:rgba(255,255,255,.22);color:#fff">Solo ver el PDF</button>
+    <button class="pill" data-a="compartirParte" data-id="${p.id}" style="margin-top:10px;padding:14px 24px;background:rgba(255,255,255,.22);color:#fff">Compartir (WhatsApp…)</button>
     <button class="pill" data-a="ir" data-v="hoy" style="margin-top:10px;padding:16px 24px;background:rgba(255,255,255,.22);color:#fff">Volver al inicio</button>
   </div>`;
 }
@@ -4471,7 +4478,10 @@ function vVisitas() {
 
   const n = (x) => x.length;
   return `<div class="hdr">
-    ${marcaSysefen(false)}
+    <div class="row" style="justify-content:space-between;align-items:flex-start">
+      ${marcaSysefen(false)}
+      ${avatarHTML(V.user.id, 'width:32px;height:32px;font-size:13px;background:rgba(20,23,15,.08);color:var(--tinta);cursor:pointer', 'data-a="menuUsuario"')}
+    </div>
     <div class="row" style="justify-content:space-between">
       <div class="h1">Visitas</div>
       <button class="pill" data-a="nuevaVisita" style="background:var(--tinta);color:#fff">+ Nueva</button>
