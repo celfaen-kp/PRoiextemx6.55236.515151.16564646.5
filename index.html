@@ -207,7 +207,7 @@ import * as sysDB from './supabase-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '9.9'; // versión visible de la app (única fuente)
+const APP_VERSION = '10.0'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -438,6 +438,7 @@ function mapImputacionDeDB(row) {
     categoria: row.categoria,
     obraId: row.obra_id || null,
     minutos: row.minutos || 0,
+    nota: row.nota || '',
     origen: row.origen,
     bloqueado: !!row.bloqueado,
     actualizadoPor: row.actualizado_por || null,
@@ -792,7 +793,7 @@ A.resumenRango = (r) => { V.resumenRango = r; render(); };
 
 /* --- imputación de horas --- */
 const impDraftDeLineas = (userId, fecha) => impLineasDe(userId, fecha).map((l) => ({
-  id: l.id, categoria: l.categoria, obraId: l.obraId, minutos: l.minutos, origen: l.origen, bloqueado: l.bloqueado,
+  id: l.id, categoria: l.categoria, obraId: l.obraId, minutos: l.minutos, nota: l.nota || '', origen: l.origen, bloqueado: l.bloqueado,
 }));
 // La imputación en GRUPO es ahora la entrada principal: seleccionar a la
 // gente y repartir un bloque de horas es el caso normal. La lista clásica
@@ -950,21 +951,6 @@ A.impGrupoReloj = (i, minutos) => {
   l.minutos = Math.max(0, Math.round(Number(minutos) / 15) * 15);
   render();
 };
-// La base solo admite UNA línea por (empleado, día, categoría, obra). Si se
-// ponen dos desplazamientos el mismo día, chocan. En vez de soltar el error y
-// obligar a sumar a mano, se funden en una sola sumando los minutos.
-function fundirLineas(lineas) {
-  const porClave = new Map();
-  (lineas || []).forEach((l) => {
-    if (!(l.minutos > 0)) return;
-    const clave = l.categoria + '|' + (l.categoria === 'obra' ? (l.obraId || '') : '');
-    const ya = porClave.get(clave);
-    if (ya) ya.minutos += l.minutos;
-    else porClave.set(clave, { categoria: l.categoria, obraId: l.obraId || null, minutos: l.minutos });
-  });
-  return [...porClave.values()];
-}
-
 A.impGrupoGuardar = async () => {
   if (!puedeCrear() || V.impGrupoBusy) return;
   sincronizarRuedas();
@@ -980,29 +966,23 @@ A.impGrupoGuardar = async () => {
   const excede = seleccionados.find((x) => total > x.restante);
   if (excede) { avisar(excede.u.nombre + ' solo tiene ' + durMin(excede.restante) + ' pendiente.'); return; }
   const mio = miEmpId();
-  // Para cada persona se junta lo que ya tenía ese día con lo nuevo y se
-  // reescribe el conjunto: si ya tenía desplazamiento, se le suma en vez de
-  // intentar meter una segunda línea igual (que la base rechaza).
+  // Cada línea se guarda tal cual, aunque se repita la categoría: el
+  // desplazamiento de ida y el de vuelta son dos líneas distintas. Lo que ya
+  // tuviera esa persona ese día no se toca. El servidor sigue impidiendo pasar
+  // de la jornada fichada, porque suma todas las líneas del día.
   const porPersona = seleccionados.map((x) => {
     const empId = empIdDeUser(x.u.id);
     if (!empId) return null;
-    const previas = S.imputaciones
-      .filter((i) => i.userId === x.u.id && i.fecha === fecha && !i.bloqueado)
-      .map((i) => ({ categoria: i.categoria, obraId: i.obraId || null, minutos: i.minutos || 0 }));
-    const idsPrevios = S.imputaciones
-      .filter((i) => i.userId === x.u.id && i.fecha === fecha && !i.bloqueado).map((i) => i.id);
-    const filas = fundirLineas([...previas, ...lineas]).map((l) => ({
+    return { filas: lineas.map((l) => ({
       empleado_id: empId, fecha, categoria: l.categoria,
       obra_id: l.categoria === 'obra' ? l.obraId : null,
-      minutos: l.minutos, origen: 'manual',
+      minutos: l.minutos, nota: (l.nota || '').trim() || null, origen: 'manual',
       creado_por: mio, actualizado_por: mio,
-    }));
-    return { idsPrevios, filas };
+    })) };
   }).filter(Boolean);
   V.impGrupoBusy = true; render();
   try {
     for (const p of porPersona) {
-      for (const id of p.idsPrevios) await Sysefen.db.borrarImputacion(id);
       for (const fila of p.filas) await Sysefen.db.guardarImputaciones([fila]);
     }
     await sincronizarImputaciones();
@@ -1063,12 +1043,13 @@ A.impGuardar = async () => {
   const idsPrevios = S.imputaciones
     .filter((i) => i.userId === V.impEmp && i.fecha === V.impFecha && !i.bloqueado)
     .map((i) => i.id);
-  const nuevas = fundirLineas(lineas).map((l) => ({
+  const nuevas = lineas.filter((l) => (l.minutos || 0) > 0).map((l) => ({
     empleado_id: empId,
     fecha: V.impFecha,
     categoria: l.categoria,
     obra_id: l.categoria === 'obra' ? l.obraId : null,
     minutos: l.minutos || 0,
+    nota: (l.nota || '').trim() || null,
     origen: 'manual',
     creado_por: mio,
     actualizado_por: mio,
@@ -1713,11 +1694,42 @@ A.exportarHorasObraCSV = () => {
 
 /* parte */
 // Elegir obra para el parte desde la sección Partes (sin pasar por Home).
-A.nuevoParteElegir = () => {
-  const abiertas = S.obras.filter((o) => o.estado !== 'Cerrada');
-  if (!abiertas.length) { avisar('Crea primero una obra.'); return; }
-  if (abiertas.length === 1) return A.nuevoParte(abiertas[0].id);
-  V.sheet = { tipo: 'nuevoParteObra' }; render();
+// Siempre se enseña el selector, aunque haya una sola obra o ninguna: es donde
+// está "+ Nueva obra", y lo normal es que la obra del parte aún no exista.
+A.nuevoParteElegir = () => { V.sheet = { tipo: 'nuevoParteObra' }; render(); };
+
+// --- Crear obra sin salir de lo que se estaba haciendo ----------------------
+// Desde el parte o desde imputar: se crea con lo mínimo y se vuelve al mismo
+// sitio con la obra ya elegida. El resto (email, etc.) se completa luego en
+// Obras si hace falta.
+A.obraRapida = (origen, i) => {
+  V.sheet = { tipo: 'obraRapida', origen, i: i == null || i === '' ? null : Number(i), nombre: '', cliente: '', dir: '', busy: false, err: '' };
+  render();
+};
+A.guardarObraRapida = async () => {
+  const s = V.sheet; if (!s || s.busy) return;
+  if (!s.nombre.trim()) { s.err = 'Pon el nombre de la obra.'; return render(); }
+  if (!navigator.onLine) { s.err = 'Sin conexión: no se ha creado.'; return render(); }
+  s.busy = true; s.err = ''; render();
+  try {
+    const nueva = await Sysefen.db.crearObra({
+      nombre: s.nombre.trim(), cliente: s.cliente.trim() || null, direccion: s.dir.trim() || null,
+    });
+    await sincronizarObras();
+    // Si había otra sincronización en marcha, puede que aún no esté en la lista.
+    if (!obraById(nueva.id)) S.obras.push(mapObraDeDB(nueva));
+    const { origen, i } = s;
+    V.sheet = null;
+    toast('Obra creada: ' + nueva.nombre);
+    if (origen === 'parte') return A.nuevoParte(nueva.id);
+    const lineas = origen === 'imp' ? V.impDraft : origen === 'impGrupo' ? V.impGrupoLineas : null;
+    if (lineas && lineas[i]) { lineas[i].categoria = 'obra'; lineas[i].obraId = nueva.id; }
+    render();
+  } catch (e) {
+    s.busy = false;
+    s.err = 'No se pudo crear: ' + ((e && e.message) || 'error');
+    render();
+  }
 };
 // Personal y horas sugeridos del parte = imputaciones REALES a esa obra ese
 // día. (No es la presencia: es el tiempo que se imputó a esta obra.)
@@ -3057,7 +3069,8 @@ function vImputarGrupo() {
     ${lineas.map((l, i) => `<div class="card" style="margin-bottom:10px">
       <div class="wrap">${IMP_CATS.map(([c, lab]) => `<div class="chip ${l.categoria === c ? 'on' : ''}" data-a="impGrupoCat" data-i="${i}" data-c="${c}">${lab}</div>`).join('')}</div>
       ${l.categoria === 'obra' ? `<div class="lbl" style="margin:12px 0 7px">Obra</div>
-        <div class="wrap">${obras.length ? obras.map((o) => `<div class="chip ${l.obraId === o.id ? 'on' : ''}" data-a="impGrupoObra" data-i="${i}" data-id="${o.id}">${esc(o.titulo)}</div>`).join('') : '<div class="tiny">No hay obras abiertas.</div>'}</div>` : ''}
+        <div class="wrap">${obras.map((o) => `<div class="chip ${l.obraId === o.id ? 'on' : ''}" data-a="impGrupoObra" data-i="${i}" data-id="${o.id}">${esc(o.titulo)}</div>`).join('')}<div class="chip" data-a="obraRapida" data-o="impGrupo" data-i="${i}" style="border:1.5px dashed var(--verde-o);color:var(--verde-o)">+ Nueva obra</div></div>` : ''}
+      <input class="inp" data-f="impGrupoNota" data-i="${i}" value="${esc(l.nota || '')}" placeholder="Nota (opcional): ida, vuelta…" style="margin-top:10px;font-size:14px;padding:10px 12px">
       ${relojHTML('impGrupo', i, l.minutos || 0, RELOJ_MAX_DEFECTO, seleccionados.length > 0, 15)}
       ${lineas.length > 1 ? `<button class="pill pill-rojo" data-a="impGrupoDelLinea" data-i="${i}" style="display:block;margin:2px auto 0">Quitar línea</button>` : ''}
     </div>`).join('')}
@@ -3100,7 +3113,8 @@ function vImputarEmpleado() {
     ${disp > 0 ? (draft.length ? draft.map((l, i) => `<div class="card" style="margin-bottom:10px">
       <div class="wrap">${IMP_CATS.map(([c, lab]) => `<div class="chip ${l.categoria === c ? 'on' : ''}" ${editable ? `data-a="impCat" data-i="${i}" data-c="${c}"` : ''}>${lab}</div>`).join('')}</div>
       ${l.categoria === 'obra' ? `<div class="lbl" style="margin:12px 0 7px">Obra</div>
-        <div class="wrap">${obras.length ? obras.map((o) => `<div class="chip ${l.obraId === o.id ? 'on' : ''}" ${editable ? `data-a="impObra" data-i="${i}" data-id="${o.id}"` : ''}>${esc(o.titulo)}</div>`).join('') : '<div class="tiny">No hay obras abiertas.</div>'}</div>` : ''}
+        <div class="wrap">${obras.map((o) => `<div class="chip ${l.obraId === o.id ? 'on' : ''}" ${editable ? `data-a="impObra" data-i="${i}" data-id="${o.id}"` : ''}>${esc(o.titulo)}</div>`).join('')}${editable ? `<div class="chip" data-a="obraRapida" data-o="imp" data-i="${i}" style="border:1.5px dashed var(--verde-o);color:var(--verde-o)">+ Nueva obra</div>` : ''}</div>` : ''}
+      <input class="inp" data-f="impNota" data-i="${i}" value="${esc(l.nota || '')}" placeholder="Nota (opcional): ida, vuelta…" style="margin-top:10px;font-size:14px;padding:10px 12px" ${editable ? '' : 'disabled'}>
       ${relojHTML('imp', i, l.minutos || 0, RELOJ_MAX_DEFECTO, editable, 15)}
       ${editable ? `<button class="pill pill-rojo" data-a="impDelLinea" data-i="${i}" style="display:block;margin:2px auto 0">Quitar línea</button>` : ''}
     </div>`).join('') : '<div class="card"><div class="sub">Sin líneas. Añade las categorías donde estuvo.</div></div>') : ''}
@@ -4023,11 +4037,30 @@ function sheet() {
       </div>
     </div></div>`;
   }
+  if (s.tipo === 'obraRapida') {
+    return `<div class="sheet"><div>
+      <div style="font:600 23px/1.15 var(--cond)">Nueva obra</div>
+      <div class="sub" style="margin-top:4px">${s.origen === 'parte' ? 'Al crearla sigues con el parte.' : 'Al crearla queda elegida en esta línea.'}</div>
+      <div class="lbl" style="margin:16px 0 6px">Nombre de la obra</div>
+      <input class="inp" data-f="orNombre" value="${esc(s.nombre)}" placeholder="Selva, Inca, Can Concos…">
+      <div class="lbl" style="margin:12px 0 6px">Cliente (opcional)</div>
+      <input class="inp" data-f="orCliente" value="${esc(s.cliente)}" placeholder="Comunidad, empresa o particular">
+      <div class="lbl" style="margin:12px 0 6px">Dirección (opcional)</div>
+      <input class="inp" data-f="orDir" value="${esc(s.dir)}" placeholder="Calle, número, población">
+      ${s.err ? `<div class="tiny" style="margin-top:10px;color:var(--rojo)">${esc(s.err)}</div>` : ''}
+      <div class="row g8" style="margin-top:18px">
+        <button class="btn btn-gris" data-a="cerrarSheet" style="border-radius:99px">Cancelar</button>
+        <button class="btn btn-verde" data-a="guardarObraRapida" style="font-size:14px" ${s.busy ? 'disabled' : ''}>${s.busy ? 'Creando…' : 'Crear obra'}</button>
+      </div>
+    </div></div>`;
+  }
   if (s.tipo === 'nuevoParteObra') {
     const abiertas = S.obras.filter((o) => o.estado !== 'Cerrada');
     return `<div class="sheet"><div>
       <div style="font:600 25px/1.15 var(--cond)">¿De qué obra es el parte?</div>
-      <div class="col g8" style="margin-top:18px">
+      <button class="btn btn-verde" data-a="obraRapida" data-o="parte" style="margin-top:16px">+ Nueva obra</button>
+      ${abiertas.length ? '' : '<div class="sub" style="margin-top:10px">Todavía no hay obras. Créala aquí y sigues con el parte.</div>'}
+      <div class="col g8" style="margin-top:12px">
         ${abiertas.map((o) => `<button class="btn btn-gris" data-a="nuevoParte" data-id="${o.id}">${esc(o.titulo)}</button>`).join('')}
       </div>
       <button class="btn btn-gris" data-a="cerrarSheet" style="border-radius:99px;margin-top:14px;opacity:.6">Cancelar</button>
@@ -4278,6 +4311,8 @@ document.addEventListener('click', (e) => {
   if (a === 'reenviar') { e.stopPropagation(); return A.reenviar(d.id); }
   if (a === 'compartirParte') { e.stopPropagation(); V.sheet = null; return A.compartirParte(d.id); }
   if (a === 'abrirEnvioParte') { e.stopPropagation(); return A.abrirEnvioParte(d.id); }
+  if (a === 'obraRapida') { e.stopPropagation(); return A.obraRapida(d.o, d.i); }
+  if (a === 'guardarObraRapida') return A.guardarObraRapida();
   if (a === 'confirmarEnvioParte') return A.confirmarEnvioParte();
   if (a === 'borrarParte') { e.stopPropagation(); return A.borrarParte(d.id); }
   if (a === 'confirmarBorrarParte') return A.confirmarBorrarParte();
@@ -4360,6 +4395,11 @@ document.addEventListener('input', (e) => {
   if (f === 'empEmail') { A.empCampo('email', t.value); return; }
   if (f === 'empTelefono') { A.empCampo('telefono', t.value); return; }
   if (f === 'envPara') { if (V.sheet) V.sheet.para = t.value; return; }
+  if (f === 'orNombre') { if (V.sheet) V.sheet.nombre = t.value; return; }
+  if (f === 'orCliente') { if (V.sheet) V.sheet.cliente = t.value; return; }
+  if (f === 'orDir') { if (V.sheet) V.sheet.dir = t.value; return; }
+  if (f === 'impNota') { const l = (V.impDraft || [])[Number(t.dataset.i)]; if (l) l.nota = t.value; return; }
+  if (f === 'impGrupoNota') { const l = (V.impGrupoLineas || [])[Number(t.dataset.i)]; if (l) l.nota = t.value; return; }
   if (f === 'envCopia') { if (V.sheet) V.sheet.copia = t.value; return; }
   if (f === 'empPin') { t.value = t.value.replace(/\D/g, '').slice(0, 4); A.empCampo('pin', t.value); return; }
   if (f === 'empNombreCompleto') { A.empCampo('nombreCompleto', t.value); return; }
