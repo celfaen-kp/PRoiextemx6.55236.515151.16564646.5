@@ -62,6 +62,33 @@ romper nada.
 | `etapa10_pin_admin.sql` | **Administración cambia el PIN de otra persona sin saber el anterior** |
 | `etapa11_nombre_completo_alta.sql` | **nombre completo y fecha de alta real en las planillas** |
 | `etapa12_adjuntos.sql` | **las fotos de los partes se guardan (bucket privado + tabla)** |
+| `etapa13_archivo_documentos.sql` | **planillas firmadas en PDF (bucket `documentos` + tabla)** |
+| `etapa14…` / `etapa15…` | vistas para Make/Teamleader en el esquema `integracion` |
+| `etapa16…` | foto o emoji de cada persona |
+| `etapa17…` / `etapa18…` | vacaciones, festivos y vacaciones generadas |
+| `etapa19_imputaciones_repetidas.sql` | varias líneas de la misma categoría el mismo día |
+
+## Planillas firmadas → Google Drive
+
+Al firmar una planilla en la app, el PDF se guarda en Supabase (bucket privado
+`documentos`, ruta `planillas/<id del empleado>/<año>/planilla-AAAA-MM.pdf`) y
+queda una fila en la tabla `documentos` con `exportado_en` vacío.
+
+Make las copia a Drive a través de la función **`archivo-make`**
+(`supabase/functions/archivo-make/index.ts`). Make no recibe la clave maestra:
+solo una clave propia de la función y enlaces de descarga que caducan en 1 hora.
+
+1. Supabase → Edge Functions → Secrets → **`MAKE_CLAVE`** = una contraseña larga
+   inventada (24 caracteres o más). No se pega en ningún chat ni en Git.
+2. Desplegar la función con el nombre **`archivo-make`** y **Verify JWT
+   desactivado** (Make no tiene sesión; la protege la cabecera `x-clave`).
+3. En Make: HTTP `POST .../functions/v1/archivo-make`, cabecera
+   `x-clave: <MAKE_CLAVE>`, cuerpo `{"accion":"pendientes"}` → por cada
+   documento, descargar `url`, subir a Drive en
+   `Sysefen/Empleados/<empleado>/<anio>/<archivo>` → `{"accion":"marcar","id":…,"ref_externa":<id de Drive>}`.
+
+Si se vuelve a firmar el mismo mes, el PDF se sustituye y vuelve a quedar
+pendiente.
 
 `etapa9` hace falta para el botón *Ajustes → Importar CSV*. Sin ella la app se
 niega a importar y no escribe nada, porque el servidor pisaría todas las horas

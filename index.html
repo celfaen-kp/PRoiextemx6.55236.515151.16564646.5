@@ -207,7 +207,7 @@ import * as sysDB from './supabase-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '10.2'; // versión visible de la app (única fuente)
+const APP_VERSION = '10.3'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -1359,7 +1359,56 @@ A.planillaSalida = (rango) => {
   render();
 };
 A.repetirFirmaPlanilla = () => { V.planFirma = ''; render(); };
-A.imprimirPlanillaFirmada = () => { V.sheet = null; render(); imprimirPlanilla(V.planEmp, V.planMes); };
+// Sin firma se imprime como siempre (se firma a mano en el papel). Con firma,
+// además se archiva el PDF en Supabase: planillas/<empleado>/<año>/<archivo>.
+A.imprimirPlanillaFirmada = async () => {
+  if (!V.planFirma) { V.sheet = null; render(); imprimirPlanilla(V.planEmp, V.planMes); return; }
+  const userId = V.planEmp, mes = V.planMes, rango = V.planRango || 'mes';
+  const anio = mes.slice(0, 4);
+  const doc = rango === 'mes' ? { periodo: mes, carpeta: anio, nombre: 'planilla-' + mes + '.pdf' }
+    : rango === 'ano' ? { periodo: anio, carpeta: anio, nombre: 'planilla-' + anio + '-anual.pdf' }
+    : { periodo: 'historial', carpeta: 'historial', nombre: 'planilla-historial.pdf' };
+  V.planPdf = null;
+  V.sheet = { tipo: 'planillaGuardada', estado: 'guardando' };
+  render();
+  try {
+    pintarPlanilla(userId, mes);
+    const blob = await pdfDeImpresion();
+    V.planPdf = { blob, nombre: doc.nombre };
+    const empleadoId = empIdDeUser(userId);
+    if (!empleadoId) throw new Error('no encuentro a esta persona en la base de datos');
+    if (!navigator.onLine) throw new Error('sin conexión');
+    const quien = yo();
+    await Sysefen.db.guardarPlanillaFirmada({
+      empleadoId, ...doc, pdfBlob: blob,
+      creadoPor: quien ? empIdDeUser(quien.id) : null,
+    });
+    V.sheet = { tipo: 'planillaGuardada', estado: 'ok' };
+  } catch (e) {
+    V.sheet = { tipo: 'planillaGuardada', estado: 'error', error: e && e.message ? e.message : 'error' };
+  }
+  render();
+};
+A.imprimirPlanillaGuardada = () => {
+  V.sheet = null; render();
+  imprimirPlanilla(V.planEmp, V.planMes);   // vuelve a pintarla con la misma firma
+};
+A.compartirPlanilla = async () => {
+  if (!V.planPdf) return;
+  const archivo = new File([V.planPdf.blob], V.planPdf.nombre, { type: 'application/pdf' });
+  try {
+    if (navigator.canShare && navigator.canShare({ files: [archivo] })) {
+      await navigator.share({ files: [archivo], title: V.planPdf.nombre });
+      return;
+    }
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(V.planPdf.blob); a.download = archivo.name; a.click();
+    toast('PDF descargado');
+  } catch (e) {
+    if (e && e.name === 'AbortError') return;
+    avisar('No se pudo compartir: ' + (e && e.message ? e.message : 'error'));
+  }
+};
 A.imprimirPlanilla = () => { imprimirPlanilla(V.planEmp, V.planMes); };
 // Lista de meses 'YYYY-MM' que cubre el rango elegido (mes / año / historial).
 // 'ano': todo el año del mes que se está viendo, sin pasarse del mes actual.
@@ -2051,24 +2100,41 @@ function cargarLibsPdf() {
   return libsPdf;
 }
 
-async function pdfDelParte(p) {
+// PDF de lo que haya pintado en #print (un parte o una planilla).
+async function pdfDeImpresion() {
   await cargarLibsPdf();
   const el = $('#print');
   el.classList.add('capturando');
   try {
-    const lienzo = await window.html2canvas(el, { scale: 2, backgroundColor: '#fff', useCORS: true });
+    const escala = 2;
+    const lienzo = await window.html2canvas(el, { scale: escala, backgroundColor: '#fff', useCORS: true });
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF({ unit: 'mm', format: 'a4' });
     const anchoMM = 210, altoMM = 297;
-    const altoImgMM = (lienzo.height * anchoMM) / lienzo.width;
+    const pxPorMM = lienzo.width / anchoMM;
+    const altoPagina = Math.floor(altoMM * pxPorMM);
     // Si no cabe en una hoja, se parte en páginas A4 en vez de encogerlo hasta
-    // que no se lea.
-    let restante = altoImgMM, y = 0;
-    const img = lienzo.toDataURL('image/jpeg', 0.92);
-    while (restante > 0) {
-      doc.addImage(img, 'JPEG', 0, -y, anchoMM, altoImgMM);
-      restante -= altoMM;
-      if (restante > 0) { doc.addPage(); y += altoMM; }
+    // que no se lea. El corte se hace al final de una fila o de un bloque, para
+    // no partir una línea de horas por la mitad entre dos páginas.
+    const arriba = el.getBoundingClientRect().top;
+    const cortes = [...el.querySelectorAll('tr, img, #print > div > *')]
+      .map((n) => Math.round((n.getBoundingClientRect().bottom - arriba) * escala))
+      .sort((a, b) => a - b);
+    let y = 0;
+    while (y < lienzo.height) {
+      let fin = Math.min(y + altoPagina, lienzo.height);
+      if (fin < lienzo.height) {
+        const c = cortes.filter((v) => v > y + altoPagina / 2 && v <= fin).pop();
+        if (c) fin = c;
+      }
+      const trozo = document.createElement('canvas');
+      trozo.width = lienzo.width; trozo.height = fin - y;
+      const cx = trozo.getContext('2d');
+      cx.fillStyle = '#fff'; cx.fillRect(0, 0, trozo.width, trozo.height);
+      cx.drawImage(lienzo, 0, y, lienzo.width, fin - y, 0, 0, lienzo.width, fin - y);
+      if (y > 0) doc.addPage();
+      doc.addImage(trozo.toDataURL('image/jpeg', 0.92), 'JPEG', 0, 0, anchoMM, (fin - y) / pxPorMM);
+      y = fin;
     }
     return doc.output('blob');
   } finally {
@@ -2083,7 +2149,7 @@ async function pdfDelParte(p) {
 async function enviarParteAhora(p, para, copia) {
   await cargarFotosParte(p);
   imprimirParteHTML(p);
-  const pdfBlob = await pdfDelParte(p);
+  const pdfBlob = await pdfDeImpresion();
   const o = obraById(p.obraId) || {};
   const r = await Sysefen.db.enviarParteCorreo({
     para, copia,
@@ -2150,7 +2216,7 @@ A.compartirParte = async (id) => {
   try {
     await cargarFotosParte(p);
     imprimirParteHTML(p);
-    const blob = await pdfDelParte(p);
+    const blob = await pdfDeImpresion();
     const archivo = new File([blob], 'parte-' + p.ref + '.pdf', { type: 'application/pdf' });
     const o = obraById(p.obraId) || {};
     if (navigator.canShare && navigator.canShare({ files: [archivo] })) {
@@ -3421,9 +3487,18 @@ function vPlanilla() {
 function resumenAusencias(a) {
   const ks = Object.keys(a || {}).filter((k) => a[k] > 0);
   if (!ks.length) return '';
-  return ' · ' + ks.map((k) => a[k] + ' ' + ETIQ_AUSENCIA[k].toLowerCase()).join(' · ');
+  // "1 festivo" / "2 festivos"; las vacaciones se cuentan en días.
+  const nombre = (k, n) => k === 'vacaciones' ? (n === 1 ? 'día de vacaciones' : 'días de vacaciones')
+    : ETIQ_AUSENCIA[k].toLowerCase() + (n === 1 ? '' : 's');
+  return ' · ' + ks.map((k) => a[k] + ' ' + nombre(k, a[k])).join(' · ');
 }
 function imprimirPlanilla(userId, mesBase) {
+  pintarPlanilla(userId, mesBase);
+  setTimeout(() => window.print(), 60);
+}
+// Solo pinta la planilla en #print: sirve para imprimir y para sacar el PDF
+// que se archiva al firmarla.
+function pintarPlanilla(userId, mesBase) {
   const rango = V.planRango || 'mes';
   const meses = mesesEnRango(userId, rango, mesBase);
   const u = userById(userId);
@@ -3509,7 +3584,6 @@ function imprimirPlanilla(userId, mesBase) {
     </div>
     <div style="font:400 6px var(--mono);color:#999;letter-spacing:.05em;text-transform:uppercase;margin-top:4px;text-align:center">Documento generado por la app · ${fechaCorta(new Date().toISOString())}</div>
   </div>`;
-  setTimeout(() => window.print(), 60);
 }
 const RANGO_LARGO = { hoy: 'Hoy', semana: 'Esta semana', mes: 'Este mes', ano: 'Este año', total: 'Total histórico' };
 function imprimirHorasObra(obraId, rango) {
@@ -3822,7 +3896,7 @@ function montarFirma() {
 // Firma del trabajador en la planilla de horas (registro de jornada).
 function montarFirmaPlanilla() {
   montarLienzo('#firmaPlan', () => V.planFirma, (dato) => { V.planFirma = dato; }, () => {
-    const b = $('.btn[data-a="imprimirPlanillaFirmada"]'); if (b) b.textContent = 'Imprimir con la firma';
+    const b = $('.btn[data-a="imprimirPlanillaFirmada"]'); if (b) b.textContent = 'Guardar firmada';
     const q = $('#firmaPlanAviso'); if (q) q.remove();
   });
 }
@@ -4008,9 +4082,39 @@ function sheet() {
         <div class="linea"></div>
       </div>
       ${firmado ? '' : '<div id="firmaPlanAviso" class="tiny" style="margin-top:10px">Si prefiere firmar a mano en el papel, imprima sin firmar y quedará el renglón en blanco.</div>'}
+      <div class="tiny" style="margin-top:8px">Firmada, la planilla se guarda en PDF en el archivo de ${esc(S.empresa)}.</div>
       <div class="row g8" style="margin-top:16px">
         <button class="btn btn-gris" data-a="cerrarSheet" style="border-radius:99px">Cancelar</button>
-        <button class="btn btn-verde" data-a="imprimirPlanillaFirmada" style="font-size:14px">${firmado ? 'Imprimir con la firma' : 'Imprimir sin firmar'}</button>
+        <button class="btn btn-verde" data-a="imprimirPlanillaFirmada" style="font-size:14px">${firmado ? 'Guardar firmada' : 'Imprimir sin firmar'}</button>
+      </div>
+    </div></div>`;
+  }
+  if (s.tipo === 'planillaGuardada') {
+    const botones = `<div class="row g8" style="margin-top:18px">
+        <button class="btn btn-gris" data-a="compartirPlanilla" style="font-size:14px" ${V.planPdf ? '' : 'disabled'}>Compartir PDF</button>
+        <button class="btn btn-verde" data-a="imprimirPlanillaGuardada" style="font-size:14px">Imprimir</button>
+      </div>`;
+    if (s.estado === 'guardando') {
+      return `<div class="sheet"><div>
+        <div style="font:600 23px/1.15 var(--cond)">Guardando la planilla…</div>
+        <div class="sub" style="margin-top:4px">Preparando el PDF firmado y subiéndolo al archivo. No cierres la app.</div>
+      </div></div>`;
+    }
+    if (s.estado === 'ok') {
+      return `<div class="sheet"><div>
+        <div style="font:600 23px/1.15 var(--cond)">✓ Planilla guardada</div>
+        <div class="sub" style="margin-top:4px">${esc(V.planPdf ? V.planPdf.nombre : '')} queda archivada con la firma. Si se vuelve a firmar el mismo periodo, se sustituye.</div>
+        ${botones}
+        <div style="text-align:center;margin-top:12px"><span class="tiny" data-a="cerrarSheet" style="cursor:pointer;text-decoration:underline">Listo</span></div>
+      </div></div>`;
+    }
+    return `<div class="sheet"><div>
+      <div style="font:600 23px/1.15 var(--cond);color:var(--rojo)">No se pudo archivar</div>
+      <div class="sub" style="margin-top:4px">${esc(s.error || '')}. ${V.planPdf ? 'La firma no se ha perdido: puedes reintentarlo, o imprimirla y compartirla igualmente.' : 'Puedes reintentarlo o imprimirla igualmente.'}</div>
+      ${botones}
+      <div class="row g8" style="margin-top:8px">
+        <button class="btn btn-gris" data-a="cerrarSheet" style="border-radius:99px">Cerrar</button>
+        <button class="btn btn-verde" data-a="imprimirPlanillaFirmada" style="font-size:14px">Reintentar</button>
       </div>
     </div></div>`;
   }
@@ -4433,6 +4537,8 @@ document.addEventListener('click', (e) => {
   if (a === 'planillaSalida') return A.planillaSalida(d.r);
   if (a === 'repetirFirmaPlanilla') return A.repetirFirmaPlanilla();
   if (a === 'imprimirPlanillaFirmada') return A.imprimirPlanillaFirmada();
+  if (a === 'imprimirPlanillaGuardada') return A.imprimirPlanillaGuardada();
+  if (a === 'compartirPlanilla') return A.compartirPlanilla();
   if (a === 'imprimirPlanilla') return A.imprimirPlanilla();
   if (a === 'exportarPlanillaCSV') return A.exportarPlanillaCSV();
   if (a === 'toggleOpt') return A.toggleOpt(d.k);

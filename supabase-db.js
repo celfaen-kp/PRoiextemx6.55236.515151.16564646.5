@@ -404,6 +404,23 @@ export async function subirAvatar(empleadoId, dataURL) {
   return ruta;
 }
 
+// Planilla firmada → bucket privado `documentos` + fila en la tabla `documentos`.
+// La carpeta va por id del empleado: los permisos comprueban que es la suya.
+// Volver a firmar el mismo periodo sustituye el PDF y lo deja otra vez
+// pendiente de copiar fuera (exportado_en a null).
+export async function guardarPlanillaFirmada({ empleadoId, periodo, carpeta, nombre, pdfBlob, creadoPor }) {
+  const ruta = `planillas/${empleadoId}/${carpeta}/${nombre}`;
+  const { error } = await supabase.storage.from('documentos')
+    .upload(ruta, pdfBlob, { contentType: 'application/pdf', upsert: true });
+  if (error) throw new Error(error.message);
+  const fila = {
+    tipo: 'planilla', empleado_id: empleadoId, periodo, ruta, nombre,
+    bytes: pdfBlob.size, creado_por: creadoPor || null,
+    creado_en: new Date().toISOString(), exportado_en: null,
+  };
+  return unwrap(await supabase.from('documentos').upsert(fila, { onConflict: 'ruta' }).select().single());
+}
+
 export async function urlsFirmadasAvatar(rutas, segundos = 3600) {
   if (!rutas || !rutas.length) return {};
   const { data, error } = await supabase.storage.from('avatares').createSignedUrls(rutas, segundos);
@@ -500,6 +517,7 @@ export default {
   listarHorasPartes, listarMaterialesPartes, borrarParte, enviarParteCorreo,
   subirAdjunto, listarAdjuntosPartes, urlsFirmadas, descargarAdjunto, borrarAdjunto,
   subirAvatar, urlsFirmadasAvatar, guardarMiAvatar, guardarAvatarDe, borrarAvatar,
+  guardarPlanillaFirmada,
   listarAusencias, marcarAusencia, quitarAusencia,
   listarFestivos, ponerFestivo, quitarFestivo,
   listarIncidencias, crearIncidencia,
