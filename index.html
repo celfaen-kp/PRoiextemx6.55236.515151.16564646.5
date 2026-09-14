@@ -168,6 +168,33 @@ a:hover{color:var(--tinta)}
 .adj .tipo{width:34px;height:34px;border-radius:9px;flex:none;display:flex;align-items:center;justify-content:center;font:600 9px var(--mono)}
 .dash{text-align:center;font:500 13px var(--sans);padding:14px;border-radius:14px;border:1.5px dashed rgba(20,23,15,.22);color:var(--t2);cursor:pointer;flex:1}
 
+/* Toma de datos (rol presupuestos) */
+.scroll.sin-marca::before{display:none}
+.pie{flex:none;display:flex;gap:10px;padding:12px 20px calc(14px + var(--safe-b));background:var(--papel);border-top:1px solid var(--l1)}
+.pie .btn{padding:16px}
+.pie .btn-gris{flex:0 0 34%}
+.pie.col{flex-direction:column;gap:8px}
+.pie.col .btn-gris{flex:none;padding:13px}
+.chip.sel{background:var(--verde-c);color:#fff;border-color:var(--verde-c)}
+.campo{display:flex;flex-direction:column;gap:8px;margin-top:16px}
+.rej2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.rej3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.elegida{box-shadow:0 0 0 1.5px var(--verde-c),var(--sh)}
+.tick{width:26px;height:26px;border-radius:99px;flex:none;display:flex;align-items:center;justify-content:center}
+.tick.si{background:var(--verde-c)}
+.tick.no{border:1px solid var(--l2);background:#fff}
+.foto-v{position:relative;aspect-ratio:4/3;border-radius:14px;overflow:hidden;background:#2b3024 center/cover no-repeat;display:flex;align-items:flex-end;padding:9px;cursor:pointer}
+.foto-v::before{content:'';position:absolute;inset:0;background:linear-gradient(to top,rgba(0,0,0,.55),transparent 60%)}
+.foto-v span{position:relative;font:500 11px/1.25 var(--sans);color:#fff}
+.foto-v em{position:absolute;top:8px;right:8px;width:20px;height:20px;border-radius:99px;background:var(--verde-c);display:flex;align-items:center;justify-content:center}
+.foto-hueco{aspect-ratio:4/3;border-radius:14px;border:1.5px dashed rgba(20,23,15,.22);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;padding:8px;text-align:center;font:500 11px/1.25 var(--sans);color:var(--t2);cursor:pointer}
+.aviso-rojo{background:var(--rojo-cl);border-radius:14px;padding:12px 13px;display:flex;gap:10px;align-items:flex-start;color:var(--rojo)}
+.aviso-rojo .ex{flex:none;width:18px;height:18px;border-radius:99px;background:var(--rojo);color:#fff;font:700 12px/18px var(--sans);text-align:center}
+.viaja{display:grid;grid-template-columns:auto minmax(0,1fr);gap:9px 12px;align-items:baseline;margin-top:12px}
+.viaja .k{font:500 10px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--t3)}
+.viaja .v{font:500 14px/1.3 var(--sans)}
+.viaja small{display:block;font:400 12px/1.3 var(--sans);color:var(--t2);margin-top:2px}
+
 /* Control de horas: dos ruedas (horas / minutos en pasos de 15) tipo selector
    nativo. El desplazamiento vertical con encastre (scroll-snap) es un gesto
    que ya se conoce de los pickers de fecha/hora del propio teléfono — mucho
@@ -201,13 +228,16 @@ a:hover{color:var(--tinta)}
 import { supabase } from './supabase-client.js';
 import * as sysAuth from './supabase-auth.js';
 import * as sysDB from './supabase-db.js';
+import * as vSchemas from './visitas-schemas.js';
+import * as vForm from './visitas-form.js';
+import * as visitasDB from './visitas-db.js';
 
 // Capa Supabase disponible para la Etapa 3 (integración progresiva) y pruebas.
 // La app sigue funcionando con localStorage hasta que se enchufe pieza a pieza.
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '10.3'; // versión visible de la app (única fuente)
+const APP_VERSION = '10.4'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -544,7 +574,7 @@ async function sincronizarAusencias() {
     S.festivos = (await Sysefen.db.listarFestivos()) || [];
   } catch (e) { /* si falta la etapa17, la app sigue sin vacaciones ni festivos */ }
 }
-const refrescarDatos = () => Promise.all([sincronizarFichajes(), sincronizarObras(), sincronizarImputaciones(), sincronizarPartes(), cargarAvatares(), sincronizarAusencias()]);
+const refrescarDatos = () => esPresupuestos() ? Promise.all([cargarAvatares()]) : Promise.all([sincronizarFichajes(), sincronizarObras(), sincronizarImputaciones(), sincronizarPartes(), cargarAvatares(), sincronizarAusencias()]);
 
 // Ausencia de una persona en un día concreto (o null).
 // Un día puede estar marcado por dos vías: la ausencia PERSONAL (vacaciones de
@@ -627,8 +657,12 @@ const yo = () => (V.user ? S.users.find((u) => u.id === V.user.id) : null);
 const rol = () => { const u = yo(); return u ? u.rol : null; };
 const esAdmin = () => rol() === 'admin';
 const puedeCrear = () => ['admin', 'jefe'].includes(rol());
+// Presupuestos (Ramón): toma datos en casa del cliente. No ficha ni hace partes.
+const esPresupuestos = () => rol() === 'presupuestos';
+const esComercial = () => ['presupuestos', 'jefe', 'admin'].includes(rol());
+function rolNombre(r) { return r === 'admin' ? 'Administración' : r === 'jefe' ? 'Jefe de obra' : r === 'presupuestos' ? 'Presupuestos' : 'Operario'; }
 // equipo() = empleados ACTIVOS no admin (para operaciones nuevas: fichaje, imputación, partes).
-const equipo = () => S.users.filter((u) => u.rol !== 'admin' && u.activo !== false);
+const equipo = () => S.users.filter((u) => u.rol !== 'admin' && u.rol !== 'presupuestos' && u.activo !== false);
 // equipoTodos() = incluye inactivos (para la sección Empleados / histórico).
 const equipoTodos = () => S.users.filter((u) => u.rol !== 'admin');
 const userById = (id) => S.users.find((u) => u.id === id) || { nombre: '—' };
@@ -778,10 +812,11 @@ A.salir = () => {
   // (depende de V.user); sin cerrarlo, el render de después revienta al
   // intentar leer los datos de un usuario que ya no existe.
   try { sessionStorage.removeItem('ch_user'); } catch (e) {}
+  V.visitas = []; V.visitasCargadas = false; V.visitaVer = null;
   V.view = 'login'; render();
   sysAuth.logout().catch(() => {});
 };
-A.ir = (v) => { V.view = v; render(); if (['hoy', 'obras', 'obra', 'partes', 'horas'].includes(v)) refrescarDatos().then(render); };
+A.ir = (v) => { V.view = v; render(); if (v === 'visitas') A.cargarVisitas(); if (['hoy', 'obras', 'obra', 'partes', 'horas'].includes(v)) refrescarDatos().then(render); };
 A.verObra = (id) => { V.obraId = id; V.obraRango = 'total'; V.view = 'obra'; render(); refrescarDatos().then(render); };
 A.obraRango = (r) => { V.obraRango = r; render(); };
 // (Sin "obra de hoy": el fichaje NUNCA lleva obra — se guarda con obraId null —
@@ -1160,6 +1195,7 @@ A.adminFichar = (userId) => {
   // nadie.
   const u = userById(userId);
   if (u && u.rol === 'admin') { avisar('Administración no ficha: no es una jornada de trabajo.'); return; }
+  if (u && u.rol === 'presupuestos') { avisar('Presupuestos no ficha: solo toma datos de visitas.'); return; }
   const f = fichajeAbierto(userId);
   V.sheet = { tipo: 'adminFichaje', userId, salida: !!f };
   render();
@@ -2518,6 +2554,11 @@ A.instalar = async () => {
 
 /* ---------- render ---------- */
 function render() {
+  // Ramón entra directo a sus visitas: ninguna pantalla de fichar, obras ni partes.
+  if (V.user && esPresupuestos() && !VISITA_VISTAS.includes(V.view)) {
+    V.view = 'visitas';
+    if (!V.visitasCargadas) A.cargarVisitas();
+  }
   const app = $('#app');
   const v = V.view;
   let html = '';
@@ -2541,7 +2582,10 @@ function render() {
   else if (v === 'p2') html = vP2();
   else if (v === 'p3') html = vP3();
   else if (v === 'ok') html = vOk();
-  if (V.user && ['hoy', 'obras', 'obra', 'partes', 'horas', 'imputar', 'empleados', 'ajustes'].includes(v)) html += nav(v);
+  else if (v === 'visitas' && esComercial()) html = vVisitas();
+  else if (v === 'visita' && esComercial()) html = vVisita();
+  else if (v === 'visitaNueva' && esComercial()) html = vVisitaNueva();
+  if (V.user && ['hoy', 'obras', 'obra', 'partes', 'horas', 'imputar', 'empleados', 'ajustes', 'visitas', 'visita'].includes(v)) html += nav(v);
   if (!navigator.onLine && V.user) html = '<div class="offline">Sin conexión — todo se guarda en el móvil</div>' + html;
   // Red de seguridad: si un sheet revienta al pintarse (p. ej. depende de
   // datos que cambiaron justo antes, como el usuario tras salir), que se
@@ -2570,7 +2614,7 @@ function vLogin() {
         ${avatarHTML(u.id, `width:42px;height:42px;font-size:17px;${avc(u.rol)}`)}
         <div class="grow">
           <div style="font:600 17px/1.1 var(--sans);color:#fff">${esc(u.nombre)}</div>
-          <div style="font:400 12px/1 var(--mono);letter-spacing:.06em;text-transform:uppercase;color:rgba(255,255,255,.45);margin-top:5px">${u.rol === 'admin' ? 'Administración' : u.rol === 'jefe' ? 'Jefe de obra' : 'Operario'}</div>
+          <div style="font:400 12px/1 var(--mono);letter-spacing:.06em;text-transform:uppercase;color:rgba(255,255,255,.45);margin-top:5px">${rolNombre(u.rol)}</div>
         </div>
         <div style="font:400 20px/1 var(--sans);color:rgba(255,255,255,.35)">›</div>
       </div>`).join('')}
@@ -3252,7 +3296,7 @@ function vImputarEmpleado() {
 }
 
 /* --- ADMINISTRACIÓN · Empleados --- */
-const ROLES = [['operario', 'Operario'], ['jefe', 'Jefe'], ['admin', 'Administración']];
+const ROLES = [['operario', 'Operario'], ['jefe', 'Jefe'], ['presupuestos', 'Presupuestos'], ['admin', 'Administración']];
 const rolLabel = (r) => (ROLES.find((x) => x[0] === r) || [r, r])[1];
 
 function vEmpleados() {
@@ -3290,7 +3334,7 @@ function vEmpleado() {
     <div data-a="empGuardar" style="font:600 13px var(--sans);color:var(--verde-o);cursor:pointer">${V.empBusy ? '…' : 'Guardar'}</div>
   </div>
   <div class="scroll pad pb-nav">
-    ${!d.nuevo && V.empEmp && d.rol !== 'admin' ? `<div class="card" style="margin-bottom:14px;background:${fx ? 'var(--verde-o)' : 'var(--tinta)'};color:#fff">
+    ${!d.nuevo && V.empEmp && !['admin', 'presupuestos'].includes(d.rol) ? `<div class="card" style="margin-bottom:14px;background:${fx ? 'var(--verde-o)' : 'var(--tinta)'};color:#fff">
       <div class="row" style="justify-content:space-between;align-items:center">
         <div><div class="lbl" style="color:rgba(255,255,255,.6)">Fichaje de hoy</div>
         <div style="font:600 15px var(--sans);margin-top:4px">${fx ? 'Entrada ' + hhmm(fx.entrada) + ' · dentro' : (minutosDia(V.empEmp, hoyISO()) ? 'Hoy ' + durMin(minutosDia(V.empEmp, hoyISO())) + ' · fuera' : 'Sin fichar hoy')}</div></div>
@@ -3622,7 +3666,7 @@ function imprimirHorasObra(obraId, rango) {
 /* --- ajustes --- */
 function vAjustes() {
   const u = yo();
-  const opts = esAdmin()
+  const opts = esPresupuestos() ? [] : esAdmin()
     ? [['gps', 'Registrar ubicación al fichar', 'Se guarda la posición junto al fichaje'], ['recordatorio', 'Aviso de fichaje', 'Recordatorio si siguen dentro por la tarde'], ['importesOperario', 'Operarios ven importes', 'Por defecto solo los jefes ven precios']]
     : [['gps', 'Registrar ubicación al fichar', 'Se guarda la posición junto al fichaje'], ['recordatorio', 'Aviso de fichaje', 'Recordatorio si sigues dentro por la tarde']];
   return `<div class="hdr"><div class="h1">${esAdmin() ? 'Ajustes' : 'Perfil'}</div></div>
@@ -3635,7 +3679,7 @@ function vAjustes() {
     <div class="card row" style="margin-bottom:12px">
       ${avatarHTML(u.id, `width:46px;height:46px;font-size:18px;background:${u.rol === 'admin' ? 'var(--ambar);color:var(--tinta)' : u.rol === 'jefe' ? 'var(--verde-c);color:#fff' : 'rgba(20,23,15,.08);color:var(--tinta)'}`)}
       <div class="grow"><div style="font:600 18px/1.1 var(--sans)">${esc(u.nombre)}</div>
-      <div class="lbl" style="margin-top:5px">${u.rol === 'admin' ? 'Administración' : u.rol === 'jefe' ? 'Jefe de obra' : 'Operario'}</div></div>
+      <div class="lbl" style="margin-top:5px">${rolNombre(u.rol)}</div></div>
       <button class="pill" data-a="salir">Salir</button>
     </div>
 
@@ -3652,12 +3696,12 @@ function vAjustes() {
       <input class="inp" data-f="emailCopia" value="${esc(S.emailCopia)}" style="margin-top:8px" type="email" inputmode="email" autocapitalize="off" placeholder="Email de copia (gestoría)">
     </div>` : ''}
 
-    <div class="card" style="padding:0;overflow:hidden;margin-bottom:12px">
+    ${opts.length ? `<div class="card" style="padding:0;overflow:hidden;margin-bottom:12px">
       ${opts.map(([k, n, d], i) => `<div class="row" data-a="toggleOpt" data-k="${k}" style="padding:14px 16px;cursor:pointer;${i ? 'border-top:1px solid var(--l1)' : ''}">
         <div class="grow"><div style="font:500 15px/1.2 var(--sans)">${n}</div><div class="sub" style="font-size:12px;margin-top:4px">${d}</div></div>
         <div class="sw" style="background:${S.opts[k] ? 'var(--verde)' : 'rgba(20,23,15,.16)'};justify-content:${S.opts[k] ? 'flex-end' : 'flex-start'}"><i></i></div>
       </div>`).join('')}
-    </div>
+    </div>` : ''}
 
     ${esAdmin() ? `<div class="card row" data-a="ir" data-v="empleados" style="margin-top:14px;cursor:pointer">
       <div class="grow"><div style="font:600 15px var(--sans)">Empleados</div>
@@ -3965,9 +4009,715 @@ function vOk() {
   </div>`;
 }
 
+/* =============================================================================
+ * TOMA DE DATOS · rol presupuestos (Ramón)
+ *
+ * Ramón no ficha, no ve obras, no hace partes ni firma. Rellena la visita en
+ * cinco pasos y la manda a Teamleader, que es donde se hace el presupuesto.
+ * Los cuestionarios viven en visitas-schemas.js; aquí solo están las
+ * pantallas y las acciones. Ver TOMA-DATOS.md.
+ * ============================================================================= */
+Object.assign(V, {
+  visitas: [], visitasCargadas: false, visitasCargando: false, visitasError: null,
+  visitaDraft: null, visitaFichas: {}, visitaFotos: {}, visitaAdjuntos: [], visitaFotoUrls: {},
+  visitaPaso: 1, visitaCat: null, visitaBusy: false,
+  visitaClientes: null, visitaClientesErr: false, visitaBuscarTxt: '',
+  visitaVer: null, confirmarDescartar: false,
+});
+
+const VISITA_VISTAS = ['visitas', 'visita', 'visitaNueva', 'ajustes'];
+const PASOS_VISITA = ['Cliente', 'El inmueble', '¿Qué se presupuesta?', 'Fichas', 'Cierre'];
+const KEY_VISITA = 'sysefen.visita.borrador';
+const CAMPOS_COMUN = vSchemas.COMUN.secciones.flatMap((s) => s.campos);
+const nombreCat = (c) => (vSchemas.CATEGORIAS.find((x) => x.key === c) || { nombre: c }).nombre;
+const msgError = (e) => (e && e.message) || 'error desconocido';
+const inicialesCli = (n) => String(n || '?').trim().split(/\s+/).slice(0, 2).map((x) => x[0]).join('').toUpperCase();
+const tipoCliente = (c) => (c && c.tl_tipo === 'company' ? 'Empresa' : 'Particular');
+
+const SVG_TICK = (color = '#fff', s = 14) => `<svg width="${s}" height="${s}" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7" stroke="${color}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+const SVG_MAS = '<svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 3v10M3 8h10" stroke="rgba(20,23,15,.45)" stroke-width="2" stroke-linecap="round"/></svg>';
+const SVG_CHEV = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true" style="flex:none;color:var(--t3)"><path d="M6 3.5L10.5 8 6 12.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+const SVG_CAMARA = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 8.5A1.5 1.5 0 015.5 7h2l1.5-2h6l1.5 2h2A1.5 1.5 0 0120 8.5v9a1.5 1.5 0 01-1.5 1.5h-13A1.5 1.5 0 014 17.5v-9z" stroke="currentColor" stroke-width="1.6"/><circle cx="12" cy="13" r="3.2" stroke="currentColor" stroke-width="1.6"/></svg>';
+
+/* ---------- borrador en el móvil ---------- */
+// Una visita a medias tiene que sobrevivir a cerrar la app o quedarse sin
+// cobertura en mitad de una casa.
+let avisoSinEspacio = false;
+function guardarBorradorVisita() {
+  if (!V.visitaDraft) return;
+  const b = { draft: V.visitaDraft, fichas: V.visitaFichas, fotos: V.visitaFotos, adjuntos: V.visitaAdjuntos, paso: V.visitaPaso };
+  try { localStorage.setItem(KEY_VISITA, JSON.stringify(b)); }
+  catch (e) {
+    // Sin sitio casi siempre es por las fotos: se guarda el resto.
+    try { localStorage.setItem(KEY_VISITA, JSON.stringify(Object.assign({}, b, { fotos: {} }))); } catch (_) {}
+    if (!avisoSinEspacio) { avisoSinEspacio = true; avisar('El móvil va justo de espacio: las fotos no se guardan si cierras la app. Guarda la visita en cuanto puedas.'); }
+  }
+}
+function leerBorradorVisita() {
+  try { const raw = localStorage.getItem(KEY_VISITA); return raw ? JSON.parse(raw) : null; } catch (e) { return null; }
+}
+function limpiarBorradorVisita() {
+  try { localStorage.removeItem(KEY_VISITA); } catch (e) {}
+  V.visitaDraft = null; V.visitaFichas = {}; V.visitaFotos = {}; V.visitaAdjuntos = []; V.visitaCat = null;
+}
+
+/* ---------- números ---------- */
+// "2.100", "9,5" y "120" tienen que llegar a la base como números.
+function numeroVisita(v, entero) {
+  if (v == null || v === '') return null;
+  if (typeof v === 'number') return v;
+  let s = String(v).trim().replace(/\s/g, '');
+  if (s.includes(',')) s = s.replace(/\./g, '').replace(',', '.');
+  else if (/^\d{1,3}(\.\d{3})+$/.test(s)) s = s.replace(/\./g, '');
+  const n = parseFloat(s);
+  if (!Number.isFinite(n)) return null;
+  return entero ? Math.round(n) : n;
+}
+function normalizarDatos(esquema, datos) {
+  const out = Object.assign({}, datos);
+  delete out._tocados;
+  for (const sec of esquema.secciones) {
+    for (const c of sec.campos) {
+      if (c.tipo === 'numero' || c.tipo === 'entero') out[c.key] = numeroVisita(out[c.key], c.tipo === 'entero');
+      if (c.tipo === 'lista' && Array.isArray(out[c.key])) {
+        out[c.key] = out[c.key].map((f) => {
+          const g = Object.assign({}, f);
+          (c.subcampos || []).forEach((s) => {
+            if (s.tipo === 'numero' || s.tipo === 'entero') g[s.key] = numeroVisita(g[s.key], s.tipo === 'entero');
+          });
+          return g;
+        });
+      }
+    }
+  }
+  return out;
+}
+
+function faltanVisita() {
+  const d = V.visitaDraft; const out = [];
+  if (!d) return out;
+  if (!d._cliente || !String(d._cliente.nombre || '').trim()) out.push('Cliente');
+  vSchemas.loQueFalta(vSchemas.COMUN, d).forEach((x) => out.push('Inmueble: ' + x.campo));
+  const cats = d.categorias || [];
+  if (!cats.length) out.push('Elegir al menos una categoría');
+  cats.forEach((c) => vSchemas.loQueFalta(vSchemas.ESQUEMAS[c], (V.visitaFichas[c] || {}).datos)
+    .forEach((x) => out.push(nombreCat(c) + ': ' + x.campo)));
+  return out;
+}
+
+/* ---------- fotos ---------- */
+const fotosDeCat = (c) => (vSchemas.ESQUEMAS[c] && vSchemas.ESQUEMAS[c].fotos_minimas) || [];
+// La foto local (recién hecha) manda sobre la ya subida. 'pendiente' = subida
+// pero todavía sin enlace firmado para verla.
+function fotoSrc(c, key, adjuntos = V.visitaAdjuntos) {
+  const local = (V.visitaFotos[c] || {})[key];
+  if (local) return local;
+  const adj = (adjuntos || []).slice().reverse().find((a) => a.campo_ref === c + '.' + key);
+  return adj ? (V.visitaFotoUrls[adj.storage_path] || 'pendiente') : null;
+}
+async function cargarUrlsFotos(adjuntos) {
+  const rutas = (adjuntos || []).map((a) => a.storage_path).filter((r) => r && !V.visitaFotoUrls[r]);
+  if (!rutas.length) return;
+  try { Object.assign(V.visitaFotoUrls, await visitasDB.urlsFotos(rutas)); render(); } catch (e) { /* sin miniaturas */ }
+}
+
+/* ---------- acciones ---------- */
+A.cargarVisitas = async () => {
+  if (V.visitasCargando) return;
+  V.visitasCargando = true;
+  try { V.visitas = await visitasDB.listarVisitas(); V.visitasError = null; }
+  catch (e) { V.visitasError = msgError(e); }
+  finally { V.visitasCargando = false; V.visitasCargadas = true; render(); }
+};
+
+function irVisitaPaso() { scrollMemo.visitaNueva = 0; V.view = 'visitaNueva'; render(); }
+
+A.nuevaVisita = () => {
+  if (leerBorradorVisita()) { toast('Tienes una visita a medias: síguela o descártala primero.'); return; }
+  V.visitaDraft = { id: crypto.randomUUID(), fecha_visita: hoyISO(), categorias: [], _tocados: {}, _cliente: null, _catsGuardadas: [] };
+  V.visitaFichas = {}; V.visitaFotos = {}; V.visitaAdjuntos = [];
+  V.visitaPaso = 1; V.visitaCat = null; V.visitaClientes = null; V.visitaBuscarTxt = '';
+  guardarBorradorVisita();
+  irVisitaPaso();
+};
+A.seguirBorrador = () => {
+  const b = leerBorradorVisita(); if (!b || !b.draft) return;
+  V.visitaDraft = b.draft; V.visitaFichas = b.fichas || {}; V.visitaFotos = b.fotos || {};
+  V.visitaAdjuntos = b.adjuntos || []; V.visitaPaso = b.paso || 1; V.visitaCat = null;
+  V.visitaClientes = null; V.visitaBuscarTxt = '';
+  irVisitaPaso();
+  cargarUrlsFotos(V.visitaAdjuntos);
+};
+let descartarT;
+A.descartarBorrador = () => {
+  if (!V.confirmarDescartar) {
+    V.confirmarDescartar = true; render();
+    clearTimeout(descartarT);
+    descartarT = setTimeout(() => { V.confirmarDescartar = false; if (V.view === 'visitas') render(); }, 3500);
+    return;
+  }
+  V.confirmarDescartar = false;
+  limpiarBorradorVisita();
+  toast('Visita descartada.');
+  render();
+};
+A.visitaSalir = () => { guardarBorradorVisita(); V.view = 'visitas'; render(); A.cargarVisitas(); };
+A.visitaPaso = (n) => {
+  n = Number(n);
+  if (n < 1) return A.visitaSalir();
+  if (n > 5) return;
+  V.visitaPaso = n; V.visitaCat = null;
+  guardarBorradorVisita();
+  irVisitaPaso();
+};
+
+// Cliente
+let buscarClienteT;
+A.visitaBuscar = (texto) => {
+  V.visitaBuscarTxt = texto;
+  clearTimeout(buscarClienteT);
+  buscarClienteT = setTimeout(async () => {
+    let lista = [], fallo = false;
+    try { lista = await visitasDB.buscarClientes(texto); } catch (e) { fallo = true; }
+    V.visitaClientes = lista; V.visitaClientesErr = fallo;
+    // Solo se repinta la lista: repintar la pantalla quitaría el teclado.
+    const box = document.getElementById('visita-resultados');
+    if (box) box.innerHTML = resultadosClientesHTML();
+  }, 300);
+};
+A.visitaElegirCliente = (id) => {
+  const c = (V.visitaClientes || []).find((x) => x.id === id); if (!c || !V.visitaDraft) return;
+  V.visitaDraft._cliente = { id: c.id, nombre: c.nombre, telefono: c.telefono || '', tl_id: c.tl_id || null, tl_tipo: c.tl_tipo || 'contact', nuevo: false };
+  guardarBorradorVisita(); render();
+};
+A.visitaClienteNuevo = () => {
+  if (!V.visitaDraft) return;
+  V.visitaDraft._cliente = { nombre: V.visitaBuscarTxt || '', telefono: '', nif: '', email: '', tl_tipo: 'contact', nuevo: true };
+  guardarBorradorVisita(); render();
+};
+A.visitaQuitarCliente = () => {
+  if (!V.visitaDraft) return;
+  V.visitaDraft._cliente = null; V.visitaClientes = null; V.visitaBuscarTxt = '';
+  guardarBorradorVisita(); render();
+};
+A.visitaCliTipo = (t) => {
+  const c = V.visitaDraft && V.visitaDraft._cliente; if (!c) return;
+  c.tl_tipo = t; guardarBorradorVisita(); render();
+};
+
+// Categorías y fichas
+A.visitaToggleCat = (c) => {
+  const d = V.visitaDraft; if (!d) return;
+  const cats = d.categorias || (d.categorias = []);
+  const i = cats.indexOf(c);
+  // Al desmarcar NO se borra lo ya rellenado: un toque sin querer no debe
+  // costar media ficha. Solo se deja de guardar.
+  if (i >= 0) cats.splice(i, 1); else cats.push(c);
+  guardarBorradorVisita(); render();
+};
+A.visitaCat = (c) => {
+  V.visitaCat = c || null;
+  if (c) {
+    const f = V.visitaFichas[c] || (V.visitaFichas[c] = { datos: {}, tocados: {} });
+    const esq = vSchemas.ESQUEMAS[c];
+    esq.secciones.forEach((s) => s.campos.forEach((k) => {
+      if (k.defecto != null && f.datos[k.key] == null) f.datos[k.key] = k.defecto;
+    }));
+    // Las propuestas dependen de datos del inmueble que pueden haber cambiado.
+    const p = vSchemas.proponer(c, f.datos, V.visitaDraft);
+    for (const [k, v] of Object.entries(p)) {
+      if (!f.tocados[k] && v != null && !Number.isNaN(v)) f.datos[k] = v;
+    }
+  }
+  guardarBorradorVisita();
+  scrollMemo.visitaNueva = 0;
+  render();
+};
+A.visitaIrFicha = (c) => { V.visitaPaso = 4; A.visitaCat(c); };
+
+// Único manejador del formulario: delega en visitas-form.js
+A.vf = (accion, d, valor) => {
+  const dr = V.visitaDraft; if (!dr) return;
+  const cat = V.visitaPaso === 4 ? V.visitaCat : null;
+  let estado, esquema = null;
+  if (cat) {
+    estado = V.visitaFichas[cat] || (V.visitaFichas[cat] = { datos: {}, tocados: {} });
+    esquema = vSchemas.ESQUEMAS[cat];
+  } else {
+    estado = { datos: dr, tocados: dr._tocados || (dr._tocados = {}) };
+  }
+  if (!vForm.manejar(accion, d, valor, estado, esquema, dr)) return;
+  guardarBorradorVisita();
+  // Los campos de texto no se repintan: perderían el foco y el cursor.
+  if (accion !== 'vfCampo' && accion !== 'vfLista') render();
+};
+
+A.visitaFoto = (c, key) => {
+  const inp = document.createElement('input');
+  inp.type = 'file'; inp.accept = 'image/*'; inp.capture = 'environment';
+  inp.onchange = async () => {
+    const file = inp.files && inp.files[0]; if (!file) return;
+    try {
+      const data = await comprimir(file);
+      (V.visitaFotos[c] || (V.visitaFotos[c] = {}))[key] = data;
+      guardarBorradorVisita(); render();
+    } catch (e) { avisar('No se pudo leer la foto.'); }
+  };
+  inp.click();
+};
+
+// Guardar (borrador o cerrada)
+A.guardarVisita = async (completar) => {
+  const d = V.visitaDraft; if (!d || V.visitaBusy) return;
+  const cats = d.categorias || [];
+  if (completar) {
+    const faltan = faltanVisita();
+    if (faltan.length) { avisar('Falta: ' + faltan.join(' · ')); return; }
+  }
+  if (!navigator.onLine) {
+    guardarBorradorVisita();
+    avisar('Sin conexión. La visita queda en el móvil: guárdala cuando haya cobertura.');
+    return;
+  }
+  V.visitaBusy = true; render();
+  try {
+    const cli = d._cliente;
+    if (cli && cli.nuevo && !cli.id && String(cli.nombre || '').trim()) {
+      const creado = await visitasDB.crearClienteLocal(Object.assign({}, cli, { nombre: cli.nombre.trim() }));
+      cli.id = creado.id; guardarBorradorVisita();
+    }
+    const comun = normalizarDatos(vSchemas.COMUN, d);
+    const fila = {
+      id: d.id,
+      fecha_visita: d.fecha_visita || hoyISO(),
+      cliente_id: (cli && cli.id) || null,
+      estado: completar ? 'completada' : 'borrador',
+      sync_estado: 'pendiente',
+      sync_error: null,
+    };
+    CAMPOS_COMUN.forEach((c) => {
+      let v = comun[c.key];
+      if (c.tipo === 'bool') v = v === true;
+      else if (v === '' || v === undefined) v = null;
+      fila[c.key] = v;
+    });
+    const guardada = await visitasDB.guardarOCrearVisita(fila);
+    d.codigo = guardada.codigo;
+
+    for (const c of cats) {
+      const f = V.visitaFichas[c] || { datos: {} };
+      const esq = vSchemas.ESQUEMAS[c];
+      await visitasDB.guardarFicha(d.id, c, normalizarDatos(esq, f.datos), vSchemas.VERSION, !vSchemas.loQueFalta(esq, f.datos).length);
+    }
+    for (const c of (d._catsGuardadas || [])) {
+      if (!cats.includes(c)) await visitasDB.quitarFicha(d.id, c);
+    }
+    d._catsGuardadas = cats.slice();
+    guardarBorradorVisita();
+
+    // Las fotos van una a una y se quitan del borrador según suben: si falla
+    // la quinta, las cuatro primeras no se vuelven a subir.
+    for (const c of Object.keys(V.visitaFotos)) {
+      if (!cats.includes(c)) continue;
+      for (const key of Object.keys(V.visitaFotos[c])) {
+        const etiqueta = (fotosDeCat(c).find((x) => x.key === key) || {}).etiqueta || key;
+        const adj = await visitasDB.subirFoto(d.id, { dataURL: V.visitaFotos[c][key], categoria: c, campoRef: c + '.' + key, descripcion: etiqueta });
+        V.visitaAdjuntos.push(adj);
+        delete V.visitaFotos[c][key];
+        guardarBorradorVisita();
+      }
+    }
+
+    limpiarBorradorVisita();
+    V.visitaBusy = false;
+    toast(completar ? 'Visita cerrada. Ya se puede enviar a Teamleader.' : 'Guardada. La sigues cuando quieras.');
+    if (completar) { A.cargarVisitas(); return A.verVisita(guardada.id); }
+    V.view = 'visitas'; render(); A.cargarVisitas();
+  } catch (e) {
+    V.visitaBusy = false; guardarBorradorVisita(); render();
+    avisar('No se pudo guardar: ' + msgError(e) + '. La visita sigue en el móvil.');
+  }
+};
+
+A.abrirVisita = (id) => {
+  const v = (V.visitas || []).find((x) => x.id === id);
+  if (v && v.estado === 'borrador') return A.editarVisita(id);
+  return A.verVisita(id);
+};
+A.editarVisita = async (id) => {
+  if (leerBorradorVisita()) { toast('Primero termina o descarta la visita que tienes a medias.'); return; }
+  if (V.visitaBusy) return;
+  V.visitaBusy = true; render();
+  try {
+    const { visita, fichas, adjuntos } = await visitasDB.verVisita(id);
+    const cats = fichas.map((f) => f.categoria);
+    const d = Object.assign({}, visita, { _tocados: {}, categorias: cats, _catsGuardadas: cats.slice() });
+    d._cliente = visita.cliente
+      ? { id: visita.cliente.id, nombre: visita.cliente.nombre, telefono: visita.cliente.telefono || '', tl_id: visita.cliente.tl_id || null, tl_tipo: visita.cliente.tl_tipo || 'contact', nuevo: false }
+      : null;
+    delete d.cliente;
+    Object.keys(d).forEach((k) => { if (d[k] != null && CAMPOS_COMUN.some((c) => c.key === k)) d._tocados[k] = true; });
+    V.visitaDraft = d;
+    V.visitaFichas = {};
+    fichas.forEach((f) => {
+      const tocados = {};
+      Object.keys(f.datos || {}).forEach((k) => { if (f.datos[k] != null) tocados[k] = true; });
+      V.visitaFichas[f.categoria] = { datos: f.datos || {}, tocados };
+    });
+    V.visitaFotos = {}; V.visitaAdjuntos = adjuntos || [];
+    V.visitaPaso = cats.length ? 4 : 1; V.visitaCat = null;
+    guardarBorradorVisita();
+    V.visitaBusy = false;
+    irVisitaPaso();
+    cargarUrlsFotos(V.visitaAdjuntos);
+  } catch (e) {
+    V.visitaBusy = false; render();
+    avisar('No se pudo abrir la visita: ' + msgError(e));
+  }
+};
+A.verVisita = async (id) => {
+  V.visitaVer = null; V.view = 'visita'; scrollMemo.visita = 0; render();
+  try {
+    V.visitaVer = await visitasDB.verVisita(id);
+    render();
+    cargarUrlsFotos(V.visitaVer.adjuntos);
+  } catch (e) {
+    avisar('No se pudo abrir la visita: ' + msgError(e));
+    V.view = 'visitas'; render();
+  }
+};
+A.enviarVisita = async () => {
+  const vv = V.visitaVer; if (!vv || V.visitaBusy) return;
+  if (!navigator.onLine) { avisar('Sin conexión. Envíala cuando haya cobertura.'); return; }
+  V.visitaBusy = true; render();
+  const id = vv.visita.id;
+  try {
+    await visitasDB.enviarATeamleader(id);
+    toast('Enviada a Teamleader.');
+  } catch (e) {
+    const status = e && e.context && e.context.status;
+    const sinFuncion = status === 404 || /FunctionsFetchError|FunctionsRelayError|failed to send|failed to fetch/i.test(((e && e.name) || '') + ' ' + msgError(e));
+    const msg = sinFuncion ? 'Teamleader todavía no está conectado a la app.' : msgError(e);
+    try { await visitasDB.guardarVisita(id, { sync_estado: 'error', sync_error: msg }); } catch (_) {}
+    avisar('No se pudo enviar: ' + msg + ' La visita no se pierde.');
+  }
+  V.visitaBusy = false;
+  A.cargarVisitas();
+  await A.verVisita(id);
+};
+
+/* ---------- vistas ---------- */
+function vVisitas() {
+  const b = leerBorradorVisita();
+  const idLocal = b && b.draft ? b.draft.id : null;
+  const lista = V.visitas || [];
+  const sinCerrar = lista.filter((v) => v.estado === 'borrador' && v.id !== idLocal);
+  const porEnviar = lista.filter((v) => v.estado === 'completada' && v.sync_estado !== 'sincronizada');
+  const enTL = lista.filter((v) => v.sync_estado === 'sincronizada');
+
+  const estado = (v) => v.sync_estado === 'sincronizada' ? ['var(--verde)', 'En Teamleader' + (v.sync_at ? ' · ' + fechaCorta(v.sync_at) : '')]
+    : v.estado === 'completada' && v.sync_estado === 'error' ? ['var(--rojo)', 'No se pudo enviar']
+    : v.estado === 'completada' ? ['var(--tinta)', 'Cerrada · por enviar']
+    : ['var(--ambar)', 'Borrador'];
+
+  const tarjeta = (v) => {
+    const [color, texto] = estado(v);
+    const cats = (v.fichas || []).map((f) => f.categoria);
+    return `<div class="card" data-a="abrirVisita" data-id="${v.id}" style="margin-bottom:11px;cursor:pointer">
+      <div class="row g8"><span class="dot" style="width:8px;height:8px;background:${color}"></span><span class="lbl"${color === 'var(--rojo)' ? ' style="color:var(--rojo)"' : ''}>${esc(texto)}</span><div class="grow"></div><span class="tiny">${esc(v.codigo || '')}</span></div>
+      <div class="h2" style="margin-top:9px">${esc(v.direccion || 'Sin dirección')}</div>
+      <div class="sub" style="margin-top:4px">${esc([v.cliente && v.cliente.nombre, v.poblacion].filter(Boolean).join(' · ') || 'Sin cliente')}</div>
+      <div class="row" style="gap:6px;flex-wrap:wrap;margin-top:13px;padding-top:12px;border-top:1px solid var(--l1)">
+        ${cats.map((c) => `<span class="badge" style="background:rgba(20,23,15,.06);color:var(--tinta)">${esc(nombreCat(c))}</span>`).join('')}
+        <div class="grow"></div><span class="tiny">${v.fecha_visita ? fechaCorta(v.fecha_visita + 'T12:00') : ''}</span>
+      </div>
+    </div>`;
+  };
+
+  const medias = b && b.draft ? `<div class="card" style="margin-bottom:11px;box-shadow:0 0 0 1.5px var(--ambar),var(--sh)">
+      <div class="row g8"><span class="dot" style="width:8px;height:8px;background:var(--ambar)"></span><span class="lbl">A medias en este móvil · paso ${b.paso || 1} de 5</span></div>
+      <div class="h2" style="margin-top:9px">${esc(b.draft.direccion || 'Visita sin dirección')}</div>
+      <div class="sub" style="margin-top:4px">${esc([(b.draft._cliente || {}).nombre, b.draft.poblacion].filter(Boolean).join(' · ') || 'Sin cliente todavía')}</div>
+      <div class="row g8" style="margin-top:13px">
+        <button class="pill pill-verde grow" data-a="seguirBorrador" style="padding:13px">Seguir</button>
+        <button class="pill ${V.confirmarDescartar ? 'pill-rojo' : ''}" data-a="descartarBorrador" style="padding:13px">${V.confirmarDescartar ? '¿Seguro? Otra vez' : 'Descartar'}</button>
+      </div>
+    </div>` : '';
+
+  const grupos = [];
+  if (medias || sinCerrar.length) grupos.push(['Sin cerrar', medias + sinCerrar.map(tarjeta).join('')]);
+  if (porEnviar.length) grupos.push(['Por enviar', porEnviar.map(tarjeta).join('')]);
+  if (enTL.length) grupos.push(['En Teamleader', enTL.map(tarjeta).join('')]);
+
+  let aviso = '';
+  if (V.visitasError) {
+    const faltaSQL = /does not exist|PGRST205|schema cache|relation/i.test(V.visitasError);
+    aviso = `<div class="card" style="background:var(--rojo-cl);margin-bottom:14px">
+      <div style="font:600 14px var(--sans);color:var(--rojo)">${faltaSQL ? 'Falta preparar la base de datos' : 'No se pudieron cargar las visitas'}</div>
+      <div class="sub" style="font-size:13px;margin-top:6px;color:var(--rojo)">${faltaSQL ? 'Hay que ejecutar sql/etapa20_toma_datos.sql en Supabase.' : esc(V.visitasError)}</div>
+    </div>`;
+  }
+
+  const n = (x) => x.length;
+  return `<div class="hdr">
+    ${marcaSysefen(false)}
+    <div class="row" style="justify-content:space-between">
+      <div class="h1">Visitas</div>
+      <button class="pill" data-a="nuevaVisita" style="background:var(--tinta);color:#fff">+ Nueva</button>
+    </div>
+    <div class="sub" style="margin-top:8px">${V.visitasCargadas ? `${n(sinCerrar) + (medias ? 1 : 0)} sin cerrar · ${n(porEnviar)} por enviar · ${n(enTL)} en Teamleader` : 'Cargando…'}</div>
+  </div>
+  <div class="scroll pad pb-nav">
+    ${aviso}
+    ${grupos.map(([t, html], i) => `<div class="lbl" style="margin:${i ? 22 : 0}px 0 10px">${t}</div>${html}`).join('')}
+    ${!grupos.length && V.visitasCargadas && !V.visitasError ? `<div class="card"><div class="h2">Sin visitas todavía</div><div class="sub" style="margin-top:6px">Dale a «+ Nueva» cuando llegues a casa del cliente.</div></div>` : ''}
+  </div>`;
+}
+
+function resultadosClientesHTML() {
+  if (V.visitaClientesErr) return '<div class="sub">No se pudo buscar. Si no hay cobertura, da de alta el cliente a mano.</div>';
+  const l = V.visitaClientes;
+  if (!l) return '';
+  if (!l.length) return String(V.visitaBuscarTxt || '').trim().length < 2 ? '' : '<div class="sub">No aparece. Dalo de alta abajo.</div>';
+  return l.map((c) => `<div class="card row" data-a="visitaElegirCliente" data-id="${c.id}" style="cursor:pointer">
+    <div class="av" style="width:38px;height:38px;background:rgba(20,23,15,.06);color:var(--t2);font-size:14px">${esc(inicialesCli(c.nombre))}</div>
+    <div class="grow"><div style="font:600 16px/1.2 var(--sans)">${esc(c.nombre)}</div>
+    <div class="sub" style="margin-top:2px">${esc([tipoCliente(c), c.telefono, c.pendiente_alta ? 'pendiente de alta' : ''].filter(Boolean).join(' · '))}</div></div>
+  </div>`).join('');
+}
+
+function fotosHTML(c) {
+  const fotos = fotosDeCat(c); if (!fotos.length) return '';
+  const hechas = fotos.filter((f) => fotoSrc(c, f.key)).length;
+  return `<div>
+    <div class="row" style="justify-content:space-between;align-items:baseline"><div class="h2">Fotos</div><span class="tiny">${hechas} de ${fotos.length}</span></div>
+    <div class="rej2" style="margin-top:12px">${fotos.map((f) => {
+      const src = fotoSrc(c, f.key);
+      if (!src) return `<div class="foto-hueco" data-a="visitaFoto" data-c="${c}" data-k="${esc(f.key)}">${SVG_CAMARA}<span>${esc(f.etiqueta)}</span></div>`;
+      const fondo = src === 'pendiente' ? '' : `background-image:url('${src}')`;
+      return `<div class="foto-v" data-a="visitaFoto" data-c="${c}" data-k="${esc(f.key)}" style="${fondo}"><em>${SVG_TICK('#fff', 11)}</em><span>${esc(f.etiqueta)}</span></div>`;
+    }).join('')}</div>
+  </div>`;
+}
+
+function vVisitaNueva() {
+  const d = V.visitaDraft;
+  if (!d) { V.view = 'visitas'; return vVisitas(); }
+  const p = V.visitaPaso;
+  const cats = d.categorias || [];
+  const cli = d._cliente;
+  let titulo = PASOS_VISITA[p - 1];
+  let sub = 'Paso ' + p + ' de 5';
+  let volver = '<div class="volver" data-a="visitaSalir">‹ Visitas</div>';
+  let cuerpo = '';
+  const atras = `<button class="btn btn-gris" data-a="visitaPaso" data-n="${p - 1}">Atrás</button>`;
+  const siguiente = `<button class="btn btn-verde" data-a="visitaPaso" data-n="${p + 1}">Siguiente</button>`;
+  let pie = atras + siguiente;
+  let pieCol = false;
+
+  if (p === 1) {
+    sub += ' · ' + (d.codigo || 'Nueva visita');
+    pie = siguiente;
+    if (cli && !cli.nuevo) {
+      cuerpo = `<div class="lbl" style="margin-bottom:10px">Cliente</div>
+        <div class="card row elegida">
+          <div class="av" style="width:38px;height:38px;background:rgba(61,143,74,.14);color:var(--verde-o);font-size:14px">${esc(inicialesCli(cli.nombre))}</div>
+          <div class="grow"><div style="font:600 16px/1.2 var(--sans)">${esc(cli.nombre)}</div>
+          <div class="sub" style="margin-top:2px">${esc([tipoCliente(cli), cli.telefono].filter(Boolean).join(' · '))}</div></div>
+          <div class="tick si">${SVG_TICK()}</div>
+        </div>
+        <button class="btn btn-gris" data-a="visitaQuitarCliente" style="margin-top:12px">Cambiar de cliente</button>`;
+    } else if (cli && cli.nuevo) {
+      cuerpo = `<div class="lbl">Cliente nuevo</div>
+        <div class="wrap" style="margin-top:10px">
+          <span class="chip ${cli.tl_tipo !== 'company' ? 'sel' : ''}" data-a="visitaCliTipo" data-t="contact" style="cursor:pointer">Particular</span>
+          <span class="chip ${cli.tl_tipo === 'company' ? 'sel' : ''}" data-a="visitaCliTipo" data-t="company" style="cursor:pointer">Empresa o comunidad</span>
+        </div>
+        <div class="campo"><div class="lbl">Nombre<span style="color:var(--rojo)"> *</span></div>
+          <input class="inp" id="visita-cli-nombre" data-f="visitaCli" data-k="nombre" value="${esc(cli.nombre || '')}" placeholder="${cli.tl_tipo === 'company' ? 'Razón social' : 'Nombre y apellidos'}"></div>
+        <div class="campo"><div class="lbl">Teléfono</div>
+          <input class="inp" id="visita-cli-tel" data-f="visitaCli" data-k="telefono" type="tel" inputmode="tel" value="${esc(cli.telefono || '')}"></div>
+        <div class="campo"><div class="lbl">NIF / CIF</div>
+          <input class="inp" id="visita-cli-nif" data-f="visitaCli" data-k="nif" autocapitalize="characters" value="${esc(cli.nif || '')}"></div>
+        <div class="campo"><div class="lbl">Email</div>
+          <input class="inp" id="visita-cli-email" data-f="visitaCli" data-k="email" type="email" inputmode="email" autocapitalize="off" value="${esc(cli.email || '')}"></div>
+        <div class="tiny" style="margin-top:10px">Se da de alta en Teamleader al enviar la visita.</div>
+        <div class="dash" data-a="visitaQuitarCliente" style="margin-top:18px">Buscar uno que ya exista</div>`;
+    } else {
+      cuerpo = `<div class="campo" style="margin-top:0"><div class="lbl">Buscar en Teamleader</div>
+          <input class="inp" id="visita-buscar" data-f="visitaBuscar" value="${esc(V.visitaBuscarTxt || '')}" placeholder="Nombre, NIF o teléfono" autocomplete="off">
+          <div class="tiny">Busca en la copia de clientes de la app.</div></div>
+        <div id="visita-resultados" class="col g8" style="margin-top:18px">${resultadosClientesHTML()}</div>
+        <div class="dash" data-a="visitaClienteNuevo" style="margin-top:14px">+ Cliente nuevo</div>`;
+    }
+
+  } else if (p === 2) {
+    if (cli && cli.nombre) sub += ' · ' + cli.nombre;
+    cuerpo = vForm.fichaHTML(vSchemas.COMUN, d, d._tocados || {});
+
+  } else if (p === 3) {
+    sub += ' · Puedes marcar varias';
+    cuerpo = `<div class="col g10">${vSchemas.CATEGORIAS.map((c) => {
+      const on = cats.includes(c.key);
+      const esq = vSchemas.ESQUEMAS[c.key];
+      const nf = fotosDeCat(c.key).length;
+      return `<div class="card row ${on ? 'elegida' : ''}" data-a="visitaToggleCat" data-c="${c.key}" style="cursor:pointer">
+        <div class="grow"><div style="font:600 17px/1.2 var(--sans)">${esc(c.nombre)}</div>
+        <div class="sub" style="margin-top:3px">${esc(esq.secciones.slice(0, 4).map((s) => s.titulo).join(' · '))}</div>
+        ${nf ? `<div class="tiny" style="margin-top:7px">${nf} fotos mínimas</div>` : ''}</div>
+        <div class="tick ${on ? 'si' : 'no'}">${on ? SVG_TICK() : SVG_MAS}</div>
+      </div>`;
+    }).join('')}</div>`;
+
+  } else if (p === 4 && V.visitaCat && cats.includes(V.visitaCat)) {
+    const c = V.visitaCat;
+    const esq = vSchemas.ESQUEMAS[c];
+    const f = V.visitaFichas[c] || { datos: {}, tocados: {} };
+    const faltan = vSchemas.loQueFalta(esq, f.datos).length;
+    titulo = nombreCat(c);
+    sub += faltan ? ` · Faltan ${faltan} obligatorio${faltan === 1 ? '' : 's'}` : ' · Todo lo obligatorio';
+    volver = '<div class="volver" data-a="visitaCat" data-c="">‹ Fichas</div>';
+    cuerpo = fotosHTML(c) + vForm.fichaHTML(esq, f.datos, f.tocados);
+    pie = '<button class="btn btn-verde" data-a="visitaCat" data-c="">Volver a fichas</button>';
+
+  } else if (p === 4) {
+    if (d.direccion) sub += ' · ' + d.direccion;
+    if (!cats.length) {
+      cuerpo = `<div class="card"><div class="h2">Sin categorías</div>
+        <div class="sub" style="margin-top:6px">Vuelve un paso y marca qué se presupuesta.</div></div>`;
+    } else {
+      cuerpo = `<div class="col g10">${cats.map((c) => {
+        const esq = vSchemas.ESQUEMAS[c];
+        const datos = (V.visitaFichas[c] || {}).datos;
+        const faltan = vSchemas.loQueFalta(esq, datos);
+        const total = esq.secciones.reduce((t, s) => t + s.campos.filter((k) => k.obligatorio).length, 0) || 1;
+        const pct = Math.round(((total - faltan.length) / total) * 100);
+        const fotos = fotosDeCat(c);
+        const hechas = fotos.filter((x) => fotoSrc(c, x.key)).length;
+        return `<div class="card" data-a="visitaCat" data-c="${c}" style="cursor:pointer">
+          <div class="row">
+            <div class="grow" style="font:600 17px/1.2 var(--sans)">${esc(nombreCat(c))}</div>
+            ${faltan.length ? `<span class="pill" style="padding:8px 11px">Faltan ${faltan.length}</span>` : '<span class="pill pill-verde" style="padding:8px 11px">Completa</span>'}
+            ${SVG_CHEV}
+          </div>
+          <div class="prog"><i style="width:${pct}%"></i></div>
+          <div class="row" style="justify-content:space-between;margin-top:9px;gap:12px">
+            <span class="tiny ell">${esc(faltan.length ? faltan.map((x) => x.campo).join(' · ') : 'Todo lo obligatorio')}</span>
+            ${fotos.length ? `<span class="tiny" style="flex:none">${hechas}/${fotos.length} fotos</span>` : ''}
+          </div>
+        </div>`;
+      }).join('')}</div>
+      <div class="tiny" style="margin-top:16px">Se puede seguir con alguna a medias. Todo se exige al cerrar la visita.</div>`;
+    }
+
+  } else {
+    sub += ' · Repasa antes de cerrar';
+    const faltan = faltanVisita();
+    const bloqueo = faltan.length ? `<div class="aviso-rojo" style="margin-bottom:14px"><span class="ex">!</span>
+        <div class="col" style="gap:3px"><b style="font:600 13px/1.3 var(--sans)">${faltan.length === 1 ? 'Falta 1 dato' : 'Faltan ' + faltan.length + ' datos'} para cerrar</b>
+        <span style="font:400 12px/1.4 var(--sans)">${esc(faltan.join(' · '))}</span></div></div>` : '';
+    const tarjetaResumen = (titulo2, accion, html) => `<div class="card" style="margin-bottom:10px;padding:13px 15px 8px">
+        <div class="row" style="justify-content:space-between"><div class="h2" style="font-size:17px">${esc(titulo2)}</div>${accion}</div>
+        ${html}
+      </div>`;
+    cuerpo = bloqueo
+      + tarjetaResumen(cli && cli.nombre ? cli.nombre : 'Sin cliente', '<span class="tiny" data-a="visitaPaso" data-n="2" style="cursor:pointer;color:var(--verde-o)">Editar</span>', vForm.resumenHTML(vSchemas.COMUN, d))
+      + cats.map((c) => {
+        const fotos = fotosDeCat(c);
+        const hechas = fotos.filter((x) => fotoSrc(c, x.key)).length;
+        return tarjetaResumen(nombreCat(c), `<span class="tiny" data-a="visitaIrFicha" data-c="${c}" style="cursor:pointer;color:var(--verde-o)">Editar</span>`,
+          (fotos.length ? `<div class="tiny" style="margin-top:6px">${hechas} de ${fotos.length} fotos</div>` : '')
+          + vForm.resumenHTML(vSchemas.ESQUEMAS[c], (V.visitaFichas[c] || {}).datos));
+      }).join('');
+    pieCol = true;
+    pie = `<button class="btn btn-verde" data-a="guardarVisita" data-completar="1" ${faltan.length || V.visitaBusy ? 'disabled' : ''}>${V.visitaBusy ? 'Guardando…' : 'Cerrar la visita'}</button>
+      <button class="btn btn-gris" data-a="guardarVisita" ${V.visitaBusy ? 'disabled' : ''}>Guardar y seguir luego</button>`;
+  }
+
+  return `<div class="hdr-dark">
+    ${volver}
+    <div style="font:600 27px/1.1 var(--cond)">${esc(titulo)}</div>
+    <div class="sub" style="color:rgba(255,255,255,.5);margin-top:6px">${esc(sub)}</div>
+    <div class="pasos">${[1, 2, 3, 4, 5].map((i) => `<i class="${i <= p ? 'on' : ''}" data-a="visitaPaso" data-n="${i}" style="cursor:pointer"></i>`).join('')}</div>
+  </div>
+  <div class="scroll pad sin-marca" style="padding-bottom:30px">${cuerpo}</div>
+  <div class="pie${pieCol ? ' col' : ''}">${pie}</div>`;
+}
+
+function vVisita() {
+  const vv = V.visitaVer;
+  const cab = (t, s) => `<div class="hdr-dark">
+    <div class="volver" data-a="ir" data-v="visitas">‹ Visitas</div>
+    <div style="font:600 27px/1.1 var(--cond)">${esc(t)}</div>
+    ${s ? `<div class="sub" style="color:rgba(255,255,255,.5);margin-top:6px">${esc(s)}</div>` : ''}
+  </div>`;
+  if (!vv) return cab('Visita', 'Cargando…') + '<div class="scroll pad pb-nav sin-marca"></div>';
+
+  const v = vv.visita, fichas = vv.fichas || [], adj = vv.adjuntos || [];
+  const cli = v.cliente;
+  const cats = fichas.map((f) => f.categoria);
+  const enviada = v.sync_estado === 'sincronizada';
+  const fotosN = adj.filter((a) => a.tipo === 'foto' || !a.tipo).length;
+
+  let bloque = '';
+  if (enviada) {
+    bloque = `<div class="card">
+      <div class="row g8"><span class="dot" style="width:8px;height:8px;background:var(--verde)"></span><span class="lbl">En Teamleader</span></div>
+      <div class="viaja">
+        ${v.sync_at ? `<span class="k">Enviada</span><span class="v">${fechaCorta(v.sync_at)} · ${hhmm(v.sync_at)}</span>` : ''}
+        <span class="k">Deal</span><span class="v">${esc(cats.map(nombreCat).join(' + ') || '—')}<small>${esc([v.poblacion, v.tl_deal_fase].filter(Boolean).join(' · '))}</small></span>
+      </div>
+      <div class="tiny" style="margin-top:14px">Ya no se edita desde el móvil. Si hay que corregir algo, se hace en Teamleader.</div>
+    </div>`;
+  } else if (v.estado === 'completada') {
+    const error = v.sync_estado === 'error';
+    bloque = `<div class="card">
+      <div class="row g8"><span class="dot" style="width:8px;height:8px;background:${error ? 'var(--rojo)' : 'var(--tinta)'}"></span><span class="lbl"${error ? ' style="color:var(--rojo)"' : ''}>${error ? 'No se pudo enviar' : 'Cerrada · por enviar'}</span></div>
+      ${error && v.sync_error ? `<div class="aviso-rojo" style="margin-top:12px"><span class="ex">!</span><span style="font:400 13px/1.4 var(--sans)">${esc(v.sync_error)}</span></div>` : ''}
+      <div class="viaja">
+        <span class="k">Cliente</span><span class="v">${esc(cli ? cli.nombre : 'Sin cliente')}<small>${cli ? (cli.tl_id ? 'Ya existe en Teamleader' : 'Se da de alta al enviar') : 'Se enviará sin cliente'}</small></span>
+        <span class="k">Deal</span><span class="v">${esc(cats.map(nombreCat).join(' + ') || '—')}<small>${esc(v.poblacion || '')}</small></span>
+        <span class="k">Nota</span><span class="v">${fichas.length === 1 ? 'La ficha en texto' : 'Las ' + fichas.length + ' fichas en texto'}</span>
+        <span class="k">Fotos</span><span class="v">${fotosN} ${fotosN === 1 ? 'archivo' : 'archivos'}</span>
+      </div>
+      <button class="btn btn-verde" data-a="enviarVisita" style="margin-top:16px" ${V.visitaBusy ? 'disabled' : ''}>${V.visitaBusy ? 'Enviando…' : error ? 'Reintentar el envío' : 'Enviar a Teamleader'}</button>
+      <button class="btn btn-gris" data-a="editarVisita" data-id="${v.id}" style="margin-top:8px">Corregir algo</button>
+    </div>`;
+  } else {
+    bloque = `<div class="card">
+      <div class="row g8"><span class="dot" style="width:8px;height:8px;background:var(--ambar)"></span><span class="lbl">Borrador</span></div>
+      <div class="sub" style="margin-top:8px">Todavía no está cerrada.</div>
+      <button class="btn btn-verde" data-a="editarVisita" data-id="${v.id}" style="margin-top:14px">Seguir rellenando</button>
+    </div>`;
+  }
+
+  const miniaturas = (c) => {
+    const lista = adj.filter((a) => String(a.campo_ref || '').startsWith(c + '.'));
+    if (!lista.length) return '';
+    return `<div class="rej3" style="margin-top:10px">${lista.map((a) => {
+      const url = V.visitaFotoUrls[a.storage_path];
+      return `<div class="foto-v" style="${url ? `background-image:url('${url}')` : ''};cursor:default"><span>${esc(a.descripcion || '')}</span></div>`;
+    }).join('')}</div>`;
+  };
+
+  return cab(v.direccion || 'Visita', [cli && cli.nombre, v.poblacion, v.codigo].filter(Boolean).join(' · '))
+    + `<div class="scroll pad pb-nav sin-marca">
+      ${bloque}
+      <div class="lbl" style="margin:24px 0 10px">Inmueble</div>
+      <div class="card" style="padding:4px 15px 10px">${vForm.resumenHTML(vSchemas.COMUN, v)}</div>
+      ${fichas.map((f) => `<div class="lbl" style="margin:24px 0 10px">${esc(nombreCat(f.categoria))}</div>
+        <div class="card" style="padding:4px 15px 12px">
+          ${miniaturas(f.categoria)}
+          ${vForm.resumenHTML(vSchemas.ESQUEMAS[f.categoria], f.datos)}
+        </div>`).join('')}
+    </div>`;
+}
+
 /* --- nav --- */
 function nav(v) {
-  const items = esAdmin()
+  const items = esPresupuestos()
+    ? [['visitas', 'Visitas', '5px'], ['ajustes', 'Perfil', '99px']]
+    : esAdmin()
     ? [['hoy', 'Hoy', '99px'], ['empleados', 'Empleados', '4px'], ['obras', 'Obras', '5px'], ['partes', 'Partes', '3px'], ['horas', 'Horas', '2px'], ['ajustes', 'Ajustes', '99px']]
     : puedeCrear()
     ? [['hoy', 'Hoy', '99px'], ['obras', 'Obras', '5px'], ['partes', 'Partes', '3px'], ['horas', 'Horas', '2px'], ['ajustes', 'Ajustes', '99px']]
@@ -3975,7 +4725,8 @@ function nav(v) {
   const act = (id) => v === id
     || (id === 'obras' && v === 'obra')
     || (id === 'horas' && v === 'imputar')
-    || (id === 'empleados' && (v === 'empleado' || v === 'planilla'));
+    || (id === 'empleados' && (v === 'empleado' || v === 'planilla'))
+    || (id === 'visitas' && v === 'visita');
   return `<div class="nav">${items.map(([id, l, r]) => `<div class="${act(id) ? 'on' : ''}" data-a="ir" data-v="${id}"><i style="border-radius:${r}"></i><span>${l}</span></div>`).join('')}</div>`;
 }
 
@@ -3987,7 +4738,7 @@ function sheet() {
     return `<div class="sheet"><div>
       ${avatarHTML(u.id, 'width:52px;height:52px;font-size:22px;background:rgba(20,23,15,.08);color:var(--tinta)')}
       <div style="font:600 22px/1.15 var(--cond);margin-top:14px">${esc(u.nombre)}</div>
-      <div class="sub" style="margin-top:4px">${u.rol === 'admin' ? 'Administración' : u.rol === 'jefe' ? 'Jefe de obra' : 'Operario'}</div>
+      <div class="sub" style="margin-top:4px">${rolNombre(u.rol)}</div>
       <button class="btn btn-gris" data-a="abrirAvatar" style="margin-top:18px;border-radius:14px">Cambiar mi foto</button>
       <div class="row g8" style="margin-top:8px">
         <button class="btn btn-gris" data-a="cerrarSheet" style="border-radius:99px">Cancelar</button>
@@ -4443,6 +5194,24 @@ document.addEventListener('click', (e) => {
   if (!el) return;
   const a = el.dataset.a;
   const d = el.dataset;
+  if (a.startsWith('vf')) return A.vf(a, d);
+  if (a === 'nuevaVisita') return A.nuevaVisita();
+  if (a === 'seguirBorrador') return A.seguirBorrador();
+  if (a === 'descartarBorrador') return A.descartarBorrador();
+  if (a === 'visitaSalir') return A.visitaSalir();
+  if (a === 'visitaPaso') return A.visitaPaso(d.n);
+  if (a === 'visitaElegirCliente') return A.visitaElegirCliente(d.id);
+  if (a === 'visitaClienteNuevo') return A.visitaClienteNuevo();
+  if (a === 'visitaQuitarCliente') return A.visitaQuitarCliente();
+  if (a === 'visitaCliTipo') return A.visitaCliTipo(d.t);
+  if (a === 'visitaToggleCat') return A.visitaToggleCat(d.c);
+  if (a === 'visitaCat') return A.visitaCat(d.c);
+  if (a === 'visitaIrFicha') return A.visitaIrFicha(d.c);
+  if (a === 'visitaFoto') return A.visitaFoto(d.c, d.k);
+  if (a === 'guardarVisita') return A.guardarVisita(d.completar === '1');
+  if (a === 'abrirVisita') return A.abrirVisita(d.id);
+  if (a === 'editarVisita') return A.editarVisita(d.id);
+  if (a === 'enviarVisita') return A.enviarVisita();
   if (a === 'elegirUser') return A.elegirUser(d.id);
   if (a === 'pinTecla') return A.pinTecla(d.k);
   if (a === 'volverLogin') return A.volverLogin();
@@ -4566,6 +5335,9 @@ document.addEventListener('input', (e) => {
     return;
   }
   if (!f) return;
+  if (f.startsWith('vf')) return A.vf(f, t.dataset, t.value);
+  if (f === 'visitaBuscar') return A.visitaBuscar(t.value);
+  if (f === 'visitaCli') { const c = V.visitaDraft && V.visitaDraft._cliente; if (c) { c[t.dataset.k] = t.value; guardarBorradorVisita(); } return; }
   if (f === 'impFecha') return A.impFecha(t.value);
   if (f === 'parteFecha') return A.parteFecha(t.value);
   if (f === 'empNombre') { A.empCampo('nombre', t.value); return; }
