@@ -1,12 +1,11 @@
 // =============================================================================
 // Sysefen · Edge Function `enviar-parte`
 //
-// Envía el PDF de un parte por correo con Resend, desde partes@sysefen.es.
+// Envía el PDF de un parte por correo con Resend, desde noreply@sysefen.com,
+// con copia oculta (BCC) siempre a partes@sysefen.com.
 //
 // SECRETOS (Supabase → Edge Functions → Secrets). Nunca en el código ni en Git:
 //   RESEND_API_KEY   la clave de Resend (empieza por re_...)
-//   REMITENTE        opcional; por defecto "Sysefen <partes@sysefen.es>"
-//   RESPONDER_A      opcional; a dónde van las respuestas del cliente
 //
 // SEGURIDAD:
 //   - Solo la ejecuta alguien con sesión (verify_jwt de Supabase).
@@ -34,8 +33,8 @@ Deno.serve(async (req) => {
 
   const CLAVE = Deno.env.get('RESEND_API_KEY');
   if (!CLAVE) return json({ error: 'Falta el secreto RESEND_API_KEY en Supabase.' }, 500);
-  const REMITENTE = Deno.env.get('REMITENTE') || 'Sysefen <partes@sysefen.es>';
-  const RESPONDER_A = Deno.env.get('RESPONDER_A') || undefined;
+  const REMITENTE = 'Sysefen <noreply@sysefen.com>';
+  const COPIA_OCULTA = 'partes@sysefen.com';
 
   // --- quién llama y con qué rol --------------------------------------------
   const autorizacion = req.headers.get('Authorization') || '';
@@ -72,7 +71,7 @@ Deno.serve(async (req) => {
       from: REMITENTE,
       to: para,
       cc: copia.length ? copia : undefined,
-      reply_to: RESPONDER_A,
+      bcc: [COPIA_OCULTA],
       subject: asunto,
       text: texto,
       attachments: [{ filename: archivo, content: pdf }],
