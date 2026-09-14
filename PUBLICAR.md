@@ -17,7 +17,13 @@ Se puede seguir la construcción en la pestaña **Actions** del repositorio
 **COMPROBAR SIEMPRE que la versión publicada es la nueva**, no dar por hecho que
 subió:
 
-    curl -s "https://celfaen-kp.github.io/PRoiextemx6.55236.515151.16564646.5/index.html?x=1" | grep APP_VERSION
+    curl -s "https://celfaen-kp.github.io/PRoiextemx6.55236.515151.16564646.5/" | grep APP_VERSION
+
+Con la URL **tal cual**, sin `?algo=` al final. GitHub Pages sirve la app con
+`Cache-Control: max-age=600`, y un `?x=1` se salta esa caché: te dice que la
+versión nueva está publicada aunque los móviles aún no la vean. Pasó con la
+10.0. Desde la 10.1 el service worker pregunta siempre al servidor
+(`cache: 'no-cache'`), así que la versión nueva llega a la primera apertura.
 
 Antes esto estaba en Netlify y se quedó sin créditos: dejó de construir en
 silencio y el sitio siguió sirviendo una versión de siete publicaciones atrás
