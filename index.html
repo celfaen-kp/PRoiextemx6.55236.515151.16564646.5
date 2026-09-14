@@ -237,7 +237,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '10.4'; // versión visible de la app (única fuente)
+const APP_VERSION = '10.5'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -2246,6 +2246,10 @@ A.confirmarEnvioParte = async () => {
   }
 };
 
+// El PDF tarda en generarse y Safari puede negar la hoja de compartir si ya
+// no cuenta como respuesta al toque. Se guarda aquí para ofrecer un segundo
+// toque que la abra al instante.
+let pdfParaCompartir = null;
 A.compartirParte = async (id) => {
   const p = S.partes.find((x) => x.id === id); if (!p) return;
   toast('Preparando el PDF…');
@@ -2255,12 +2259,9 @@ A.compartirParte = async (id) => {
     const blob = await pdfDeImpresion();
     const archivo = new File([blob], 'parte-' + p.ref + '.pdf', { type: 'application/pdf' });
     const o = obraById(p.obraId) || {};
+    pdfParaCompartir = { archivo, title: 'Parte ' + p.ref, text: S.empresa + ' · Parte de trabajo ' + p.ref + (o.titulo ? ' · ' + o.titulo : '') };
     if (navigator.canShare && navigator.canShare({ files: [archivo] })) {
-      await navigator.share({
-        files: [archivo],
-        title: 'Parte ' + p.ref,
-        text: S.empresa + ' · Parte de trabajo ' + p.ref + (o.titulo ? ' · ' + o.titulo : ''),
-      });
+      await navigator.share({ files: [archivo], title: pdfParaCompartir.title, text: pdfParaCompartir.text });
       return;
     }
     // En ordenador no hay hoja de compartir: se descarga y se abre el correo.
@@ -2270,8 +2271,17 @@ A.compartirParte = async (id) => {
     enviarEmail(p);
   } catch (e) {
     if (e && e.name === 'AbortError') return;   // canceló la hoja de compartir
+    if (e && e.name === 'NotAllowedError' && pdfParaCompartir) { V.sheet = { tipo: 'compartirListo', nombre: pdfParaCompartir.archivo.name }; render(); return; }
     avisar('No se pudo preparar el PDF: ' + (e && e.message ? e.message : 'error'));
   }
+};
+
+A.compartirListo = () => {
+  const c = pdfParaCompartir; V.sheet = null; render();
+  if (!c) return;
+  // Sin await antes: tiene que salir en el mismo toque.
+  navigator.share({ files: [c.archivo], title: c.title, text: c.text })
+    .catch((e) => { if (!e || e.name !== 'AbortError') avisar('No se pudo compartir: ' + ((e && e.message) || 'error')); });
 };
 
 A.verPdf = async (id) => {
@@ -2840,6 +2850,7 @@ function cardParte(p) {
     </div>
     ${puedeCrear() ? `<div class="row g8" style="margin-top:12px">
       <button class="pill grow" data-a="verPdf" data-id="${p.id}" style="padding:11px;text-align:center">PDF</button>
+      <button class="pill grow" data-a="compartirParte" data-id="${p.id}" style="padding:11px 6px;text-align:center">Compartir</button>
       ${p.estado !== 'anulado' ? `<button class="pill grow" data-a="abrirEnvioParte" data-id="${p.id}" style="padding:11px;text-align:center;background:var(--verde-c);color:#fff">Enviar</button>` : ''}
       ${esAdmin() ? `<button class="pill pill-rojo grow" data-a="borrarParte" data-id="${p.id}" style="padding:11px;text-align:center">Borrar</button>` : ''}
     </div>` : ''}
@@ -4937,6 +4948,16 @@ function sheet() {
       </div>
     </div></div>`;
   }
+  if (s.tipo === 'compartirListo') {
+    return `<div class="sheet"><div>
+      <div style="font:600 25px/1.15 var(--cond)">PDF listo</div>
+      <div class="sub" style="margin-top:8px">${esc(s.nombre)} ya está preparado. Pulsa Compartir y elige WhatsApp, correo o dónde guardarlo.</div>
+      <div class="row g8" style="margin-top:18px">
+        <button class="btn btn-gris" data-a="cerrarSheet" style="border-radius:99px">Cancelar</button>
+        <button class="btn btn-verde" data-a="compartirListo" style="font-size:14px">Compartir</button>
+      </div>
+    </div></div>`;
+  }
   if (s.tipo === 'accesoEmpleado') {
     return `<div class="sheet"><div>
       <div style="font:600 25px/1.15 var(--cond)">Falta crear el acceso</div>
@@ -5253,6 +5274,7 @@ document.addEventListener('click', (e) => {
   if (a === 'verPdf') { e.stopPropagation(); return A.verPdf(d.id); }
   if (a === 'reenviar') { e.stopPropagation(); return A.reenviar(d.id); }
   if (a === 'compartirParte') { e.stopPropagation(); V.sheet = null; return A.compartirParte(d.id); }
+  if (a === 'compartirListo') return A.compartirListo();
   if (a === 'abrirEnvioParte') { e.stopPropagation(); return A.abrirEnvioParte(d.id); }
   if (a === 'obraRapida') { e.stopPropagation(); return A.obraRapida(d.o, d.i); }
   if (a === 'toggleAusente') return A.toggleAusente();

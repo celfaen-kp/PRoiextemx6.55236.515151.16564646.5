@@ -28,8 +28,15 @@ begin;
 -- ---------------------------------------------------------------------------
 -- 1 · El rol nuevo
 -- ---------------------------------------------------------------------------
--- `empleados.rol` es text libre en esta base, así que no hay enum que tocar.
--- Se añade el helper que usan las políticas, al lado de es_admin() y es_jefe().
+-- `empleados.rol` tiene un check con los roles permitidos. Se rehace con los
+-- mismos de siempre más 'presupuestos'. Si hubiera algún empleado con un rol
+-- fuera de esta lista, el add falla y, al ir dentro del begin, el check viejo
+-- se queda como estaba.
+alter table public.empleados drop constraint if exists empleados_rol_check;
+alter table public.empleados add constraint empleados_rol_check
+  check (rol in ('operario', 'jefe', 'admin', 'presupuestos'));
+
+-- Helper que usan las políticas, al lado de es_admin() y es_jefe().
 
 create or replace function public.es_presupuestos()
 returns boolean
