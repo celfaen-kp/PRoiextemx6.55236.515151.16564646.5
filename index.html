@@ -237,7 +237,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '10.6'; // versión visible de la app (única fuente)
+const APP_VERSION = '10.7'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -817,7 +817,7 @@ A.salir = () => {
   sysAuth.logout().catch(() => {});
 };
 A.ir = (v) => { V.view = v; render(); if (v === 'visitas') A.cargarVisitas(); if (['hoy', 'obras', 'obra', 'partes', 'horas'].includes(v)) refrescarDatos().then(render); };
-A.verObra = (id) => { V.obraId = id; V.obraRango = 'total'; V.view = 'obra'; render(); refrescarDatos().then(render); };
+A.verObra = (id) => { V.obraId = id; V.obraRango = 'total'; V.view = 'obra'; render(); refrescarDatos().then(render); if (puedeCrear()) A.cargarDocsObra(id); };
 A.obraRango = (r) => { V.obraRango = r; render(); };
 // (Sin "obra de hoy": el fichaje NUNCA lleva obra — se guarda con obraId null —
 // así que preseleccionar una solo hacía creer que las horas se estaban
@@ -2804,11 +2804,142 @@ function vObra() {
       <button class="pill grow" data-a="imprimirHorasObra" style="padding:12px;text-align:center;background:var(--tinta);color:#fff">Imprimir PDF</button>
       <button class="pill grow" data-a="exportarHorasObraCSV" style="padding:12px;text-align:center">Exportar CSV</button>
     </div>` : ''}
+    ${puedeCrear() ? docsObraHTML(o) : ''}
     <div class="lbl" style="font-weight:600;font-size:12px;color:var(--t2);margin:22px 0 10px">Partes de esta obra</div>
     ${partes.length ? partes.map(cardParte).join('') : '<div class="card"><div class="sub">Todavía no hay partes en esta obra.</div></div>'}
     ${puedeCrear() ? `<button class="btn btn-gris" data-a="cerrarObra" data-id="${o.id}" style="margin-top:14px;border-radius:99px">${o.estado === 'Cerrada' ? 'Reabrir obra' : 'Marcar obra como cerrada'}</button>` : ''}
   </div>`;
 }
+/* --- albaranes y recibos de la obra (control interno: jefe y admin) --- */
+const DOC_TIPOS = [['albaran', 'Albarán'], ['recibo', 'Recibo'], ['factura', 'Factura'], ['otro', 'Otro']];
+const docTipoNombre = (t) => (DOC_TIPOS.find((x) => x[0] === t) || [t, 'Documento'])[1];
+const euros = (n) => Number(n || 0).toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' €';
+const faltaTablaDocs = (msg) => /does not exist|schema cache|PGRST205|bucket not found/i.test(String(msg || ''));
+Object.assign(V, { obraDocs: {}, obraDocsUrls: {}, obraDocsError: {}, confirmarBorrarDoc: null });
+// El archivo elegido va fuera de V.sheet: un PDF puede pesar megas y V se
+// recorre en cada repintado.
+let docArchivo = null;
+
+A.cargarDocsObra = async (obraId) => {
+  try {
+    const filas = await Sysefen.db.listarDocumentosObra(obraId);
+    V.obraDocs[obraId] = filas; V.obraDocsError[obraId] = null;
+    // Los enlaces firmados caducan en una hora: se piden al abrir la obra.
+    const rutas = filas.map((d) => d.ruta);
+    if (rutas.length) Object.assign(V.obraDocsUrls, await Sysefen.db.urlsFirmadasDocs(rutas));
+  } catch (e) {
+    V.obraDocsError[obraId] = (e && e.message) || 'error';
+  }
+  if (V.view === 'obra' && V.obraId === obraId) render();
+};
+
+A.nuevoDocObra = () => {
+  if (!puedeCrear()) return;
+  const inp = document.createElement('input');
+  inp.type = 'file'; inp.accept = 'image/*,application/pdf';
+  inp.onchange = async () => {
+    const file = inp.files && inp.files[0]; if (!file) return;
+    const esImg = /^image\//.test(file.type);
+    if (!esImg && file.size > 10 * 1048576) { avisar('Ese PDF pesa más de 10 MB. Prueba con una foto del documento.'); return; }
+    try {
+      const data = esImg ? await comprimir(file, 1600, 0.75) : await leerDataURL(file);
+      const base = String(file.name || (esImg ? 'foto' : 'documento')).replace(/\.[^.]+$/, '');
+      docArchivo = { data, nombre: base + (esImg ? '.jpg' : '.pdf'), esImagen: esImg };
+      V.sheet = { tipo: 'docObra', obraId: V.obraId, tipoDoc: 'albaran', proveedor: '', importe: '', fecha: hoyISO(), nota: '', busy: false, err: '' };
+      render();
+    } catch (e) { avisar('No se pudo leer ese archivo.'); }
+  };
+  inp.click();
+};
+
+A.docTipo = (t) => { if (V.sheet && V.sheet.tipo === 'docObra') { V.sheet.tipoDoc = t; render(); } };
+
+A.guardarDocObra = async () => {
+  const s = V.sheet;
+  if (!s || s.tipo !== 'docObra' || s.busy || !docArchivo) return;
+  if (!navigator.onLine) { s.err = 'Sin conexión: no se ha guardado.'; return render(); }
+  let importe = null;
+  if (String(s.importe || '').trim()) {
+    importe = numeroVisita(s.importe, false);
+    if (importe == null) { s.err = 'El importe no es un número.'; return render(); }
+  }
+  s.busy = true; s.err = ''; render();
+  try {
+    await Sysefen.db.subirDocumentoObra(s.obraId, {
+      data: docArchivo.data, nombre: docArchivo.nombre, esImagen: docArchivo.esImagen,
+      tipo: s.tipoDoc, proveedor: String(s.proveedor || '').trim() || null, importe,
+      fecha: s.fecha || hoyISO(), nota: String(s.nota || '').trim() || null,
+    });
+    docArchivo = null; V.sheet = null;
+    toast(docTipoNombre(s.tipoDoc) + ' guardado en la obra.');
+    await A.cargarDocsObra(s.obraId);
+    render();
+  } catch (e) {
+    s.busy = false;
+    const msg = (e && e.message) || 'error';
+    s.err = faltaTablaDocs(msg) ? 'Falta preparar Supabase: ejecuta sql/etapa21_obra_documentos.sql.' : 'No se pudo guardar: ' + msg;
+    render();
+  }
+};
+
+let borrarDocT;
+A.borrarDocObra = async (id) => {
+  const d = (V.obraDocs[V.obraId] || []).find((x) => x.id === id); if (!d) return;
+  if (V.confirmarBorrarDoc !== id) {
+    V.confirmarBorrarDoc = id; render();
+    clearTimeout(borrarDocT);
+    borrarDocT = setTimeout(() => { if (V.confirmarBorrarDoc === id) { V.confirmarBorrarDoc = null; if (V.view === 'obra') render(); } }, 3500);
+    return;
+  }
+  V.confirmarBorrarDoc = null;
+  if (!navigator.onLine) { avisar('Sin conexión: no se ha borrado.'); return render(); }
+  try {
+    await Sysefen.db.borrarDocumentoObra(d.id, d.ruta);
+    toast(docTipoNombre(d.tipo) + ' borrado.');
+    await A.cargarDocsObra(V.obraId);
+  } catch (e) { avisar('No se pudo borrar: ' + ((e && e.message) || 'error')); render(); }
+};
+
+function docsObraHTML(o) {
+  const docs = V.obraDocs[o.id];
+  const err = V.obraDocsError[o.id];
+  const falta = err && faltaTablaDocs(err);
+  const total = (docs || []).reduce((t, d) => t + (Number(d.importe) || 0), 0);
+  const fila = (d, i) => {
+    const url = V.obraDocsUrls[d.ruta];
+    const miniatura = d.es_imagen && url
+      ? `<div style="width:46px;height:46px;border-radius:10px;flex:none;background:#2b3024 center/cover no-repeat;background-image:url('${url}')"></div>`
+      : `<div style="width:46px;height:46px;border-radius:10px;flex:none;display:flex;align-items:center;justify-content:center;background:rgba(20,23,15,.06);font:600 10px var(--mono);color:var(--t2)">${d.es_imagen ? 'FOTO' : 'PDF'}</div>`;
+    const cuerpo = `${miniatura}
+      <div class="grow">
+        <div class="row g8"><span class="badge" style="background:rgba(20,23,15,.06);color:var(--tinta)">${esc(docTipoNombre(d.tipo))}</span><span class="tiny" style="white-space:nowrap">${d.fecha ? fechaCorta(d.fecha + 'T12:00') : ''}</span></div>
+        <div class="ell" style="font:500 15px/1.25 var(--sans);margin-top:6px">${esc(d.proveedor || d.nombre || 'Sin proveedor')}</div>
+        ${d.nota ? `<div class="tiny ell" style="margin-top:3px">${esc(d.nota)}</div>` : ''}
+      </div>
+      ${d.importe != null ? `<div class="num" style="font-size:16px;flex:none">${euros(d.importe)}</div>` : ''}`;
+    const confirmando = V.confirmarBorrarDoc === d.id;
+    return `<div class="row" style="gap:10px;padding:11px 0;${i ? 'border-top:1px solid var(--l1)' : ''}">
+      ${url
+        ? `<a href="${esc(url)}" target="_blank" rel="noopener" class="row grow" style="gap:12px;color:inherit;min-width:0">${cuerpo}</a>`
+        : `<div class="row grow" style="gap:12px;min-width:0">${cuerpo}</div>`}
+      <button class="pill ${confirmando ? 'pill-rojo' : ''}" data-a="borrarDocObra" data-id="${d.id}" style="padding:8px 10px;flex:none">${confirmando ? '¿Seguro?' : 'Borrar'}</button>
+    </div>`;
+  };
+  return `<div class="row" style="justify-content:space-between;align-items:baseline;margin:22px 0 10px">
+      <div class="lbl" style="font-weight:600;font-size:12px;color:var(--t2)">Albaranes y recibos</div>
+      ${docs && docs.length ? `<div class="tiny">${docs.length} · ${euros(total)}</div>` : ''}
+    </div>
+    ${falta ? `<div class="card" style="background:var(--rojo-cl);margin-bottom:10px">
+      <div style="font:600 14px var(--sans);color:var(--rojo)">Falta preparar Supabase</div>
+      <div class="sub" style="font-size:13px;margin-top:6px;color:var(--rojo)">Ejecuta sql/etapa21_obra_documentos.sql en el SQL Editor.</div>
+    </div>` : ''}
+    ${err && !falta ? `<div class="tiny" style="margin-bottom:10px;color:var(--rojo)">No se pudieron cargar: ${esc(err)}</div>` : ''}
+    ${!docs && !err ? '<div class="tiny" style="margin-bottom:10px">Cargando…</div>' : ''}
+    ${docs && docs.length ? `<div class="card" style="padding:4px 15px">${docs.map(fila).join('')}</div>` : ''}
+    ${!falta ? `<div class="dash" data-a="nuevoDocObra" style="margin-top:10px;display:block">+ Añadir albarán o recibo</div>
+    <div class="tiny" style="margin-top:8px">Foto o PDF. Solo lo ven jefes y Administración.</div>` : ''}`;
+}
+
 function vAlta() {
   const d = V.draft;
   const campos = [
@@ -4958,6 +5089,31 @@ function sheet() {
       </div>
     </div></div>`;
   }
+  if (s.tipo === 'docObra') {
+    const o = obraById(s.obraId) || { titulo: '' };
+    return `<div class="sheet"><div style="max-height:88vh;overflow-y:auto">
+      <div style="font:600 23px/1.15 var(--cond)">Nuevo documento</div>
+      <div class="sub" style="margin-top:4px">${esc(o.titulo)}${docArchivo ? ' · ' + esc(docArchivo.nombre) : ''}</div>
+      ${docArchivo && docArchivo.esImagen ? `<div style="margin-top:12px;height:120px;border-radius:12px;background:#2b3024 center/contain no-repeat;background-image:url('${docArchivo.data}')"></div>` : ''}
+      <div class="lbl" style="margin:16px 0 8px">Tipo</div>
+      <div class="wrap">${DOC_TIPOS.map(([k, l]) => `<span class="chip ${s.tipoDoc === k ? 'on' : ''}" data-a="docTipo" data-t="${k}" style="cursor:pointer">${l}</span>`).join('')}</div>
+      <div class="lbl" style="margin:14px 0 6px">Proveedor</div>
+      <input class="inp" data-f="docProveedor" value="${esc(s.proveedor)}" placeholder="Almacén, ferretería, gasolinera…">
+      <div class="row g8" style="margin-top:12px;align-items:flex-start">
+        <div class="grow"><div class="lbl" style="margin-bottom:6px">Importe (€)</div>
+          <input class="inp" data-f="docImporte" inputmode="decimal" value="${esc(s.importe)}" placeholder="Opcional"></div>
+        <div class="grow"><div class="lbl" style="margin-bottom:6px">Fecha</div>
+          <input class="inp" data-f="docFecha" type="date" value="${esc(s.fecha)}"></div>
+      </div>
+      <div class="lbl" style="margin:12px 0 6px">Nota</div>
+      <input class="inp" data-f="docNota" value="${esc(s.nota)}" placeholder="Opcional">
+      ${s.err ? `<div class="sub" style="color:var(--rojo);margin-top:10px">${esc(s.err)}</div>` : ''}
+      <div class="row g8" style="margin-top:18px">
+        <button class="btn btn-gris" data-a="cerrarSheet" style="border-radius:99px">Cancelar</button>
+        <button class="btn btn-verde" data-a="guardarDocObra" style="font-size:14px" ${s.busy ? 'disabled' : ''}>${s.busy ? 'Guardando…' : 'Guardar'}</button>
+      </div>
+    </div></div>`;
+  }
   if (s.tipo === 'compartirListo') {
     return `<div class="sheet"><div>
       <div style="font:600 25px/1.15 var(--cond)">PDF listo</div>
@@ -5285,6 +5441,10 @@ document.addEventListener('click', (e) => {
   if (a === 'reenviar') { e.stopPropagation(); return A.reenviar(d.id); }
   if (a === 'compartirParte') { e.stopPropagation(); V.sheet = null; return A.compartirParte(d.id); }
   if (a === 'compartirListo') return A.compartirListo();
+  if (a === 'nuevoDocObra') return A.nuevoDocObra();
+  if (a === 'docTipo') return A.docTipo(d.t);
+  if (a === 'guardarDocObra') return A.guardarDocObra();
+  if (a === 'borrarDocObra') { e.stopPropagation(); return A.borrarDocObra(d.id); }
   if (a === 'abrirEnvioParte') { e.stopPropagation(); return A.abrirEnvioParte(d.id); }
   if (a === 'obraRapida') { e.stopPropagation(); return A.obraRapida(d.o, d.i); }
   if (a === 'toggleAusente') return A.toggleAusente();
@@ -5370,6 +5530,10 @@ document.addEventListener('input', (e) => {
   if (f.startsWith('vf')) return A.vf(f, t.dataset, t.value);
   if (f === 'visitaBuscar') return A.visitaBuscar(t.value);
   if (f === 'visitaCli') { const c = V.visitaDraft && V.visitaDraft._cliente; if (c) { c[t.dataset.k] = t.value; guardarBorradorVisita(); } return; }
+  if (f === 'docProveedor') { if (V.sheet) V.sheet.proveedor = t.value; return; }
+  if (f === 'docImporte') { if (V.sheet) V.sheet.importe = t.value; return; }
+  if (f === 'docFecha') { if (V.sheet) V.sheet.fecha = t.value; return; }
+  if (f === 'docNota') { if (V.sheet) V.sheet.nota = t.value; return; }
   if (f === 'impFecha') return A.impFecha(t.value);
   if (f === 'parteFecha') return A.parteFecha(t.value);
   if (f === 'empNombre') { A.empCampo('nombre', t.value); return; }

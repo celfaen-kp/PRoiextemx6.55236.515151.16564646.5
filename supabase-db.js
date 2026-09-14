@@ -324,6 +324,65 @@ export async function borrarParte(parteId) {
   return unwrap(await supabase.from('partes').delete().eq('id', parteId).select());
 }
 
+/* ---------------- albaranes y recibos de la obra ---------------- */
+// Requiere sql/etapa21_obra_documentos.sql: bucket privado `obra-docs` y tabla
+// public.obra_documentos. Control interno: solo jefe y Administración.
+const BUCKET_DOCS = 'obra-docs';
+
+export async function listarDocumentosObra(obraId) {
+  return unwrap(await supabase.from('obra_documentos').select('*').eq('obra_id', obraId)
+    .order('fecha', { ascending: false }).order('creado_en', { ascending: false })) || [];
+}
+
+// Igual que subirAdjunto: si la fila falla, se borra el archivo para no dejar
+// nada huérfano en el almacén.
+export async function subirDocumentoObra(obraId, doc) {
+  const blob = blobDeDataURL(doc.data);
+  const ext = doc.esImagen
+    ? 'jpg'
+    : (String(doc.nombre || '').split('.').pop() || 'pdf').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 5) || 'pdf';
+  const ruta = `${obraId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+
+  const subida = await supabase.storage.from(BUCKET_DOCS)
+    .upload(ruta, blob, { contentType: blob.type, upsert: false });
+  if (subida.error) throw new Error(subida.error.message);
+
+  const { data, error } = await supabase.from('obra_documentos').insert({
+    obra_id: obraId,
+    tipo: doc.tipo || 'albaran',
+    proveedor: doc.proveedor || null,
+    importe: doc.importe,
+    fecha: doc.fecha,
+    nota: doc.nota || null,
+    ruta,
+    nombre: doc.nombre || null,
+    mime: blob.type,
+    bytes: blob.size,
+    es_imagen: !!doc.esImagen,
+  }).select().single();
+  if (error) {
+    await supabase.storage.from(BUCKET_DOCS).remove([ruta]);
+    throw new Error(error.message);
+  }
+  return data;
+}
+
+export async function urlsFirmadasDocs(rutas, segundos = 3600) {
+  if (!rutas || !rutas.length) return {};
+  const { data, error } = await supabase.storage.from(BUCKET_DOCS).createSignedUrls(rutas, segundos);
+  if (error) throw new Error(error.message);
+  const out = {};
+  (data || []).forEach((x) => { if (x.signedUrl && !x.error) out[x.path] = x.signedUrl; });
+  return out;
+}
+
+export async function borrarDocumentoObra(id, ruta) {
+  const { error } = await supabase.from('obra_documentos').delete().eq('id', id);
+  if (error) throw new Error(error.message);
+  await supabase.storage.from(BUCKET_DOCS).remove([ruta]);
+  return true;
+}
+
 /* ---------------- envío de partes por correo ---------------- */
 // Edge Function `enviar-parte` (Resend). El PDF viaja en base64.
 // Si la función no está desplegada, el error lleva `noDesplegada` para que la
