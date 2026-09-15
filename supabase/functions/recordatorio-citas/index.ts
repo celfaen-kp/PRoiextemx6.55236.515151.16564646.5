@@ -27,6 +27,8 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
 
 const ZONA = 'Europe/Madrid';
 const REMITENTE = 'Sysefen <noreply@sysefen.com>';
+const APP_URL = 'https://celfaen-kp.github.io/PRoiextemx6.55236.515151.16564646.5/';
+const LOGO_URL = APP_URL + 'logo-email.png';
 const CATEGORIAS: Record<string, string> = {
   aerotermia: 'aerotermia',
   solar: 'paneles solares',
@@ -79,6 +81,148 @@ const listaCategorias = (cats: string[]) => {
   const n = (cats || []).map((c) => CATEGORIAS[c] || c);
   return n.length <= 1 ? (n[0] || '') : n.slice(0, -1).join(', ') + ' y ' + n[n.length - 1];
 };
+
+// --- Plantillas HTML de los correos de aviso -------------------------------------
+// Pensadas para programas de correo: tablas, estilos en línea y fuentes del
+// sistema (Gmail y Outlook ignoran las hojas de estilo y las fuentes web).
+// El logo se carga por URL: los correos con la imagen incrustada no se ven en Gmail.
+const COLOR = {
+  tinta: '#14170f', verde: '#206028', verdeClaro: '#3d8f4a', papel: '#f5f4ef',
+  suave: '#6b6d66', linea: '#e6e4dc', blanco: '#ffffff',
+};
+const FUENTE = "'Helvetica Neue',Helvetica,Arial,sans-serif";
+
+function escHtml(s: unknown) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' } as Record<string, string>)[c]);
+}
+
+function marcoCorreo({ logoUrl, preheader, cuerpo, pie }: { logoUrl: string; preheader: string; cuerpo: string; pie: string }) {
+  return `<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light"><title>Sysefen</title></head>
+<body style="margin:0;padding:0;background:${COLOR.papel};">
+<div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;">${escHtml(preheader)}</div>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:${COLOR.papel};">
+  <tr><td align="center" style="padding:28px 14px;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:600px;background:${COLOR.blanco};border-radius:16px;overflow:hidden;">
+      <tr><td style="height:5px;background:${COLOR.verde};font-size:0;line-height:0;">&nbsp;</td></tr>
+      <tr><td style="padding:26px 32px 18px;border-bottom:1px solid ${COLOR.linea};">
+        <img src="${escHtml(logoUrl)}" width="150" alt="Sysefen" style="display:block;width:150px;max-width:60%;height:auto;border:0;">
+      </td></tr>
+      <tr><td style="padding:28px 32px 8px;font-family:${FUENTE};color:${COLOR.tinta};">${cuerpo}</td></tr>
+      <tr><td style="padding:22px 32px 28px;font-family:${FUENTE};">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-top:1px solid ${COLOR.linea};">
+          <tr><td style="padding-top:18px;font-size:13px;line-height:20px;color:${COLOR.tinta};"><strong>Sysefen</strong> · Eficiencia Energética</td></tr>
+          <tr><td style="padding-top:6px;font-size:12px;line-height:18px;color:${COLOR.suave};">${pie}</td></tr>
+        </table>
+      </td></tr>
+    </table>
+  </td></tr>
+</table>
+</body></html>`;
+}
+
+// Fila etiqueta/valor. Si no hay valor, no se pinta.
+function filaDato(etiqueta: string, valor: string | null | undefined) {
+  if (!valor) return '';
+  return `<tr>
+    <td style="padding:10px 0;border-bottom:1px solid ${COLOR.linea};font-size:11px;line-height:16px;letter-spacing:1px;text-transform:uppercase;color:${COLOR.suave};width:36%;vertical-align:top;">${escHtml(etiqueta)}</td>
+    <td style="padding:10px 0;border-bottom:1px solid ${COLOR.linea};font-size:15px;line-height:21px;color:${COLOR.tinta};vertical-align:top;">${escHtml(valor)}</td>
+  </tr>`;
+}
+
+// Bloque destacado de día y hora.
+function bloqueCuando({ etiqueta, dia, hora }: { etiqueta: string; dia: string; hora: string }) {
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:${COLOR.papel};border-radius:12px;">
+    <tr>
+      <td style="padding:18px 20px;width:112px;vertical-align:middle;border-right:1px solid ${COLOR.linea};">
+        <div style="font-size:34px;line-height:36px;font-weight:700;color:${COLOR.tinta};letter-spacing:-1px;">${escHtml(hora)}</div>
+        <div style="font-size:11px;line-height:16px;color:${COLOR.suave};letter-spacing:1px;text-transform:uppercase;">horas</div>
+      </td>
+      <td style="padding:18px 20px;vertical-align:middle;">
+        <div style="font-size:11px;line-height:16px;font-weight:700;color:${COLOR.verde};letter-spacing:1.5px;text-transform:uppercase;">${escHtml(etiqueta)}</div>
+        <div style="font-size:18px;line-height:24px;font-weight:600;color:${COLOR.tinta};padding-top:2px;">${escHtml(dia)}</div>
+      </td>
+    </tr>
+  </table>`;
+}
+
+const eyebrow = (txt: string) => `<div style="font-size:11px;line-height:16px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:${COLOR.verde};">${escHtml(txt)}</div>`;
+const titular = (txt: string) => `<h1 style="margin:8px 0 10px;font-size:24px;line-height:30px;font-weight:700;color:${COLOR.tinta};">${escHtml(txt)}</h1>`;
+const parrafo = (txt: string) => `<p style="margin:0 0 20px;font-size:15px;line-height:23px;color:${COLOR.tinta};">${escHtml(txt)}</p>`;
+
+/**
+ * Correo al cliente.
+ * d = { logoUrl, nombre, etiqueta: 'Mañana', dia: 'Miércoles, 16 de septiembre', hora: '10:00',
+ *       direccion, motivo, tecnico, duracion }
+ */
+// deno-lint-ignore no-explicit-any
+function correoClienteHTML(d: any) {
+  const cuerpo = `
+    ${eyebrow('Recordatorio de cita')}
+    ${titular('Hola, ' + d.nombre)}
+    ${parrafo('Le recordamos su cita' + (d.motivo ? ' para la ' + d.motivo : ' con Sysefen') + '.')}
+    ${bloqueCuando({ etiqueta: d.etiqueta, dia: d.dia, hora: d.hora })}
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:14px;">
+      ${filaDato('Dirección', d.direccion)}
+      ${filaDato('Motivo', d.motivo ? d.motivo.charAt(0).toUpperCase() + d.motivo.slice(1) : '')}
+      ${filaDato('Le atenderá', d.tecnico)}
+      ${filaDato('Duración aprox.', d.duracion)}
+    </table>
+    <p style="margin:22px 0 0;font-size:14px;line-height:22px;color:${COLOR.suave};">Si necesita cambiar la cita, póngase en contacto con nosotros.</p>`;
+  return marcoCorreo({
+    logoUrl: d.logoUrl,
+    preheader: `${d.etiqueta} a las ${d.hora}${d.direccion ? ' · ' + d.direccion : ''}`,
+    cuerpo,
+    pie: 'Este correo se envía automáticamente. Por favor, no responda a esta dirección.',
+  });
+}
+
+/**
+ * Correo a quien va.
+ * d = { logoUrl, appUrl, nombre, citas: [{ etiqueta, dia, hora, duracion, cliente, direccion, motivo }] }
+ */
+// deno-lint-ignore no-explicit-any
+function correoTecnicoHTML(d: any) {
+  const n = d.citas.length;
+  // deno-lint-ignore no-explicit-any
+  const bloques = d.citas.map((c: any, i: number) => `
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:${i ? 12 : 0}px;border:1px solid ${COLOR.linea};border-radius:12px;">
+      <tr>
+        <td style="padding:16px 18px;width:84px;vertical-align:top;">
+          <div style="font-size:24px;line-height:28px;font-weight:700;color:${COLOR.tinta};">${escHtml(c.hora)}</div>
+          <div style="font-size:11px;line-height:16px;color:${COLOR.suave};">${escHtml(c.duracion || '')}</div>
+        </td>
+        <td style="padding:16px 18px 16px 0;vertical-align:top;">
+          <div style="font-size:11px;line-height:16px;font-weight:700;color:${COLOR.verde};letter-spacing:1.5px;text-transform:uppercase;">${escHtml(c.etiqueta)} · ${escHtml(c.dia)}</div>
+          <div style="font-size:16px;line-height:22px;font-weight:700;color:${COLOR.tinta};padding-top:4px;">${escHtml(c.cliente)}</div>
+          ${c.direccion ? `<div style="font-size:14px;line-height:20px;color:${COLOR.tinta};padding-top:2px;">${escHtml(c.direccion)}</div>` : ''}
+          ${c.motivo ? `<div style="font-size:13px;line-height:19px;color:${COLOR.suave};padding-top:2px;">${escHtml(c.motivo)}</div>` : ''}
+        </td>
+      </tr>
+    </table>`).join('');
+  const cuerpo = `
+    ${eyebrow(n === 1 ? 'Próxima cita' : 'Tus próximas citas')}
+    ${titular('Hola, ' + d.nombre)}
+    ${parrafo(n === 1 ? 'Tienes esta cita en las próximas horas.' : `Tienes ${n} citas en las próximas horas.`)}
+    ${bloques}
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin-top:22px;">
+      <tr><td style="background:${COLOR.verde};border-radius:99px;">
+        <a href="${escHtml(d.appUrl)}" style="display:inline-block;padding:13px 26px;font-family:${FUENTE};font-size:14px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:${COLOR.blanco};text-decoration:none;">Abrir la agenda</a>
+      </td></tr>
+    </table>`;
+  return marcoCorreo({
+    logoUrl: d.logoUrl,
+    preheader: n === 1 ? `${d.citas[0].etiqueta} a las ${d.citas[0].hora} · ${d.citas[0].cliente}` : `${n} citas en las próximas horas`,
+    cuerpo,
+    pie: 'Aviso automático de la agenda de Sysefen.',
+  });
+}
+
+const mayus = (s: string) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
+const diaCorto = (iso: string) =>
+  new Date(iso).toLocaleDateString('es-ES', { timeZone: ZONA, weekday: 'short', day: 'numeric', month: 'short' }).replace(/\./g, '');
+const duracionTxt = (m: number) => (m >= 60 ? (m % 60 ? `${Math.floor(m / 60)} h ${m % 60} min` : (m === 60 ? '1 hora' : `${m / 60} horas`)) : `${m} minutos`);
 
 Deno.serve(async (req) => {
   if (req.method !== 'POST') return json({ error: 'Método no permitido.' }, 405);
@@ -136,17 +280,25 @@ Deno.serve(async (req) => {
     [c.direccion || c.cliente?.direccion, c.poblacion || c.cliente?.poblacion].filter(Boolean).join(', ');
 
   // --- correos a clientes --------------------------------------------------------
+  const motivoDe = (c: Cita) => (c.categorias?.length ? 'instalación de ' + listaCategorias(c.categorias) : '');
   const aClientes = citas.filter((c) => esEmail(c.cliente?.email)).map((c) => ({
     para: String(c.cliente!.email).trim(),
-    asunto: `Recordatorio de su cita con Sysefen · ${cuandoCorto(c.inicio, ahora)} a las ${hora(c.inicio)}`,
+    asunto: motivoDe(c)
+      ? `Su cita para la ${motivoDe(c)} · ${cuandoCorto(c.inicio, ahora)} a las ${hora(c.inicio)}`
+      : `Recordatorio de su cita con Sysefen · ${cuandoCorto(c.inicio, ahora)} a las ${hora(c.inicio)}`,
     texto:
       `Hola ${c.cliente!.nombre}:\n\n` +
-      `Le recordamos que ${cuando(c.inicio, ahora)}, a las ${hora(c.inicio)}, ` +
-      `pasaremos a verle${dondeDe(c) ? ` en ${dondeDe(c)}` : ''}` +
-      `${c.categorias?.length ? ` para preparar su presupuesto de ${listaCategorias(c.categorias)}` : ''}.\n\n` +
+      `Le recordamos su cita${motivoDe(c) ? ` para la ${motivoDe(c)}` : ' con Sysefen'}: ` +
+      `${cuando(c.inicio, ahora)}, a las ${hora(c.inicio)}${dondeDe(c) ? `, en ${dondeDe(c)}` : ''}.` +
+      `${c.empleado?.nombre ? `\nLe atenderá ${c.empleado.nombre}.` : ''}\n\n` +
       `Si necesita cambiar la cita, póngase en contacto con nosotros.\n\n` +
-      `Un saludo,\nSysefen\n\n` +
+      `Un saludo,\nSysefen · Eficiencia Energética\n\n` +
       `(Este correo se envía automáticamente. Por favor, no responda a esta dirección.)`,
+    html: correoClienteHTML({
+      logoUrl: LOGO_URL, nombre: c.cliente!.nombre, etiqueta: mayus(cuandoCorto(c.inicio, ahora)),
+      dia: mayus(diaLargo(c.inicio)), hora: hora(c.inicio), direccion: dondeDe(c), motivo: motivoDe(c),
+      tecnico: c.empleado?.nombre || '', duracion: duracionTxt(c.duracion_min || 60),
+    }),
   }));
 
   // --- correos a técnicos: una lista por persona ----------------------------------
@@ -170,7 +322,15 @@ Deno.serve(async (req) => {
         `  ${dondeDe(c) || 'Sin dirección'}` +
         `${c.categorias?.length ? `\n  ${listaCategorias(c.categorias)}` : ''}`,
       ).join('\n\n') +
-      `\n\nLo tienes todo en la Agenda de la app.`,
+      `\n\nLo tienes todo en la Agenda de la app: ${APP_URL}`,
+    html: correoTecnicoHTML({
+      logoUrl: LOGO_URL, appUrl: APP_URL, nombre: t.nombre,
+      citas: t.citas.map((c) => ({
+        etiqueta: mayus(cuandoCorto(c.inicio, ahora)), dia: diaCorto(c.inicio), hora: hora(c.inicio),
+        duracion: duracionTxt(c.duracion_min || 60), cliente: c.cliente?.nombre || 'Cliente',
+        direccion: dondeDe(c), motivo: mayus(motivoDe(c)),
+      })),
+    }),
   }));
 
   if (soloVer) {
@@ -183,11 +343,11 @@ Deno.serve(async (req) => {
   }
 
   // --- enviar ----------------------------------------------------------------------
-  const enviar = async (para: string, asunto: string, texto: string) => {
+  const enviar = async (para: string, asunto: string, texto: string, html: string) => {
     const r = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: { Authorization: 'Bearer ' + RESEND, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ from: REMITENTE, to: [para], subject: asunto, text: texto }),
+      body: JSON.stringify({ from: REMITENTE, to: [para], subject: asunto, text: texto, html }),
     });
     if (!r.ok) {
       const res = await r.json().catch(() => ({}));
@@ -198,11 +358,11 @@ Deno.serve(async (req) => {
   const errores: string[] = [];
   let clientesOk = 0, tecnicosOk = 0;
   for (const m of aClientes) {
-    try { await enviar(m.para, m.asunto, m.texto); clientesOk++; }
+    try { await enviar(m.para, m.asunto, m.texto, m.html); clientesOk++; }
     catch (e) { errores.push(`${m.para}: ${(e as Error).message}`); }
   }
   for (const m of aTecnicos) {
-    try { await enviar(m.para, m.asunto, m.texto); tecnicosOk++; }
+    try { await enviar(m.para, m.asunto, m.texto, m.html); tecnicosOk++; }
     catch (e) { errores.push(`${m.para}: ${(e as Error).message}`); }
   }
 
