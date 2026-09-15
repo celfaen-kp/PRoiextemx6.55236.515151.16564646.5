@@ -237,7 +237,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '10.9'; // versión visible de la app (única fuente)
+const APP_VERSION = '10.10'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -4649,7 +4649,7 @@ function vVisitas() {
 
   const n = (x) => x.length;
   return `<div class="hdr">
-    <div class="row" style="justify-content:space-between;align-items:flex-start">
+    <div class="row" style="justify-content:space-between;align-items:center;margin-bottom:14px">
       ${marcaSysefen(false)}
       ${avatarHTML(V.user.id, 'width:32px;height:32px;font-size:13px;background:rgba(20,23,15,.08);color:var(--tinta);cursor:pointer', 'data-a="menuUsuario"')}
     </div>
