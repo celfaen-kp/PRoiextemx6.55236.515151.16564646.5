@@ -219,6 +219,13 @@ a:hover{color:var(--tinta)}
 .ag-hito::before{content:'';position:absolute;left:-22px;top:16px;width:12px;height:12px;border-radius:99px;background:var(--papel);border:2px solid var(--t3)}
 .ag-hito.hecho::before{background:var(--verde-c);border-color:var(--verde-c)}
 .ag-hito.ahora::before{background:var(--ambar);border-color:var(--ambar)}
+/* Filas etiqueta/valor dentro de una tarjeta (detalle de cita, ficha de cliente).
+   Solo hijas directas de .card: las filas del PDF del parte (.docu) no cambian. */
+.card > .fila{display:flex;justify-content:space-between;align-items:baseline;gap:14px;padding:10px 0;border-bottom:1px solid var(--l1)}
+.card > .fila:last-child{border-bottom:none}
+.card > .fila .k{flex:none;font:400 11px/1.35 var(--mono);letter-spacing:.04em;color:var(--t3)}
+.card > .fila .v{min-width:0;font:500 15px/1.35 var(--sans);text-align:right;overflow-wrap:anywhere}
+.pie.col .row .btn-gris{flex:1;min-width:0;width:auto}
 
 /* Control de horas: dos ruedas (horas / minutos en pasos de 15) tipo selector
    nativo. El desplazamiento vertical con encastre (scroll-snap) es un gesto
@@ -262,7 +269,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '11.1'; // versión visible de la app (única fuente)
+const APP_VERSION = '11.2'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
