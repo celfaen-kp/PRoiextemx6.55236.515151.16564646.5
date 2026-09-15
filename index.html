@@ -237,7 +237,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '10.10'; // versión visible de la app (única fuente)
+const APP_VERSION = '11.0'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -454,13 +454,17 @@ const miEmpId = () => empIdDeUser(V.user && V.user.id);
 const IMP_CATS = [
   ['obra', 'Obra'],
   ['despacho', 'Despacho / oficina'],
+  // Trabajo hecho en la base para la propia empresa (taller, mantenimiento,
+  // montajes propios). No es lo mismo que estar en la oficina.
+  ['sysefen', 'Trabajos Sysefen'],
   ['preparacion', 'Preparación / carga / descarga'],
   ['desplazamiento', 'Desplazamiento'],
   ['otros', 'Otros'],
 ];
-// Paleta categórica validada (5 colores, orden fijo, distinguibles también con
-// daltonismo) para el resumen por categoría de Horas. Mismo orden que IMP_CATS.
-const IMP_COLORES = { obra: '#2a78d6', despacho: '#eb6834', preparacion: '#1baf7a', desplazamiento: '#eda100', otros: '#e87ba4' };
+// Paleta categórica validada (orden fijo de la paleta de referencia,
+// distinguibles también con daltonismo) para el resumen por categoría de Horas.
+// El color va con la categoría, no con su posición: 'sysefen' toma el sexto.
+const IMP_COLORES = { obra: '#2a78d6', despacho: '#eb6834', preparacion: '#1baf7a', desplazamiento: '#eda100', otros: '#e87ba4', sysefen: '#008300' };
 let sincImp = false;
 
 function mapImputacionDeDB(row) {
@@ -3292,14 +3296,19 @@ function refrescarNumerosRueda() {
 }
 
 const RESUMEN_RANGOS = [['hoy', 'Hoy'], ['semana', 'Semana'], ['mes', 'Mes'], ['ano', 'Año']];
-// Barra apilada en vez de torta: con 5 categorías, un gráfico de torta no pasa
+// Barra apilada en vez de torta: con 6 categorías, un gráfico de torta no pasa
 // las pruebas de distinción por color (daltonismo); una barra apilada muestra
 // exactamente lo mismo (parte del total, con porcentaje y horas) sin ese
 // riesgo, y es más fácil de leer con precisión.
+// La barra va SIEMPRE en el orden de la paleta, no por horas: solo en ese orden
+// los vecinos se distinguen con daltonismo (el verde de 'sysefen' junto al
+// naranja de despacho no). La lista de abajo sí va por horas: lleva el nombre.
+const IMP_ORDEN_BARRA = ['obra', 'despacho', 'preparacion', 'desplazamiento', 'otros', 'sysefen'];
 function vResumenImp() {
   const rango = V.resumenRango || 'mes';
   const { filas, totalMin } = resumenCategorias(rango);
   const ordenadas = filas.filter((f) => f.min > 0).sort((a, b) => b.min - a.min);
+  const enBarra = IMP_ORDEN_BARRA.map((c) => ordenadas.find((f) => f.cat === c)).filter(Boolean);
   return `<div class="hdr">
     <div class="row" style="justify-content:space-between">
       <div class="h1" style="font-size:24px">Resumen por categoría</div>
@@ -3313,8 +3322,8 @@ function vResumenImp() {
       <div class="num" style="font-size:30px;margin-top:4px">${durMin(totalMin)}</div>
     </div>
     ${ordenadas.length ? `<div class="card">
-      <div style="display:flex;height:20px;border-radius:99px;overflow:hidden;background:var(--l1)">
-        ${ordenadas.map((f) => `<div style="width:${(f.min / totalMin) * 100}%;background:${IMP_COLORES[f.cat]}"></div>`).join('')}
+      <div style="display:flex;gap:2px;height:20px;border-radius:99px;overflow:hidden;background:#fff">
+        ${enBarra.map((f) => `<div style="width:${(f.min / totalMin) * 100}%;min-width:3px;background:${IMP_COLORES[f.cat]}"></div>`).join('')}
       </div>
       <div class="col g12" style="margin-top:18px">
         ${ordenadas.map((f) => `<div class="row" style="justify-content:space-between">
