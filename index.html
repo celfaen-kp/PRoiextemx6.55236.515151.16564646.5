@@ -237,7 +237,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '10.8'; // versión visible de la app (única fuente)
+const APP_VERSION = '10.9'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -803,7 +803,16 @@ A.pinTecla = (k) => {
   if (V.pin.length === 4) {
     const pin = V.pin, pu = V.pinUser;
     V.pinBusy = true; render();
-    sysAuth.loginConPin(pu.nombre, pin, pu.email).then(async (res) => {
+    // La copia del email guardada en este móvil puede estar vieja (ficha
+    // corregida después). Si un empleado dado de alta desde la app da PIN
+    // incorrecto, se prueba una vez con el email que le toca por su nombre.
+    const emailAlt = sysAuth.cuentaPorNombre(pu.nombre) ? '' : emailSugerido(pu.nombre);
+    sysAuth.loginConPin(pu.nombre, pin, pu.email).catch((err) => {
+      if (err && /PIN incorrecto/.test(err.message || '') && emailAlt && emailAlt !== String(pu.email || '').toLowerCase()) {
+        return sysAuth.loginConPin(pu.nombre, pin, emailAlt);
+      }
+      throw err;
+    }).then(async (res) => {
       const correo = String((res && res.user && res.user.email) || pu.email || '').toLowerCase();
       let local = (pu.id && S.users.find((u) => u.id === pu.id)) || localPorNombre(pu.nombre) || localPorEmail(correo);
       if (!local) { try { mapaEmpPromesa = null; await cargarMapaEmpleados(); save(); } catch (e) {} local = localPorEmail(correo) || localPorNombre(pu.nombre); }
