@@ -195,6 +195,31 @@ a:hover{color:var(--tinta)}
 .viaja .v{font:500 14px/1.3 var(--sans)}
 .viaja small{display:block;font:400 12px/1.3 var(--sans);color:var(--t2);margin-top:2px}
 
+/* Agenda de presupuestos */
+.ag-cita{display:grid;grid-template-columns:58px minmax(0,1fr);gap:12px;align-items:start}
+.ag-hora{font:700 22px/1 var(--cond);letter-spacing:-.01em}
+.ag-hora small{display:block;font:400 10px/1.2 var(--mono);color:var(--t3);margin-top:4px}
+.ag-seg{display:flex;background:rgba(20,23,15,.06);border-radius:99px;padding:3px}
+.ag-seg span{flex:1;text-align:center;font:600 13px/1 var(--sans);padding:10px 0;border-radius:99px;color:var(--t2);cursor:pointer}
+.ag-seg span.on{background:#fff;color:var(--tinta);box-shadow:var(--sh)}
+.ag-dias{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:6px}
+.ag-dia{background:#fff;border:1px solid var(--l2);border-radius:14px;padding:9px 0 8px;text-align:center;cursor:pointer}
+.ag-dia span{font:500 10px/1 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--t3)}
+.ag-dia b{display:block;font:700 20px/1 var(--cond);margin-top:5px}
+.ag-dia small{display:block;margin:6px auto 0;width:5px;height:5px;border-radius:99px;background:var(--verde-c)}
+.ag-dia small.vacio{background:transparent}
+.ag-dia.on{background:var(--tinta);border-color:var(--tinta);color:#fff}
+.ag-dia.on span{color:rgba(255,255,255,.6)}
+.ag-acciones{display:flex;justify-content:space-around;margin-top:18px}
+.ag-accion{display:flex;flex-direction:column;align-items:center;gap:6px;font:500 11px/1 var(--sans);color:rgba(255,255,255,.72);text-decoration:none;cursor:pointer;min-width:64px}
+.ag-accion i{width:44px;height:44px;border-radius:99px;background:rgba(255,255,255,.12);display:flex;align-items:center;justify-content:center;color:#fff}
+.ag-linea{position:relative;padding-left:22px}
+.ag-linea::before{content:'';position:absolute;left:5px;top:6px;bottom:6px;width:2px;background:var(--l2)}
+.ag-hito{position:relative;margin-bottom:12px}
+.ag-hito::before{content:'';position:absolute;left:-22px;top:16px;width:12px;height:12px;border-radius:99px;background:var(--papel);border:2px solid var(--t3)}
+.ag-hito.hecho::before{background:var(--verde-c);border-color:var(--verde-c)}
+.ag-hito.ahora::before{background:var(--ambar);border-color:var(--ambar)}
+
 /* Control de horas: dos ruedas (horas / minutos en pasos de 15) tipo selector
    nativo. El desplazamiento vertical con encastre (scroll-snap) es un gesto
    que ya se conoce de los pickers de fecha/hora del propio teléfono — mucho
@@ -844,10 +869,11 @@ A.salir = () => {
   // intentar leer los datos de un usuario que ya no existe.
   try { sessionStorage.removeItem('ch_user'); } catch (e) {}
   V.visitas = []; V.visitasCargadas = false; V.visitaVer = null;
+  V.agenda.citas = []; V.agenda.clientes = []; V.agenda.cargado = false;
   V.view = 'login'; render();
   sysAuth.logout().catch(() => {});
 };
-A.ir = (v) => { V.view = v; render(); if (v === 'visitas') A.cargarVisitas(); if (['hoy', 'obras', 'obra', 'partes', 'horas'].includes(v)) refrescarDatos().then(render); };
+A.ir = (v) => { V.view = v; render(); if (v === 'visitas') A.cargarVisitas(); if (AG_VISTAS.includes(v)) A.cargarAgenda(); if (['hoy', 'obras', 'obra', 'partes', 'horas'].includes(v)) refrescarDatos().then(render); };
 A.verObra = (id) => { V.obraId = id; V.obraRango = 'total'; V.view = 'obra'; render(); refrescarDatos().then(render); if (puedeCrear()) A.cargarDocsObra(id); };
 A.obraRango = (r) => { V.obraRango = r; render(); };
 // (Sin "obra de hoy": el fichaje NUNCA lleva obra — se guarda con obraId null —
@@ -1150,12 +1176,13 @@ A.abrirEmpleado = (userId) => {
     nombreCompleto: row.nombre_completo || '',
     fechaAlta: row.fecha_alta ? String(row.fecha_alta).slice(0, 10) : '',
     vacacionesAnuales: row.vacaciones_anuales != null ? row.vacaciones_anuales : 30,
+    emailAvisos: row.email_avisos || '',
   };
   V.view = 'empleado'; render();
 };
 A.empNuevo = () => {
   V.empEmp = null;
-  V.empDraft = { nombre: '', email: '', telefono: '', rol: 'operario', activo: true, pin: '', nombreCompleto: '', fechaAlta: '', vacacionesAnuales: 30, nuevo: true };
+  V.empDraft = { nombre: '', email: '', telefono: '', rol: 'operario', activo: true, pin: '', nombreCompleto: '', fechaAlta: '', vacacionesAnuales: 30, emailAvisos: '', nuevo: true };
   V.view = 'empleado'; render();
 };
 A.volverEmpleados = () => { V.empEmp = null; V.empDraft = null; V.view = 'empleados'; render(); };
@@ -1181,6 +1208,11 @@ A.empGuardar = async () => {
   if (columnaEmp('nombre_completo')) campos.nombre_completo = (d.nombreCompleto || '').trim() || null;
   if (columnaEmp('fecha_alta')) campos.fecha_alta = (d.fechaAlta || '').trim() || null;
   if (columnaEmp('vacaciones_anuales')) campos.vacaciones_anuales = parseInt(d.vacacionesAnuales, 10) || 30;
+  if (columnaEmp('email_avisos')) {
+    const ea = (d.emailAvisos || '').trim().toLowerCase();
+    if (ea && !esCorreo(ea)) { avisar('El email para avisos no es válido.'); return; }
+    campos.email_avisos = ea || null;
+  }
   V.empBusy = true; render();
   try {
     if (d.nuevo) {
@@ -2597,8 +2629,8 @@ A.instalar = async () => {
 function render() {
   // Ramón entra directo a sus visitas: ninguna pantalla de fichar, obras ni partes.
   if (V.user && esPresupuestos() && !VISITA_VISTAS.includes(V.view)) {
-    V.view = 'visitas';
-    if (!V.visitasCargadas) A.cargarVisitas();
+    V.view = 'agenda';
+    if (!V.agenda.cargado) A.cargarAgenda();
   }
   const app = $('#app');
   const v = V.view;
@@ -2626,7 +2658,13 @@ function render() {
   else if (v === 'visitas' && esComercial()) html = vVisitas();
   else if (v === 'visita' && esComercial()) html = vVisita();
   else if (v === 'visitaNueva' && esComercial()) html = vVisitaNueva();
-  if (V.user && ['hoy', 'obras', 'obra', 'partes', 'horas', 'imputar', 'empleados', 'ajustes', 'visitas', 'visita'].includes(v)) html += nav(v);
+  else if (v === 'agenda' && esComercial()) html = vAgenda();
+  else if (v === 'clientes' && esComercial()) html = vClientes();
+  else if (v === 'clienteNuevo' && puedeCitar()) html = vClienteNuevo();
+  else if (v === 'clienteVer' && esComercial()) html = vClienteVer();
+  else if (v === 'citaNueva' && puedeCitar()) html = vCitaNueva();
+  else if (v === 'citaVer' && esComercial()) html = vCitaVer();
+  if (V.user && ['hoy', 'obras', 'obra', 'partes', 'horas', 'imputar', 'empleados', 'ajustes', 'visitas', 'visita', 'agenda', 'clientes', 'clienteVer'].includes(v)) html += nav(v);
   if (!navigator.onLine && V.user) html = '<div class="offline">Sin conexión — todo se guarda en el móvil</div>' + html;
   // Red de seguridad: si un sheet revienta al pintarse (p. ej. depende de
   // datos que cambiaron justo antes, como el usuario tras salir), que se
@@ -2635,7 +2673,7 @@ function render() {
   app.innerHTML = html;
   if (V.view === 'p2') montarFirma();
   if (V.sheet && V.sheet.tipo === 'firmaPlanilla') montarFirmaPlanilla();
-  if (V.view === 'imputarEmp' || V.view === 'imputarGrupo' || V.view === 'p1') montarRelojes();
+  if (V.view === 'imputarEmp' || V.view === 'imputarGrupo' || V.view === 'p1' || V.view === 'citaNueva') montarRelojes();
   const sc = app.querySelector('.scroll,.hoja'); if (sc && scrollMemo[V.view] != null) sc.scrollTop = scrollMemo[V.view];
 }
 const scrollMemo = {};
@@ -3195,6 +3233,7 @@ function ruedaEscribir(el, v) {
   else if (scope === 'impGrupo') { const l = V.impGrupoLineas && V.impGrupoLineas[+key]; if (l) l.minutos = v; }
   else if (scope === 'parte') { if (V.draft) V.draft.horas[key] = v / 60; }
   else if (scope === 'parteGrupo') V.horasGrupoMin = v;
+  else if (scope === 'cita') { if (V.citaDraft) V.citaDraft.horaMin = v; }
 }
 // Fuerza a leer AHORA MISMO la posición real de cada rueda montada y la
 // vuelca a su sitio en V, sin esperar los 140ms de "asentado" del scroll.
@@ -3264,6 +3303,10 @@ function montarRelojes() {
 // (ver montarRelojes). Cada hueco lleva un data-num en su vista.
 function refrescarNumerosRueda() {
   const set = (sel, txt) => document.querySelectorAll(sel).forEach((n) => { n.textContent = txt; });
+  if (V.view === 'citaNueva' && V.citaDraft) {
+    V.agConfirmar = null;
+    document.querySelectorAll('[data-num="citaSolape"]').forEach((n) => { n.innerHTML = agSolapeHTML(V.citaDraft); });
+  }
   if (V.view === 'imputarEmp' && V.impEmp) {
     const disp = disponibleImputar(V.impEmp, V.impFecha);
     const imp = (V.impDraft || []).reduce((t, l) => t + (l.minutos || 0), 0);
@@ -3559,6 +3602,9 @@ function vEmpleado() {
     <input class="inp" data-f="empEmail" value="${esc(d.email)}" type="email" inputmode="email" autocapitalize="off" placeholder="${d.nuevo ? esc(emailSugerido(d.nombre) || 'nombre@sysefen.app') : 'nombre@sysefen.app'}">
     <div class="lbl" style="margin:14px 0 7px">Teléfono</div>
     <input class="inp" data-f="empTelefono" value="${esc(d.telefono)}" type="tel" inputmode="tel" placeholder="Opcional">
+    ${columnaEmp('email_avisos') ? `<div class="lbl" style="margin:14px 0 7px">Email para avisos</div>
+    <input class="inp" data-f="empEmailAvisos" value="${esc(d.emailAvisos || '')}" type="email" inputmode="email" autocapitalize="off" placeholder="Su correo de verdad">
+    <div class="sub" style="font-size:12px;margin-top:6px">Donde le llegan los avisos de citas del día siguiente. No es el de acceso: cambiarlo no afecta a su PIN.</div>` : ''}
     ${d.nuevo ? `<div class="lbl" style="margin:14px 0 7px">PIN de entrada</div>
     <input class="inp" data-f="empPin" inputmode="numeric" maxlength="4" value="${esc(d.pin || '')}" placeholder="4 números" style="font:600 20px var(--cond);letter-spacing:.25em">
     <div class="sub" style="font-size:12px;margin-top:6px">Con esto ya puede entrar. Si lo dejas en blanco se crea solo el perfil y le das el acceso después.</div>` : ''}
@@ -4223,7 +4269,7 @@ Object.assign(V, {
   visitaVer: null, confirmarDescartar: false,
 });
 
-const VISITA_VISTAS = ['visitas', 'visita', 'visitaNueva', 'ajustes'];
+const VISITA_VISTAS = ['visitas', 'visita', 'visitaNueva', 'ajustes', 'agenda', 'clientes', 'clienteNuevo', 'clienteVer', 'citaNueva', 'citaVer'];
 const PASOS_VISITA = ['Cliente', 'El inmueble', '¿Qué se presupuesta?', 'Fichas', 'Cierre'];
 const KEY_VISITA = 'sysefen.visita.borrador';
 const CAMPOS_COMUN = vSchemas.COMUN.secciones.flatMap((s) => s.campos);
@@ -4331,7 +4377,7 @@ A.cargarVisitas = async () => {
 function irVisitaPaso() { scrollMemo.visitaNueva = 0; V.view = 'visitaNueva'; render(); }
 
 A.nuevaVisita = () => {
-  if (leerBorradorVisita()) { toast('Tienes una visita a medias: síguela o descártala primero.'); return; }
+  if (leerBorradorVisita()) { V.sheet = { tipo: 'visitaAMedias', busy: false }; render(); return; }
   V.visitaDraft = { id: crypto.randomUUID(), fecha_visita: hoyISO(), categorias: [], _tocados: {}, _cliente: null, _catsGuardadas: [] };
   V.visitaFichas = {}; V.visitaFotos = {}; V.visitaAdjuntos = [];
   V.visitaPaso = 1; V.visitaCat = null; V.visitaClientes = null; V.visitaBuscarTxt = '';
@@ -4359,7 +4405,7 @@ A.descartarBorrador = () => {
   toast('Visita descartada.');
   render();
 };
-A.visitaSalir = () => { guardarBorradorVisita(); V.view = 'visitas'; render(); A.cargarVisitas(); };
+A.visitaSalir = () => { guardarBorradorVisita(); V.view = esPresupuestos() ? 'agenda' : 'visitas'; render(); A.cargarVisitas(); if (esPresupuestos()) A.cargarAgenda(); };
 A.visitaPaso = (n) => {
   n = Number(n);
   if (n < 1) return A.visitaSalir();
@@ -4465,7 +4511,7 @@ A.visitaFoto = (c, key) => {
 };
 
 // Guardar (borrador o cerrada)
-A.guardarVisita = async (completar) => {
+A.guardarVisita = async (completar, trasGuardar) => {
   const d = V.visitaDraft; if (!d || V.visitaBusy) return;
   const cats = d.categorias || [];
   if (completar) {
@@ -4499,6 +4545,7 @@ A.guardarVisita = async (completar) => {
       else if (v === '' || v === undefined) v = null;
       fila[c.key] = v;
     });
+    if (d.cita_id) fila.cita_id = d.cita_id;
     const guardada = await visitasDB.guardarOCrearVisita(fila);
     d.codigo = guardada.codigo;
 
@@ -4526,11 +4573,17 @@ A.guardarVisita = async (completar) => {
       }
     }
 
+    // La cita de la que salió queda como visitada.
+    if (d.cita_id) {
+      try { await visitasDB.guardarCita({ id: d.cita_id, estado: 'visitada', visita_id: d.id }); } catch (e) { /* la visita ya está guardada */ }
+      A.cargarAgenda();
+    }
     limpiarBorradorVisita();
     V.visitaBusy = false;
+    if (typeof trasGuardar === 'function') { toast('Visita guardada como borrador.'); A.cargarVisitas(); return trasGuardar(); }
     toast(completar ? 'Visita cerrada. Ya se puede enviar a Teamleader.' : 'Guardada. La sigues cuando quieras.');
     if (completar) { A.cargarVisitas(); return A.verVisita(guardada.id); }
-    V.view = 'visitas'; render(); A.cargarVisitas();
+    V.view = esPresupuestos() ? 'agenda' : 'visitas'; render(); A.cargarVisitas();
   } catch (e) {
     V.visitaBusy = false; guardarBorradorVisita(); render();
     avisar('No se pudo guardar: ' + msgError(e) + '. La visita sigue en el móvil.');
@@ -4709,7 +4762,7 @@ function vVisitaNueva() {
   const cli = d._cliente;
   let titulo = PASOS_VISITA[p - 1];
   let sub = 'Paso ' + p + ' de 5';
-  let volver = '<div class="volver" data-a="visitaSalir">‹ Visitas</div>';
+  let volver = '<div class="volver" data-a="visitaSalir">‹ Agenda</div>';
   let cuerpo = '';
   const atras = `<button class="btn btn-gris" data-a="visitaPaso" data-n="${p - 1}">Atrás</button>`;
   const siguiente = `<button class="btn btn-verde" data-a="visitaPaso" data-n="${p + 1}">Siguiente</button>`;
@@ -4914,20 +4967,643 @@ function vVisita() {
     </div>`;
 }
 
+/* =============================================================================
+ * AGENDA DE PRESUPUESTOS · clientes y citas (fase A)
+ *
+ * Primero se da de alta el cliente con su cita; el día llegado, "Empezar
+ * visita" abre la toma de datos ya rellena. Requiere sql/etapa23.
+ * Crean y cambian citas solo los de presupuestos; jefes y admin las ven.
+ * ============================================================================= */
+Object.assign(V, {
+  agenda: { citas: [], clientes: [], cargado: false, cargando: false, error: null, filtro: 'todas', filtroCli: 'todos', buscar: '' },
+  clienteDraft: null, citaDraft: null, clienteVerId: null, citaVerId: null, agBusy: false, agConfirmar: null,
+});
+
+const AG_VISTAS = ['agenda', 'clientes', 'clienteNuevo', 'clienteVer', 'citaNueva', 'citaVer'];
+const AG_TIPOS = [['particular', 'Particular'], ['empresa', 'Empresa'], ['comunidad', 'Comunidad']];
+const AG_ORIGENES = [['recomendacion', 'Recomendación'], ['web', 'Web'], ['llamada', 'Llamada'], ['cliente_existente', 'Cliente de siempre'], ['constructora', 'Constructora']];
+const AG_DURACIONES = [30, 45, 60, 90, 120];
+const AG_ESTADOS = { pendiente: 'Pendiente', visitada: 'Visitada', no_estaba: 'No estaba', anulada: 'Anulada' };
+const puedeCitar = () => esPresupuestos();
+const faltaAgendaSQL = (m) => /does not exist|schema cache|PGRST20[05]|could not find/i.test(String(m || ''));
+const agErrorTxt = (e) => (faltaAgendaSQL(msgError(e)) ? 'Falta preparar Supabase: ejecuta sql/etapa23_agenda_citas.sql.' : msgError(e));
+
+const agHoy = () => hoyISO();
+const agDiaDe = (iso) => (iso ? fechaLocal(iso) : null);
+const agHora = (iso) => (iso ? hhmm(iso) : '');
+const agDur = (m) => (m >= 60 ? (m % 60 ? Math.floor(m / 60) + ' h ' + (m % 60) + ' min' : m / 60 + ' h') : m + ' min');
+const agSumaDias = (dia, n) => { const d = new Date(dia + 'T12:00'); d.setDate(d.getDate() + n); return fechaLocal(d); };
+const agMayus = (s) => String(s || '').replace(/^./, (c) => c.toUpperCase());
+function agEtiquetaDia(dia) {
+  if (dia === agHoy()) return 'Hoy · ' + fechaLarga(dia);
+  if (dia === agSumaDias(agHoy(), 1)) return 'Mañana · ' + fechaLarga(dia);
+  return agMayus(fechaLarga(dia));
+}
+const agCliente = (id) => V.agenda.clientes.find((c) => c.id === id) || null;
+const agCita = (id) => V.agenda.citas.find((c) => c.id === id) || null;
+const agPresupuestos = () => S.users.filter((u) => u.rol === 'presupuestos' && u.activo !== false && u.empId);
+const agNombreEmp = (empId) => { const u = S.users.find((x) => x.empId === empId); return u ? u.nombre : ''; };
+const agTipoNombre = (c) => (AG_TIPOS.find((x) => x[0] === c.tipo) || [null, c.tl_tipo === 'company' ? 'Empresa' : 'Particular'])[1];
+const agBadge = (txt) => `<span class="badge" style="background:rgba(20,23,15,.06);color:var(--tinta)">${esc(txt)}</span>`;
+
+function agEstadoCliente(c) {
+  const vis = c.visitas || [];
+  const pend = (c.citas || []).filter((x) => x.estado === 'pendiente');
+  if (vis.some((v) => v.sync_estado === 'sincronizada')) return { k: 'teamleader', color: 'var(--verde)', txt: 'En Teamleader' };
+  const prox = pend.filter((x) => x.inicio).sort((a, b) => a.inicio.localeCompare(b.inicio))[0];
+  if (prox) return { k: 'citado', color: 'var(--ambar)', txt: 'Citado · ' + (agDiaDe(prox.inicio) === agHoy() ? 'hoy' : fechaCorta(prox.inicio)) + ' ' + agHora(prox.inicio) };
+  if (vis.length) return { k: 'visitado', color: 'var(--tinta)', txt: vis.some((v) => v.estado === 'completada') ? 'Visitado · por enviar' : 'Visitado · sin cerrar' };
+  return { k: 'sin_cita', color: 'var(--rojo)', txt: pend.length ? 'Pendiente de fecha' : 'Sin cita' };
+}
+
+/* ---------- carga ---------- */
+A.cargarAgenda = async () => {
+  const ag = V.agenda; if (ag.cargando) return;
+  ag.cargando = true;
+  try {
+    if (!empRows.length) { try { await cargarMapaEmpleados(); } catch (e) { /* los nombres saldrán vacíos */ } }
+    const [citas, clientes] = await Promise.all([visitasDB.listarCitas(), visitasDB.listarClientesAgenda()]);
+    ag.citas = citas; ag.clientes = clientes; ag.error = null;
+  } catch (e) { ag.error = msgError(e); }
+  finally { ag.cargando = false; ag.cargado = true; if (AG_VISTAS.includes(V.view)) render(); }
+};
+
+/* ---------- acciones: un solo despachador para todo lo que empieza por ag_ ---------- */
+A.ag = (a, d, e) => {
+  const cd = V.citaDraft;
+  switch (a) {
+    case 'ag_filtro': V.agenda.filtro = d.f; return render();
+    case 'ag_filtroCli': V.agenda.filtroCli = d.f; return render();
+    case 'ag_sinCita': V.agenda.filtroCli = 'sin_cita'; V.view = 'clientes'; return render();
+    case 'ag_visitas': return A.ir('visitas');
+    case 'ag_volver': V.view = d.v; return render();
+    case 'ag_nuevoCliente': return agNuevoCliente();
+    case 'ag_editarCliente': return agEditarCliente(d.id);
+    case 'ag_cliTipo': if (V.clienteDraft) V.clienteDraft.tipo = d.t; return render();
+    case 'ag_cliOrigen': if (V.clienteDraft) V.clienteDraft.origen = V.clienteDraft.origen === d.o ? null : d.o; return render();
+    case 'ag_guardarCliente': return agGuardarCliente(d.cita === '1');
+    case 'ag_abrirCliente': V.clienteVerId = d.id; V.view = 'clienteVer'; scrollMemo.clienteVer = 0; render(); return A.cargarAgenda();
+    case 'ag_abrirCita': V.citaVerId = d.id; V.agConfirmar = null; V.view = 'citaVer'; scrollMemo.citaVer = 0; return render();
+    case 'ag_nuevaCita': if (e) e.stopPropagation(); return agNuevaCita(d.id, false);
+    case 'ag_editarCita': return agEditarCita(d.id);
+    // Antes de repintar se lee la rueda: si no, se perdería la hora recién movida.
+    case 'ag_citaDia': if (cd) { sincronizarRuedas(); cd.dia = d.dia || null; } return render();
+    case 'ag_citaDur': if (cd) { sincronizarRuedas(); cd.duracion = +d.m; } return render();
+    case 'ag_citaCat': if (cd) { sincronizarRuedas(); const i = cd.categorias.indexOf(d.c); if (i >= 0) cd.categorias.splice(i, 1); else cd.categorias.push(d.c); } return render();
+    case 'ag_citaQuien': if (cd) { sincronizarRuedas(); cd.empleadoId = cd.empleadoId === d.id ? null : d.id; } return render();
+    case 'ag_guardarCita': return agGuardarCita();
+    case 'ag_estado': return agCambiarEstado(d.id, d.e);
+    case 'ag_empezar': if (e) e.stopPropagation(); return agEmpezarVisita(d.id);
+  }
+};
+
+function agNuevoCliente() {
+  if (!puedeCitar()) return;
+  V.clienteDraft = { id: null, nombre: '', tipo: 'particular', telefono: '', email: '', nif: '', direccion: '', poblacion: '', origen: null, nota: '' };
+  V.view = 'clienteNuevo'; scrollMemo.clienteNuevo = 0; render();
+}
+function agEditarCliente(id) {
+  const c = agCliente(id); if (!c || !puedeCitar()) return;
+  V.clienteDraft = {
+    id: c.id, nombre: c.nombre || '', tipo: c.tipo || (c.tl_tipo === 'company' ? 'empresa' : 'particular'),
+    telefono: c.telefono || '', email: c.email || '', nif: c.nif || '', direccion: c.direccion || '',
+    poblacion: c.poblacion || '', origen: c.origen || null, nota: c.nota || '',
+  };
+  V.view = 'clienteNuevo'; scrollMemo.clienteNuevo = 0; render();
+}
+async function agGuardarCliente(conCita) {
+  const d = V.clienteDraft; if (!d || V.agBusy) return;
+  const t = (k) => String(d[k] || '').trim();
+  if (!t('nombre')) { avisar('Pon al menos el nombre del cliente.'); return; }
+  if (t('email') && !esCorreo(t('email'))) { avisar('El email no parece válido. Corrígelo o déjalo vacío.'); return; }
+  if (!navigator.onLine) { avisar('Sin conexión: el cliente no se ha guardado.'); return; }
+  V.agBusy = true; render();
+  try {
+    const g = await visitasDB.guardarCliente({
+      id: d.id, nombre: t('nombre'), tipo: d.tipo, tl_tipo: d.tipo === 'particular' ? 'contact' : 'company',
+      telefono: t('telefono') || null, email: t('email').toLowerCase() || null, nif: t('nif') || null,
+      direccion: t('direccion') || null, poblacion: t('poblacion') || null, origen: d.origen || null, nota: t('nota') || null,
+    });
+    V.agBusy = false; V.clienteDraft = null;
+    await A.cargarAgenda();
+    V.clienteVerId = g.id;
+    if (conCita) return agNuevaCita(g.id, true);
+    toast('Cliente guardado.');
+    V.view = 'clienteVer'; render();
+  } catch (e) {
+    V.agBusy = false; render();
+    avisar('No se pudo guardar el cliente: ' + agErrorTxt(e));
+  }
+}
+
+function agNuevaCita(clienteId, desdeAlta) {
+  if (!puedeCitar()) return;
+  const c = agCliente(clienteId); if (!c) { avisar('No se encuentra el cliente.'); return; }
+  V.clienteVerId = clienteId;
+  V.citaDraft = {
+    id: null, clienteId, desdeAlta: !!desdeAlta, dia: agSumaDias(agHoy(), 1), horaMin: 600, duracion: 60,
+    categorias: [], empleadoId: miEmpId() || null, direccion: c.direccion || '', poblacion: c.poblacion || '', nota: '',
+  };
+  V.agConfirmar = null;
+  V.view = 'citaNueva'; scrollMemo.citaNueva = 0; render();
+}
+function agEditarCita(id) {
+  const x = agCita(id); if (!x || !puedeCitar()) return;
+  const ini = x.inicio ? new Date(x.inicio) : null;
+  V.citaDraft = {
+    id: x.id, clienteId: x.cliente_id, desdeAlta: false, dia: ini ? fechaLocal(ini) : null,
+    horaMin: ini ? ini.getHours() * 60 + ini.getMinutes() : 600, duracion: x.duracion_min || 60,
+    categorias: (x.categorias || []).slice(), empleadoId: x.empleado_id || null,
+    direccion: x.direccion || '', poblacion: x.poblacion || '', nota: x.nota || '',
+  };
+  V.agConfirmar = null;
+  V.view = 'citaNueva'; scrollMemo.citaNueva = 0; render();
+}
+async function agGuardarCita() {
+  sincronizarRuedas();
+  const d = V.citaDraft; if (!d || V.agBusy) return;
+  const choques = agSolapes(d).filter((o) => o.mismo);
+  if (choques.length && V.agConfirmar !== 'solape') {
+    V.agConfirmar = 'solape'; render();
+    avisar('Esa hora choca con otra cita de ' + agNombreEmp(d.empleadoId) + '. Pulsa «Guardar igualmente» si es a propósito.');
+    return;
+  }
+  V.agConfirmar = null;
+  if (!navigator.onLine) { avisar('Sin conexión: la cita no se ha guardado.'); return; }
+  let inicio = null;
+  if (d.dia) {
+    const h = Math.floor(d.horaMin / 60), m = d.horaMin % 60;
+    inicio = new Date(`${d.dia}T${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:00`).toISOString();
+  }
+  const fila = {
+    cliente_id: d.clienteId, inicio, duracion_min: d.duracion, categorias: d.categorias, empleado_id: d.empleadoId,
+    direccion: String(d.direccion || '').trim() || null, poblacion: String(d.poblacion || '').trim() || null,
+    nota: String(d.nota || '').trim() || null,
+  };
+  if (d.id) {
+    fila.id = d.id;
+    // Si cambia el momento de la cita, el aviso del día antes vuelve a tocar.
+    const antes = agCita(d.id);
+    if (!antes || antes.inicio !== inicio) fila.aviso_enviado_at = null;
+  }
+  V.agBusy = true; render();
+  try {
+    const g = await visitasDB.guardarCita(fila);
+    V.agBusy = false; V.citaDraft = null;
+    toast(inicio ? 'Cita guardada: ' + fechaCorta(inicio) + ' a las ' + hhmm(inicio) + '.' : 'Guardado como pendiente de fecha.');
+    await A.cargarAgenda();
+    V.citaVerId = g.id; V.view = 'citaVer'; render();
+  } catch (e) {
+    V.agBusy = false; render();
+    avisar('No se pudo guardar la cita: ' + agErrorTxt(e));
+  }
+}
+
+let agConfirmarT;
+async function agCambiarEstado(id, estado) {
+  if (!puedeCitar()) return;
+  const clave = id + ':' + estado;
+  if (V.agConfirmar !== clave) {
+    V.agConfirmar = clave; render();
+    clearTimeout(agConfirmarT);
+    agConfirmarT = setTimeout(() => { if (V.agConfirmar === clave) { V.agConfirmar = null; if (V.view === 'citaVer') render(); } }, 3500);
+    return;
+  }
+  V.agConfirmar = null;
+  if (!navigator.onLine) { avisar('Sin conexión: no se ha cambiado.'); return render(); }
+  try {
+    await visitasDB.guardarCita({ id, estado });
+    toast(estado === 'anulada' ? 'Cita anulada.' : 'Marcada: no estaba.');
+    await A.cargarAgenda();
+  } catch (e) { avisar('No se pudo cambiar: ' + agErrorTxt(e)); render(); }
+}
+
+function agEmpezarVisita(citaId) {
+  const x = agCita(citaId); if (!x || !puedeCitar()) return;
+  const b = leerBorradorVisita();
+  if (b && b.draft) {
+    if (b.draft.cita_id === citaId) return A.seguirBorrador();
+    V.sheet = { tipo: 'visitaAMedias', citaId, busy: false }; render();
+    return;
+  }
+  const c = x.cliente || agCliente(x.cliente_id) || {};
+  const cats = (x.categorias || []).slice();
+  V.visitaDraft = {
+    id: crypto.randomUUID(), fecha_visita: hoyISO(), categorias: cats, _catsGuardadas: [], _tocados: {}, cita_id: x.id,
+    _cliente: { id: c.id || x.cliente_id, nombre: c.nombre || '', telefono: c.telefono || '', tl_id: c.tl_id || null, tl_tipo: c.tl_tipo || 'contact', nuevo: false },
+    direccion: x.direccion || c.direccion || '', poblacion: x.poblacion || c.poblacion || '',
+  };
+  if (V.visitaDraft.direccion) V.visitaDraft._tocados.direccion = true;
+  if (V.visitaDraft.poblacion) V.visitaDraft._tocados.poblacion = true;
+  V.visitaFichas = {};
+  cats.forEach((k) => { V.visitaFichas[k] = { datos: {}, tocados: {} }; });
+  V.visitaFotos = {}; V.visitaAdjuntos = []; V.visitaCat = null; V.visitaClientes = null; V.visitaBuscarTxt = '';
+  // El cliente ya viene de la cita: se empieza por el inmueble.
+  V.visitaPaso = 2;
+  guardarBorradorVisita();
+  irVisitaPaso();
+}
+
+/* ---------- solapes: ¿esa hora pisa otra cita? ---------- */
+const agMinDelDia = (iso) => { const t = new Date(iso); return t.getHours() * 60 + t.getMinutes(); };
+const agRango = (s, e) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}–${Math.floor(e / 60)}:${String(e % 60).padStart(2, '0')}`;
+function agSolapes(d) {
+  if (!d || !d.dia) return [];
+  const ini = d.horaMin, fin = d.horaMin + (d.duracion || 60);
+  return V.agenda.citas
+    .filter((x) => x.estado === 'pendiente' && x.inicio && x.id !== d.id && agDiaDe(x.inicio) === d.dia)
+    .map((x) => { const s = agMinDelDia(x.inicio); return { x, s, e: s + (x.duracion_min || 60) }; })
+    .filter((o) => o.s < fin && ini < o.e)
+    .map((o) => Object.assign(o, { mismo: !!d.empleadoId && o.x.empleado_id === d.empleadoId }));
+}
+// Se repinta sola al mover la rueda (refrescarNumerosRueda), sin render().
+function agSolapeHTML(d) {
+  if (!d || !d.dia) return '';
+  const quien = (o) => esc(((o.x.cliente || {}).nombre) || 'Cliente') + (o.x.empleado_id ? ' (' + esc(agNombreEmp(o.x.empleado_id)) + ')' : '');
+  const tuya = 'Tu cita: ' + agRango(d.horaMin, d.horaMin + (d.duracion || 60)) + '.';
+  const sol = agSolapes(d);
+  const mismos = sol.filter((o) => o.mismo), otros = sol.filter((o) => !o.mismo);
+  if (mismos.length) {
+    return `<div class="aviso-rojo"><span class="ex">!</span><div class="col" style="gap:3px">
+      <b style="font:600 13px/1.3 var(--sans)">Choca con otra cita de ${esc(agNombreEmp(d.empleadoId))}</b>
+      <span style="font:400 12px/1.4 var(--sans)">${tuya} Ocupado: ${mismos.map((o) => agRango(o.s, o.e) + ' ' + quien(o)).join(' · ')}</span></div></div>`;
+  }
+  if (otros.length) {
+    return `<div class="tiny" style="color:var(--ambar-o)">${tuya} A esa hora también hay: ${otros.map((o) => agRango(o.s, o.e) + ' ' + quien(o)).join(' · ')}</div>`;
+  }
+  const delDia = V.agenda.citas
+    .filter((x) => x.estado === 'pendiente' && x.inicio && x.id !== d.id && agDiaDe(x.inicio) === d.dia)
+    .map((x) => { const s = agMinDelDia(x.inicio); return agRango(s, s + (x.duracion_min || 60)); });
+  return `<div class="tiny" style="color:var(--verde-o)">${tuya} No choca con ninguna cita.${delDia.length ? ' Ese día ocupado: ' + delDia.join(', ') + '.' : ''}</div>`;
+}
+
+/* ---------- vistas ---------- */
+function agAvisoHTML() {
+  const ag = V.agenda;
+  if (ag.error) {
+    const falta = faltaAgendaSQL(ag.error);
+    return `<div class="card" style="background:var(--rojo-cl);margin-bottom:14px">
+      <div style="font:600 14px var(--sans);color:var(--rojo)">${falta ? 'Falta preparar la base de datos' : 'No se pudo cargar la agenda'}</div>
+      <div class="sub" style="font-size:13px;margin-top:6px;color:var(--rojo)">${falta ? 'Hay que ejecutar sql/etapa23_agenda_citas.sql en Supabase.' : esc(ag.error)}</div>
+    </div>`;
+  }
+  return !ag.cargado ? '<div class="tiny" style="margin-bottom:12px">Cargando…</div>' : '';
+}
+
+function vAgenda() {
+  const ag = V.agenda, hoy = agHoy(), yoEmp = miEmpId();
+  const b = leerBorradorVisita();
+  let citas = ag.citas.filter((x) => x.estado === 'pendiente' && x.inicio && agDiaDe(x.inicio) >= hoy);
+  if (ag.filtro === 'mias' && puedeCitar()) citas = citas.filter((x) => x.empleado_id === yoEmp);
+  citas.sort((p, q) => p.inicio.localeCompare(q.inicio));
+  const dias = [...new Set(citas.map((x) => agDiaDe(x.inicio)))];
+  const sinCita = ag.clientes.filter((c) => agEstadoCliente(c).k === 'sin_cita').length;
+
+  const tarjeta = (x) => {
+    const c = x.cliente || agCliente(x.cliente_id) || {};
+    const esHoy = agDiaDe(x.inicio) === hoy;
+    return `<div class="card" data-a="ag_abrirCita" data-id="${x.id}" style="margin-bottom:10px;cursor:pointer${esHoy ? ';box-shadow:0 0 0 1.5px var(--ambar),var(--sh)' : ''}">
+      <div class="ag-cita">
+        <div class="ag-hora">${agHora(x.inicio)}<small>${agDur(x.duracion_min || 60)}</small></div>
+        <div style="min-width:0">
+          <div class="h2" style="font-size:17px">${esc(c.nombre || 'Cliente')}</div>
+          <div class="sub" style="margin-top:3px">${esc([x.direccion || c.direccion, x.poblacion || c.poblacion].filter(Boolean).join(' · ') || 'Sin dirección')}</div>
+          <div class="row" style="gap:6px;margin-top:10px;flex-wrap:wrap">${(x.categorias || []).map((k) => agBadge(nombreCat(k))).join('')}<div class="grow"></div><span class="tiny">${esc(agNombreEmp(x.empleado_id))}</span></div>
+        </div>
+      </div>
+      ${esHoy && puedeCitar() ? `<button class="btn btn-verde" data-a="ag_empezar" data-id="${x.id}" style="margin-top:14px;padding:14px;font-size:15px">Empezar visita</button>` : ''}
+    </div>`;
+  };
+
+  const medias = b && b.draft && puedeCitar() ? `<div class="card" style="margin-bottom:14px;box-shadow:0 0 0 1.5px var(--ambar),var(--sh)">
+      <div class="row g8"><span class="dot" style="width:8px;height:8px;background:var(--ambar)"></span><span class="lbl">Visita a medias · paso ${b.paso || 1} de 5</span></div>
+      <div class="h2" style="font-size:17px;margin-top:8px">${esc((b.draft._cliente || {}).nombre || b.draft.direccion || 'Visita')}</div>
+      <button class="pill pill-verde" data-a="seguirBorrador" style="margin-top:12px;padding:12px;width:100%">Seguir con la visita</button>
+    </div>` : '';
+
+  return `<div class="hdr">
+    <div class="row" style="justify-content:space-between;align-items:center;margin-bottom:14px">
+      ${marcaSysefen(false)}
+      ${avatarHTML(V.user.id, 'width:32px;height:32px;font-size:13px;background:rgba(20,23,15,.08);color:var(--tinta);cursor:pointer', 'data-a="menuUsuario"')}
+    </div>
+    <div class="row" style="justify-content:space-between">
+      <div class="h1">${puedeCitar() ? 'Agenda' : 'Citas'}</div>
+      ${puedeCitar() ? '<button class="pill" data-a="ag_nuevoCliente" style="background:var(--tinta);color:#fff">+ Cliente</button>' : '<button class="pill" data-a="ag_volver" data-v="clientes">Clientes</button>'}
+    </div>
+    ${puedeCitar()
+      ? `<div class="ag-seg" style="margin-top:14px">${[['todas', 'Todas'], ['mias', 'Mías']].map(([k, l]) => `<span class="${ag.filtro === k ? 'on' : ''}" data-a="ag_filtro" data-f="${k}">${l}</span>`).join('')}</div>`
+      : '<div class="sub" style="margin-top:8px">Citas del equipo de presupuestos</div>'}
+  </div>
+  <div class="scroll pad pb-nav">
+    ${agAvisoHTML()}
+    ${medias}
+    ${dias.map((dia, i) => {
+      const delDia = citas.filter((x) => agDiaDe(x.inicio) === dia);
+      return `<div class="row" style="justify-content:space-between;margin:${i ? 20 : 0}px 0 10px"><div class="lbl">${esc(agEtiquetaDia(dia))}</div><span class="tiny">${delDia.length === 1 ? '1 cita' : delDia.length + ' citas'}</span></div>${delDia.map(tarjeta).join('')}`;
+    }).join('')}
+    ${!dias.length && ag.cargado && !ag.error ? `<div class="card"><div class="h2">Sin citas próximas</div><div class="sub" style="margin-top:6px">${puedeCitar() ? 'Da de alta un cliente con «+ Cliente» y ponle día.' : 'El equipo de presupuestos no tiene citas por delante.'}</div></div>` : ''}
+    ${sinCita ? `<div class="card row" data-a="ag_sinCita" style="margin-top:14px;cursor:pointer">
+      <span class="dot" style="width:8px;height:8px;background:var(--rojo)"></span>
+      <div class="grow" style="font:600 15px var(--sans)">${sinCita === 1 ? '1 cliente sin cita' : sinCita + ' clientes sin cita'}</div>
+      <div style="font:400 20px/1 var(--sans);color:var(--t3)">›</div>
+    </div>` : ''}
+    ${puedeCitar() ? `<div class="card row" data-a="ag_visitas" style="margin-top:10px;cursor:pointer">
+      <div class="grow"><div style="font:600 15px var(--sans)">Visitas</div>
+      <div class="sub" style="font-size:12px;margin-top:4px">Las fichas tomadas: sin cerrar, por enviar y en Teamleader.</div></div>
+      <div style="font:400 20px/1 var(--sans);color:var(--t3)">›</div>
+    </div>` : ''}
+  </div>`;
+}
+
+function clientesListaHTML() {
+  const ag = V.agenda, q = String(ag.buscar || '').trim().toLowerCase();
+  let lista = ag.clientes.map((c) => ({ c, e: agEstadoCliente(c) }));
+  if (ag.filtroCli !== 'todos') lista = lista.filter((x) => x.e.k === ag.filtroCli);
+  if (q) lista = lista.filter(({ c }) => [c.nombre, c.telefono, c.poblacion, c.email].some((v) => String(v || '').toLowerCase().includes(q)));
+  if (!lista.length) return `<div class="card"><div class="sub">${ag.clientes.length ? 'Ningún cliente con ese filtro.' : (ag.cargado ? 'Todavía no hay clientes.' : 'Cargando…')}</div></div>`;
+  return lista.map(({ c, e }) => `<div class="card" data-a="ag_abrirCliente" data-id="${c.id}" style="margin-bottom:10px;cursor:pointer">
+    <div class="row g8"><span class="dot" style="width:8px;height:8px;background:${e.color}"></span><span class="lbl"${e.k === 'sin_cita' ? ' style="color:var(--rojo)"' : ''}>${esc(e.txt)}</span></div>
+    <div class="h2" style="font-size:17px;margin-top:8px">${esc(c.nombre)}</div>
+    <div class="sub" style="margin-top:3px">${esc([agTipoNombre(c), c.poblacion, c.telefono].filter(Boolean).join(' · '))}</div>
+    ${e.k === 'sin_cita' && puedeCitar() ? `<div class="row" style="margin-top:12px;padding-top:11px;border-top:1px solid var(--l1)">
+      ${c.nota ? `<span class="tiny grow ell">${esc(c.nota)}</span>` : '<div class="grow"></div>'}
+      <button class="pill" data-a="ag_nuevaCita" data-id="${c.id}" style="padding:8px 12px">Citar</button>
+    </div>` : ''}
+  </div>`).join('');
+}
+
+function vClientes() {
+  const ag = V.agenda;
+  const cuenta = (k) => ag.clientes.filter((c) => agEstadoCliente(c).k === k).length;
+  const filtros = [['todos', 'Todos'], ['sin_cita', 'Sin cita'], ['citado', 'Citados'], ['visitado', 'Visitados'], ['teamleader', 'En Teamleader']];
+  return `<div class="hdr">
+    <div class="row" style="justify-content:space-between">
+      <div class="h1">Clientes</div>
+      ${puedeCitar() ? '<button class="pill" data-a="ag_nuevoCliente" style="background:var(--tinta);color:#fff">+ Cliente</button>' : ''}
+    </div>
+    <input class="inp" id="ag-buscar" data-f="ag_buscar" value="${esc(ag.buscar || '')}" placeholder="Nombre, teléfono o población" autocomplete="off" style="margin-top:14px">
+    <div class="wrap" style="margin-top:12px">${filtros.map(([k, l]) => {
+      const n = k === 'todos' ? 0 : cuenta(k);
+      return `<span class="chip ${ag.filtroCli === k ? 'on' : ''}" data-a="ag_filtroCli" data-f="${k}" style="cursor:pointer">${l}${n ? ' · ' + n : ''}</span>`;
+    }).join('')}</div>
+  </div>
+  <div class="scroll pad pb-nav">
+    ${agAvisoHTML()}
+    <div id="clientes-lista">${clientesListaHTML()}</div>
+  </div>`;
+}
+
+function vClienteNuevo() {
+  const d = V.clienteDraft;
+  if (!d) { V.view = 'clientes'; return vClientes(); }
+  const nuevo = !d.id;
+  const campo = (k, lbl, attrs, ph) => `<div class="campo"><div class="lbl">${lbl}</div>
+    <input class="inp" id="ag-cli-${k}" data-f="ag_cli" data-k="${k}" value="${esc(d[k] || '')}" placeholder="${esc(ph || '')}" ${attrs || ''}></div>`;
+  return `<div class="hdr-dark">
+    <div class="volver" data-a="ag_volver" data-v="${nuevo ? 'agenda' : 'clienteVer'}">‹ ${nuevo ? 'Agenda' : 'Cliente'}</div>
+    <div style="font:600 27px/1.1 var(--cond)">${nuevo ? 'Nuevo cliente' : 'Editar cliente'}</div>
+    <div class="sub" style="color:rgba(255,255,255,.5);margin-top:6px">${nuevo ? 'Paso 1 de 2 · Quién es' : esc(d.nombre)}</div>
+    ${nuevo ? '<div class="pasos"><i class="on"></i><i></i></div>' : ''}
+  </div>
+  <div class="scroll pad sin-marca" style="padding-bottom:30px">
+    <div class="campo" style="margin-top:0"><div class="lbl">Tipo</div>
+      <div class="wrap">${AG_TIPOS.map(([k, l]) => `<span class="chip ${d.tipo === k ? 'sel' : ''}" data-a="ag_cliTipo" data-t="${k}" style="cursor:pointer">${l}</span>`).join('')}</div></div>
+    ${campo('nombre', 'Nombre<span style="color:var(--rojo)"> *</span>', 'autocapitalize="words"', d.tipo === 'particular' ? 'Nombre y apellidos' : 'Razón social o nombre')}
+    <div class="rej2" style="margin-top:16px">
+      <div class="campo" style="margin-top:0"><div class="lbl">Teléfono</div><input class="inp" id="ag-cli-telefono" data-f="ag_cli" data-k="telefono" value="${esc(d.telefono)}" type="tel" inputmode="tel" placeholder="Opcional"></div>
+      <div class="campo" style="margin-top:0"><div class="lbl">NIF / CIF</div><input class="inp" id="ag-cli-nif" data-f="ag_cli" data-k="nif" value="${esc(d.nif)}" autocapitalize="characters" placeholder="Opcional"></div>
+    </div>
+    ${campo('email', 'Email', 'type="email" inputmode="email" autocapitalize="off"', 'Para el aviso del día antes')}
+    ${campo('direccion', 'Dirección de la visita', '', 'Calle y número')}
+    ${campo('poblacion', 'Población', 'autocapitalize="words"', '')}
+    <div class="campo"><div class="lbl">¿Cómo nos conoció?</div>
+      <div class="wrap">${AG_ORIGENES.map(([k, l]) => `<span class="chip ${d.origen === k ? 'sel' : ''}" data-a="ag_cliOrigen" data-o="${k}" style="cursor:pointer">${l}</span>`).join('')}</div></div>
+    <div class="campo"><div class="lbl">Nota</div>
+      <textarea class="inp" id="ag-cli-nota" data-f="ag_cli" data-k="nota" rows="3" placeholder="Lo que contó al llamar, cómo llegar…">${esc(d.nota)}</textarea></div>
+    <div class="tiny" style="margin-top:12px">Solo el nombre es obligatorio. El resto se puede completar después.</div>
+  </div>
+  <div class="pie">${nuevo
+    ? `<button class="btn btn-gris" data-a="ag_guardarCliente" ${V.agBusy ? 'disabled' : ''}>Sin cita</button>
+       <button class="btn btn-verde" data-a="ag_guardarCliente" data-cita="1" ${V.agBusy ? 'disabled' : ''}>${V.agBusy ? 'Guardando…' : 'Siguiente: la cita'}</button>`
+    : `<button class="btn btn-verde" data-a="ag_guardarCliente" ${V.agBusy ? 'disabled' : ''}>${V.agBusy ? 'Guardando…' : 'Guardar'}</button>`}</div>`;
+}
+
+function vCitaNueva() {
+  const d = V.citaDraft;
+  if (!d) { V.view = 'agenda'; return vAgenda(); }
+  const c = agCliente(d.clienteId) || {};
+  const hoy = agHoy();
+  const dias = Array.from({ length: 10 }, (_, i) => agSumaDias(hoy, i));
+  const otras = V.agenda.citas.filter((x) => x.estado === 'pendiente' && x.inicio && x.id !== d.id);
+  const conCitas = new Set(otras.map((x) => agDiaDe(x.inicio)));
+  const dow = (dia) => new Date(dia + 'T12:00').toLocaleDateString('es-ES', { weekday: 'short' }).replace('.', '');
+  const presu = agPresupuestos();
+  return `<div class="hdr-dark">
+    <div class="volver" data-a="ag_volver" data-v="${d.id ? 'citaVer' : 'clienteVer'}">‹ ${d.id ? 'Cita' : 'Cliente'}</div>
+    <div style="font:600 27px/1.1 var(--cond)">${d.id ? 'Cambiar la cita' : 'La cita'}</div>
+    <div class="sub" style="color:rgba(255,255,255,.5);margin-top:6px">${d.desdeAlta ? 'Paso 2 de 2 · ' : ''}${esc(c.nombre || '')}</div>
+    ${d.desdeAlta ? '<div class="pasos"><i class="on"></i><i class="on"></i></div>' : ''}
+  </div>
+  <div class="scroll pad sin-marca" style="padding-bottom:30px">
+    <div class="campo" style="margin-top:0">
+      <div class="lbl">Día</div>
+      <div class="ag-dias">${dias.map((dia) => `<div class="ag-dia ${d.dia === dia ? 'on' : ''}" data-a="ag_citaDia" data-dia="${dia}">
+        <span>${dia === hoy ? 'hoy' : esc(dow(dia))}</span><b>${+dia.slice(8)}</b><small class="${conCitas.has(dia) ? '' : 'vacio'}"></small></div>`).join('')}</div>
+      <div class="row g8">
+        <input class="inp grow" type="date" id="ag-cita-fecha" data-f="ag_citaFecha" value="${esc(d.dia || '')}" min="${hoy}" style="min-height:44px;padding:10px 12px">
+        <span class="chip ${!d.dia ? 'sel' : ''}" data-a="ag_citaDia" data-dia="" style="cursor:pointer">Sin fecha aún</span>
+      </div>
+      <div class="tiny">Un punto verde: ese día ya hay citas del equipo.</div>
+    </div>
+    ${d.dia ? `<div class="campo">
+      <div class="lbl">Hora · ${esc(agMayus(fechaLarga(d.dia)))}</div>
+      ${relojHTML('cita', 'hora', d.horaMin, 23 * 60 + 45, true, 15)}
+      <div data-num="citaSolape">${agSolapeHTML(d)}</div>
+    </div>
+    <div class="campo"><div class="lbl">Duración</div>
+      <div class="wrap">${AG_DURACIONES.map((m) => `<span class="chip ${d.duracion === m ? 'sel' : ''}" data-a="ag_citaDur" data-m="${m}" style="cursor:pointer">${agDur(m)}</span>`).join('')}</div></div>` : ''}
+    <div class="campo"><div class="lbl">Qué quiere presupuestar</div>
+      <div class="wrap">${vSchemas.CATEGORIAS.map((k) => `<span class="chip ${d.categorias.includes(k.key) ? 'sel' : ''}" data-a="ag_citaCat" data-c="${k.key}" style="cursor:pointer">${esc(k.nombre)}</span>`).join('')}</div></div>
+    <div class="campo"><div class="lbl">Quién va</div>
+      <div class="wrap">${presu.length ? presu.map((u) => `<span class="chip ${d.empleadoId === u.empId ? 'sel' : ''}" data-a="ag_citaQuien" data-id="${u.empId}" style="cursor:pointer">${esc(u.nombre)}</span>`).join('') : '<span class="tiny">No hay nadie con rol presupuestos.</span>'}</div></div>
+    <div class="campo"><div class="lbl">Dirección de la visita</div>
+      <input class="inp" id="ag-cita-direccion" data-f="ag_cita" data-k="direccion" value="${esc(d.direccion)}" placeholder="Calle y número"></div>
+    <div class="campo"><div class="lbl">Población</div>
+      <input class="inp" id="ag-cita-poblacion" data-f="ag_cita" data-k="poblacion" value="${esc(d.poblacion)}" autocapitalize="words"></div>
+    <div class="campo"><div class="lbl">Nota para la visita</div>
+      <textarea class="inp" id="ag-cita-nota" data-f="ag_cita" data-k="nota" rows="3" placeholder="Dónde aparcar, qué tiene ahora, a quién preguntar…">${esc(d.nota)}</textarea></div>
+  </div>
+  <div class="pie"><button class="btn btn-verde" data-a="ag_guardarCita" ${V.agBusy ? 'disabled' : ''}>${V.agBusy ? 'Guardando…' : V.agConfirmar === 'solape' ? 'Guardar igualmente' : d.dia ? 'Guardar cita' : 'Guardar sin fecha'}</button></div>`;
+}
+
+function vCitaVer() {
+  const x = agCita(V.citaVerId);
+  if (!x) {
+    return `<div class="hdr-dark"><div class="volver" data-a="ag_volver" data-v="agenda">‹ Agenda</div>
+      <div style="font:600 27px/1.1 var(--cond)">Cita</div>
+      <div class="sub" style="color:rgba(255,255,255,.5);margin-top:6px">${V.agenda.cargando ? 'Cargando…' : 'No se encuentra la cita.'}</div></div>
+      <div class="scroll pad sin-marca"></div>`;
+  }
+  const c = x.cliente || agCliente(x.cliente_id) || {};
+  const dir = [x.direccion || c.direccion, x.poblacion || c.poblacion].filter(Boolean).join(', ');
+  const fin = x.inicio ? new Date(new Date(x.inicio).getTime() + (x.duracion_min || 60) * 60000).toISOString() : null;
+  const cuando = x.inicio
+    ? (agDiaDe(x.inicio) === agHoy() ? 'Hoy' : agMayus(fechaLarga(agDiaDe(x.inicio)))) + ' · ' + agHora(x.inicio) + ' – ' + hhmm(fin)
+    : 'Sin fecha aún';
+  const tel = String(c.telefono || '').replace(/[^\d+]/g, '');
+  const icono = {
+    tel: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6.5 3.5l3 3-2 2.5a12 12 0 005.5 5.5l2.5-2 3 3-2 3C9 18 6 15 3.5 7.5l3-4z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>',
+    mapa: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 21s-6.5-6.2-6.5-11.2a6.5 6.5 0 0113 0C18.5 14.8 12 21 12 21z" stroke="currentColor" stroke-width="1.7"/><circle cx="12" cy="9.8" r="2.3" stroke="currentColor" stroke-width="1.7"/></svg>',
+    cal: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="4" y="5" width="16" height="15" rx="2.5" stroke="currentColor" stroke-width="1.7"/><path d="M4 10h16M9 3v4M15 3v4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>',
+  };
+  const pendiente = x.estado === 'pendiente';
+  const conf = (e) => V.agConfirmar === x.id + ':' + e;
+  const fila = (k, v) => (v ? `<div class="fila"><span class="k">${k}</span><span class="v">${v}</span></div>` : '');
+
+  let pie = '';
+  if (puedeCitar() && pendiente) {
+    pie = `<div class="pie col">
+      <button class="btn btn-verde" data-a="ag_empezar" data-id="${x.id}">Empezar visita</button>
+      <div class="row g8">
+        <button class="btn btn-gris ${conf('no_estaba') ? 'btn-rojo' : ''}" data-a="ag_estado" data-id="${x.id}" data-e="no_estaba" style="padding:13px;${conf('no_estaba') ? 'color:#fff' : ''}">${conf('no_estaba') ? '¿Seguro?' : 'No estaba'}</button>
+        <button class="btn btn-gris ${conf('anulada') ? 'btn-rojo' : ''}" data-a="ag_estado" data-id="${x.id}" data-e="anulada" style="padding:13px;${conf('anulada') ? 'color:#fff' : ''}">${conf('anulada') ? '¿Seguro?' : 'Anular'}</button>
+      </div>
+    </div>`;
+  } else if (x.visita_id) {
+    pie = `<div class="pie"><button class="btn btn-gris" data-a="abrirVisita" data-id="${x.visita_id}">Ver la visita</button></div>`;
+  } else if (puedeCitar()) {
+    pie = `<div class="pie"><button class="btn btn-verde" data-a="ag_nuevaCita" data-id="${x.cliente_id}">Nueva cita</button></div>`;
+  }
+
+  return `<div class="hdr-dark">
+    <div class="volver" data-a="ag_volver" data-v="agenda">‹ Agenda</div>
+    <div class="lbl" style="color:${pendiente ? 'var(--ambar)' : 'rgba(255,255,255,.5)'};margin-top:4px">${esc(cuando)}${pendiente ? '' : ' · ' + esc(AG_ESTADOS[x.estado] || x.estado)}</div>
+    <div style="font:600 27px/1.1 var(--cond);margin-top:8px">${esc(c.nombre || 'Cliente')}</div>
+    <div class="sub" style="color:rgba(255,255,255,.5);margin-top:6px">${esc(dir || 'Sin dirección')}</div>
+    <div class="ag-acciones">
+      ${tel ? `<a class="ag-accion" href="tel:${esc(tel)}"><i>${icono.tel}</i>Llamar</a>` : ''}
+      ${dir ? `<a class="ag-accion" href="https://www.google.com/maps/search/?api=1&amp;query=${encodeURIComponent(dir)}" target="_blank" rel="noopener"><i>${icono.mapa}</i>Cómo llegar</a>` : ''}
+      ${puedeCitar() && pendiente ? `<div class="ag-accion" data-a="ag_editarCita" data-id="${x.id}"><i>${icono.cal}</i>Cambiar</div>` : ''}
+    </div>
+  </div>
+  <div class="scroll pad sin-marca" style="padding-bottom:24px">
+    <div class="card" style="padding:6px 15px">
+      ${fila('A presupuestar', esc((x.categorias || []).map(nombreCat).join(', ')) || '—')}
+      ${fila('Va', esc(agNombreEmp(x.empleado_id)) || '—')}
+      ${fila('Duración', agDur(x.duracion_min || 60))}
+      ${fila('Teléfono', esc(c.telefono || ''))}
+      ${fila('Email', esc(c.email || ''))}
+      ${fila('Nota', esc(x.nota || ''))}
+      ${x.aviso_enviado_at ? fila('Aviso', 'Enviado ' + fechaCorta(x.aviso_enviado_at) + ' ' + hhmm(x.aviso_enviado_at)) : ''}
+    </div>
+    <div class="card row" data-a="ag_abrirCliente" data-id="${x.cliente_id}" style="margin-top:12px;cursor:pointer">
+      <div class="grow"><div style="font:600 15px var(--sans)">Ficha del cliente</div>
+      <div class="sub" style="font-size:12px;margin-top:4px">Historial de citas y visitas.</div></div>
+      <div style="font:400 20px/1 var(--sans);color:var(--t3)">›</div>
+    </div>
+  </div>
+  ${pie}`;
+}
+
+function vClienteVer() {
+  const c = agCliente(V.clienteVerId);
+  if (!c) {
+    return `<div class="hdr-dark"><div class="volver" data-a="ag_volver" data-v="clientes">‹ Clientes</div>
+      <div style="font:600 27px/1.1 var(--cond)">Cliente</div>
+      <div class="sub" style="color:rgba(255,255,255,.5);margin-top:6px">${V.agenda.cargando ? 'Cargando…' : 'No se encuentra el cliente.'}</div></div>
+      <div class="scroll pad sin-marca pb-nav"></div>`;
+  }
+  const hoy = agHoy();
+  const citas = V.agenda.citas.filter((x) => x.cliente_id === c.id);
+  const items = [
+    ...citas.map((x) => ({ t: x.inicio || x.created_at || '', tipo: 'cita', x })),
+    ...(c.visitas || []).map((v) => ({ t: v.fecha_visita ? v.fecha_visita + 'T12:00' : '', tipo: 'visita', v })),
+  ].sort((p, q) => String(q.t).localeCompare(String(p.t)));
+
+  const hito = (it) => {
+    if (it.tipo === 'cita') {
+      const x = it.x;
+      const futura = x.estado === 'pendiente';
+      const clase = futura ? (x.inicio && agDiaDe(x.inicio) === hoy ? 'ahora' : '') : 'hecho';
+      const cuando = x.inicio ? (agDiaDe(x.inicio) === hoy ? 'hoy' : fechaCorta(x.inicio)) + ' · ' + agHora(x.inicio) : 'sin fecha';
+      const txt = futura ? 'Cita · ' + cuando : (AG_ESTADOS[x.estado] || x.estado) + ' · ' + cuando;
+      return `<div class="ag-hito ${clase}"><div class="card" data-a="ag_abrirCita" data-id="${x.id}" style="cursor:pointer">
+        <div class="lbl"${futura ? '' : ' style="color:var(--t2)"'}>${esc(txt)}</div>
+        ${x.nota ? `<div style="font:500 14px/1.3 var(--sans);margin-top:7px">${esc(x.nota)}</div>` : ''}
+        <div class="row" style="gap:6px;margin-top:8px;flex-wrap:wrap">${(x.categorias || []).map((k) => agBadge(nombreCat(k))).join('')}<div class="grow"></div><span class="tiny">${esc(agNombreEmp(x.empleado_id))}</span></div>
+      </div></div>`;
+    }
+    const v = it.v;
+    const est = v.sync_estado === 'sincronizada' ? ['var(--verde)', 'En Teamleader'] : v.estado === 'completada' ? ['var(--tinta)', 'Cerrada · por enviar'] : ['var(--ambar)', 'Borrador'];
+    return `<div class="ag-hito hecho"><div class="card" data-a="abrirVisita" data-id="${v.id}" style="cursor:pointer">
+      <div class="row g8"><span class="dot" style="width:8px;height:8px;background:${est[0]}"></span><span class="lbl">${est[1]}${v.codigo ? ' · ' + esc(v.codigo) : ''}</span></div>
+      <div style="font:600 15px/1.25 var(--sans);margin-top:7px">Visita${v.fecha_visita ? ' del ' + fechaCorta(v.fecha_visita + 'T12:00') : ''}</div>
+    </div></div>`;
+  };
+
+  return `<div class="hdr-dark">
+    <div class="volver" data-a="ag_volver" data-v="clientes">‹ Clientes</div>
+    <div style="font:600 27px/1.1 var(--cond)">${esc(c.nombre)}</div>
+    <div class="sub" style="color:rgba(255,255,255,.5);margin-top:6px">${esc([agTipoNombre(c), c.poblacion, c.telefono].filter(Boolean).join(' · '))}</div>
+    ${puedeCitar() ? `<div class="row g8" style="margin-top:14px">
+      <button class="pill pill-verde grow" data-a="ag_nuevaCita" data-id="${c.id}" style="padding:13px">+ Nueva cita</button>
+      <button class="pill grow" data-a="ag_editarCliente" data-id="${c.id}" style="padding:13px;background:rgba(255,255,255,.12);color:#fff">Editar</button>
+    </div>` : ''}
+  </div>
+  <div class="scroll pad sin-marca pb-nav">
+    ${c.email || c.nif || c.direccion || c.nota ? `<div class="card" style="padding:6px 15px;margin-bottom:18px">
+      ${c.telefono ? `<div class="fila"><span class="k">Teléfono</span><span class="v"><a href="tel:${esc(String(c.telefono).replace(/[^\d+]/g, ''))}">${esc(c.telefono)}</a></span></div>` : ''}
+      ${c.email ? `<div class="fila"><span class="k">Email</span><span class="v">${esc(c.email)}</span></div>` : ''}
+      ${c.nif ? `<div class="fila"><span class="k">NIF</span><span class="v">${esc(c.nif)}</span></div>` : ''}
+      ${c.direccion ? `<div class="fila"><span class="k">Dirección</span><span class="v">${esc([c.direccion, c.poblacion].filter(Boolean).join(', '))}</span></div>` : ''}
+      ${c.nota ? `<div class="fila"><span class="k">Nota</span><span class="v">${esc(c.nota)}</span></div>` : ''}
+    </div>` : ''}
+    <div class="lbl" style="margin-bottom:12px">Historial</div>
+    <div class="ag-linea">
+      ${items.map(hito).join('')}
+      <div class="ag-hito hecho"><div class="card" style="padding:12px 15px">
+        <div class="lbl">Alta${c.created_at ? ' · ' + fechaCorta(c.created_at) : ''}</div>
+        ${c.origen ? `<div class="tiny" style="margin-top:5px">${esc((AG_ORIGENES.find((o) => o[0] === c.origen) || [null, c.origen])[1])}</div>` : ''}
+      </div></div>
+    </div>
+  </div>`;
+}
+
+
+/* ---------- otra visita con una a medias ---------- */
+// Antes se bloqueaba. Ahora la de medias se guarda como borrador en Supabase
+// (con sus fotos) y se empieza la nueva. Sin cobertura no se puede guardar.
+A.visitaAparcar = async () => {
+  const s = V.sheet;
+  if (!s || s.tipo !== 'visitaAMedias' || s.busy) return;
+  const luego = () => { V.sheet = null; return s.citaId ? agEmpezarVisita(s.citaId) : A.nuevaVisita(); };
+  const b = leerBorradorVisita();
+  if (!b || !b.draft) return luego();
+  if (!navigator.onLine) { avisar('Sin conexión: la visita a medias no se puede guardar ahora. Síguela o descártala.'); return; }
+  s.busy = true; render();
+  V.visitaDraft = b.draft; V.visitaFichas = b.fichas || {}; V.visitaFotos = b.fotos || {};
+  V.visitaAdjuntos = b.adjuntos || []; V.visitaPaso = b.paso || 1; V.visitaCat = null;
+  await A.guardarVisita(false, luego);
+  if (V.sheet === s) { s.busy = false; render(); }   // falló: la hoja sigue abierta
+};
+A.visitaSeguirMedias = () => { V.sheet = null; A.seguirBorrador(); };
+
 /* --- nav --- */
 function nav(v) {
   const items = esPresupuestos()
-    ? [['visitas', 'Visitas', '5px'], ['ajustes', 'Perfil', '99px']]
+    ? [['agenda', 'Agenda', '5px'], ['clientes', 'Clientes', '3px'], ['ajustes', 'Perfil', '99px']]
     : esAdmin()
-    ? [['hoy', 'Hoy', '99px'], ['empleados', 'Empleados', '4px'], ['obras', 'Obras', '5px'], ['partes', 'Partes', '3px'], ['horas', 'Horas', '2px'], ['ajustes', 'Ajustes', '99px']]
+    ? [['hoy', 'Hoy', '99px'], ['empleados', 'Empleados', '4px'], ['obras', 'Obras', '5px'], ['partes', 'Partes', '3px'], ['horas', 'Horas', '2px'], ['agenda', 'Citas', '6px'], ['ajustes', 'Ajustes', '99px']]
     : puedeCrear()
-    ? [['hoy', 'Hoy', '99px'], ['obras', 'Obras', '5px'], ['partes', 'Partes', '3px'], ['horas', 'Horas', '2px'], ['ajustes', 'Ajustes', '99px']]
+    ? [['hoy', 'Hoy', '99px'], ['obras', 'Obras', '5px'], ['partes', 'Partes', '3px'], ['horas', 'Horas', '2px'], ['agenda', 'Citas', '6px'], ['ajustes', 'Ajustes', '99px']]
     : [['hoy', 'Hoy', '99px'], ['obras', 'Obras', '5px'], ['horas', 'Horas', '2px'], ['ajustes', 'Perfil', '99px']];
   const act = (id) => v === id
     || (id === 'obras' && v === 'obra')
     || (id === 'horas' && v === 'imputar')
     || (id === 'empleados' && (v === 'empleado' || v === 'planilla'))
-    || (id === 'visitas' && v === 'visita');
+    || (id === 'visitas' && v === 'visita')
+    || (id === 'agenda' && (v === 'citaVer' || (!esPresupuestos() && (v === 'clientes' || v === 'clienteVer'))))
+    || (id === 'clientes' && ['clienteVer', 'visitas', 'visita'].includes(v));
   return `<div class="nav">${items.map(([id, l, r]) => `<div class="${act(id) ? 'on' : ''}" data-a="ir" data-v="${id}"><i style="border-radius:${r}"></i><span>${l}</span></div>`).join('')}</div>`;
 }
 
@@ -5135,6 +5811,19 @@ function sheet() {
       <div class="row g8" style="margin-top:20px">
         <button class="btn btn-gris" data-a="cerrarSheet" style="border-radius:99px">Cancelar</button>
         <button class="btn btn-verde" data-a="corrGuardar" style="font-size:14px" ${s.busy ? 'disabled' : ''}>${s.busy ? 'Guardando…' : 'Guardar corrección'}</button>
+      </div>
+    </div></div>`;
+  }
+  if (s.tipo === 'visitaAMedias') {
+    const b = leerBorradorVisita(); const dr = (b && b.draft) || {};
+    return `<div class="sheet"><div>
+      <div style="font:600 23px/1.15 var(--cond)">Tienes una visita a medias</div>
+      <div class="sub" style="margin-top:6px">${esc([(dr._cliente || {}).nombre, dr.direccion].filter(Boolean).join(' · ') || 'Visita sin datos todavía')}</div>
+      <div class="sub" style="margin-top:10px">Se guarda como borrador, con sus fotos, y empiezas la nueva. La encontrarás en Visitas → Sin cerrar.</div>
+      <button class="btn btn-verde" data-a="visitaAparcar" style="margin-top:16px" ${s.busy ? 'disabled' : ''}>${s.busy ? 'Guardando…' : 'Guardarla y empezar otra'}</button>
+      <div class="row g8" style="margin-top:8px">
+        <button class="btn btn-gris" data-a="cerrarSheet" style="border-radius:99px">Cancelar</button>
+        <button class="btn btn-gris" data-a="visitaSeguirMedias" style="border-radius:99px" ${s.busy ? 'disabled' : ''}>Seguir con ella</button>
       </div>
     </div></div>`;
   }
@@ -5431,6 +6120,9 @@ document.addEventListener('click', (e) => {
   const a = el.dataset.a;
   const d = el.dataset;
   if (a.startsWith('vf')) return A.vf(a, d);
+  if (a.startsWith('ag_')) return A.ag(a, d, e);
+  if (a === 'visitaAparcar') return A.visitaAparcar();
+  if (a === 'visitaSeguirMedias') return A.visitaSeguirMedias();
   if (a === 'nuevaVisita') return A.nuevaVisita();
   if (a === 'seguirBorrador') return A.seguirBorrador();
   if (a === 'descartarBorrador') return A.descartarBorrador();
@@ -5579,6 +6271,10 @@ document.addEventListener('input', (e) => {
   }
   if (!f) return;
   if (f.startsWith('vf')) return A.vf(f, t.dataset, t.value);
+  if (f === 'ag_buscar') { V.agenda.buscar = t.value; const box = document.getElementById('clientes-lista'); if (box) box.innerHTML = clientesListaHTML(); return; }
+  if (f === 'ag_cli') { if (V.clienteDraft) V.clienteDraft[t.dataset.k] = t.value; return; }
+  if (f === 'ag_cita') { if (V.citaDraft) V.citaDraft[t.dataset.k] = t.value; return; }
+  if (f === 'ag_citaFecha') { if (V.citaDraft) { sincronizarRuedas(); V.citaDraft.dia = t.value || null; render(); } return; }
   if (f === 'loginNombre') { V.loginNombre = t.value; return; }
   if (f === 'visitaBuscar') return A.visitaBuscar(t.value);
   if (f === 'visitaCli') { const c = V.visitaDraft && V.visitaDraft._cliente; if (c) { c[t.dataset.k] = t.value; guardarBorradorVisita(); } return; }
@@ -5591,6 +6287,7 @@ document.addEventListener('input', (e) => {
   if (f === 'empNombre') { A.empCampo('nombre', t.value); return; }
   if (f === 'empEmail') { A.empCampo('email', t.value); return; }
   if (f === 'empTelefono') { A.empCampo('telefono', t.value); return; }
+  if (f === 'empEmailAvisos') { A.empCampo('emailAvisos', t.value); return; }
   if (f === 'envPara') { if (V.sheet) V.sheet.para = t.value; return; }
   if (f === 'orNombre') { if (V.sheet) V.sheet.nombre = t.value; return; }
   if (f === 'orCliente') { if (V.sheet) V.sheet.cliente = t.value; return; }
