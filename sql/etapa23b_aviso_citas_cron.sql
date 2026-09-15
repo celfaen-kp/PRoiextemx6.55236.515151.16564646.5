@@ -10,8 +10,14 @@
 -- ANTES DE DARLE A RUN: sustituye CAMBIA_ESTA_CLAVE por esa MISMA contraseña.
 -- No la guardes en este archivo ni en Git: pégala solo en el SQL Editor.
 --
--- CUÁNDO: todos los días a las 16:00 UTC = 18:00 en Mallorca en verano y
--- 17:00 en invierno. Avisa de las citas del día siguiente.
+-- CUÁNDO: cada 10 minutos. En cada pasada avisa de las citas que empiezan en
+-- las próximas 24 horas y aún no se han avisado: el correo sale 24 h antes, o
+-- en pocos minutos si la cita se crea con menos margen.
+--
+-- ¿YA TENÍAS LA TAREA CREADA A LAS 16:00? No hace falta volver a poner la
+-- clave: basta con cambiarle el horario con esta línea sola:
+--   select cron.alter_job((select jobid from cron.job where jobname = 'recordatorio-citas'),
+--                         schedule := '*/10 * * * *');
 -- =============================================================================
 
 create extension if not exists pg_cron;
@@ -22,7 +28,7 @@ select cron.unschedule(jobid) from cron.job where jobname = 'recordatorio-citas'
 
 select cron.schedule(
   'recordatorio-citas',
-  '0 16 * * *',
+  '*/10 * * * *',
   $$
   select net.http_post(
     url     := 'https://pcftuxqgzeacladtmaqx.supabase.co/functions/v1/recordatorio-citas',

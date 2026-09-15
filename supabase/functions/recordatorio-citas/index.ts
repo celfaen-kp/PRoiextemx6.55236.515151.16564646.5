@@ -1,23 +1,26 @@
 // =============================================================================
 // Sysefen · Edge Function `recordatorio-citas`
 //
-// Cada tarde (tarea programada, sql/etapa23b_aviso_citas_cron.sql) manda por
-// correo, desde noreply@sysefen.com:
-//   - a cada CLIENTE con email, un recordatorio de su cita de mañana;
-//   - a cada TÉCNICO con "email para avisos", la lista de sus citas de mañana.
-// Cada cita se marca con aviso_enviado_at para no avisar dos veces.
+// La llama una tarea programada cada 10 minutos (sql/etapa23b_aviso_citas_cron.sql).
+// En cada pasada busca las citas pendientes que empiezan en las PRÓXIMAS 24 HORAS
+// y todavía no se han avisado, y manda por correo, desde noreply@sysefen.com:
+//   - a cada CLIENTE con email, un recordatorio de su cita;
+//   - a cada TÉCNICO con "email para avisos", la lista de sus próximas citas.
+// Así el aviso sale 24 h antes, y si la cita se crea con menos de 24 h de
+// margen, sale en la siguiente pasada (en pocos minutos).
+// Cada cita se marca con aviso_enviado_at para no avisar dos veces. Si en la
+// app se cambia la hora de la cita, se borra esa marca y vuelve a avisarse.
 //
 // SECRETOS (Supabase → Edge Functions → Secrets). Nunca en el código ni en Git:
 //   RESEND_API_KEY   la misma que usa enviar-parte
 //   AVISOS_CLAVE     contraseña larga inventada; la misma va en la tarea cron
-//   (SUPABASE_URL y SUPABASE_SERVICE_ROLE_KEY los pone Supabase solo.)
 //
 // DESPLIEGUE: "Verify JWT" DESACTIVADO. La protege la cabecera `x-clave`.
 //
 // USO (POST con JSON):
-//   {}                                   avisa de las citas de mañana
-//   { "solo_ver": true }                 dice a quién escribiría, sin enviar nada
-//   { "fecha": "2026-09-20", ... }       otro día (para probar)
+//   {}                            avisa de las citas de las próximas 24 horas
+//   { "solo_ver": true }          dice a quién escribiría, sin enviar nada
+//   { "fecha": "2026-09-20" }     en vez de las próximas 24 h, ese día entero (pruebas)
 // =============================================================================
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
@@ -58,6 +61,20 @@ const hora = (iso: string) =>
   new Date(iso).toLocaleTimeString('es-ES', { timeZone: ZONA, hour: '2-digit', minute: '2-digit' });
 const diaLargo = (iso: string) =>
   new Date(iso).toLocaleDateString('es-ES', { timeZone: ZONA, weekday: 'long', day: 'numeric', month: 'long' });
+
+// "hoy", "mañana, miércoles 16 de septiembre" o "miércoles 16 de septiembre".
+function cuando(iso: string, ahora: Date) {
+  const dia = fechaEnZona(new Date(iso));
+  if (dia === fechaEnZona(ahora)) return 'hoy';
+  if (dia === fechaEnZona(new Date(ahora.getTime() + 24 * 3600 * 1000))) return 'mañana, ' + diaLargo(iso);
+  return diaLargo(iso);
+}
+// Para el asunto: "hoy", "mañana" o "miércoles 16 de septiembre".
+function cuandoCorto(iso: string, ahora: Date) {
+  const c = cuando(iso, ahora);
+  return c.startsWith('mañana') ? 'mañana' : c;
+}
+
 const listaCategorias = (cats: string[]) => {
   const n = (cats || []).map((c) => CATEGORIAS[c] || c);
   return n.length <= 1 ? (n[0] || '') : n.slice(0, -1).join(', ') + ' y ' + n[n.length - 1];
@@ -77,13 +94,19 @@ Deno.serve(async (req) => {
   const RESEND = Deno.env.get('RESEND_API_KEY') || '';
   if (!soloVer && !RESEND) return json({ error: 'Falta el secreto RESEND_API_KEY.' }, 500);
 
-  // --- qué día -----------------------------------------------------------------
-  const fecha = typeof b.fecha === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(b.fecha)
-    ? b.fecha
-    : fechaEnZona(new Date(Date.now() + 24 * 3600 * 1000));
-  const off = desfase(fecha);
-  const desde = new Date(`${fecha}T00:00:00${off}`).toISOString();
-  const hasta = new Date(`${fecha}T23:59:59${off}`).toISOString();
+  // --- qué ventana de tiempo --------------------------------------------------------
+  const ahora = new Date();
+  let desde: string, hasta: string, ventana: string;
+  if (typeof b.fecha === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(b.fecha)) {
+    const off = desfase(b.fecha);
+    desde = new Date(`${b.fecha}T00:00:00${off}`).toISOString();
+    hasta = new Date(`${b.fecha}T23:59:59${off}`).toISOString();
+    ventana = 'día ' + b.fecha;
+  } else {
+    desde = ahora.toISOString();
+    hasta = new Date(ahora.getTime() + 24 * 3600 * 1000).toISOString();
+    ventana = 'próximas 24 horas';
+  }
 
   const sb = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, {
     auth: { persistSession: false },
@@ -107,17 +130,18 @@ Deno.serve(async (req) => {
     empleado: { nombre: string; email_avisos: string | null } | null;
   };
   const citas = (data || []) as unknown as Cita[];
+  if (!citas.length) return json({ ventana, citas: 0 });
+
   const dondeDe = (c: Cita) =>
     [c.direccion || c.cliente?.direccion, c.poblacion || c.cliente?.poblacion].filter(Boolean).join(', ');
 
   // --- correos a clientes --------------------------------------------------------
   const aClientes = citas.filter((c) => esEmail(c.cliente?.email)).map((c) => ({
-    cita: c.id,
     para: String(c.cliente!.email).trim(),
-    asunto: `Recordatorio de su cita con Sysefen · ${diaLargo(c.inicio)}`,
+    asunto: `Recordatorio de su cita con Sysefen · ${cuandoCorto(c.inicio, ahora)} a las ${hora(c.inicio)}`,
     texto:
       `Hola ${c.cliente!.nombre}:\n\n` +
-      `Le recordamos que mañana, ${diaLargo(c.inicio)}, a las ${hora(c.inicio)}, ` +
+      `Le recordamos que ${cuando(c.inicio, ahora)}, a las ${hora(c.inicio)}, ` +
       `pasaremos a verle${dondeDe(c) ? ` en ${dondeDe(c)}` : ''}` +
       `${c.categorias?.length ? ` para preparar su presupuesto de ${listaCategorias(c.categorias)}` : ''}.\n\n` +
       `Si necesita cambiar la cita, póngase en contacto con nosotros.\n\n` +
@@ -135,13 +159,14 @@ Deno.serve(async (req) => {
     porTecnico.get(k)!.citas.push(c);
   }
   const aTecnicos = [...porTecnico.entries()].map(([para, t]) => ({
-    citas: t.citas.map((c) => c.id),
     para,
-    asunto: `Tus citas de mañana (${t.citas.length}) · ${diaLargo(t.citas[0].inicio)}`,
+    asunto: t.citas.length === 1
+      ? `Cita ${cuandoCorto(t.citas[0].inicio, ahora)} a las ${hora(t.citas[0].inicio)} · ${t.citas[0].cliente?.nombre || 'Cliente'}`
+      : `Tus próximas citas (${t.citas.length})`,
     texto:
-      `Hola ${t.nombre}, mañana tienes ${t.citas.length === 1 ? '1 cita' : t.citas.length + ' citas'}:\n\n` +
+      `Hola ${t.nombre}, ${t.citas.length === 1 ? 'tienes esta cita' : 'tienes estas citas'} en las próximas horas:\n\n` +
       t.citas.map((c) =>
-        `· ${hora(c.inicio)} (${c.duracion_min} min) — ${c.cliente?.nombre || 'Cliente'}\n` +
+        `· ${cuando(c.inicio, ahora)}, ${hora(c.inicio)} (${c.duracion_min} min) — ${c.cliente?.nombre || 'Cliente'}\n` +
         `  ${dondeDe(c) || 'Sin dirección'}` +
         `${c.categorias?.length ? `\n  ${listaCategorias(c.categorias)}` : ''}`,
       ).join('\n\n') +
@@ -150,7 +175,7 @@ Deno.serve(async (req) => {
 
   if (soloVer) {
     return json({
-      fecha, citas: citas.length,
+      ventana, citas: citas.length,
       clientes: aClientes.map((m) => ({ para: m.para, asunto: m.asunto })),
       tecnicos: aTecnicos.map((m) => ({ para: m.para, asunto: m.asunto })),
       sin_email_cliente: citas.filter((c) => !esEmail(c.cliente?.email)).map((c) => c.cliente?.nombre || c.id),
@@ -182,13 +207,11 @@ Deno.serve(async (req) => {
   }
 
   // Se marcan todas las citas revisadas: si una no tenía email, no hay a quién
-  // avisar, y repetirla cada tarde no cambiaría nada.
-  if (citas.length) {
-    const { error: e2 } = await sb.from('citas')
-      .update({ aviso_enviado_at: new Date().toISOString() })
-      .in('id', citas.map((c) => c.id));
-    if (e2) errores.push('marcar avisadas: ' + e2.message);
-  }
+  // avisar, y repetirla cada 10 minutos no cambiaría nada.
+  const { error: e2 } = await sb.from('citas')
+    .update({ aviso_enviado_at: new Date().toISOString() })
+    .in('id', citas.map((c) => c.id));
+  if (e2) errores.push('marcar avisadas: ' + e2.message);
 
-  return json({ fecha, citas: citas.length, clientes_avisados: clientesOk, tecnicos_avisados: tecnicosOk, errores });
+  return json({ ventana, citas: citas.length, clientes_avisados: clientesOk, tecnicos_avisados: tecnicosOk, errores });
 });

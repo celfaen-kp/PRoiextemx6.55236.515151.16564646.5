@@ -269,7 +269,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '11.2'; // versión visible de la app (única fuente)
+const APP_VERSION = '11.3'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -5443,6 +5443,20 @@ function vCitaNueva() {
   <div class="pie"><button class="btn btn-verde" data-a="ag_guardarCita" ${V.agBusy ? 'disabled' : ''}>${V.agBusy ? 'Guardando…' : V.agConfirmar === 'solape' ? 'Guardar igualmente' : d.dia ? 'Guardar cita' : 'Guardar sin fecha'}</button></div>`;
 }
 
+// Qué pasa con el correo de aviso de una cita. La tarea de Supabase revisa
+// cada 10 minutos y avisa de las citas de las próximas 24 horas.
+function agAvisoTxt(x, c) {
+  if (x.aviso_enviado_at) return 'Enviado ' + fechaCorta(x.aviso_enviado_at) + ' ' + hhmm(x.aviso_enviado_at);
+  if (x.estado !== 'pendiente' || !x.inicio) return x.inicio ? '' : 'Cuando tenga fecha';
+  if (new Date(x.inicio).getTime() < Date.now()) return '';
+  const row = empRowById(x.empleado_id) || {};
+  const quien = agNombreEmp(x.empleado_id) || 'quien va';
+  const para = [c.email ? 'al cliente' : '', row.email_avisos ? 'a ' + quien : ''].filter(Boolean);
+  if (!para.length) return 'Sin envío: faltan el email del cliente y el email para avisos de ' + esc(quien);
+  const sale = new Date(new Date(x.inicio).getTime() - 24 * 3600 * 1000);
+  const cuandoSale = sale.getTime() <= Date.now() ? 'En unos minutos' : fechaCorta(sale.toISOString()) + ' ' + hhmm(sale.toISOString());
+  return cuandoSale + ' · ' + esc(para.join(' y '));
+}
 function vCitaVer() {
   const x = agCita(V.citaVerId);
   if (!x) {
@@ -5501,7 +5515,7 @@ function vCitaVer() {
       ${fila('Teléfono', esc(c.telefono || ''))}
       ${fila('Email', esc(c.email || ''))}
       ${fila('Nota', esc(x.nota || ''))}
-      ${x.aviso_enviado_at ? fila('Aviso', 'Enviado ' + fechaCorta(x.aviso_enviado_at) + ' ' + hhmm(x.aviso_enviado_at)) : ''}
+      ${fila('Aviso', agAvisoTxt(x, c))}
     </div>
     <div class="card row" data-a="ag_abrirCliente" data-id="${x.cliente_id}" style="margin-top:12px;cursor:pointer">
       <div class="grow"><div style="font:600 15px var(--sans)">Ficha del cliente</div>
