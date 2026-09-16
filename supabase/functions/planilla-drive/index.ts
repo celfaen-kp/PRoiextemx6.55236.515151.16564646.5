@@ -60,6 +60,22 @@ async function tokenDeGoogle(id: string, secreto: string, refresh: string) {
 // vez que firma y se guarda su id en `empleados.drive_carpeta_id`, para no
 // buscarla en cada subida. Con el permiso `drive.file` solo vemos lo que crea
 // esta app, así que la carpeta la crea y la mantiene ella.
+const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
+  'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+
+// "2026-09" -> "Septiembre 2026.pdf" · "2026" -> "Anual 2026.pdf" · "historial" -> "Historial.pdf"
+function nombreDePlanilla(periodo: string | null) {
+  const p = String(periodo || '').trim();
+  const mes = p.match(/^(\d{4})-(\d{2})$/);
+  if (mes) {
+    const n = MESES[Number(mes[2]) - 1];
+    if (n) return `${n.charAt(0).toUpperCase()}${n.slice(1)} ${mes[1]}.pdf`;
+  }
+  if (/^\d{4}$/.test(p)) return `Anual ${p}.pdf`;
+  if (p.toLowerCase() === 'historial') return 'Historial.pdf';
+  return (p || 'planilla') + '.pdf';
+}
+
 async function carpetaDelEmpleado(token: string, raiz: string, nombre: string, guardada: string | null) {
   const cabeceras = { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' };
 
@@ -142,8 +158,8 @@ Deno.serve(async (req) => {
   const { data: emp } = await admin.from('empleados')
     .select('nombre, nombre_completo, drive_carpeta_id').eq('id', doc.empleado_id).maybeSingle();
   const quien = (emp?.nombre_completo || emp?.nombre || 'Sin nombre').replace(/[\\/:*?"<>|]/g, '-').trim();
-  // Dentro de su carpeta basta con el periodo: "2026-09.pdf".
-  const nombre = `${doc.periodo || 'planilla'}.pdf`;
+  // Dentro de su carpeta, el nombre dice el periodo: "Septiembre 2026.pdf".
+  const nombre = nombreDePlanilla(doc.periodo);
 
   // --- a Drive ------------------------------------------------------------------
   let token: string;
@@ -171,8 +187,25 @@ Deno.serve(async (req) => {
   // Si ya se subió antes, se sustituye ese mismo archivo: así no se acumulan
   // copias cuando alguien vuelve a firmar el mismo mes.
   const anterior = typeof doc.ref_externa === 'string' && /^[\w-]{10,}$/.test(doc.ref_externa) ? doc.ref_externa : '';
+
+  // Si ya estaba subida, se actualiza ESE archivo y, de paso, se mueve a la
+  // carpeta de la persona: antes se quedaba donde se subió la primera vez.
+  let mover = '';
+  if (anterior) {
+    const info = await fetch(
+      `https://www.googleapis.com/drive/v3/files/${anterior}?fields=parents&supportsAllDrives=true`,
+      { headers: { Authorization: 'Bearer ' + token } });
+    if (info.ok) {
+      const d = await info.json().catch(() => ({}));
+      const padres: string[] = d.parents || [];
+      if (!padres.includes(carpeta.id)) {
+        mover = `&addParents=${carpeta.id}` + (padres.length ? `&removeParents=${padres.join(',')}` : '');
+      }
+    }
+  }
+
   const url = anterior
-    ? `https://www.googleapis.com/upload/drive/v3/files/${anterior}?uploadType=multipart&supportsAllDrives=true&fields=id,name`
+    ? `https://www.googleapis.com/upload/drive/v3/files/${anterior}?uploadType=multipart&supportsAllDrives=true&fields=id,name${mover}`
     : 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true&fields=id,name';
   const metadatos = anterior ? { name: nombre } : { name: nombre, parents: [carpeta.id] };
 
