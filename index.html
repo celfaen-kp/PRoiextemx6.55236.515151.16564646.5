@@ -269,7 +269,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '11.9'; // versión visible de la app (única fuente)
+const APP_VERSION = '12.0'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -2403,7 +2403,7 @@ A.verPdf = async (id) => {
 A.borrarParte = (id) => { V.sheet = { tipo: 'borrarParte', id }; render(); };
 A.confirmarBorrarParte = async () => {
   const id = V.sheet.id;
-  if (!esAdmin()) return;
+  if (!puedeCrear()) return;
   if (!navigator.onLine) { avisar('Sin conexión — no se ha borrado'); return; }
   try {
     await Sysefen.db.borrarParte(id);
@@ -3110,7 +3110,7 @@ function cardParte(p) {
       <button class="pill grow" data-a="verPdf" data-id="${p.id}" style="padding:11px;text-align:center">PDF</button>
       <button class="pill grow" data-a="compartirParte" data-id="${p.id}" style="padding:11px 6px;text-align:center">Compartir</button>
       ${p.estado !== 'anulado' ? `<button class="pill grow" data-a="abrirEnvioParte" data-id="${p.id}" style="padding:11px;text-align:center;background:var(--verde-c);color:#fff">Enviar</button>` : ''}
-      ${esAdmin() ? `<button class="pill pill-rojo grow" data-a="borrarParte" data-id="${p.id}" style="padding:11px;text-align:center">Borrar</button>` : ''}
+      ${puedeCrear() ? `<button class="pill pill-rojo grow" data-a="borrarParte" data-id="${p.id}" style="padding:11px;text-align:center">Borrar</button>` : ''}
     </div>` : ''}
   </div>`;
 }
@@ -6127,6 +6127,7 @@ function sheet() {
       <div style="font:600 25px/1.15 var(--cond)">¿Borrar este parte?</div>
       <div class="sub" style="margin-top:8px">${p ? esc(p.ref) + ' · ' + esc((obraById(p.obraId) || {}).cliente || '') + '. ' : ''}Se borra del todo, con sus horas, materiales y fotos. <b>No se puede deshacer.</b></div>
       <div class="sub" style="margin-top:8px">Las horas fichadas del equipo no cambian: viven aparte, en el registro de jornada.</div>
+      ${p && p.driveId ? '<div class="sub" style="margin-top:8px">El PDF que se subió a Google Drive NO se borra: quítalo tú desde Drive si quieres.</div>' : ''}
       <div class="row g8" style="margin-top:20px">
         <button class="btn btn-gris" data-a="cerrarSheet" style="border-radius:99px">Cancelar</button>
         <button class="btn btn-rojo" data-a="confirmarBorrarParte" style="font-size:14px">Sí, borrar</button>
