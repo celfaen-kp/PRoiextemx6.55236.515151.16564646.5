@@ -1,2 +1,6 @@
 .DS_Store
 copia-*.json
+
+# Credenciales de Google para subir planillas a Drive: nunca a GitHub
+herramientas/google-credenciales.json
+herramientas/google-refresh-token.txt
