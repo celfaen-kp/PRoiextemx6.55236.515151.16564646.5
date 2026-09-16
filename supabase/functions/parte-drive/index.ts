@@ -22,7 +22,8 @@
 // "2026-09-16 · P-0007 (1).pdf". No se pisa nada; se decide después.
 //
 // USO (POST con JSON):
-//   { "parte_id": "uuid", "pdf_base64": "JVBERi0..." }
+//   { "parte_id": "uuid", "pdf_base64": "JVBERi0...", "ref": "PT-0916-1A2B" }
+//   `ref` es opcional: si no viene, se calcula igual que en la app.
 // =============================================================================
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
@@ -141,8 +142,10 @@ Deno.serve(async (req) => {
   const admin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, {
     auth: { persistSession: false },
   });
-  const { data: parte } = await admin.from('partes')
-    .select('id, ref, fecha, autor_id, obra_id').eq('id', parteId).maybeSingle();
+  // Ojo: `ref` no es una columna, la calcula la app a partir de la fecha y el id.
+  const { data: parte, error: errParte } = await admin.from('partes')
+    .select('id, fecha, autor_id, obra_id').eq('id', parteId).maybeSingle();
+  if (errParte) return json({ error: 'No se pudo leer el parte: ' + errParte.message }, 500);
   if (!parte) return json({ error: 'Ese parte no existe.' }, 404);
   if (!['jefe', 'admin'].includes(yo.rol) && parte.autor_id !== yo.id) {
     return json({ error: 'Solo el autor del parte, un jefe o Administración pueden subirlo.' }, 403);
@@ -165,7 +168,10 @@ Deno.serve(async (req) => {
   }
 
   const fecha = String(parte.fecha || '').slice(0, 10);
-  const nombre = await nombreLibre(token, carpetaObra, `${fecha} · ${limpiar(parte.ref || 'parte')}.pdf`);
+  // Misma referencia que enseña la app: PT-MMDD-XXXX.
+  const refCalculada = `PT-${fecha.slice(5, 7)}${fecha.slice(8, 10)}-${String(parte.id).slice(0, 4).toUpperCase()}`;
+  const ref = typeof b.ref === 'string' && b.ref.trim() ? limpiar(b.ref) : refCalculada;
+  const nombre = await nombreLibre(token, carpetaObra, `${fecha} · ${ref}.pdf`);
 
   // base64 -> bytes
   const bin = atob(pdf);
