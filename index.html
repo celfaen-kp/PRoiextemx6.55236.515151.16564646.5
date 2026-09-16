@@ -269,7 +269,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '12.1'; // versión visible de la app (única fuente)
+const APP_VERSION = '12.2'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -2307,6 +2307,20 @@ async function enviarParteAhora(p, para, copia) {
     ].join('\n'),
     pdfBlob,
     nombreArchivo: 'parte-' + p.ref + '.pdf',
+    // Con esto el servidor arma el correo con logo y colores; el texto de
+    // arriba se queda como alternativa para quien lea el correo en texto.
+    datos: {
+      ref: p.ref,
+      fecha: fechaLarga(p.fecha),
+      obra: o.titulo || '',
+      cliente: o.cliente || '',
+      direccion: o.dir || '',
+      tecnico: userById(p.autorId).nombre,
+      firmado: !!p.firma,
+      firmante: p.firmante || '',
+      nivel: p.nivel || '',
+      incidencia: p.inc || '',
+    },
   });
   try {
     await Sysefen.db.actualizarParte(p.id, { estado: 'enviado', actualizado_en: new Date().toISOString() });
@@ -5433,13 +5447,14 @@ async function agGuardarCita() {
     // Si el cliente ya había recibido el aviso, el correo nuevo tiene que decir
     // que es un cambio y desde cuándo.
     if (antes && antes.inicio && antes.inicio !== inicio) {
-      fila.cambio_desde = antes.aviso_enviado_at ? antes.inicio : null;
+      fila.cambio_desde = (antes.aviso_enviado_at || antes.confirmacion_enviada_at) ? antes.inicio : null;
     }
   }
   V.agBusy = true; render();
   try {
     const g = await visitasDB.guardarCita(fila);
     V.agBusy = false; V.citaDraft = null;
+    avisarDeCita(g.id);
     toast(inicio ? 'Cita guardada: ' + fechaCorta(inicio) + ' a las ' + hhmm(inicio) + '.' : 'Guardado como pendiente de fecha.');
     await A.cargarAgenda();
     V.citaVerId = g.id; V.view = 'citaVer'; render();
@@ -5447,6 +5462,24 @@ async function agGuardarCita() {
     V.agBusy = false; render();
     avisar('No se pudo guardar la cita: ' + agErrorTxt(e));
   }
+}
+
+/**
+ * El correo de la cita sale al momento: «cita nueva» al crearla, «cambio de
+ * cita» al moverla y «cita anulada» al anularla, al cliente y a quien va.
+ * Si esto falla (sin cobertura, por ejemplo) no se para nada: la tarea
+ * programada lo recoge en la siguiente pasada.
+ */
+async function avisarDeCita(id) {
+  if (!id || !navigator.onLine) return;
+  try {
+    const r = await visitasDB.avisarCita(id);
+    if (r && r.enviados) {
+      toast(r.tipo === 'anulada' ? 'Anulación avisada por correo.'
+        : r.tipo === 'cambio' ? 'Cambio avisado por correo.'
+        : 'Cita avisada por correo.');
+    }
+  } catch (e) { /* lo reintenta la tarea programada */ }
 }
 
 let agConfirmarT;
@@ -5464,6 +5497,7 @@ async function agCambiarEstado(id, estado) {
   try {
     await visitasDB.guardarCita({ id, estado });
     toast(estado === 'anulada' ? 'Cita anulada.' : 'Marcada: no estaba.');
+    if (estado === 'anulada') avisarDeCita(id);
     await A.cargarAgenda();
   } catch (e) { avisar('No se pudo cambiar: ' + agErrorTxt(e)); render(); }
 }

@@ -387,12 +387,12 @@ export async function borrarDocumentoObra(id, ruta) {
 // Edge Function `enviar-parte` (Resend). El PDF viaja en base64.
 // Si la función no está desplegada, el error lleva `noDesplegada` para que la
 // app ofrezca compartir el PDF a mano en vez de dejar al usuario tirado.
-export async function enviarParteCorreo({ para, copia, asunto, texto, pdfBlob, nombreArchivo }) {
+export async function enviarParteCorreo({ para, copia, asunto, texto, pdfBlob, nombreArchivo, datos }) {
   const buf = new Uint8Array(await pdfBlob.arrayBuffer());
   let bin = '';
   for (let i = 0; i < buf.length; i += 0x8000) bin += String.fromCharCode.apply(null, buf.subarray(i, i + 0x8000));
   const { data, error } = await supabase.functions.invoke('enviar-parte', {
-    body: { para, copia, asunto, texto, pdf_base64: btoa(bin), nombre_archivo: nombreArchivo },
+    body: { para, copia, asunto, texto, pdf_base64: btoa(bin), nombre_archivo: nombreArchivo, datos },
   });
   if (error) {
     const ctx = error.context;

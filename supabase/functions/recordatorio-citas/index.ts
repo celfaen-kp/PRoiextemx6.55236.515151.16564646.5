@@ -138,16 +138,18 @@ function filaDato(etiqueta: string, valor: string | null | undefined) {
 }
 
 // Bloque destacado de día y hora.
-function bloqueCuando({ etiqueta, dia, hora }: { etiqueta: string; dia: string; hora: string }) {
+function bloqueCuando({ etiqueta, dia, hora, apagado }: { etiqueta: string; dia: string; hora: string; apagado?: boolean }) {
+  const acento = apagado ? COLOR.suave : COLOR.verde;
+  const tachado = apagado ? 'text-decoration:line-through;' : '';
   return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:${COLOR.papel};border-radius:12px;">
     <tr>
       <td style="padding:18px 20px;width:112px;vertical-align:middle;border-right:1px solid ${COLOR.linea};">
-        <div style="font-size:34px;line-height:36px;font-weight:700;color:${COLOR.tinta};letter-spacing:-1px;">${escHtml(hora)}</div>
+        <div style="font-size:34px;line-height:36px;font-weight:700;color:${COLOR.tinta};letter-spacing:-1px;${tachado}">${escHtml(hora)}</div>
         <div style="font-size:11px;line-height:16px;color:${COLOR.suave};letter-spacing:1px;text-transform:uppercase;">horas</div>
       </td>
       <td style="padding:18px 20px;vertical-align:middle;">
-        <div style="font-size:11px;line-height:16px;font-weight:700;color:${COLOR.verde};letter-spacing:1.5px;text-transform:uppercase;">${escHtml(etiqueta)}</div>
-        <div style="font-size:18px;line-height:24px;font-weight:600;color:${COLOR.tinta};padding-top:2px;">${escHtml(dia)}</div>
+        <div style="font-size:11px;line-height:16px;font-weight:700;color:${acento};letter-spacing:1.5px;text-transform:uppercase;">${escHtml(etiqueta)}</div>
+        <div style="font-size:18px;line-height:24px;font-weight:600;color:${COLOR.tinta};padding-top:2px;${tachado}">${escHtml(dia)}</div>
       </td>
     </tr>
   </table>`;
@@ -165,14 +167,16 @@ const parrafo = (txt: string) => `<p style="margin:0 0 20px;font-size:15px;line-
 // deno-lint-ignore no-explicit-any
 function correoClienteHTML(d: any) {
   const cuerpo = `
-    ${eyebrow(d.confirmacion ? 'Cita confirmada' : d.antes ? 'Cambio de cita' : 'Recordatorio de cita')}
+    ${eyebrow(d.anulada ? 'Cita anulada' : d.confirmacion ? 'Cita confirmada' : d.antes ? 'Cambio de cita' : 'Recordatorio de cita')}
     ${titular('Hola, ' + d.nombre)}
-    ${parrafo(d.confirmacion
-      ? 'Hemos agendado su cita' + (d.motivo ? ' para la ' + d.motivo : ' con Sysefen') + '. Le enviaremos un recordatorio el día antes.'
-      : d.antes
-        ? 'Le informamos de que su cita' + (d.motivo ? ' para la ' + d.motivo : ' con Sysefen') + ' ha cambiado de día y hora. Queda así:'
-        : 'Le recordamos su cita' + (d.motivo ? ' para la ' + d.motivo : ' con Sysefen') + '.')}
-    ${bloqueCuando({ etiqueta: d.antes ? 'Nueva fecha · ' + d.etiqueta : d.etiqueta, dia: d.dia, hora: d.hora })}
+    ${parrafo(d.anulada
+      ? 'Le informamos de que su cita' + (d.motivo ? ' para la ' + d.motivo : ' con Sysefen') + ' ha quedado anulada. Disculpe las molestias.'
+      : d.confirmacion
+        ? 'Hemos agendado su cita' + (d.motivo ? ' para la ' + d.motivo : ' con Sysefen') + '. Le enviaremos un recordatorio el día antes.'
+        : d.antes
+          ? 'Le informamos de que su cita' + (d.motivo ? ' para la ' + d.motivo : ' con Sysefen') + ' ha cambiado de día y hora. Queda así:'
+          : 'Le recordamos su cita' + (d.motivo ? ' para la ' + d.motivo : ' con Sysefen') + '.')}
+    ${bloqueCuando({ etiqueta: d.anulada ? 'Estaba prevista' : d.antes ? 'Nueva fecha · ' + d.etiqueta : d.etiqueta, dia: d.dia, hora: d.hora, apagado: d.anulada })}
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:14px;">
       ${filaDato('Antes era', d.antes)}
       ${filaDato('Dirección', d.direccion)}
@@ -180,10 +184,14 @@ function correoClienteHTML(d: any) {
       ${filaDato('Le atenderá', d.tecnico)}
       ${filaDato('Duración aprox.', d.duracion)}
     </table>
-    <p style="margin:22px 0 0;font-size:14px;line-height:22px;color:${COLOR.suave};">Si usted lo desea, puede cambiar su cita contactando con nosotros en el <a href="${TEL_LINK}" style="color:${COLOR.verde};text-decoration:none;font-weight:700;">${escHtml(TEL)}</a>.</p>`;
+    <p style="margin:22px 0 0;font-size:14px;line-height:22px;color:${COLOR.suave};">${d.anulada
+      ? 'Si desea concertar una nueva cita, puede llamarnos al'
+      : 'Si usted lo desea, puede cambiar su cita contactando con nosotros en el'} <a href="${TEL_LINK}" style="color:${COLOR.verde};text-decoration:none;font-weight:700;">${escHtml(TEL)}</a>.</p>`;
   return marcoCorreo({
     logoUrl: d.logoUrl,
-    preheader: `${d.etiqueta} a las ${d.hora}${d.direccion ? ' · ' + d.direccion : ''}`,
+    preheader: d.anulada
+      ? `Cita anulada · ${d.dia} a las ${d.hora}`
+      : `${d.etiqueta} a las ${d.hora}${d.direccion ? ' · ' + d.direccion : ''}`,
     cuerpo,
     pie: 'Este correo se envía automáticamente. Por favor, no responda a esta dirección.',
   });
@@ -212,12 +220,21 @@ function correoTecnicoHTML(d: any) {
         </td>
       </tr>
     </table>`).join('');
-  const cuerpo = `
-    ${eyebrow(d.resumen ? 'Citas de mañana' : (n === 1 ? 'Próxima cita' : 'Tus próximas citas'))}
-    ${titular('Hola, ' + d.nombre)}
-    ${parrafo(d.resumen
+  const rotulo = d.aviso === 'nueva' ? 'Cita nueva'
+    : d.aviso === 'cambio' ? 'Cita cambiada'
+    : d.aviso === 'anulada' ? 'Cita anulada'
+    : d.resumen ? 'Citas de mañana'
+    : (n === 1 ? 'Próxima cita' : 'Tus próximas citas');
+  const entradilla = d.aviso === 'nueva' ? 'Se te ha asignado una cita nueva.'
+    : d.aviso === 'cambio' ? 'Una de tus citas ha cambiado de día y hora. Queda así:'
+    : d.aviso === 'anulada' ? 'Esta cita se ha anulado. Ya no tienes que ir.'
+    : d.resumen
       ? (n === 1 ? 'Mañana tienes una cita.' : `Mañana tienes ${n} citas.`)
-      : (n === 1 ? 'Tienes esta cita en las próximas horas.' : `Tienes ${n} citas en las próximas horas.`))}
+      : (n === 1 ? 'Tienes esta cita en las próximas horas.' : `Tienes ${n} citas en las próximas horas.`);
+  const cuerpo = `
+    ${eyebrow(rotulo)}
+    ${titular('Hola, ' + d.nombre)}
+    ${parrafo(entradilla)}
     ${bloques}
     <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin-top:22px;">
       <tr><td style="background:${COLOR.verde};border-radius:99px;">
@@ -242,11 +259,31 @@ Deno.serve(async (req) => {
 
   const CLAVE = Deno.env.get('AVISOS_CLAVE') || '';
   if (CLAVE.length < 24) return json({ error: 'Falta el secreto AVISOS_CLAVE (mínimo 24 caracteres).' }, 500);
-  if (!mismaClave(req.headers.get('x-clave') || '', CLAVE)) return json({ error: 'No autorizado.' }, 401);
+  const esElCron = mismaClave(req.headers.get('x-clave') || '', CLAVE);
 
   let b: Record<string, unknown> = {};
   try { b = await req.json(); } catch { /* cuerpo vacío: valores por defecto */ }
   const soloVer = b.solo_ver === true;
+  const citaSuelta = typeof b.cita_id === 'string' ? b.cita_id : '';
+
+  // Dos maneras de entrar: la tarea programada, con su clave, que puede hacerlo
+  // todo; o alguien de la app con sesión, que solo puede avisar de UNA cita, la
+  // que acaba de crear o cambiar. Así el aviso sale al momento sin que la clave
+  // del cron ande por el navegador.
+  if (!esElCron) {
+    if (!citaSuelta) return json({ error: 'No autorizado.' }, 401);
+    const autorizacion = req.headers.get('Authorization') || '';
+    if (!autorizacion) return json({ error: 'Falta la sesión.' }, 401);
+    const comoUsuario = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_ANON_KEY')!, {
+      global: { headers: { Authorization: autorizacion } },
+    });
+    const { data: { user } } = await comoUsuario.auth.getUser();
+    if (!user) return json({ error: 'Sesión no válida.' }, 401);
+    const { data: yo } = await comoUsuario.from('empleados').select('rol').eq('user_id', user.id).maybeSingle();
+    if (!yo || !['presupuestos', 'jefe', 'admin'].includes(yo.rol)) {
+      return json({ error: 'Solo presupuestos, jefes y Administración.' }, 403);
+    }
+  }
 
   const RESEND = Deno.env.get('RESEND_API_KEY') || '';
   if (!soloVer && !RESEND) return json({ error: 'Falta el secreto RESEND_API_KEY.' }, 500);
@@ -254,6 +291,152 @@ Deno.serve(async (req) => {
   const sb = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, {
     auth: { persistSession: false },
   });
+
+  const mandar = async (para: string, asunto: string, texto: string, html: string) => {
+    const r = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer ' + RESEND, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ from: REMITENTE, to: [para], subject: asunto, text: texto, html }),
+    });
+    if (!r.ok) {
+      const res = await r.json().catch(() => ({}));
+      throw new Error((res as { message?: string }).message || String(r.status));
+    }
+  };
+
+  // --- avisar de UNA cita: nueva, cambiada o anulada ---------------------------------
+  // La llama la app en cuanto se crea, se cambia o se anula una cita, para que el
+  // aviso no espere a la pasada del cron; y la llama también el propio cron, como
+  // red de seguridad, por si la app no pudo (sin cobertura, por ejemplo).
+  const avisarDeUnaCita = async (citaSuelta: string) => {
+    const { data: c, error: errU } = await sb.from('citas')
+      .select(`*, cliente:clientes_cache(nombre, email, direccion, poblacion),
+        empleado:empleados!citas_empleado_id_fkey(nombre, email_avisos)`)
+      .eq('id', citaSuelta).maybeSingle();
+    if (errU) return { error: errU.message };
+    if (!c) return { error: 'Esa cita no existe.' };
+    if (!c.inicio) return { ok: true, nada: 'la cita todavía no tiene día y hora' };
+
+    // Qué toca contar.
+    let tipo = '';
+    if (c.estado === 'anulada') {
+      if (c.anulacion_enviada_at) return { ok: true, tipo: 'anulada', nada: 'ya avisada' };
+      // Si nunca se le dijo nada al cliente, tampoco hay que anunciarle una anulación.
+      if (!c.confirmacion_enviada_at && !c.aviso_enviado_at) {
+        if (!soloVer) await sb.from('citas').update({ anulacion_enviada_at: new Date().toISOString() }).eq('id', c.id);
+        return { ok: true, tipo: 'anulada', nada: 'nunca se avisó de esta cita' };
+      }
+      tipo = 'anulada';
+    } else if (c.estado !== 'pendiente') {
+      return { ok: true, nada: 'la cita ya no está pendiente' };
+    } else if (c.cambio_desde) {
+      tipo = 'cambio';
+    } else if (!c.confirmacion_enviada_at) {
+      tipo = 'nueva';
+    } else {
+      return { ok: true, nada: 'ya avisada' };
+    }
+
+    const ahoraU = new Date();
+    const dondeU = [c.direccion || c.cliente?.direccion, c.poblacion || c.cliente?.poblacion].filter(Boolean).join(', ');
+    const motivoU = c.categorias?.length ? 'instalación de ' + listaCategorias(c.categorias) : '';
+    const diaU = mayus(diaLargo(c.inicio));
+    const horaU = hora(c.inicio);
+    const rotuloU = tipo === 'anulada' ? 'Cita anulada' : tipo === 'cambio' ? 'Cambio de cita' : 'Cita confirmada';
+
+    const correos: { para: string; asunto: string; texto: string; html: string; quien: string }[] = [];
+
+    if (esEmail(c.cliente?.email)) {
+      const asunto = `${rotuloU}${motivoU && tipo !== 'anulada' ? ` para la ${motivoU}` : ''} · ${diaU} a las ${horaU}`;
+      const texto =
+        `Hola ${c.cliente.nombre}:\n\n` +
+        (tipo === 'anulada'
+          ? `Le informamos de que su cita${motivoU ? ` para la ${motivoU}` : ' con Sysefen'} del ${diaU} a las ${horaU} ha quedado anulada. Disculpe las molestias.\n\n` +
+            `Si desea concertar una nueva cita, puede llamarnos al ${TEL}.`
+          : tipo === 'cambio'
+            ? `Le informamos de que su cita${motivoU ? ` para la ${motivoU}` : ' con Sysefen'} ha cambiado de día y hora.\n` +
+              (c.cambio_desde ? `Antes era: ${mayus(diaLargo(c.cambio_desde))}, a las ${hora(c.cambio_desde)}.\n` : '') +
+              `Queda así: ${diaU}, a las ${horaU}${dondeU ? `, en ${dondeU}` : ''}.` +
+              `${c.empleado?.nombre ? `\nLe atenderá ${c.empleado.nombre}.` : ''}\n\n` +
+              `Si usted lo desea, puede cambiar su cita contactando con nosotros en el ${TEL}.`
+            : `Hemos agendado su cita${motivoU ? ` para la ${motivoU}` : ' con Sysefen'}: ` +
+              `${diaU}, a las ${horaU}${dondeU ? `, en ${dondeU}` : ''}.` +
+              `${c.empleado?.nombre ? `\nLe atenderá ${c.empleado.nombre}.` : ''}\n\n` +
+              `Le enviaremos un recordatorio el día antes.\n` +
+              `Si usted lo desea, puede cambiar su cita contactando con nosotros en el ${TEL}.`) +
+        `\n\nUn saludo,\nSysefen · Eficiencia Energética\n\n` +
+        `(Este correo se envía automáticamente. Por favor, no responda a esta dirección.)`;
+      correos.push({
+        quien: 'cliente', para: String(c.cliente.email).trim(), asunto, texto,
+        html: correoClienteHTML({
+          logoUrl: LOGO_URL, nombre: c.cliente.nombre,
+          etiqueta: tipo === 'nueva' ? 'Su cita' : mayus(cuandoCorto(c.inicio, ahoraU)),
+          dia: diaU, hora: horaU, direccion: dondeU, motivo: motivoU,
+          tecnico: c.empleado?.nombre || '', duracion: duracionTxt(c.duracion_min || 60),
+          confirmacion: tipo === 'nueva', anulada: tipo === 'anulada',
+          antes: tipo === 'cambio' && c.cambio_desde ? `${mayus(diaLargo(c.cambio_desde))}, ${hora(c.cambio_desde)}` : '',
+        }),
+      });
+    }
+
+    if (esEmail(c.empleado?.email_avisos)) {
+      const quienCli = c.cliente?.nombre || 'Cliente';
+      const asunto = `${tipo === 'anulada' ? 'Cita anulada' : tipo === 'cambio' ? 'Cita cambiada' : 'Cita nueva'} · ${diaCorto(c.inicio)} a las ${horaU} · ${quienCli}`;
+      const texto =
+        `Hola ${c.empleado.nombre}:\n\n` +
+        (tipo === 'anulada' ? 'Se ha anulado esta cita. Ya no tienes que ir.\n\n'
+          : tipo === 'cambio' ? 'Una de tus citas ha cambiado de día y hora. Queda así:\n\n'
+            : 'Se te ha asignado una cita nueva:\n\n') +
+        `· ${diaU}, ${horaU} (${duracionTxt(c.duracion_min || 60)}) — ${quienCli}\n` +
+        `  ${dondeU || 'Sin dirección'}` +
+        `${motivoU ? `\n  ${mayus(motivoU)}` : ''}` +
+        `${tipo === 'cambio' && c.cambio_desde ? `\n  Antes era: ${mayus(diaLargo(c.cambio_desde))}, ${hora(c.cambio_desde)}` : ''}` +
+        `${c.nota ? `\n  Nota: ${c.nota}` : ''}` +
+        `\n\nLo tienes todo en la Agenda de la app: ${APP_URL}`;
+      correos.push({
+        quien: 'instalador', para: String(c.empleado.email_avisos).trim(), asunto, texto,
+        html: correoTecnicoHTML({
+          logoUrl: LOGO_URL, appUrl: APP_URL, nombre: c.empleado.nombre, aviso: tipo,
+          citas: [{
+            etiqueta: tipo === 'anulada' ? 'Anulada' : mayus(cuandoCorto(c.inicio, ahoraU)),
+            dia: diaCorto(c.inicio), hora: horaU, duracion: duracionTxt(c.duracion_min || 60),
+            cliente: quienCli, direccion: dondeU, motivo: mayus(motivoU),
+          }],
+        }),
+      });
+    }
+
+    if (soloVer) return { modo: 'cita', tipo, correos: correos.map((m) => ({ a: m.quien, para: m.para, asunto: m.asunto })) };
+
+    const falloU: string[] = [];
+    let okU = 0;
+    for (const m of correos) {
+      try { await mandar(m.para, m.asunto, m.texto, m.html); okU++; }
+      catch (e) { falloU.push(`${m.quien} ${m.para}: ${(e as Error).message}`); }
+    }
+
+    // Se marca aunque no hubiera a quién escribir: repetirlo no cambiaría nada.
+    const ahoraTxt = new Date().toISOString();
+    const dentro24U = new Date(Date.now() + 24 * 3600 * 1000).toISOString();
+    const marca: Record<string, unknown> = tipo === 'anulada'
+      ? { anulacion_enviada_at: ahoraTxt }
+      : { confirmacion_enviada_at: ahoraTxt, cambio_desde: null };
+    // Si la cita es para dentro de menos de 24 h, este correo ya hace de
+    // recordatorio: así el cron no manda otro casi igual diez minutos después.
+    if (tipo !== 'anulada' && c.inicio <= dentro24U) marca.aviso_enviado_at = ahoraTxt;
+    const { error: errM } = await sb.from('citas').update(marca).eq('id', c.id);
+
+    return {
+      modo: 'cita', tipo, enviados: okU,
+      a: correos.map((m) => m.quien),
+      errores: falloU.concat(errM ? ['marcar: ' + errM.message] : []),
+    };
+  };
+
+  if (citaSuelta) {
+    const r = await avisarDeUnaCita(citaSuelta);
+    return json(r, (r as { error?: string }).error ? 400 : 200);
+  }
 
 
   // --- resumen de las citas de mañana, para quien va ---------------------------------
@@ -347,17 +530,14 @@ Deno.serve(async (req) => {
     }
   };
 
-  // --- confirmación de las citas nuevas ---------------------------------------------
-  // En cuanto una cita tiene día y hora, el cliente recibe la confirmación. Si la
-  // cita nace dentro de las próximas 24 h, se marca sin enviar: el recordatorio
-  // sale a continuación y dice lo mismo.
+  // --- red de seguridad: citas que la app no llegó a avisar --------------------------
+  // Lo normal es que el aviso salga al crear, cambiar o anular la cita desde la app.
+  // Si aquello falló (sin cobertura, la función caída...), aquí se recupera.
   let confirmadas = 0;
   const erroresConf: string[] = [];
   if (ventana === 'próximas 24 horas') {
     const { data: nuevas, error: errC } = await sb.from('citas')
-      .select(`id, inicio, duracion_min, categorias, direccion, poblacion,
-        cliente:clientes_cache(nombre, email, direccion, poblacion),
-        empleado:empleados!citas_empleado_id_fkey(nombre)`)
+      .select('id')
       .eq('estado', 'pendiente')
       .is('confirmacion_enviada_at', null)
       .gt('inicio', ahora.toISOString())
@@ -366,37 +546,19 @@ Deno.serve(async (req) => {
     if (errC && !/column .* does not exist|confirmacion_enviada_at/i.test(errC.message)) {
       return json({ error: errC.message }, 500);
     }
-    // deno-lint-ignore no-explicit-any
-    const lista = (nuevas || []) as any[];
-    const dentro24 = new Date(ahora.getTime() + 24 * 3600 * 1000).toISOString();
-    const marcar: string[] = [];
-    for (const c of lista) {
-      marcar.push(c.id);
-      if (c.inicio <= dentro24) continue;            // lo cubre el recordatorio
-      if (!esEmail(c.cliente?.email)) continue;      // sin email no hay a quién escribir
-      const donde = [c.direccion || c.cliente?.direccion, c.poblacion || c.cliente?.poblacion].filter(Boolean).join(', ');
-      const motivo = c.categorias?.length ? 'instalación de ' + listaCategorias(c.categorias) : '';
-      const asunto = `Cita confirmada · ${mayus(diaLargo(c.inicio))} a las ${hora(c.inicio)}`;
-      const texto =
-        `Hola ${c.cliente.nombre}:\n\n` +
-        `Hemos agendado su cita${motivo ? ` para la ${motivo}` : ' con Sysefen'}: ` +
-        `${mayus(diaLargo(c.inicio))}, a las ${hora(c.inicio)}${donde ? `, en ${donde}` : ''}.` +
-        `${c.empleado?.nombre ? `\nLe atenderá ${c.empleado.nombre}.` : ''}\n\n` +
-        `Le enviaremos un recordatorio el día antes.\n` +
-        `Si usted lo desea, puede cambiar su cita contactando con nosotros en el ${TEL}.\n\n` +
-        `Un saludo,\nSysefen · Eficiencia Energética\n\n` +
-        `(Este correo se envía automáticamente. Por favor, no responda a esta dirección.)`;
-      const html = correoClienteHTML({
-        logoUrl: LOGO_URL, nombre: c.cliente.nombre, etiqueta: 'Su cita', dia: mayus(diaLargo(c.inicio)),
-        hora: hora(c.inicio), direccion: donde, motivo, tecnico: c.empleado?.nombre || '',
-        duracion: duracionTxt(c.duracion_min || 60), confirmacion: true,
-      });
-      if (soloVer) { confirmadas++; continue; }
-      try { await enviarCorreo(String(c.cliente.email).trim(), asunto, texto, html); confirmadas++; }
-      catch (e) { erroresConf.push(`${c.cliente.email}: ${(e as Error).message}`); }
-    }
-    if (marcar.length && !soloVer) {
-      await sb.from('citas').update({ confirmacion_enviada_at: new Date().toISOString() }).in('id', marcar);
+    // Anuladas de las que sí se había avisado y aún no se ha dicho nada.
+    const { data: anuladas } = await sb.from('citas')
+      .select('id')
+      .eq('estado', 'anulada')
+      .is('anulacion_enviada_at', null)
+      .not('confirmacion_enviada_at', 'is', null)
+      .limit(20);
+
+    for (const c of [...(nuevas || []), ...(anuladas || [])]) {
+      const r = await avisarDeUnaCita(String(c.id)) as Record<string, unknown>;
+      if (r.error) erroresConf.push(String(r.error));
+      else if (r.enviados) confirmadas++;
+      if (Array.isArray(r.errores) && r.errores.length) erroresConf.push(...r.errores.map(String));
     }
   }
 

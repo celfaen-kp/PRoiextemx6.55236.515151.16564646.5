@@ -349,6 +349,16 @@ export async function guardarCliente(cliente) {
   );
 }
 
+/**
+ * Avisa por correo de UNA cita: nueva, cambiada o anulada (sql/etapa30).
+ * La función decide sola qué toca contar y a quién, y marca la cita para no
+ * repetirlo. Va con la sesión de quien usa la app; la clave del cron no sale
+ * nunca del servidor.
+ */
+export async function avisarCita(citaId) {
+  return invocar('recordatorio-citas', { cita_id: citaId });
+}
+
 /** Borra una cita. Si tenía visita hecha, la visita se queda (sin cita). */
 export async function borrarCita(id) {
   const { error } = await supabase.from('citas').delete().eq('id', id);
