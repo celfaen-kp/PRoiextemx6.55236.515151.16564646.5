@@ -269,7 +269,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '12.3'; // versión visible de la app (única fuente)
+const APP_VERSION = '12.4'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -5911,19 +5911,23 @@ function vCitaVer() {
   ${pie}`;
 }
 
-// Carpeta del cliente en Drive: enlace si ya está, y reintento si falló.
+/**
+ * Carpeta del cliente en Drive: el enlace si ya está, el reintento si falló y,
+ * para los clientes de antes de la 12.1, el botón para creársela ahora.
+ */
 function agCarpetaHTML(c) {
+  if (!puedeCitar()) return '';
   const d = V.cliDrive && V.cliDrive.id === c.id ? V.cliDrive : null;
   const url = (d && d.url) || (c.drive_carpeta_id ? 'https://drive.google.com/drive/folders/' + c.drive_carpeta_id : '');
-  if (!url && !d) return '';
+  const trabajando = d && d.estado === 'subiendo';
   return `<div class="card" style="margin-bottom:18px">
     <div class="row g8"><span class="lbl">Carpeta en Drive</span></div>
-    ${d && d.estado === 'subiendo' ? '<div class="sub" style="margin-top:7px;font-size:13px">Creándola…</div>' : ''}
-    ${d && d.estado === 'error' ? `<div class="sub" style="margin-top:7px;font-size:13px;color:var(--rojo)">No se pudo crear: ${esc(d.error || '')}</div>
-      <button class="pill" data-a="cliDriveReintentar" data-id="${c.id}" style="margin-top:10px;padding:11px 18px">Reintentar</button>` : ''}
+    ${trabajando ? '<div class="sub" style="margin-top:7px;font-size:13px">Creándola…</div>' : ''}
+    ${d && d.estado === 'error' ? `<div class="sub" style="margin-top:7px;font-size:13px;color:var(--rojo)">No se pudo crear: ${esc(d.error || '')}</div>` : ''}
     ${d && d.aviso ? `<div class="sub" style="margin-top:7px;font-size:13px;color:var(--rojo)">La carpeta está, pero la hoja de clientes falló: ${esc(d.aviso)}</div>` : ''}
+    ${!url && !trabajando ? `<div class="sub" style="margin-top:7px;font-size:13px">Todavía no tiene carpeta. Ahí van las fotos y los PDF de sus presupuestos.</div>` : ''}
     ${url ? `<a href="${esc(url)}" target="_blank" rel="noopener" class="pill" style="display:block;margin-top:10px;padding:11px;text-align:center;text-decoration:none">Abrir en Drive</a>` : ''}
-    ${!url && !d ? '' : ''}
+    ${!trabajando ? `<button class="pill" data-a="cliDriveReintentar" data-id="${c.id}" style="margin-top:8px;padding:11px;width:100%;text-align:center">${url ? 'Repasar carpeta y hoja' : 'Crear su carpeta'}</button>` : ''}
   </div>`;
 }
 
