@@ -269,7 +269,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '12.2'; // versión visible de la app (única fuente)
+const APP_VERSION = '12.3'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -4790,10 +4790,11 @@ async function cargarFotosVisita(vv) {
   return fallos === 0;
 }
 
-// El técnico se guarda como user_id; el nombre sale de la lista de usuarios.
+// La visita guarda el técnico como user_id de Supabase; el nombre está en la
+// ficha de empleado, no en la lista local de usuarios.
 function nombreDeTecnico(v) {
-  const u = S.users.find((x) => x.id === v.tecnico_id || x.userId === v.tecnico_id);
-  return u ? u.nombre : '';
+  const e = empRows.find((x) => x.user_id === v.tecnico_id);
+  return e ? e.nombre : '';
 }
 
 function imprimirVisitaHTML(vv) {
