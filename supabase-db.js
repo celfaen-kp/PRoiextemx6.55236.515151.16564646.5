@@ -413,6 +413,38 @@ export async function enviarParteCorreo({ para, copia, asunto, texto, pdfBlob, n
   return data;
 }
 
+/**
+ * Sube a Google Drive el PDF de un parte (edge function `parte-drive`). El
+ * parte se dibuja en el móvil, así que el PDF viaja en base64, igual que en
+ * el envío por correo.
+ */
+export async function subirParteADrive(parteId, pdfBlob) {
+  const buf = new Uint8Array(await pdfBlob.arrayBuffer());
+  let bin = '';
+  for (let i = 0; i < buf.length; i += 0x8000) bin += String.fromCharCode.apply(null, buf.subarray(i, i + 0x8000));
+  const { data, error } = await supabase.functions.invoke('parte-drive', {
+    body: { parte_id: parteId, pdf_base64: btoa(bin) },
+  });
+  if (error) {
+    let msg = error.message || 'error';
+    const nombre = error.name || '';
+    if (nombre === 'FunctionsFetchError' || nombre === 'FunctionsRelayError' || /failed to (send|fetch)/i.test(msg)) {
+      msg = 'la función parte-drive no está subida todavía';
+    } else {
+      try {
+        const ctx = error.context;
+        if (ctx && typeof ctx.clone === 'function') {
+          const cuerpo = await ctx.clone().json();
+          if (cuerpo && cuerpo.error) msg = cuerpo.error;
+        }
+      } catch (_) { /* no era JSON */ }
+    }
+    throw new Error(msg);
+  }
+  if (data && data.error) throw new Error(data.error);
+  return data;
+}
+
 /* ---------------- ausencias (vacaciones, festivos, bajas) ---------------- */
 // sql/etapa17. Marcan un día completo sin trabajo. No tocan los fichajes: un
 // día puede tener las dos cosas (media jornada y luego permiso), y la planilla
@@ -605,6 +637,7 @@ export default {
   subirAvatar, urlsFirmadasAvatar, guardarMiAvatar, guardarAvatarDe, borrarAvatar,
   guardarPlanillaFirmada,
   subirPlanillaADrive,
+  subirParteADrive,
   listarAusencias, marcarAusencia, quitarAusencia,
   listarFestivos, ponerFestivo, quitarFestivo,
   listarIncidencias, crearIncidencia,

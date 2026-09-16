@@ -269,7 +269,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '11.8'; // versión visible de la app (única fuente)
+const APP_VERSION = '11.9'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -1498,6 +1498,24 @@ A.imprimirPlanillaFirmada = async () => {
   }
   render();
 };
+// Copia a Google Drive el parte recién guardado, a la carpeta de su obra.
+// El PDF se dibuja aquí (con firma y fotos) y viaja a la función.
+async function subirParteDrive(p) {
+  if (!p) return;
+  V.okDrive = { estado: 'subiendo' }; render();
+  try {
+    await cargarFotosParte(p);
+    imprimirParteHTML(p);
+    const blob = await pdfDeImpresion();
+    const r = await Sysefen.db.subirParteADrive(p.id, blob);
+    V.okDrive = { estado: 'ok', archivo: (r && r.archivo) || '' };
+  } catch (e) {
+    V.okDrive = { estado: 'error', error: (e && e.message) || 'error' };
+  }
+  render();
+}
+A.parteDrive = (id) => subirParteDrive(S.partes.find((x) => x.id === id));
+
 // Copia a Google Drive la planilla recién archivada. Si falla, la planilla
 // sigue guardada en Supabase: solo se ofrece reintentar.
 async function subirPlanillaDrive() {
@@ -2114,7 +2132,7 @@ A.guardarEnviar = async (enviar) => {
         : 'El parte se guardó, pero no subió ' + fallos.length + (fallos.length === 1 ? ' foto' : ' fotos') + (motivo ? ': ' + motivo : '.'));
     }
     const p = S.partes.find((x) => x.id === nuevo.id);
-    V.verParte = nuevo.id; V.draft = null; V.okEnvio = null;
+    V.verParte = nuevo.id; V.draft = null; V.okEnvio = null; V.okDrive = null;
     // Si la obra no tenía correo del cliente y el parte sí, se le guarda: así el
     // próximo parte de esa obra ya sale con el correo puesto.
     const obra = obraById(campos.obra_id);
@@ -2123,6 +2141,7 @@ A.guardarEnviar = async (enviar) => {
     }
     V.parteBusy = false;
     V.view = 'ok'; render();
+    if (p) subirParteDrive(p);
     if (!enviar || !p) return;
 
     // Antes esto abría la app de correo del móvil con un borrador sin PDF.
@@ -4272,6 +4291,11 @@ function vOk() {
       : V.okEnvio && V.okEnvio.ok ? '<br><b>Enviado a ' + esc(V.okEnvio.a) + '.</b>'
       : V.okEnvio && V.okEnvio.ok === false ? '<br><b>No se pudo enviar:</b> ' + esc(V.okEnvio.err) + '<br>Pulsa «Enviar el parte» para reintentar.'
       : p.estado === 'enviado' ? '<br>Enviado.' : ''}</div>
+    ${V.okDrive ? `<div style="font:400 13px/1.45 var(--sans);color:rgba(255,255,255,.8);margin-top:18px;max-width:300px">${
+      V.okDrive.estado === 'subiendo' ? 'Subiendo el parte a Google Drive…'
+      : V.okDrive.estado === 'ok' ? '✓ Copiado a Drive' + (V.okDrive.archivo ? ' como ' + esc(V.okDrive.archivo) : '')
+      : 'No se pudo copiar a Drive: ' + esc(V.okDrive.error || '')}</div>
+      ${V.okDrive.estado === 'error' ? `<button class="pill" data-a="parteDrive" data-id="${p.id}" style="margin-top:10px;padding:12px 22px;background:rgba(255,255,255,.22);color:#fff">Reintentar Drive</button>` : ''}` : ''}
     <button class="pill" data-a="abrirEnvioParte" data-id="${p.id}" style="margin-top:26px;padding:16px 26px;background:#fff;color:var(--verde-o);font-weight:600">Enviar el parte</button>
     <button class="pill" data-a="verPdf" data-id="${p.id}" style="margin-top:10px;padding:14px 24px;background:rgba(255,255,255,.22);color:#fff">Solo ver el PDF</button>
     <button class="pill" data-a="compartirParte" data-id="${p.id}" style="margin-top:10px;padding:14px 24px;background:rgba(255,255,255,.22);color:#fff">Compartir (WhatsApp…)</button>
@@ -6395,6 +6419,7 @@ document.addEventListener('click', (e) => {
   if (a === 'imprimirPlanillaFirmada') return A.imprimirPlanillaFirmada();
   if (a === 'imprimirPlanillaGuardada') return A.imprimirPlanillaGuardada();
   if (a === 'planillaDrive') return A.planillaDrive();
+  if (a === 'parteDrive') return A.parteDrive(d.id);
   if (a === 'compartirPlanilla') return A.compartirPlanilla();
   if (a === 'imprimirPlanilla') return A.imprimirPlanilla();
   if (a === 'exportarPlanillaCSV') return A.exportarPlanillaCSV();
