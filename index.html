@@ -269,7 +269,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '11.4'; // versión visible de la app (única fuente)
+const APP_VERSION = '11.5'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -5450,6 +5450,16 @@ function vCitaNueva() {
 
 // Qué pasa con el correo de aviso de una cita. La tarea de Supabase revisa
 // cada 10 minutos y avisa de las citas de las próximas 24 horas.
+// La confirmación sale en cuanto la cita tiene día y hora (salvo que ya entre
+// en el recordatorio de 24 h, que dice lo mismo).
+function agConfirmTxt(x, c) {
+  if (x.confirmacion_enviada_at) return 'Enviada ' + fechaCorta(x.confirmacion_enviada_at) + ' ' + hhmm(x.confirmacion_enviada_at);
+  if (x.estado !== 'pendiente' || !x.inicio) return '';
+  if (new Date(x.inicio).getTime() < Date.now()) return '';
+  if (!c.email) return 'Sin envío: el cliente no tiene email';
+  if (new Date(x.inicio).getTime() - Date.now() <= 24 * 3600 * 1000) return 'No hace falta: entra en el aviso de 24 h';
+  return 'En unos minutos · al cliente';
+}
 function agAvisoTxt(x, c) {
   if (x.aviso_enviado_at) return 'Enviado ' + fechaCorta(x.aviso_enviado_at) + ' ' + hhmm(x.aviso_enviado_at);
   if (x.cambio_desde) return 'Cambio de cita · en unos minutos · ' + esc(c.email ? 'al cliente' : 'el cliente no tiene email');
@@ -5521,7 +5531,8 @@ function vCitaVer() {
       ${fila('Teléfono', esc(c.telefono || ''))}
       ${fila('Email', esc(c.email || ''))}
       ${fila('Nota', esc(x.nota || ''))}
-      ${fila('Aviso', agAvisoTxt(x, c))}
+      ${fila('Confirmación', agConfirmTxt(x, c))}
+      ${fila('Aviso 24 h antes', agAvisoTxt(x, c))}
     </div>
     <div class="card row" data-a="ag_abrirCliente" data-id="${x.cliente_id}" style="margin-top:12px;cursor:pointer">
       <div class="grow"><div style="font:600 15px var(--sans)">Ficha del cliente</div>

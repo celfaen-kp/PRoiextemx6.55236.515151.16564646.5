@@ -22,6 +22,8 @@
 //   { "solo_ver": true }          dice a quién escribiría, sin enviar nada
 //   { "fecha": "2026-09-20" }     en vez de las próximas 24 h, ese día entero (pruebas)
 //   { "resumen_dia": true }       resumen de MAÑANA a cada persona de presupuestos
+// Además, en cada pasada normal confirma por correo las citas nuevas (las que
+// empiezan dentro de más de 24 h y aún no tienen confirmacion_enviada_at).
 //   { "resumen_dia": true, "fecha": "2026-09-20" }   resumen de ese día (pruebas)
 // =============================================================================
 
@@ -163,11 +165,13 @@ const parrafo = (txt: string) => `<p style="margin:0 0 20px;font-size:15px;line-
 // deno-lint-ignore no-explicit-any
 function correoClienteHTML(d: any) {
   const cuerpo = `
-    ${eyebrow(d.antes ? 'Cambio de cita' : 'Recordatorio de cita')}
+    ${eyebrow(d.confirmacion ? 'Cita confirmada' : d.antes ? 'Cambio de cita' : 'Recordatorio de cita')}
     ${titular('Hola, ' + d.nombre)}
-    ${parrafo(d.antes
-      ? 'Le informamos de que su cita' + (d.motivo ? ' para la ' + d.motivo : ' con Sysefen') + ' ha cambiado de día y hora. Queda así:'
-      : 'Le recordamos su cita' + (d.motivo ? ' para la ' + d.motivo : ' con Sysefen') + '.')}
+    ${parrafo(d.confirmacion
+      ? 'Hemos agendado su cita' + (d.motivo ? ' para la ' + d.motivo : ' con Sysefen') + '. Le enviaremos un recordatorio el día antes.'
+      : d.antes
+        ? 'Le informamos de que su cita' + (d.motivo ? ' para la ' + d.motivo : ' con Sysefen') + ' ha cambiado de día y hora. Queda así:'
+        : 'Le recordamos su cita' + (d.motivo ? ' para la ' + d.motivo : ' con Sysefen') + '.')}
     ${bloqueCuando({ etiqueta: d.antes ? 'Nueva fecha · ' + d.etiqueta : d.etiqueta, dia: d.dia, hora: d.hora })}
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:14px;">
       ${filaDato('Antes era', d.antes)}
@@ -331,6 +335,71 @@ Deno.serve(async (req) => {
     ventana = 'próximas 24 horas';
   }
 
+  const enviarCorreo = async (para: string, asunto: string, texto: string, html: string) => {
+    const r = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer ' + RESEND, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ from: REMITENTE, to: [para], subject: asunto, text: texto, html }),
+    });
+    if (!r.ok) {
+      const res = await r.json().catch(() => ({}));
+      throw new Error((res as { message?: string }).message || String(r.status));
+    }
+  };
+
+  // --- confirmación de las citas nuevas ---------------------------------------------
+  // En cuanto una cita tiene día y hora, el cliente recibe la confirmación. Si la
+  // cita nace dentro de las próximas 24 h, se marca sin enviar: el recordatorio
+  // sale a continuación y dice lo mismo.
+  let confirmadas = 0;
+  const erroresConf: string[] = [];
+  if (ventana === 'próximas 24 horas') {
+    const { data: nuevas, error: errC } = await sb.from('citas')
+      .select(`id, inicio, duracion_min, categorias, direccion, poblacion,
+        cliente:clientes_cache(nombre, email, direccion, poblacion),
+        empleado:empleados!citas_empleado_id_fkey(nombre)`)
+      .eq('estado', 'pendiente')
+      .is('confirmacion_enviada_at', null)
+      .gt('inicio', ahora.toISOString())
+      .order('inicio')
+      .limit(50);
+    if (errC && !/column .* does not exist|confirmacion_enviada_at/i.test(errC.message)) {
+      return json({ error: errC.message }, 500);
+    }
+    // deno-lint-ignore no-explicit-any
+    const lista = (nuevas || []) as any[];
+    const dentro24 = new Date(ahora.getTime() + 24 * 3600 * 1000).toISOString();
+    const marcar: string[] = [];
+    for (const c of lista) {
+      marcar.push(c.id);
+      if (c.inicio <= dentro24) continue;            // lo cubre el recordatorio
+      if (!esEmail(c.cliente?.email)) continue;      // sin email no hay a quién escribir
+      const donde = [c.direccion || c.cliente?.direccion, c.poblacion || c.cliente?.poblacion].filter(Boolean).join(', ');
+      const motivo = c.categorias?.length ? 'instalación de ' + listaCategorias(c.categorias) : '';
+      const asunto = `Cita confirmada · ${mayus(diaLargo(c.inicio))} a las ${hora(c.inicio)}`;
+      const texto =
+        `Hola ${c.cliente.nombre}:\n\n` +
+        `Hemos agendado su cita${motivo ? ` para la ${motivo}` : ' con Sysefen'}: ` +
+        `${mayus(diaLargo(c.inicio))}, a las ${hora(c.inicio)}${donde ? `, en ${donde}` : ''}.` +
+        `${c.empleado?.nombre ? `\nLe atenderá ${c.empleado.nombre}.` : ''}\n\n` +
+        `Le enviaremos un recordatorio el día antes.\n` +
+        `Si usted lo desea, puede cambiar su cita contactando con nosotros en el ${TEL}.\n\n` +
+        `Un saludo,\nSysefen · Eficiencia Energética\n\n` +
+        `(Este correo se envía automáticamente. Por favor, no responda a esta dirección.)`;
+      const html = correoClienteHTML({
+        logoUrl: LOGO_URL, nombre: c.cliente.nombre, etiqueta: 'Su cita', dia: mayus(diaLargo(c.inicio)),
+        hora: hora(c.inicio), direccion: donde, motivo, tecnico: c.empleado?.nombre || '',
+        duracion: duracionTxt(c.duracion_min || 60), confirmacion: true,
+      });
+      if (soloVer) { confirmadas++; continue; }
+      try { await enviarCorreo(String(c.cliente.email).trim(), asunto, texto, html); confirmadas++; }
+      catch (e) { erroresConf.push(`${c.cliente.email}: ${(e as Error).message}`); }
+    }
+    if (marcar.length && !soloVer) {
+      await sb.from('citas').update({ confirmacion_enviada_at: new Date().toISOString() }).in('id', marcar);
+    }
+  }
+
   const { data, error } = await sb.from('citas')
     .select(`id, inicio, duracion_min, categorias, direccion, poblacion, cambio_desde,
       cliente:clientes_cache(nombre, email, direccion, poblacion),
@@ -349,7 +418,7 @@ Deno.serve(async (req) => {
     empleado: { nombre: string; email_avisos: string | null } | null;
   };
   const citas = (data || []) as unknown as Cita[];
-  if (!citas.length) return json({ ventana, citas: 0 });
+  if (!citas.length) return json({ ventana, citas: 0, confirmadas, errores: erroresConf });
 
   const dondeDe = (c: Cita) =>
     [c.direccion || c.cliente?.direccion, c.poblacion || c.cliente?.poblacion].filter(Boolean).join(', ');
@@ -418,6 +487,7 @@ Deno.serve(async (req) => {
   if (soloVer) {
     return json({
       ventana, citas: citas.length,
+      confirmaciones: confirmadas,
       clientes: aClientes.map((m) => ({ para: m.para, asunto: m.asunto })),
       tecnicos: aTecnicos.map((m) => ({ para: m.para, asunto: m.asunto })),
       sin_email_cliente: citas.filter((c) => !esEmail(c.cliente?.email)).map((c) => c.cliente?.nombre || c.id),
@@ -425,26 +495,14 @@ Deno.serve(async (req) => {
   }
 
   // --- enviar ----------------------------------------------------------------------
-  const enviar = async (para: string, asunto: string, texto: string, html: string) => {
-    const r = await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: { Authorization: 'Bearer ' + RESEND, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ from: REMITENTE, to: [para], subject: asunto, text: texto, html }),
-    });
-    if (!r.ok) {
-      const res = await r.json().catch(() => ({}));
-      throw new Error((res as { message?: string }).message || String(r.status));
-    }
-  };
-
   const errores: string[] = [];
   let clientesOk = 0, tecnicosOk = 0;
   for (const m of aClientes) {
-    try { await enviar(m.para, m.asunto, m.texto, m.html); clientesOk++; }
+    try { await enviarCorreo(m.para, m.asunto, m.texto, m.html); clientesOk++; }
     catch (e) { errores.push(`${m.para}: ${(e as Error).message}`); }
   }
   for (const m of aTecnicos) {
-    try { await enviar(m.para, m.asunto, m.texto, m.html); tecnicosOk++; }
+    try { await enviarCorreo(m.para, m.asunto, m.texto, m.html); tecnicosOk++; }
     catch (e) { errores.push(`${m.para}: ${(e as Error).message}`); }
   }
 
@@ -455,5 +513,5 @@ Deno.serve(async (req) => {
     .in('id', citas.map((c) => c.id));
   if (e2) errores.push('marcar avisadas: ' + e2.message);
 
-  return json({ ventana, citas: citas.length, clientes_avisados: clientesOk, tecnicos_avisados: tecnicosOk, errores });
+  return json({ ventana, citas: citas.length, confirmadas, clientes_avisados: clientesOk, tecnicos_avisados: tecnicosOk, errores: errores.concat(erroresConf) });
 });

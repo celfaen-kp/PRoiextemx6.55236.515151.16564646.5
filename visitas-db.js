@@ -265,7 +265,7 @@ export async function pendientesDeEnviar() {
  * ------------------------------------------------------------------------- */
 const CAMPOS_CITA = `
   id, cliente_id, inicio, duracion_min, empleado_id, categorias, direccion,
-  poblacion, nota, estado, visita_id, aviso_enviado_at, cambio_desde, created_at, updated_at
+  poblacion, nota, estado, visita_id, aviso_enviado_at, cambio_desde, confirmacion_enviada_at, created_at, updated_at
 `;
 
 /** Citas sin fecha y las de los últimos `diasAtras` días en adelante. */
