@@ -269,7 +269,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '11.7'; // versión visible de la app (única fuente)
+const APP_VERSION = '11.8'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -1508,7 +1508,7 @@ async function subirPlanillaDrive() {
   estado('subiendo');
   try {
     const r = await Sysefen.db.subirPlanillaADrive(V.planDocId);
-    estado('ok', { driveNombre: (r && r.archivo) || '' });
+    estado('ok', { driveNombre: (r && r.archivo) || '', driveUbic: (r && r.ubicacion) || '' });
   } catch (e) {
     estado('error', { driveError: (e && e.message) || 'error' });
   }
@@ -5850,7 +5850,8 @@ function sheet() {
         <div style="font:600 23px/1.15 var(--cond)">✓ Planilla guardada</div>
         <div class="sub" style="margin-top:4px">${esc(V.planPdf ? V.planPdf.nombre : '')} queda archivada con la firma. Si se vuelve a firmar el mismo periodo, se sustituye.</div>
         ${s.drive === 'subiendo' ? '<div class="tiny" style="margin-top:10px">Subiendo a Google Drive…</div>'
-          : s.drive === 'ok' ? `<div class="tiny" style="margin-top:10px;color:var(--verde-o)">✓ Copiada a Google Drive${s.driveNombre ? ' como ' + esc(s.driveNombre) : ''}</div>`
+          : s.drive === 'ok' ? `<div class="tiny" style="margin-top:10px;color:var(--verde-o)">✓ Copiada a Google Drive${s.driveNombre ? ' como ' + esc(s.driveNombre) : ''}</div>
+            ${/^no se pudo/.test(s.driveUbic || '') ? `<div class="tiny" style="margin-top:6px;color:var(--ambar-o)">Pero quedó fuera de su carpeta: ${esc(s.driveUbic)}</div>` : ''}`
           : s.drive === 'error' ? `<div class="tiny" style="margin-top:10px;color:var(--rojo)">No se pudo copiar a Drive: ${esc(s.driveError || '')}</div>
             <button class="btn btn-gris" data-a="planillaDrive" style="margin-top:8px">Reintentar Drive</button>` : ''}
         ${botones}

@@ -188,24 +188,8 @@ Deno.serve(async (req) => {
   // copias cuando alguien vuelve a firmar el mismo mes.
   const anterior = typeof doc.ref_externa === 'string' && /^[\w-]{10,}$/.test(doc.ref_externa) ? doc.ref_externa : '';
 
-  // Si ya estaba subida, se actualiza ESE archivo y, de paso, se mueve a la
-  // carpeta de la persona: antes se quedaba donde se subió la primera vez.
-  let mover = '';
-  if (anterior) {
-    const info = await fetch(
-      `https://www.googleapis.com/drive/v3/files/${anterior}?fields=parents&supportsAllDrives=true`,
-      { headers: { Authorization: 'Bearer ' + token } });
-    if (info.ok) {
-      const d = await info.json().catch(() => ({}));
-      const padres: string[] = d.parents || [];
-      if (!padres.includes(carpeta.id)) {
-        mover = `&addParents=${carpeta.id}` + (padres.length ? `&removeParents=${padres.join(',')}` : '');
-      }
-    }
-  }
-
   const url = anterior
-    ? `https://www.googleapis.com/upload/drive/v3/files/${anterior}?uploadType=multipart&supportsAllDrives=true&fields=id,name${mover}`
+    ? `https://www.googleapis.com/upload/drive/v3/files/${anterior}?uploadType=multipart&supportsAllDrives=true&fields=id,name`
     : 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true&fields=id,name';
   const metadatos = anterior ? { name: nombre } : { name: nombre, parents: [carpeta.id] };
 
@@ -227,10 +211,34 @@ Deno.serve(async (req) => {
     return json({ error: 'Drive rechazó la subida: ' + (res.error?.message || r.status) }, 502);
   }
 
+  // --- que quede dentro de su carpeta ---------------------------------------------
+  // Se hace en un paso aparte, después de subir el contenido: mover y subir a la
+  // vez no siempre se aplica, y el archivo se quedaba donde estaba.
+  let ubicacion = 'sin comprobar';
+  try {
+    const info = await fetch(
+      `https://www.googleapis.com/drive/v3/files/${res.id}?fields=parents&supportsAllDrives=true`,
+      { headers: { Authorization: 'Bearer ' + token } });
+    const d = info.ok ? await info.json().catch(() => ({})) : {};
+    const padres: string[] = d.parents || [];
+    if (!padres.includes(carpeta.id)) {
+      const quitar = padres.length ? `&removeParents=${padres.join(',')}` : '';
+      const mueve = await fetch(
+        `https://www.googleapis.com/drive/v3/files/${res.id}?addParents=${carpeta.id}${quitar}&fields=id,parents&supportsAllDrives=true`,
+        { method: 'PATCH', headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' }, body: '{}' });
+      const m = await mueve.json().catch(() => ({}));
+      ubicacion = mueve.ok && (m.parents || []).includes(carpeta.id) ? 'movida' : 'no se pudo mover: ' + (m.error?.message || mueve.status);
+    } else {
+      ubicacion = 'ya estaba';
+    }
+  } catch (e) {
+    ubicacion = 'no se pudo comprobar: ' + (e as Error).message;
+  }
+
   // --- queda constancia ----------------------------------------------------------
   await admin.from('documentos')
     .update({ exportado_en: new Date().toISOString(), ref_externa: res.id })
     .eq('id', doc.id);
 
-  return json({ ok: true, archivo: `${quien}/${res.name || nombre}`, drive_id: res.id, carpeta: carpeta.id });
+  return json({ ok: true, archivo: `${quien}/${res.name || nombre}`, drive_id: res.id, carpeta: carpeta.id, ubicacion });
 });
