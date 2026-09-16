@@ -269,7 +269,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '12.0'; // versión visible de la app (única fuente)
+const APP_VERSION = '12.1'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -4632,7 +4632,7 @@ A.guardarVisita = async (completar, trasGuardar) => {
     V.visitaBusy = false;
     if (typeof trasGuardar === 'function') { toast('Visita guardada como borrador.'); A.cargarVisitas(); return trasGuardar(); }
     toast(completar ? 'Visita cerrada. Ya se puede enviar a Teamleader.' : 'Guardada. La sigues cuando quieras.');
-    if (completar) { A.cargarVisitas(); return A.verVisita(guardada.id); }
+    if (completar) { A.cargarVisitas(); await A.verVisita(guardada.id); return subirVisitaDrive(); }
     V.view = esPresupuestos() ? 'agenda' : 'visitas'; render(); A.cargarVisitas();
   } catch (e) {
     V.visitaBusy = false; guardarBorradorVisita(); render();
@@ -4677,7 +4677,7 @@ A.editarVisita = async (id) => {
   }
 };
 A.verVisita = async (id) => {
-  V.visitaVer = null; V.view = 'visita'; scrollMemo.visita = 0; render();
+  V.visitaVer = null; V.okVisitaDrive = null; V.view = 'visita'; scrollMemo.visita = 0; render();
   try {
     V.visitaVer = await visitasDB.verVisita(id);
     render();
@@ -4706,6 +4706,196 @@ A.enviarVisita = async () => {
   A.cargarVisitas();
   await A.verVisita(id);
 };
+
+/**
+ * Todas las visitas en una hoja, una fila cada una: para mirarlas en Excel,
+ * filtrar por población o categoría y, el día de mañana, importarlas al CRM.
+ * El detalle de cada ficha no cabe en una tabla: para eso está el PDF.
+ */
+A.exportarVisitasCSV = () => {
+  const lista = V.visitas || [];
+  if (!lista.length) { avisar('No hay visitas que exportar.'); return; }
+  const si = (b) => (b ? 'Sí' : 'No');
+  const filas = [[
+    'Código', 'Fecha', 'Cliente', 'Teléfono', 'Dirección', 'Población', 'CP',
+    'Tipo de inmueble', 'Superficie m2', 'Plantas', 'Habitaciones', 'Baños',
+    'Año', 'Ocupantes', 'Acceso', 'Grúa', 'Andamio', 'Categorías', 'Origen',
+    'Plazo', 'Financiación', 'Subvención', 'Estado', 'En Teamleader', 'Observaciones',
+  ]];
+  lista.slice().sort((a, b) => String(b.fecha_visita || '').localeCompare(String(a.fecha_visita || ''))).forEach((v) => {
+    filas.push([
+      v.codigo || '', v.fecha_visita || '',
+      (v.cliente && v.cliente.nombre) || '', (v.cliente && v.cliente.telefono) || '',
+      v.direccion || '', v.poblacion || '', v.cp || '',
+      v.tipo_inmueble || '', v.superficie_m2 ?? '', v.plantas ?? '', v.habitaciones ?? '', v.banos ?? '',
+      v.anio_construccion ?? '', v.ocupantes ?? '', v.acceso || '',
+      si(v.necesita_grua), si(v.necesita_andamio),
+      (v.fichas || []).map((f) => nombreCat(f.categoria)).join(' + '),
+      v.origen || '', v.plazo_deseado || '',
+      si(v.interesa_financiacion), si(v.interesa_subvencion),
+      v.estado === 'completada' ? 'Cerrada' : v.estado === 'borrador' ? 'Borrador' : v.estado || '',
+      v.sync_estado === 'sincronizada' ? 'Sí' : 'No',
+      (v.observaciones || '').replace(/\s+/g, ' '),
+    ]);
+  });
+  const csv = '\uFEFF' + filas.map((r) => r.map((c) => '"' + String(c).replace(/"/g, '""') + '"').join(';')).join('\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+  a.download = 'visitas-' + hoyISO() + '.csv'; a.click();
+  toast('Visitas exportadas en CSV');
+};
+
+/* ---------------------------------------------------------------------------
+ * La visita en papel: PDF, compartir y copia en Google Drive (sql/etapa29)
+ *
+ * El PDF es la ficha entera —cliente, inmueble, cada categoría y las fotos—,
+ * que es lo que se usa para sentarse a presupuestar. La copia de Drive va a
+ * Visitas / Cliente / fecha · código, junto con las fotos sueltas.
+ * ------------------------------------------------------------------------- */
+
+// Las fotos viven en Supabase Storage. Hay que traerlas como datos ANTES de
+// dibujar: si fueran enlaces, el PDF saldría con los huecos en blanco.
+async function cargarFotosVisita(vv) {
+  const fotos = (vv.adjuntos || []).filter((a) => a.storage_path && !a.data);
+  if (!fotos.length) return true;
+  const faltan = fotos.map((a) => a.storage_path).filter((r) => !V.visitaFotoUrls[r]);
+  if (faltan.length) {
+    try { Object.assign(V.visitaFotoUrls, await visitasDB.urlsFotos(faltan)); } catch (e) { /* se ve abajo */ }
+  }
+  let fallos = 0;
+  for (const a of fotos) {
+    const url = V.visitaFotoUrls[a.storage_path];
+    if (!url) { fallos++; continue; }
+    try {
+      const blob = await (await fetch(url)).blob();
+      a.data = await new Promise((res, rej) => {
+        const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(blob);
+      });
+    } catch (e) { fallos++; }
+  }
+  return fallos === 0;
+}
+
+// El técnico se guarda como user_id; el nombre sale de la lista de usuarios.
+function nombreDeTecnico(v) {
+  const u = S.users.find((x) => x.id === v.tecnico_id || x.userId === v.tecnico_id);
+  return u ? u.nombre : '';
+}
+
+function imprimirVisitaHTML(vv) {
+  const v = vv.visita, fichas = vv.fichas || [], adj = vv.adjuntos || [];
+  const cli = v.cliente || null;
+  const cats = fichas.map((f) => f.categoria);
+
+  const titulillo = (t) => `<div style="font:600 10px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:#666;margin:16px 0 5px">${esc(t)}</div>`;
+  const tabla = (filas) => `<table style="width:100%;font:400 12px var(--sans);border-collapse:collapse">
+    ${filas.map(([k, val]) => `<tr>
+      <td style="padding:4px 0;color:#666;width:42%;vertical-align:top;border-bottom:1px solid #eee">${esc(k)}</td>
+      <td style="padding:4px 0;border-bottom:1px solid #eee;white-space:pre-line">${esc(val)}</td></tr>`).join('')}
+  </table>`;
+  const bloques = (esquema, datos) => vForm.resumenFilas(esquema, datos)
+    .map((sec) => titulillo(sec.titulo) + tabla(sec.filas)).join('')
+    || '<div style="font:italic 400 11px var(--sans);color:#666">Sin datos.</div>';
+
+  const fotosDe = (cat) => {
+    const lista = adj.filter((a) => a.data && String(a.campo_ref || '').startsWith(cat + '.'));
+    if (!lista.length) return '';
+    return `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:10px">${lista.map((a) => `<div style="width:56mm">
+      <img src="${a.data}" style="width:100%;border-radius:3px">
+      <div style="font:400 9px var(--mono);color:#666;margin-top:2px">${esc(a.descripcion || '')}</div></div>`).join('')}</div>`;
+  };
+  const sueltas = adj.filter((a) => a.data && !cats.some((c) => String(a.campo_ref || '').startsWith(c + '.')));
+
+  const el = $('#print');
+  el.innerHTML = `<div style="font-family:var(--sans);color:#14170f;max-width:180mm;position:relative;z-index:0">
+    <img src="logo-trans.png" alt="" style="position:absolute;top:110mm;left:50%;transform:translate(-50%,-50%);width:120mm;opacity:.11;z-index:-1;pointer-events:none">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start">
+      <div><img src="logo-trans.png" alt="" style="height:17mm">
+      ${S.cif ? `<div style="font:400 10px var(--mono);color:#666;margin-top:2px">${esc(S.empresa)} · ${esc(S.cif)}</div>` : ''}</div>
+      <div style="text-align:right"><div style="font:600 11px var(--mono);letter-spacing:.1em">TOMA DE DATOS</div>
+      <div style="font:700 16px var(--cond);margin-top:2px">${esc(v.codigo || '')}</div></div>
+    </div>
+    <div style="height:2px;background:#14170f;margin:10px 0 14px"></div>
+    <table style="width:100%;font:400 12px var(--sans);border-collapse:collapse">
+      <tr><td style="padding:3px 0;color:#666;width:32%">Cliente</td><td style="font-weight:600">${esc(cli ? cli.nombre : 'Sin cliente')}</td></tr>
+      ${cli && cli.telefono ? `<tr><td style="padding:3px 0;color:#666">Teléfono</td><td>${esc(cli.telefono)}</td></tr>` : ''}
+      ${cli && cli.email ? `<tr><td style="padding:3px 0;color:#666">Email</td><td>${esc(cli.email)}</td></tr>` : ''}
+      ${cli && cli.nif ? `<tr><td style="padding:3px 0;color:#666">NIF</td><td>${esc(cli.nif)}</td></tr>` : ''}
+      <tr><td style="padding:3px 0;color:#666">Emplazamiento</td><td>${esc([v.direccion, v.poblacion, v.cp].filter(Boolean).join(' · ') || '—')}</td></tr>
+      <tr><td style="padding:3px 0;color:#666">Fecha de la visita</td><td>${v.fecha_visita ? fechaLarga(v.fecha_visita + 'T12:00') : '—'}</td></tr>
+      ${nombreDeTecnico(v) ? `<tr><td style="padding:3px 0;color:#666">Técnico</td><td>${esc(nombreDeTecnico(v))}</td></tr>` : ''}
+      <tr><td style="padding:3px 0;color:#666">Presupuestos a preparar</td><td style="font-weight:600">${esc(cats.map(nombreCat).join(' + ') || '—')}</td></tr>
+    </table>
+    ${titulillo('El inmueble')}
+    ${tabla(vForm.resumenFilas(vSchemas.COMUN, v).reduce((t, sec) => t.concat(sec.filas), []))}
+    ${fichas.map((f) => `<div style="margin-top:22px;padding-top:6px;border-top:2px solid #14170f">
+        <div style="font:700 15px var(--cond);margin:6px 0 2px">${esc(nombreCat(f.categoria))}</div>
+        ${bloques(vSchemas.ESQUEMAS[f.categoria], f.datos)}
+        ${fotosDe(f.categoria)}
+      </div>`).join('')}
+    ${v.observaciones ? titulillo('Observaciones') + `<div style="font:400 12px/1.5 var(--sans);white-space:pre-wrap">${esc(v.observaciones)}</div>` : ''}
+    ${sueltas.length ? titulillo('Otras fotos') + `<div style="display:flex;flex-wrap:wrap;gap:6px">${sueltas.map((a) => `<img src="${a.data}" style="width:56mm;border-radius:3px">`).join('')}</div>` : ''}
+    <div style="margin-top:26px;font:400 10px var(--mono);color:#999">Documento interno de ${esc(S.empresa)} · generado por la app el ${fechaLarga(hoyISO() + 'T12:00')}</div>
+  </div>`;
+}
+
+async function pdfDeVisita(vv) {
+  const todas = await cargarFotosVisita(vv);
+  imprimirVisitaHTML(vv);
+  const blob = await pdfDeImpresion();
+  return { blob, todas };
+}
+
+A.visitaPdf = async () => {
+  const vv = V.visitaVer; if (!vv) return;
+  toast('Preparando el PDF…');
+  const todas = await cargarFotosVisita(vv);
+  if (!todas) avisar('Alguna foto no se pudo descargar: saldrá sin ella.');
+  imprimirVisitaHTML(vv);
+  setTimeout(() => window.print(), 60);
+};
+
+A.compartirVisita = async () => {
+  const vv = V.visitaVer; if (!vv) return;
+  toast('Preparando el PDF…');
+  try {
+    const { blob } = await pdfDeVisita(vv);
+    const nombre = 'visita-' + (vv.visita.codigo || 'sysefen') + '.pdf';
+    const archivo = new File([blob], nombre, { type: 'application/pdf' });
+    const cli = vv.visita.cliente;
+    pdfParaCompartir = {
+      archivo,
+      title: 'Toma de datos ' + (vv.visita.codigo || ''),
+      text: S.empresa + ' · Toma de datos' + (cli ? ' · ' + cli.nombre : ''),
+    };
+    if (navigator.canShare && navigator.canShare({ files: [archivo] })) {
+      await navigator.share({ files: [archivo], title: pdfParaCompartir.title, text: pdfParaCompartir.text });
+      return;
+    }
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = nombre; a.click();
+    toast('PDF descargado.');
+  } catch (e) {
+    if (e && e.name === 'AbortError') return;
+    if (e && e.name === 'NotAllowedError' && pdfParaCompartir) { V.sheet = { tipo: 'compartirListo', nombre: pdfParaCompartir.archivo.name }; render(); return; }
+    avisar('No se pudo preparar el PDF: ' + msgError(e));
+  }
+};
+
+// Copia a Drive. Sale sola al cerrar la visita y se puede reintentar a mano.
+async function subirVisitaDrive() {
+  const vv = V.visitaVer; if (!vv) return;
+  V.okVisitaDrive = { estado: 'subiendo' }; render();
+  try {
+    const { blob } = await pdfDeVisita(vv);
+    const r = await visitasDB.subirVisitaADrive(vv.visita.id, blob);
+    V.okVisitaDrive = { estado: 'ok', archivo: (r && r.archivo) || '', url: (r && r.carpeta_url) || '', fotos: (r && r.fotos) || 0 };
+  } catch (e) {
+    V.okVisitaDrive = { estado: 'error', error: msgError(e) };
+  }
+  render();
+}
+A.visitaDrive = () => subirVisitaDrive();
 
 /* ---------- vistas ---------- */
 function vVisitas() {
@@ -4767,7 +4957,10 @@ function vVisitas() {
     </div>
     <div class="row" style="justify-content:space-between">
       <div class="h1">Visitas</div>
-      <button class="pill" data-a="nuevaVisita" style="background:var(--tinta);color:#fff">+ Nueva</button>
+      <div class="row g8">
+        ${lista.length ? '<button class="pill" data-a="exportarVisitasCSV">CSV</button>' : ''}
+        <button class="pill" data-a="nuevaVisita" style="background:var(--tinta);color:#fff">+ Nueva</button>
+      </div>
     </div>
     <div class="sub" style="margin-top:8px">${V.visitasCargadas ? `${n(sinCerrar) + (medias ? 1 : 0)} sin cerrar · ${n(porEnviar)} por enviar · ${n(enTL)} en Teamleader` : 'Cargando…'}</div>
   </div>
@@ -5004,9 +5197,27 @@ function vVisita() {
     }).join('')}</div>`;
   };
 
+  // La ficha en papel: PDF para mirar o mandar, y la copia en Drive.
+  const dr = V.okVisitaDrive;
+  const papel = `<div class="card" style="margin-top:12px">
+    <div class="lbl">La ficha en papel</div>
+    <div class="sub" style="margin-top:6px;font-size:13px">El PDF lleva el inmueble, cada categoría y las fotos. La copia va a Drive, a la carpeta del cliente.</div>
+    <div class="row g8" style="margin-top:14px">
+      <button class="pill grow" data-a="visitaPdf" style="padding:12px;text-align:center">Ver PDF</button>
+      <button class="pill grow" data-a="compartirVisita" style="padding:12px;text-align:center">Compartir</button>
+    </div>
+    <button class="pill" data-a="visitaDrive" style="margin-top:8px;padding:12px;width:100%;text-align:center" ${dr && dr.estado === 'subiendo' ? 'disabled' : ''}>${
+      dr && dr.estado === 'subiendo' ? 'Subiendo a Drive…' : v.drive_id || (dr && dr.estado === 'ok') ? 'Volver a subir a Drive' : 'Copiar a Drive'}</button>
+    ${dr ? `<div class="tiny" style="margin-top:10px${dr.estado === 'error' ? ';color:var(--rojo)' : ''}">${
+      dr.estado === 'subiendo' ? 'Subiendo el PDF y las fotos…'
+      : dr.estado === 'ok' ? '✓ En Drive' + (dr.archivo ? ' como ' + esc(dr.archivo) : '') + (dr.fotos ? ' · ' + dr.fotos + (dr.fotos === 1 ? ' foto' : ' fotos') : '')
+      : 'No se pudo copiar a Drive: ' + esc(dr.error || '')}</div>` : v.drive_at ? `<div class="tiny" style="margin-top:10px">✓ Copiada a Drive el ${fechaCorta(v.drive_at)}</div>` : ''}
+  </div>`;
+
   return cab(v.direccion || 'Visita', [cli && cli.nombre, v.poblacion, v.codigo].filter(Boolean).join(' · '))
     + `<div class="scroll pad pb-nav sin-marca">
       ${bloque}
+      ${papel}
       <div class="lbl" style="margin:24px 0 10px">Inmueble</div>
       <div class="card" style="padding:4px 15px 10px">${vForm.resumenHTML(vSchemas.COMUN, v)}</div>
       ${fichas.map((f) => `<div class="lbl" style="margin:24px 0 10px">${esc(nombreCat(f.categoria))}</div>
@@ -5139,6 +5350,7 @@ async function agGuardarCliente(conCita) {
       direccion: t('direccion') || null, poblacion: t('poblacion') || null, origen: d.origen || null, nota: t('nota') || null,
     });
     V.agBusy = false; V.clienteDraft = null;
+    clienteADrive(g.id);
     await A.cargarAgenda();
     V.clienteVerId = g.id;
     if (conCita) return agNuevaCita(g.id, true);
@@ -5149,6 +5361,25 @@ async function agGuardarCliente(conCita) {
     avisar('No se pudo guardar el cliente: ' + agErrorTxt(e));
   }
 }
+
+/**
+ * Carpeta del cliente en Drive y su fila en la hoja única (sql/etapa29).
+ * No bloquea: el cliente ya está guardado en Supabase pase lo que pase con
+ * Google. Si falla, se avisa por debajo y se puede reintentar desde su ficha.
+ */
+async function clienteADrive(id) {
+  if (!id || !navigator.onLine) return;
+  V.cliDrive = { id, estado: 'subiendo' }; render();
+  try {
+    const r = await visitasDB.clienteADrive(id);
+    V.cliDrive = { id, estado: 'ok', url: (r && r.carpeta_url) || '', aviso: (r && r.aviso) || '' };
+    const c = agCliente(id); if (c && r) c.drive_carpeta_id = r.carpeta_id || c.drive_carpeta_id;
+  } catch (e) {
+    V.cliDrive = { id, estado: 'error', error: msgError(e) };
+  }
+  render();
+}
+A.cliDriveReintentar = (id) => clienteADrive(id);
 
 function agNuevaCita(clienteId, desdeAlta) {
   if (!puedeCitar()) return;
@@ -5645,6 +5876,22 @@ function vCitaVer() {
   ${pie}`;
 }
 
+// Carpeta del cliente en Drive: enlace si ya está, y reintento si falló.
+function agCarpetaHTML(c) {
+  const d = V.cliDrive && V.cliDrive.id === c.id ? V.cliDrive : null;
+  const url = (d && d.url) || (c.drive_carpeta_id ? 'https://drive.google.com/drive/folders/' + c.drive_carpeta_id : '');
+  if (!url && !d) return '';
+  return `<div class="card" style="margin-bottom:18px">
+    <div class="row g8"><span class="lbl">Carpeta en Drive</span></div>
+    ${d && d.estado === 'subiendo' ? '<div class="sub" style="margin-top:7px;font-size:13px">Creándola…</div>' : ''}
+    ${d && d.estado === 'error' ? `<div class="sub" style="margin-top:7px;font-size:13px;color:var(--rojo)">No se pudo crear: ${esc(d.error || '')}</div>
+      <button class="pill" data-a="cliDriveReintentar" data-id="${c.id}" style="margin-top:10px;padding:11px 18px">Reintentar</button>` : ''}
+    ${d && d.aviso ? `<div class="sub" style="margin-top:7px;font-size:13px;color:var(--rojo)">La carpeta está, pero la hoja de clientes falló: ${esc(d.aviso)}</div>` : ''}
+    ${url ? `<a href="${esc(url)}" target="_blank" rel="noopener" class="pill" style="display:block;margin-top:10px;padding:11px;text-align:center;text-decoration:none">Abrir en Drive</a>` : ''}
+    ${!url && !d ? '' : ''}
+  </div>`;
+}
+
 function vClienteVer() {
   const c = agCliente(V.clienteVerId);
   if (!c) {
@@ -5698,6 +5945,7 @@ function vClienteVer() {
       ${c.direccion ? `<div class="fila"><span class="k">Dirección</span><span class="v">${esc([c.direccion, c.poblacion].filter(Boolean).join(', '))}</span></div>` : ''}
       ${c.nota ? `<div class="fila"><span class="k">Nota</span><span class="v">${esc(c.nota)}</span></div>` : ''}
     </div>` : ''}
+    ${agCarpetaHTML(c)}
     <div class="lbl" style="margin-bottom:12px">Historial</div>
     <div class="ag-linea">
       ${items.map(hito).join('')}
@@ -6317,6 +6565,11 @@ document.addEventListener('click', (e) => {
   if (a === 'abrirVisita') return A.abrirVisita(d.id);
   if (a === 'editarVisita') return A.editarVisita(d.id);
   if (a === 'enviarVisita') return A.enviarVisita();
+  if (a === 'visitaPdf') return A.visitaPdf();
+  if (a === 'exportarVisitasCSV') return A.exportarVisitasCSV();
+  if (a === 'compartirVisita') return A.compartirVisita();
+  if (a === 'visitaDrive') return A.visitaDrive();
+  if (a === 'cliDriveReintentar') return A.cliDriveReintentar(d.id);
   if (a === 'elegirUser') return A.elegirUser(d.id);
   if (a === 'pinTecla') return A.pinTecla(d.k);
   if (a === 'volverLogin') return A.volverLogin();

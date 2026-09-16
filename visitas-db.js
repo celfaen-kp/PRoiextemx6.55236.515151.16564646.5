@@ -65,7 +65,8 @@ const CAMPOS_VISITA = `
   acceso, acceso_notas, necesita_grua, necesita_andamio,
   origen, plazo_deseado, interesa_financiacion, interesa_subvencion,
   estado, observaciones, tl_deal_id, tl_deal_fase,
-  sync_estado, sync_error, sync_at, created_at, updated_at
+  sync_estado, sync_error, sync_at, drive_id, drive_at, drive_carpeta_id,
+  created_at, updated_at
 `;
 
 export async function listarVisitas() {
@@ -224,6 +225,49 @@ export async function urlsFotos(rutas, segundos = 3600) {
 export async function borrarFoto(id, ruta) {
   await supabase.storage.from('visitas').remove([ruta]);
   return unwrap(await supabase.from('visita_adjuntos').delete().eq('id', id));
+}
+
+/* ---------------------------------------------------------------------------
+ * Google Drive (sql/etapa29)
+ *
+ * Igual que con las planillas y los partes: la app no habla con Google, se lo
+ * pide a su backend. Las credenciales viven solo en la edge function.
+ * ------------------------------------------------------------------------- */
+
+/** Saca el error de dentro de la respuesta de la función, que si no llega como "non-2xx". */
+async function invocar(nombre, cuerpo) {
+  const { data, error } = await supabase.functions.invoke(nombre, { body: cuerpo });
+  if (error) {
+    let msg = error.message || 'error';
+    const clase = error.name || '';
+    if (clase === 'FunctionsFetchError' || clase === 'FunctionsRelayError' || /failed to (send|fetch)/i.test(msg)) {
+      msg = 'la función ' + nombre + ' no está subida todavía';
+    } else {
+      try {
+        const ctx = error.context;
+        if (ctx && typeof ctx.clone === 'function') {
+          const c = await ctx.clone().json();
+          if (c && c.error) msg = c.error;
+        }
+      } catch (_) { /* no era JSON */ }
+    }
+    throw new Error(msg);
+  }
+  if (data && data.error) throw new Error(data.error);
+  return data;
+}
+
+/** Le crea (o le repasa) su carpeta en Drive y su fila en la hoja de clientes. */
+export async function clienteADrive(clienteId) {
+  return invocar('cliente-drive', { cliente_id: clienteId });
+}
+
+/** Sube el PDF de la visita y sus fotos a la carpeta del cliente. */
+export async function subirVisitaADrive(visitaId, pdfBlob) {
+  const buf = new Uint8Array(await pdfBlob.arrayBuffer());
+  let bin = '';
+  for (let i = 0; i < buf.length; i += 0x8000) bin += String.fromCharCode.apply(null, buf.subarray(i, i + 0x8000));
+  return invocar('visita-drive', { visita_id: visitaId, pdf_base64: btoa(bin) });
 }
 
 /* ---------------------------------------------------------------------------

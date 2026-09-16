@@ -145,6 +145,19 @@ function valorLegible(c, v) {
   return c.unidad ? `${v} ${c.unidad}` : String(v);
 }
 
+/**
+ * Las secciones con algo escrito, ya legibles: [{ titulo, filas: [[etiqueta, valor]] }].
+ * De aquí salen el resumen de la pantalla, el texto para Teamleader y el PDF.
+ */
+export function resumenFilas(esquema, datos) {
+  return (esquema.secciones || []).map((sec) => ({
+    titulo: sec.titulo,
+    filas: sec.campos
+      .map((c) => [c.etiqueta, valorLegible(c, datos?.[c.key])])
+      .filter(([, v]) => v != null),
+  })).filter((s) => s.filas.length);
+}
+
 export function resumenHTML(esquema, datos) {
   const bloques = esquema.secciones.map((sec) => {
     const filas = sec.campos
