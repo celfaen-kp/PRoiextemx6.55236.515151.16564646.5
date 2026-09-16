@@ -22,8 +22,9 @@
 // USO (POST con JSON):
 //   { "documento_id": "uuid" }
 //
-// SI LA MISMA PLANILLA SE VUELVE A FIRMAR: se sustituye el archivo en Drive en
-// vez de dejar dos. Se busca por el id que quedó guardado en `ref_externa`.
+// SI LA MISMA PLANILLA SE VUELVE A FIRMAR: se sube un archivo NUEVO y, si ya
+// había uno con ese nombre, se numera: "Septiembre 2026 (1).pdf". Nunca se
+// pisa ni se toca lo anterior; queda a la vista y se decide después.
 //
 // CADA PERSONA TIENE SU CARPETA dentro de DRIVE_CARPETA_ID, con su nombre. Se
 // crea la primera vez que firma (sql/etapa27 guarda su id en empleados).
@@ -60,6 +61,26 @@ async function tokenDeGoogle(id: string, secreto: string, refresh: string) {
 // vez que firma y se guarda su id en `empleados.drive_carpeta_id`, para no
 // buscarla en cada subida. Con el permiso `drive.file` solo vemos lo que crea
 // esta app, así que la carpeta la crea y la mantiene ella.
+// Si ya hay un archivo con ese nombre en la carpeta, se numera el nuevo:
+// "Septiembre 2026.pdf", "Septiembre 2026 (1).pdf"… Nunca se pisa lo anterior.
+async function nombreLibre(token: string, carpetaId: string, nombre: string) {
+  const base = nombre.replace(/\.pdf$/i, '');
+  const q = encodeURIComponent(
+    `'${carpetaId}' in parents and trashed = false and name contains '${base.replace(/'/g, "\\'")}'`);
+  const r = await fetch(
+    `https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(name)&pageSize=100&supportsAllDrives=true`,
+    { headers: { Authorization: 'Bearer ' + token } });
+  if (!r.ok) return nombre;
+  const d = await r.json().catch(() => ({}));
+  const usados = new Set<string>((d.files || []).map((f: { name: string }) => f.name));
+  if (!usados.has(nombre)) return nombre;
+  for (let i = 1; i < 100; i++) {
+    const intento = `${base} (${i}).pdf`;
+    if (!usados.has(intento)) return intento;
+  }
+  return `${base} (${Date.now()}).pdf`;
+}
+
 const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
   'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
 
@@ -186,26 +207,17 @@ Deno.serve(async (req) => {
 
   // Si ya se subió antes, se sustituye ese mismo archivo: así no se acumulan
   // copias cuando alguien vuelve a firmar el mismo mes.
-  const anterior = typeof doc.ref_externa === 'string' && /^[\w-]{10,}$/.test(doc.ref_externa) ? doc.ref_externa : '';
-
-  const url = anterior
-    ? `https://www.googleapis.com/upload/drive/v3/files/${anterior}?uploadType=multipart&supportsAllDrives=true&fields=id,name`
-    : 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true&fields=id,name';
-  const metadatos = anterior ? { name: nombre } : { name: nombre, parents: [carpeta.id] };
-
-  let r = await fetch(url, {
-    method: anterior ? 'PATCH' : 'POST',
-    headers: { Authorization: 'Bearer ' + token, 'Content-Type': `multipart/related; boundary=${limite}` },
-    body: cuerpoMultipart(metadatos),
-  });
-  // Si el archivo anterior ya no está en Drive (lo borraron), se sube de nuevo.
-  if (!r.ok && anterior && (r.status === 404 || r.status === 403)) {
-    r = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true&fields=id,name', {
+  // Siempre un archivo nuevo. Antes se actualizaba el de la vez anterior por su
+  // id, y si ese archivo estaba borrado, la actualización se aplicaba dentro de
+  // la papelera: en Drive no aparecía nada.
+  const nombreFinal = await nombreLibre(token, carpeta.id, nombre);
+  const r = await fetch(
+    'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true&fields=id,name',
+    {
       method: 'POST',
       headers: { Authorization: 'Bearer ' + token, 'Content-Type': `multipart/related; boundary=${limite}` },
-      body: cuerpoMultipart({ name: nombre, parents: [carpeta.id] }),
+      body: cuerpoMultipart({ name: nombreFinal, parents: [carpeta.id] }),
     });
-  }
   const res = await r.json().catch(() => ({}));
   if (!r.ok || !res.id) {
     return json({ error: 'Drive rechazó la subida: ' + (res.error?.message || r.status) }, 502);
@@ -240,5 +252,5 @@ Deno.serve(async (req) => {
     .update({ exportado_en: new Date().toISOString(), ref_externa: res.id })
     .eq('id', doc.id);
 
-  return json({ ok: true, archivo: `${quien}/${res.name || nombre}`, drive_id: res.id, carpeta: carpeta.id, ubicacion });
+  return json({ ok: true, archivo: `${quien}/${res.name || nombreFinal}`, drive_id: res.id, carpeta: carpeta.id, ubicacion });
 });
