@@ -1,4 +1,4 @@
-const CACHE = 'ch-v11-3';
+const CACHE = 'ch-v11-4';
 const ASSETS = ['./', './index.html', './manifest.webmanifest', './supabase-client.js', './supabase-auth.js', './supabase-db.js', './visitas-schemas.js', './visitas-form.js', './visitas-db.js', './icon-192.png', './icon-512.png', './icon-maskable.png', './logo-trans.png', './logo-blanco.png'];
 
 self.addEventListener('install', (e) => {

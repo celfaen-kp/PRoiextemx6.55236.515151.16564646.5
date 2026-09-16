@@ -269,7 +269,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '11.3'; // versión visible de la app (única fuente)
+const APP_VERSION = '11.4'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -5152,6 +5152,11 @@ async function agGuardarCita() {
     // Si cambia el momento de la cita, el aviso del día antes vuelve a tocar.
     const antes = agCita(d.id);
     if (!antes || antes.inicio !== inicio) fila.aviso_enviado_at = null;
+    // Si el cliente ya había recibido el aviso, el correo nuevo tiene que decir
+    // que es un cambio y desde cuándo.
+    if (antes && antes.inicio && antes.inicio !== inicio) {
+      fila.cambio_desde = antes.aviso_enviado_at ? antes.inicio : null;
+    }
   }
   V.agBusy = true; render();
   try {
@@ -5447,6 +5452,7 @@ function vCitaNueva() {
 // cada 10 minutos y avisa de las citas de las próximas 24 horas.
 function agAvisoTxt(x, c) {
   if (x.aviso_enviado_at) return 'Enviado ' + fechaCorta(x.aviso_enviado_at) + ' ' + hhmm(x.aviso_enviado_at);
+  if (x.cambio_desde) return 'Cambio de cita · en unos minutos · ' + esc(c.email ? 'al cliente' : 'el cliente no tiene email');
   if (x.estado !== 'pendiente' || !x.inicio) return x.inicio ? '' : 'Cuando tenga fecha';
   if (new Date(x.inicio).getTime() < Date.now()) return '';
   const row = empRowById(x.empleado_id) || {};

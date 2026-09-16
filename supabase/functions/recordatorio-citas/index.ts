@@ -21,6 +21,8 @@
 //   {}                            avisa de las citas de las próximas 24 horas
 //   { "solo_ver": true }          dice a quién escribiría, sin enviar nada
 //   { "fecha": "2026-09-20" }     en vez de las próximas 24 h, ese día entero (pruebas)
+//   { "resumen_dia": true }       resumen de MAÑANA a cada persona de presupuestos
+//   { "resumen_dia": true, "fecha": "2026-09-20" }   resumen de ese día (pruebas)
 // =============================================================================
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
@@ -29,6 +31,8 @@ const ZONA = 'Europe/Madrid';
 const REMITENTE = 'Sysefen <noreply@sysefen.com>';
 const APP_URL = 'https://celfaen-kp.github.io/PRoiextemx6.55236.515151.16564646.5/';
 const LOGO_URL = APP_URL + 'logo-email.png';
+const TEL = '+34 696 284 058';
+const TEL_LINK = 'tel:+34696284058';
 const CATEGORIAS: Record<string, string> = {
   aerotermia: 'aerotermia',
   solar: 'paneles solares',
@@ -159,17 +163,20 @@ const parrafo = (txt: string) => `<p style="margin:0 0 20px;font-size:15px;line-
 // deno-lint-ignore no-explicit-any
 function correoClienteHTML(d: any) {
   const cuerpo = `
-    ${eyebrow('Recordatorio de cita')}
+    ${eyebrow(d.antes ? 'Cambio de cita' : 'Recordatorio de cita')}
     ${titular('Hola, ' + d.nombre)}
-    ${parrafo('Le recordamos su cita' + (d.motivo ? ' para la ' + d.motivo : ' con Sysefen') + '.')}
-    ${bloqueCuando({ etiqueta: d.etiqueta, dia: d.dia, hora: d.hora })}
+    ${parrafo(d.antes
+      ? 'Le informamos de que su cita' + (d.motivo ? ' para la ' + d.motivo : ' con Sysefen') + ' ha cambiado de día y hora. Queda así:'
+      : 'Le recordamos su cita' + (d.motivo ? ' para la ' + d.motivo : ' con Sysefen') + '.')}
+    ${bloqueCuando({ etiqueta: d.antes ? 'Nueva fecha · ' + d.etiqueta : d.etiqueta, dia: d.dia, hora: d.hora })}
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:14px;">
+      ${filaDato('Antes era', d.antes)}
       ${filaDato('Dirección', d.direccion)}
       ${filaDato('Motivo', d.motivo ? d.motivo.charAt(0).toUpperCase() + d.motivo.slice(1) : '')}
       ${filaDato('Le atenderá', d.tecnico)}
       ${filaDato('Duración aprox.', d.duracion)}
     </table>
-    <p style="margin:22px 0 0;font-size:14px;line-height:22px;color:${COLOR.suave};">Si necesita cambiar la cita, póngase en contacto con nosotros.</p>`;
+    <p style="margin:22px 0 0;font-size:14px;line-height:22px;color:${COLOR.suave};">Si usted lo desea, puede cambiar su cita contactando con nosotros en el <a href="${TEL_LINK}" style="color:${COLOR.verde};text-decoration:none;font-weight:700;">${escHtml(TEL)}</a>.</p>`;
   return marcoCorreo({
     logoUrl: d.logoUrl,
     preheader: `${d.etiqueta} a las ${d.hora}${d.direccion ? ' · ' + d.direccion : ''}`,
@@ -202,9 +209,11 @@ function correoTecnicoHTML(d: any) {
       </tr>
     </table>`).join('');
   const cuerpo = `
-    ${eyebrow(n === 1 ? 'Próxima cita' : 'Tus próximas citas')}
+    ${eyebrow(d.resumen ? 'Citas de mañana' : (n === 1 ? 'Próxima cita' : 'Tus próximas citas'))}
     ${titular('Hola, ' + d.nombre)}
-    ${parrafo(n === 1 ? 'Tienes esta cita en las próximas horas.' : `Tienes ${n} citas en las próximas horas.`)}
+    ${parrafo(d.resumen
+      ? (n === 1 ? 'Mañana tienes una cita.' : `Mañana tienes ${n} citas.`)
+      : (n === 1 ? 'Tienes esta cita en las próximas horas.' : `Tienes ${n} citas en las próximas horas.`))}
     ${bloques}
     <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin-top:22px;">
       <tr><td style="background:${COLOR.verde};border-radius:99px;">
@@ -238,6 +247,76 @@ Deno.serve(async (req) => {
   const RESEND = Deno.env.get('RESEND_API_KEY') || '';
   if (!soloVer && !RESEND) return json({ error: 'Falta el secreto RESEND_API_KEY.' }, 500);
 
+  const sb = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, {
+    auth: { persistSession: false },
+  });
+
+
+  // --- resumen de las citas de mañana, para quien va ---------------------------------
+  // Tarea aparte (sql/etapa24b): no toca aviso_enviado_at, así que convive con el
+  // aviso de cada cita.
+  if (b.resumen_dia === true) {
+    const dia = typeof b.fecha === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(b.fecha)
+      ? b.fecha
+      : fechaEnZona(new Date(Date.now() + 24 * 3600 * 1000));
+    const off2 = desfase(dia);
+    const { data: filas, error: errR } = await sb.from('citas')
+      .select(`id, inicio, duracion_min, categorias, direccion, poblacion,
+        cliente:clientes_cache(nombre, direccion, poblacion),
+        empleado:empleados!citas_empleado_id_fkey(nombre, email_avisos)`)
+      .eq('estado', 'pendiente')
+      .gte('inicio', new Date(`${dia}T00:00:00${off2}`).toISOString())
+      .lte('inicio', new Date(`${dia}T23:59:59${off2}`).toISOString())
+      .order('inicio');
+    if (errR) return json({ error: errR.message }, 500);
+    // deno-lint-ignore no-explicit-any
+    const citasR = (filas || []) as any[];
+    const porPersona = new Map<string, { nombre: string; citas: any[] }>();
+    for (const c of citasR) {
+      const email = c.empleado?.email_avisos;
+      if (!esEmail(email)) continue;
+      const k = String(email).trim().toLowerCase();
+      if (!porPersona.has(k)) porPersona.set(k, { nombre: c.empleado.nombre, citas: [] });
+      porPersona.get(k)!.citas.push(c);
+    }
+    const dondeR = (c: any) =>
+      [c.direccion || c.cliente?.direccion, c.poblacion || c.cliente?.poblacion].filter(Boolean).join(', ');
+    const motivoR = (c: any) => (c.categorias?.length ? 'instalación de ' + listaCategorias(c.categorias) : '');
+    const correos = [...porPersona.entries()].map(([para, t]) => ({
+      para,
+      asunto: `Mañana: ${t.citas.length === 1 ? '1 cita' : t.citas.length + ' citas'} · ${diaLargo(t.citas[0].inicio)}`,
+      texto:
+        `Hola ${t.nombre}, mañana ${t.citas.length === 1 ? 'tienes 1 cita' : 'tienes ' + t.citas.length + ' citas'}:\n\n` +
+        t.citas.map((c) =>
+          `· ${hora(c.inicio)} (${duracionTxt(c.duracion_min || 60)}) — ${c.cliente?.nombre || 'Cliente'}\n` +
+          `  ${dondeR(c) || 'Sin dirección'}${motivoR(c) ? `\n  ${mayus(motivoR(c))}` : ''}`).join('\n\n') +
+        `\n\nLo tienes todo en la Agenda de la app: ${APP_URL}`,
+      html: correoTecnicoHTML({
+        logoUrl: LOGO_URL, appUrl: APP_URL, nombre: t.nombre, resumen: true,
+        citas: t.citas.map((c) => ({
+          etiqueta: 'Mañana', dia: diaCorto(c.inicio), hora: hora(c.inicio),
+          duracion: duracionTxt(c.duracion_min || 60), cliente: c.cliente?.nombre || 'Cliente',
+          direccion: dondeR(c), motivo: mayus(motivoR(c)),
+        })),
+      }),
+    }));
+    if (soloVer) return json({ modo: 'resumen', dia, citas: citasR.length, correos: correos.map((m) => ({ para: m.para, asunto: m.asunto })) });
+    const fallos: string[] = [];
+    let enviados = 0;
+    for (const m of correos) {
+      try {
+        const r = await fetch('https://api.resend.com/emails', {
+          method: 'POST',
+          headers: { Authorization: 'Bearer ' + RESEND, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ from: REMITENTE, to: [m.para], subject: m.asunto, text: m.texto, html: m.html }),
+        });
+        if (!r.ok) throw new Error(String(r.status));
+        enviados++;
+      } catch (e) { fallos.push(`${m.para}: ${(e as Error).message}`); }
+    }
+    return json({ modo: 'resumen', dia, citas: citasR.length, enviados, errores: fallos });
+  }
+
   // --- qué ventana de tiempo --------------------------------------------------------
   const ahora = new Date();
   let desde: string, hasta: string, ventana: string;
@@ -252,12 +331,8 @@ Deno.serve(async (req) => {
     ventana = 'próximas 24 horas';
   }
 
-  const sb = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, {
-    auth: { persistSession: false },
-  });
-
   const { data, error } = await sb.from('citas')
-    .select(`id, inicio, duracion_min, categorias, direccion, poblacion,
+    .select(`id, inicio, duracion_min, categorias, direccion, poblacion, cambio_desde,
       cliente:clientes_cache(nombre, email, direccion, poblacion),
       empleado:empleados!citas_empleado_id_fkey(nombre, email_avisos)`)
     .eq('estado', 'pendiente')
@@ -269,7 +344,7 @@ Deno.serve(async (req) => {
 
   type Cita = {
     id: string; inicio: string; duracion_min: number; categorias: string[];
-    direccion: string | null; poblacion: string | null;
+    direccion: string | null; poblacion: string | null; cambio_desde: string | null;
     cliente: { nombre: string; email: string | null; direccion: string | null; poblacion: string | null } | null;
     empleado: { nombre: string; email_avisos: string | null } | null;
   };
@@ -283,21 +358,28 @@ Deno.serve(async (req) => {
   const motivoDe = (c: Cita) => (c.categorias?.length ? 'instalación de ' + listaCategorias(c.categorias) : '');
   const aClientes = citas.filter((c) => esEmail(c.cliente?.email)).map((c) => ({
     para: String(c.cliente!.email).trim(),
-    asunto: motivoDe(c)
-      ? `Su cita para la ${motivoDe(c)} · ${cuandoCorto(c.inicio, ahora)} a las ${hora(c.inicio)}`
-      : `Recordatorio de su cita con Sysefen · ${cuandoCorto(c.inicio, ahora)} a las ${hora(c.inicio)}`,
+    asunto: c.cambio_desde
+      ? `Cambio de cita${motivoDe(c) ? ` para la ${motivoDe(c)}` : ''} · ${cuandoCorto(c.inicio, ahora)} a las ${hora(c.inicio)}`
+      : motivoDe(c)
+        ? `Su cita para la ${motivoDe(c)} · ${cuandoCorto(c.inicio, ahora)} a las ${hora(c.inicio)}`
+        : `Recordatorio de su cita con Sysefen · ${cuandoCorto(c.inicio, ahora)} a las ${hora(c.inicio)}`,
     texto:
       `Hola ${c.cliente!.nombre}:\n\n` +
-      `Le recordamos su cita${motivoDe(c) ? ` para la ${motivoDe(c)}` : ' con Sysefen'}: ` +
-      `${cuando(c.inicio, ahora)}, a las ${hora(c.inicio)}${dondeDe(c) ? `, en ${dondeDe(c)}` : ''}.` +
+      (c.cambio_desde
+        ? `Le informamos de que su cita${motivoDe(c) ? ` para la ${motivoDe(c)}` : ' con Sysefen'} ha cambiado de día y hora.\n` +
+          `Antes era: ${mayus(diaLargo(c.cambio_desde))}, a las ${hora(c.cambio_desde)}.\n` +
+          `Queda así: ${cuando(c.inicio, ahora)}, a las ${hora(c.inicio)}${dondeDe(c) ? `, en ${dondeDe(c)}` : ''}.`
+        : `Le recordamos su cita${motivoDe(c) ? ` para la ${motivoDe(c)}` : ' con Sysefen'}: ` +
+          `${cuando(c.inicio, ahora)}, a las ${hora(c.inicio)}${dondeDe(c) ? `, en ${dondeDe(c)}` : ''}.`) +
       `${c.empleado?.nombre ? `\nLe atenderá ${c.empleado.nombre}.` : ''}\n\n` +
-      `Si necesita cambiar la cita, póngase en contacto con nosotros.\n\n` +
+      `Si usted lo desea, puede cambiar su cita contactando con nosotros en el ${TEL}.\n\n` +
       `Un saludo,\nSysefen · Eficiencia Energética\n\n` +
       `(Este correo se envía automáticamente. Por favor, no responda a esta dirección.)`,
     html: correoClienteHTML({
       logoUrl: LOGO_URL, nombre: c.cliente!.nombre, etiqueta: mayus(cuandoCorto(c.inicio, ahora)),
       dia: mayus(diaLargo(c.inicio)), hora: hora(c.inicio), direccion: dondeDe(c), motivo: motivoDe(c),
       tecnico: c.empleado?.nombre || '', duracion: duracionTxt(c.duracion_min || 60),
+      antes: c.cambio_desde ? `${mayus(diaLargo(c.cambio_desde))}, ${hora(c.cambio_desde)}` : '',
     }),
   }));
 
@@ -369,7 +451,7 @@ Deno.serve(async (req) => {
   // Se marcan todas las citas revisadas: si una no tenía email, no hay a quién
   // avisar, y repetirla cada 10 minutos no cambiaría nada.
   const { error: e2 } = await sb.from('citas')
-    .update({ aviso_enviado_at: new Date().toISOString() })
+    .update({ aviso_enviado_at: new Date().toISOString(), cambio_desde: null })
     .in('id', citas.map((c) => c.id));
   if (e2) errores.push('marcar avisadas: ' + e2.message);
 
