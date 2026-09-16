@@ -1,16 +1,19 @@
 // =============================================================================
 // Sysefen · Edge Function `cliente-drive`
 //
-// Cuando se da de alta (o se corrige) un cliente en la agenda de presupuestos:
-//   1. Le crea su carpeta en Google Drive, dentro de la carpeta de CLIENTES.
-//   2. Lo escribe en la hoja de cálculo única "Clientes Sysefen", una fila por
-//      cliente. Si el cliente ya tenía fila, se corrige esa fila; no se añade
-//      otra. La hoja se crea sola la primera vez, dentro de esa misma carpeta.
+// Cuando se da de alta (o se corrige) un cliente en la agenda de presupuestos,
+// lo escribe en la hoja de cálculo única "Clientes Sysefen": una fila por
+// cliente. Si el cliente ya tenía fila, se corrige esa fila; no se añade otra.
+// La hoja se crea sola la primera vez, dentro de la carpeta de clientes.
+//
+// NO se crea una carpeta por cliente aquí: las fotos y los PDF de cada uno van
+// a su carpeta dentro de la de VISITAS, que crea `visita-drive` el día que se
+// sube la primera visita. La hoja enlaza a esa carpeta en cuanto existe.
 //
 // SECRETOS (Supabase → Edge Functions → Secrets). Nunca en el código ni en Git:
 //   GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REFRESH_TOKEN   los mismos
 //   que usan `planilla-drive` y `parte-drive`
-//   DRIVE_CARPETA_CLIENTES   id de la carpeta de Drive de los clientes
+//   DRIVE_CARPETA_CLIENTES   carpeta de Drive donde vive la hoja de clientes
 //
 // En Google Cloud tiene que estar activada la API de Google Sheets, además de
 // la de Drive. El permiso `drive.file` basta: la hoja la crea esta función, y
@@ -34,10 +37,8 @@ const CORS = {
 const json = (cuerpo: unknown, status = 200) =>
   new Response(JSON.stringify(cuerpo), { status, headers: { ...CORS, 'Content-Type': 'application/json' } });
 
-const limpiar = (s: string) => s.replace(/[\\/:*?"<>|]/g, '-').replace(/\s+/g, ' ').trim();
-
 const CABECERA = ['Alta', 'Nombre', 'Tipo', 'NIF', 'Teléfono', 'Email',
-  'Dirección', 'Población', 'Origen', 'Nota', 'Carpeta en Drive'];
+  'Dirección', 'Población', 'Origen', 'Nota', 'Carpeta de visitas'];
 
 async function tokenDeGoogle(id: string, secreto: string, refresh: string) {
   const r = await fetch('https://oauth2.googleapis.com/token', {
@@ -52,42 +53,6 @@ async function tokenDeGoogle(id: string, secreto: string, refresh: string) {
     throw new Error('Google no aceptó las credenciales: ' + (res.error_description || res.error || r.status));
   }
   return res.access_token as string;
-}
-
-// Carpeta dentro de otra. Si ya existe (por id guardado o por nombre), se
-// reutiliza; si no, se crea. Una papelera no cuenta: se vuelve a crear.
-async function carpetaDentro(token: string, padre: string, nombre: string, guardada: string | null) {
-  const cabeceras = { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' };
-
-  if (guardada) {
-    const r = await fetch(
-      `https://www.googleapis.com/drive/v3/files/${guardada}?fields=id,trashed&supportsAllDrives=true`,
-      { headers: cabeceras });
-    if (r.ok) {
-      const d = await r.json().catch(() => ({}));
-      if (d.id && !d.trashed) return d.id as string;
-    }
-  }
-
-  const q = encodeURIComponent(
-    `'${padre}' in parents and name = '${nombre.replace(/'/g, "\\'")}' ` +
-    `and mimeType = 'application/vnd.google-apps.folder' and trashed = false`);
-  const busca = await fetch(
-    `https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id)&pageSize=1&supportsAllDrives=true`,
-    { headers: cabeceras });
-  if (busca.ok) {
-    const d = await busca.json().catch(() => ({}));
-    if (d.files?.length) return d.files[0].id as string;
-  }
-
-  const crea = await fetch('https://www.googleapis.com/drive/v3/files?fields=id&supportsAllDrives=true', {
-    method: 'POST',
-    headers: cabeceras,
-    body: JSON.stringify({ name: nombre, mimeType: 'application/vnd.google-apps.folder', parents: [padre] }),
-  });
-  const d = await crea.json().catch(() => ({}));
-  if (!crea.ok || !d.id) throw new Error('no se pudo crear la carpeta: ' + (d.error?.message || crea.status));
-  return d.id as string;
 }
 
 // La hoja única de clientes. Se busca por el id guardado en `ajustes`; si no
@@ -163,7 +128,7 @@ Deno.serve(async (req) => {
     auth: { persistSession: false },
   });
   const { data: cli, error: errCli } = await admin.from('clientes_cache')
-    .select('id, nombre, tipo, tl_tipo, nif, telefono, email, direccion, poblacion, origen, nota, drive_carpeta_id, hoja_fila, created_at')
+    .select('id, nombre, tipo, tl_tipo, nif, telefono, email, direccion, poblacion, origen, nota, drive_visitas_id, hoja_fila, created_at')
     .eq('id', clienteId).maybeSingle();
   if (errCli) return json({ error: 'No se pudo leer el cliente: ' + errCli.message }, 500);
   if (!cli) return json({ error: 'Ese cliente no existe.' }, 404);
@@ -172,15 +137,9 @@ Deno.serve(async (req) => {
   try { token = await tokenDeGoogle(CLIENT_ID, CLIENT_SECRET, REFRESH); }
   catch (e) { return json({ error: (e as Error).message }, 502); }
 
-  // --- 1 · su carpeta -----------------------------------------------------------
-  const nombreCarpeta = limpiar(cli.nombre || 'Cliente sin nombre') || 'Cliente sin nombre';
-  let carpetaId: string;
-  try { carpetaId = await carpetaDentro(token, CARPETA, nombreCarpeta, cli.drive_carpeta_id as string | null); }
-  catch (e) { return json({ error: 'Drive: ' + (e as Error).message }, 502); }
+  const cambios: Record<string, unknown> = { drive_at: new Date().toISOString() };
 
-  const cambios: Record<string, unknown> = { drive_carpeta_id: carpetaId, drive_at: new Date().toISOString() };
-
-  // --- 2 · su fila en la hoja ---------------------------------------------------
+  // --- su fila en la hoja -------------------------------------------------------
   let hojaId = '';
   let fila = (cli.hoja_fila as number | null) || null;
   let avisoHoja = '';
@@ -199,7 +158,9 @@ Deno.serve(async (req) => {
       cli.tipo || (cli.tl_tipo === 'company' ? 'empresa' : 'particular'),
       cli.nif || '', cli.telefono || '', cli.email || '',
       cli.direccion || '', cli.poblacion || '', cli.origen || '', cli.nota || '',
-      'https://drive.google.com/drive/folders/' + carpetaId,
+      // La carpeta de sus visitas, si ya se subió alguna. Si no, en blanco:
+      // se rellena sola la próxima vez que se repase esta fila.
+      cli.drive_visitas_id ? 'https://drive.google.com/drive/folders/' + cli.drive_visitas_id : '',
     ]];
     const cabeceras = { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' };
 
@@ -223,7 +184,6 @@ Deno.serve(async (req) => {
       if (m) { fila = Number(m[1]); cambios.hoja_fila = fila; }
     }
   } catch (e) {
-    // La carpeta ya está creada: no se tira todo por la hoja. Se avisa y punto.
     avisoHoja = (e as Error).message;
   }
 
@@ -231,10 +191,8 @@ Deno.serve(async (req) => {
 
   return json({
     ok: true,
-    carpeta: nombreCarpeta,
-    carpeta_id: carpetaId,
-    carpeta_url: 'https://drive.google.com/drive/folders/' + carpetaId,
     hoja_id: hojaId || null,
+    hoja_url: hojaId ? 'https://docs.google.com/spreadsheets/d/' + hojaId : null,
     fila: fila || null,
     aviso: avisoHoja || null,
   });
