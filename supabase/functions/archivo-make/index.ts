@@ -68,13 +68,21 @@ Deno.serve(async (req) => {
     return json({
       documentos: filas.filter((f) => urlDe[f.ruta]).map((f) => {
         const e = (f as { empleados?: { nombre?: string; nombre_completo?: string } }).empleados || {};
+        const empleado = e.nombre_completo || e.nombre || 'Sin nombre';
+        const anio = f.ruta.split('/')[2];     // planillas/<empleado>/<año>/<archivo>
+        // Nombre legible para dejar todas las planillas en una sola carpeta de
+        // Drive, ordenadas por periodo. La ruta va aparte por si algún día se
+        // prefieren carpetas por empleado y año.
+        const limpio = empleado.replace(/[\\/:*?"<>|]/g, '-').trim();
         return {
           id: f.id,
           tipo: f.tipo,
           periodo: f.periodo,
-          anio: f.ruta.split('/')[2],          // planillas/<empleado>/<año>/<archivo>
-          empleado: e.nombre_completo || e.nombre || 'Sin nombre',
+          anio,
+          empleado,
           archivo: f.nombre,
+          nombre_sugerido: `${f.periodo || anio} · ${limpio}.pdf`,
+          carpeta_sugerida: `Sysefen/Empleados/${limpio}/${anio}`,
           url: urlDe[f.ruta],
         };
       }),
