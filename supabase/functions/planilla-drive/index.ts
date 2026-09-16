@@ -24,6 +24,9 @@
 //
 // SI LA MISMA PLANILLA SE VUELVE A FIRMAR: se sustituye el archivo en Drive en
 // vez de dejar dos. Se busca por el id que quedó guardado en `ref_externa`.
+//
+// CADA PERSONA TIENE SU CARPETA dentro de DRIVE_CARPETA_ID, con su nombre. Se
+// crea la primera vez que firma (sql/etapa27 guarda su id en empleados).
 // =============================================================================
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
@@ -50,6 +53,47 @@ async function tokenDeGoogle(id: string, secreto: string, refresh: string) {
     throw new Error('Google no aceptó las credenciales: ' + (res.error_description || res.error || r.status));
   }
   return res.access_token as string;
+}
+
+
+// Carpeta de la persona dentro de la carpeta de planillas. Se crea la primera
+// vez que firma y se guarda su id en `empleados.drive_carpeta_id`, para no
+// buscarla en cada subida. Con el permiso `drive.file` solo vemos lo que crea
+// esta app, así que la carpeta la crea y la mantiene ella.
+async function carpetaDelEmpleado(token: string, raiz: string, nombre: string, guardada: string | null) {
+  const cabeceras = { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' };
+
+  if (guardada) {
+    const r = await fetch(
+      `https://www.googleapis.com/drive/v3/files/${guardada}?fields=id,trashed&supportsAllDrives=true`,
+      { headers: cabeceras });
+    if (r.ok) {
+      const d = await r.json().catch(() => ({}));
+      if (d.id && !d.trashed) return { id: d.id as string, nueva: false };
+    }
+    // Si ya no está (la borraron o la sacaron de aquí), se crea otra.
+  }
+
+  // ¿La creamos nosotros antes y se perdió el id? Se busca por nombre.
+  const q = encodeURIComponent(
+    `'${raiz}' in parents and name = '${nombre.replace(/'/g, "\\'")}' ` +
+    `and mimeType = 'application/vnd.google-apps.folder' and trashed = false`);
+  const busca = await fetch(
+    `https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name)&pageSize=1&supportsAllDrives=true`,
+    { headers: cabeceras });
+  if (busca.ok) {
+    const d = await busca.json().catch(() => ({}));
+    if (d.files?.length) return { id: d.files[0].id as string, nueva: false };
+  }
+
+  const crea = await fetch('https://www.googleapis.com/drive/v3/files?fields=id&supportsAllDrives=true', {
+    method: 'POST',
+    headers: cabeceras,
+    body: JSON.stringify({ name: nombre, mimeType: 'application/vnd.google-apps.folder', parents: [raiz] }),
+  });
+  const d = await crea.json().catch(() => ({}));
+  if (!crea.ok || !d.id) throw new Error('no se pudo crear su carpeta: ' + (d.error?.message || crea.status));
+  return { id: d.id as string, nueva: true };
 }
 
 Deno.serve(async (req) => {
@@ -95,16 +139,23 @@ Deno.serve(async (req) => {
   if (errBaja || !archivo) return json({ error: 'No se pudo leer el PDF: ' + (errBaja?.message || 'sin archivo') }, 500);
   const bytes = new Uint8Array(await archivo.arrayBuffer());
 
-  // Nombre legible: "2026-09 · Jaime Pérez.pdf".
   const { data: emp } = await admin.from('empleados')
-    .select('nombre, nombre_completo').eq('id', doc.empleado_id).maybeSingle();
+    .select('nombre, nombre_completo, drive_carpeta_id').eq('id', doc.empleado_id).maybeSingle();
   const quien = (emp?.nombre_completo || emp?.nombre || 'Sin nombre').replace(/[\\/:*?"<>|]/g, '-').trim();
-  const nombre = `${doc.periodo || ''} · ${quien}.pdf`.trim();
+  // Dentro de su carpeta basta con el periodo: "2026-09.pdf".
+  const nombre = `${doc.periodo || 'planilla'}.pdf`;
 
   // --- a Drive ------------------------------------------------------------------
   let token: string;
   try { token = await tokenDeGoogle(CLIENT_ID, CLIENT_SECRET, REFRESH); }
   catch (e) { return json({ error: (e as Error).message }, 502); }
+
+  let carpeta: { id: string; nueva: boolean };
+  try { carpeta = await carpetaDelEmpleado(token, CARPETA, quien, (emp?.drive_carpeta_id as string) || null); }
+  catch (e) { return json({ error: 'Drive: ' + (e as Error).message }, 502); }
+  if (carpeta.id !== emp?.drive_carpeta_id) {
+    await admin.from('empleados').update({ drive_carpeta_id: carpeta.id }).eq('id', doc.empleado_id);
+  }
 
   const limite = '-----sysefen' + crypto.randomUUID();
   const cuerpoMultipart = (metadatos: unknown) => {
@@ -123,7 +174,7 @@ Deno.serve(async (req) => {
   const url = anterior
     ? `https://www.googleapis.com/upload/drive/v3/files/${anterior}?uploadType=multipart&supportsAllDrives=true&fields=id,name`
     : 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true&fields=id,name';
-  const metadatos = anterior ? { name: nombre } : { name: nombre, parents: [CARPETA] };
+  const metadatos = anterior ? { name: nombre } : { name: nombre, parents: [carpeta.id] };
 
   let r = await fetch(url, {
     method: anterior ? 'PATCH' : 'POST',
@@ -135,7 +186,7 @@ Deno.serve(async (req) => {
     r = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true&fields=id,name', {
       method: 'POST',
       headers: { Authorization: 'Bearer ' + token, 'Content-Type': `multipart/related; boundary=${limite}` },
-      body: cuerpoMultipart({ name: nombre, parents: [CARPETA] }),
+      body: cuerpoMultipart({ name: nombre, parents: [carpeta.id] }),
     });
   }
   const res = await r.json().catch(() => ({}));
@@ -148,5 +199,5 @@ Deno.serve(async (req) => {
     .update({ exportado_en: new Date().toISOString(), ref_externa: res.id })
     .eq('id', doc.id);
 
-  return json({ ok: true, archivo: res.name || nombre, drive_id: res.id });
+  return json({ ok: true, archivo: `${quien}/${res.name || nombre}`, drive_id: res.id, carpeta: carpeta.id });
 });
