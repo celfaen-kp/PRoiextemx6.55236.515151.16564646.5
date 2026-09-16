@@ -305,6 +305,20 @@ export async function guardarCliente(cliente) {
   );
 }
 
+/** Borra una cita. Si tenía visita hecha, la visita se queda (sin cita). */
+export async function borrarCita(id) {
+  const { error } = await supabase.from('citas').delete().eq('id', id);
+  if (error) throw error;
+  return true;
+}
+
+/** Borra un cliente y, en cascada, sus citas. Falla si tiene visitas. */
+export async function borrarCliente(id) {
+  const { error } = await supabase.from('clientes_cache').delete().eq('id', id);
+  if (error) throw error;
+  return true;
+}
+
 export async function guardarCita(cita) {
   const { id, ...campos } = cita;
   if (id) {

@@ -269,7 +269,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '11.5'; // versión visible de la app (única fuente)
+const APP_VERSION = '11.6'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -5060,6 +5060,10 @@ A.ag = (a, d, e) => {
     case 'ag_citaQuien': if (cd) { sincronizarRuedas(); cd.empleadoId = cd.empleadoId === d.id ? null : d.id; } return render();
     case 'ag_guardarCita': return agGuardarCita();
     case 'ag_estado': return agCambiarEstado(d.id, d.e);
+    case 'ag_borrarCita': if (e) e.stopPropagation(); return agBorrarCita(d.id);
+    case 'ag_confirmarBorrarCita': return agConfirmarBorrarCita();
+    case 'ag_borrarCliente': if (e) e.stopPropagation(); return agBorrarCliente(d.id);
+    case 'ag_confirmarBorrarCliente': return agConfirmarBorrarCliente();
     case 'ag_empezar': if (e) e.stopPropagation(); return agEmpezarVisita(d.id);
   }
 };
@@ -5188,6 +5192,60 @@ async function agCambiarEstado(id, estado) {
     toast(estado === 'anulada' ? 'Cita anulada.' : 'Marcada: no estaba.');
     await A.cargarAgenda();
   } catch (e) { avisar('No se pudo cambiar: ' + agErrorTxt(e)); render(); }
+}
+
+
+/* ---------- borrar cita y cliente (no tiene vuelta atrás) ---------- */
+function agBorrarCita(id) {
+  const x = agCita(id); if (!x || !puedeCitar()) return;
+  const c = x.cliente || agCliente(x.cliente_id) || {};
+  V.sheet = {
+    tipo: 'borrarCita', id, cliente: c.nombre || '',
+    cuando: x.inicio ? agMayus(fechaLarga(agDiaDe(x.inicio))) + ' · ' + agHora(x.inicio) : 'Sin fecha',
+    conVisita: !!x.visita_id, busy: false,
+  };
+  render();
+}
+async function agConfirmarBorrarCita() {
+  const s = V.sheet; if (!s || s.tipo !== 'borrarCita' || s.busy) return;
+  if (!navigator.onLine) { avisar('Sin conexión: no se ha borrado.'); return; }
+  s.busy = true; render();
+  try {
+    await visitasDB.borrarCita(s.id);
+    if (V.citaVerId === s.id) { V.citaVerId = null; V.view = V.clienteVerId ? 'clienteVer' : 'agenda'; }
+    V.sheet = null;
+    toast('Cita borrada.');
+    await A.cargarAgenda();
+    render();
+  } catch (e) { s.busy = false; render(); avisar('No se pudo borrar: ' + agErrorTxt(e)); }
+}
+
+function agBorrarCliente(id) {
+  const c = agCliente(id); if (!c || !puedeCitar()) return;
+  V.sheet = {
+    tipo: 'borrarCliente', id, nombre: c.nombre || '',
+    visitas: (c.visitas || []).length, citas: (c.citas || []).length, busy: false,
+  };
+  render();
+}
+async function agConfirmarBorrarCliente() {
+  const s = V.sheet; if (!s || s.tipo !== 'borrarCliente' || s.busy || s.visitas) return;
+  if (!navigator.onLine) { avisar('Sin conexión: no se ha borrado.'); return; }
+  s.busy = true; render();
+  try {
+    await visitasDB.borrarCliente(s.id);
+    if (V.clienteVerId === s.id) { V.clienteVerId = null; V.view = 'clientes'; }
+    V.sheet = null;
+    toast('Cliente borrado.');
+    await A.cargarAgenda();
+    render();
+  } catch (e) {
+    s.busy = false; render();
+    const m = msgError(e);
+    avisar(/23503|foreign key|viola/i.test(m)
+      ? 'Ese cliente tiene visitas guardadas: no se puede borrar.'
+      : 'No se pudo borrar: ' + agErrorTxt(e));
+  }
 }
 
 function agEmpezarVisita(citaId) {
@@ -5539,6 +5597,7 @@ function vCitaVer() {
       <div class="sub" style="font-size:12px;margin-top:4px">Historial de citas y visitas.</div></div>
       <div style="font:400 20px/1 var(--sans);color:var(--t3)">›</div>
     </div>
+    ${puedeCitar() ? `<div style="text-align:center;margin-top:22px"><span class="tiny" data-a="ag_borrarCita" data-id="${x.id}" style="color:var(--rojo);cursor:pointer;text-decoration:underline">Borrar esta cita</span></div>` : ''}
   </div>
   ${pie}`;
 }
@@ -5604,6 +5663,7 @@ function vClienteVer() {
         ${c.origen ? `<div class="tiny" style="margin-top:5px">${esc((AG_ORIGENES.find((o) => o[0] === c.origen) || [null, c.origen])[1])}</div>` : ''}
       </div></div>
     </div>
+    ${puedeCitar() ? `<button class="btn btn-gris" data-a="ag_borrarCliente" data-id="${c.id}" style="margin-top:22px;border-radius:99px;color:var(--rojo)">Borrar cliente</button>` : ''}
   </div>`;
 }
 
@@ -5849,6 +5909,36 @@ function sheet() {
       <div class="row g8" style="margin-top:20px">
         <button class="btn btn-gris" data-a="cerrarSheet" style="border-radius:99px">Cancelar</button>
         <button class="btn btn-verde" data-a="corrGuardar" style="font-size:14px" ${s.busy ? 'disabled' : ''}>${s.busy ? 'Guardando…' : 'Guardar corrección'}</button>
+      </div>
+    </div></div>`;
+  }
+  if (s.tipo === 'borrarCita') {
+    return `<div class="sheet"><div>
+      <div style="font:600 23px/1.15 var(--cond)">¿Borrar esta cita?</div>
+      <div class="sub" style="margin-top:8px">${esc(s.cuando)}${s.cliente ? ' · ' + esc(s.cliente) : ''}</div>
+      <div class="sub" style="margin-top:10px">Desaparece de la agenda y no se puede recuperar.${s.conVisita ? ' La visita que salió de ella NO se borra: se queda en el cliente.' : ''}</div>
+      <div class="sub" style="margin-top:10px">Si solo quieres dejar constancia de que no se hizo, cierra esto y usa «No estaba» o «Anular».</div>
+      <div class="row g8" style="margin-top:18px">
+        <button class="btn btn-gris" data-a="cerrarSheet" style="border-radius:99px">Cancelar</button>
+        <button class="btn btn-rojo" data-a="ag_confirmarBorrarCita" style="font-size:14px" ${s.busy ? 'disabled' : ''}>${s.busy ? 'Borrando…' : 'Borrar'}</button>
+      </div>
+    </div></div>`;
+  }
+  if (s.tipo === 'borrarCliente') {
+    if (s.visitas) {
+      return `<div class="sheet"><div>
+        <div style="font:600 23px/1.15 var(--cond)">No se puede borrar</div>
+        <div class="sub" style="margin-top:8px"><b>${esc(s.nombre)}</b> tiene ${s.visitas === 1 ? '1 visita guardada' : s.visitas + ' visitas guardadas'} con sus fichas y fotos. Borrar el cliente dejaría ese trabajo sin dueño.</div>
+        <div class="sub" style="margin-top:10px">Si ya no trabajáis con él, lo más limpio es dejarlo como está: sin citas por delante no molesta en la agenda.</div>
+        <button class="btn btn-verde" data-a="cerrarSheet" style="margin-top:16px">Entendido</button>
+      </div></div>`;
+    }
+    return `<div class="sheet"><div>
+      <div style="font:600 23px/1.15 var(--cond)">¿Borrar a ${esc(s.nombre)}?</div>
+      <div class="sub" style="margin-top:8px">Se borra su ficha${s.citas ? ' y también ' + (s.citas === 1 ? 'su cita' : 'sus ' + s.citas + ' citas') : ''}. No se puede recuperar.</div>
+      <div class="row g8" style="margin-top:18px">
+        <button class="btn btn-gris" data-a="cerrarSheet" style="border-radius:99px">Cancelar</button>
+        <button class="btn btn-rojo" data-a="ag_confirmarBorrarCliente" style="font-size:14px" ${s.busy ? 'disabled' : ''}>${s.busy ? 'Borrando…' : 'Borrar'}</button>
       </div>
     </div></div>`;
   }
