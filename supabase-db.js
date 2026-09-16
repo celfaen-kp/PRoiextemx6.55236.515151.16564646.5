@@ -480,6 +480,33 @@ export async function guardarPlanillaFirmada({ empleadoId, periodo, carpeta, nom
   return unwrap(await supabase.from('documentos').upsert(fila, { onConflict: 'ruta' }).select().single());
 }
 
+/**
+ * Sube a Google Drive el PDF de una planilla ya archivada (edge function
+ * `planilla-drive`). Devuelve { ok, archivo, drive_id }.
+ */
+export async function subirPlanillaADrive(documentoId) {
+  const { data, error } = await supabase.functions.invoke('planilla-drive', { body: { documento_id: documentoId } });
+  if (error) {
+    let msg = error.message || 'error';
+    const nombre = error.name || '';
+    if (nombre === 'FunctionsFetchError' || nombre === 'FunctionsRelayError' || /failed to (send|fetch)/i.test(msg)) {
+      msg = 'la función planilla-drive no está subida todavía';
+    } else {
+      // La función explica el motivo en su respuesta: se prefiere ese texto.
+      try {
+        const ctx = error.context;
+        if (ctx && typeof ctx.clone === 'function') {
+          const cuerpo = await ctx.clone().json();
+          if (cuerpo && cuerpo.error) msg = cuerpo.error;
+        }
+      } catch (_) { /* no era JSON: nos quedamos con el mensaje suelto */ }
+    }
+    throw new Error(msg);
+  }
+  if (data && data.error) throw new Error(data.error);
+  return data;
+}
+
 export async function urlsFirmadasAvatar(rutas, segundos = 3600) {
   if (!rutas || !rutas.length) return {};
   const { data, error } = await supabase.storage.from('avatares').createSignedUrls(rutas, segundos);
@@ -577,6 +604,7 @@ export default {
   subirAdjunto, listarAdjuntosPartes, urlsFirmadas, descargarAdjunto, borrarAdjunto,
   subirAvatar, urlsFirmadasAvatar, guardarMiAvatar, guardarAvatarDe, borrarAvatar,
   guardarPlanillaFirmada,
+  subirPlanillaADrive,
   listarAusencias, marcarAusencia, quitarAusencia,
   listarFestivos, ponerFestivo, quitarFestivo,
   listarIncidencias, crearIncidencia,
