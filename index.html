@@ -273,7 +273,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '12.7'; // versión visible de la app (única fuente)
+const APP_VERSION = '12.8'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -1200,6 +1200,22 @@ A.volverEmpleados = () => { V.empEmp = null; V.empDraft = null; V.view = 'emplea
 A.empCampo = (k, v) => { if (V.empDraft) V.empDraft[k] = v; };
 A.empRol = (r) => { if (V.empDraft) { V.empDraft.rol = r; render(); } };
 A.empToggleActivo = () => { if (V.empDraft) { V.empDraft.activo = !V.empDraft.activo; render(); } };
+/**
+ * Le manda su correo con el PIN, el enlace y cómo instalar la app. Va por
+ * detrás: el acceso ya está creado pase lo que pase con el correo, así que un
+ * fallo aquí se cuenta pero no deshace nada.
+ */
+async function correoDeAcceso(empleadoId, pin, tipo) {
+  if (!navigator.onLine) return;
+  try {
+    const r = await sysAuth.enviarBienvenida(empleadoId, pin, tipo);
+    if (r && r.para) toast((tipo === 'pin' ? 'PIN enviado a ' : 'Bienvenida enviada a ') + r.para);
+  } catch (e) {
+    const m = (e && e.message) || 'error';
+    avisar('El acceso está listo, pero el correo no salió: ' + (e && e.noDesplegada ? 'falta desplegar la función correo-bienvenida.' : m));
+  }
+}
+
 A.empGuardar = async () => {
   if (!esAdmin()) return;
   const d = V.empDraft; if (!d) return;
@@ -1237,6 +1253,7 @@ A.empGuardar = async () => {
           await sysAuth.adminCrearAcceso(creado.id, campos.email, pin);
           mapaEmpPromesa = null; await cargarMapaEmpleados();
           toast(campos.nombre + ' ya puede entrar con su PIN.');
+          correoDeAcceso(creado.id, pin, 'bienvenida');
         } catch (e) {
           // El perfil sí quedó creado: se dice qué falta y cómo hacerlo a mano.
           toast('Perfil creado. Falta el acceso (ver aviso).');
@@ -2470,12 +2487,14 @@ A.guardarPin = async () => {
     if (row.user_id) {
       await sysAuth.adminCambiarPin(row.id, s.val);
       V.sheet = null; toast('PIN de ' + userById(s.id).nombre + ' cambiado.'); render();
+      correoDeAcceso(row.id, s.val, 'pin');
     } else {
       const email = (row.email || emailSugerido(userById(s.id).nombre) || '').trim();
       if (!email) throw new Error('Falta el email de acceso de esa persona.');
       await sysAuth.adminCrearAcceso(row.id, email, s.val);
       mapaEmpPromesa = null; await cargarMapaEmpleados();
       V.sheet = null; toast('Acceso creado. Ya puede entrar con su PIN.'); render();
+      correoDeAcceso(row.id, s.val, 'bienvenida');
     }
   } catch (e) {
     s.busy = false;
@@ -3667,10 +3686,10 @@ function vEmpleado() {
     <input class="inp" data-f="empTelefono" value="${esc(d.telefono)}" type="tel" inputmode="tel" placeholder="Opcional">
     ${columnaEmp('email_avisos') ? `<div class="lbl" style="margin:14px 0 7px">Email para avisos</div>
     <input class="inp" data-f="empEmailAvisos" value="${esc(d.emailAvisos || '')}" type="email" inputmode="email" autocapitalize="off" placeholder="Su correo de verdad">
-    <div class="sub" style="font-size:12px;margin-top:6px">Donde le llegan los avisos de citas del día siguiente. No es el de acceso: cambiarlo no afecta a su PIN.</div>` : ''}
+    <div class="sub" style="font-size:12px;margin-top:6px">Su correo de verdad: ahí le llega la bienvenida con su PIN y los avisos de citas. No es el de acceso: cambiarlo no afecta a su PIN.</div>` : ''}
     ${d.nuevo ? `<div class="lbl" style="margin:14px 0 7px">PIN de entrada</div>
     <input class="inp" data-f="empPin" inputmode="numeric" maxlength="4" value="${esc(d.pin || '')}" placeholder="4 números" style="font:600 20px var(--cond);letter-spacing:.25em">
-    <div class="sub" style="font-size:12px;margin-top:6px">Con esto ya puede entrar. Si lo dejas en blanco se crea solo el perfil y le das el acceso después.</div>` : ''}
+    <div class="sub" style="font-size:12px;margin-top:6px">Con esto ya puede entrar, y se le manda por correo con el enlace de la app. Si lo dejas en blanco se crea solo el perfil y le das el acceso después.</div>` : ''}
     <div class="lbl" style="margin:18px 0 9px">Rol</div>
     <div class="wrap">${ROLES.map(([r, l]) => `<div class="chip ${d.rol === r ? 'on' : ''}" data-a="empRol" data-r="${r}">${l}</div>`).join('')}</div>
 

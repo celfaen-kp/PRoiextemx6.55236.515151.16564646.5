@@ -177,6 +177,24 @@ export async function adminCrearAcceso(empleadoId, email, pin) {
   return llamarAdmin({ accion: 'crear_acceso', empleado_id: empleadoId, email, pin: String(pin).trim() });
 }
 
+/**
+ * Le manda a esa persona su correo con el PIN, el enlace de la app y cómo
+ * instalarla (supabase/functions/correo-bienvenida). `tipo` es 'bienvenida'
+ * (acceso recién creado) o 'pin' (PIN cambiado).
+ *
+ * Va al correo personal de su ficha si lo tiene, y si no al de acceso.
+ */
+export async function enviarBienvenida(empleadoId, pin, tipo, correoA) {
+  const p = String(pin).trim();
+  if (!/^\d{4}$/.test(p)) throw new Error('El PIN son 4 números.');
+  const cuerpo = { empleado_id: empleadoId, pin: p, tipo: tipo === 'pin' ? 'pin' : 'bienvenida' };
+  if (correoA) cuerpo.correo_a = String(correoA).trim();
+  const { data, error } = await supabase.functions.invoke('correo-bienvenida', { body: cuerpo });
+  if (error) throw await errorDeFuncion(error, 'No se pudo enviar el correo.');
+  if (data && data.error) throw new Error(data.error);
+  return data;
+}
+
 // cb(session) cada vez que cambia la sesión (login/logout/refresh).
 // Devuelve función para cancelar la suscripción.
 export function onAuthChange(cb) {
@@ -196,5 +214,6 @@ export default {
   cambiarPinPropio,
   adminCambiarPin,
   adminCrearAcceso,
+  enviarBienvenida,
   onAuthChange,
 };
