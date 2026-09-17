@@ -276,13 +276,13 @@ export async function subirVisitaADrive(visitaId, pdfBlob) {
 /**
  * La app NO habla con Teamleader. Solo pide a su propio backend que lo haga.
  * Los tokens del CRM viven en la edge function, nunca en el navegador.
+ *
+ * `texto` es la ficha en texto plano, que la monta la app: las preguntas y su
+ * orden están en visitas-schemas.js y no tiene sentido duplicarlos en el
+ * servidor para que se queden viejos.
  */
-export async function enviarATeamleader(visitaId) {
-  const { data, error } = await supabase.functions.invoke('teamleader-visita', {
-    body: { visita_id: visitaId },
-  });
-  if (error) throw error;
-  return data;
+export async function enviarATeamleader(visitaId, texto) {
+  return invocar('teamleader-visita', { visita_id: visitaId, texto: texto || '' });
 }
 
 export async function estadoSync(visitaId) {

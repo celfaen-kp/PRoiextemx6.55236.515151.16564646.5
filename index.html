@@ -273,7 +273,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '13.0'; // versión visible de la app (única fuente)
+const APP_VERSION = '13.1'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -4780,18 +4780,34 @@ A.verVisita = async (id) => {
     V.view = 'visitas'; render();
   }
 };
+/**
+ * La ficha de la visita en texto plano, que es lo que viaja al CRM: va al
+ * resumen de la oportunidad y a las observaciones del cliente.
+ */
+function textoDeVisita(vv) {
+  const v = vv.visita;
+  const trozos = [];
+  const comun = vForm.resumenTexto(vSchemas.COMUN, v).trim();
+  if (comun) trozos.push(comun);
+  (vv.fichas || []).forEach((f) => {
+    const t = vForm.resumenTexto(vSchemas.ESQUEMAS[f.categoria], f.datos).trim();
+    trozos.push(nombreCat(f.categoria).toUpperCase() + '\n' + (t || 'Sin datos.'));
+  });
+  const fotos = (vv.adjuntos || []).filter((a) => a.tipo === 'foto' || !a.tipo).length;
+  if (fotos) trozos.push(fotos === 1 ? '1 foto, en la app y en Drive.' : fotos + ' fotos, en la app y en Drive.');
+  return trozos.join('\n\n');
+}
+
 A.enviarVisita = async () => {
   const vv = V.visitaVer; if (!vv || V.visitaBusy) return;
   if (!navigator.onLine) { avisar('Sin conexión. Envíala cuando haya cobertura.'); return; }
   V.visitaBusy = true; render();
   const id = vv.visita.id;
   try {
-    await visitasDB.enviarATeamleader(id);
-    toast('Enviada a Teamleader.');
+    const r = await visitasDB.enviarATeamleader(id, textoDeVisita(vv));
+    toast(r && r.deal_creado === false ? 'Actualizada en Teamleader.' : 'Enviada a Teamleader: oportunidad creada.');
   } catch (e) {
-    const status = e && e.context && e.context.status;
-    const sinFuncion = status === 404 || /FunctionsFetchError|FunctionsRelayError|failed to send|failed to fetch/i.test(((e && e.name) || '') + ' ' + msgError(e));
-    const msg = sinFuncion ? 'Teamleader todavía no está conectado a la app.' : msgError(e);
+    const msg = msgError(e);
     try { await visitasDB.guardarVisita(id, { sync_estado: 'error', sync_error: msg }); } catch (_) {}
     avisar('No se pudo enviar: ' + msg + ' La visita no se pierde.');
   }
