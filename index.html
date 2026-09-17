@@ -273,7 +273,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '12.9'; // versión visible de la app (única fuente)
+const APP_VERSION = '13.0'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -884,7 +884,7 @@ A.salir = () => {
   V.view = 'login'; render();
   sysAuth.logout().catch(() => {});
 };
-A.ir = (v) => { V.view = v; render(); if (v === 'visitas') A.cargarVisitas(); if (AG_VISTAS.includes(v)) A.cargarAgenda(); if (['hoy', 'obras', 'obra', 'partes', 'horas'].includes(v)) refrescarDatos().then(render); };
+A.ir = (v) => { V.view = v; render(); if (v === 'visitas') A.cargarVisitas(); if (AG_VISTAS.includes(v)) A.cargarAgenda(); if (v === 'ajustes' && verCRM() && !V.crm.cargado) A.crmEstado(); if (['hoy', 'obras', 'obra', 'partes', 'horas'].includes(v)) refrescarDatos().then(render); };
 A.verObra = (id) => { V.obraId = id; V.obraRango = 'total'; V.view = 'obra'; render(); refrescarDatos().then(render); if (puedeCrear()) A.cargarDocsObra(id); };
 A.obraRango = (r) => { V.obraRango = r; render(); };
 // (Sin "obra de hoy": el fichaje NUNCA lleva obra — se guarda con obraId null —
@@ -4086,6 +4086,21 @@ function vAjustes() {
     </div>
     <div class="sub" style="font-size:12px;margin-top:10px">Para pasar a la app las horas que ya tenías anotadas fuera. Antes de guardar nada verás qué entra y qué se descarta.</div>` : ''}
 
+    ${verCRM() ? `<div class="lbl" style="font-weight:600;font-size:12px;color:var(--t2);margin:22px 0 10px">Teamleader</div>
+    <div class="card">
+      <div class="row g8"><span class="dot" style="width:8px;height:8px;background:${V.crm.conectado ? 'var(--verde)' : 'var(--ambar)'}"></span>
+      <span class="lbl">${V.crm.busy ? 'Comprobando…' : V.crm.conectado ? 'Conectado' : V.crm.cargado ? 'Sin conectar' : '—'}</span></div>
+      <div class="sub" style="font-size:12px;margin-top:8px">${V.crm.conectado
+        ? 'Los clientes que se dan de alta en la agenda se crean también en el CRM, como contacto si son particulares y como empresa si son empresa o comunidad.'
+        : 'Mientras no esté conectado, los clientes se guardan solo en la app. Al conectarlo, los que falten se pueden subir desde su ficha.'}</div>
+      ${V.crm.error ? `<div class="sub" style="font-size:12px;margin-top:8px;color:var(--rojo)">${esc(V.crm.error)}</div>` : ''}
+      <div class="row g8" style="margin-top:14px">
+        <button class="pill grow" data-a="crmEstado" style="padding:11px;text-align:center" ${V.crm.busy ? 'disabled' : ''}>Comprobar</button>
+        <button class="pill grow" data-a="crmConectar" style="padding:11px;text-align:center;background:var(--tinta);color:#fff" ${V.crm.busy ? 'disabled' : ''}>${V.crm.conectado ? 'Volver a conectar' : 'Conectar'}</button>
+      </div>
+      ${esAdmin() && V.crm.conectado ? `<button class="pill ${V.crm.confirmar ? 'pill-rojo' : ''}" data-a="crmDesconectar" style="margin-top:8px;padding:11px;width:100%;text-align:center">${V.crm.confirmar ? '¿Seguro? Toca otra vez' : 'Desconectar'}</button>` : ''}
+    </div>` : ''}
+
     <button class="btn btn-gris" data-a="instalar" style="margin-top:20px;border-radius:99px">Instalar en la pantalla de inicio</button>
     <div class="lbl" style="text-align:center;margin-top:18px">Versión ${APP_VERSION} · datos sincronizados</div>
   </div>`;
@@ -5430,6 +5445,7 @@ async function agGuardarCliente(conCita) {
     });
     V.agBusy = false; V.clienteDraft = null;
     clienteADrive(g.id);
+    clienteACRM(g.id);
     await A.cargarAgenda();
     V.clienteVerId = g.id;
     if (conCita) return agNuevaCita(g.id, true);
@@ -5459,6 +5475,73 @@ async function clienteADrive(id) {
   render();
 }
 A.cliDriveReintentar = (id) => clienteADrive(id);
+
+/**
+ * Crea el cliente en Teamleader (sql/etapa31). Como lo de Drive: no bloquea,
+ * porque el cliente ya está guardado en Supabase pase lo que pase con el CRM.
+ * Si el CRM no está conectado todavía, no se da la lata cada vez: se apunta y
+ * ya se verá en su ficha.
+ */
+async function clienteACRM(id) {
+  if (!id || !navigator.onLine) return;
+  V.cliCRM = { id, estado: 'subiendo' }; render();
+  try {
+    const r = await visitasDB.clienteATeamleader(id);
+    V.cliCRM = { id, estado: 'ok', creado: !!(r && r.creado), tlId: (r && r.tl_id) || '' };
+    const c = agCliente(id); if (c && r && r.tl_id) { c.tl_id = r.tl_id; c.tl_error = null; }
+  } catch (e) {
+    const msg = msgError(e);
+    V.cliCRM = { id, estado: 'error', error: msg, sinConectar: /no está conectado|vuelve a conectarlo/i.test(msg) };
+    const c = agCliente(id); if (c) c.tl_error = msg;
+  }
+  render();
+}
+A.cliCRMReintentar = (id) => clienteACRM(id);
+
+/* ---------- conectar la app con Teamleader (una sola vez) ---------- */
+Object.assign(V, { crm: { cargado: false, busy: false, conectado: false, expira: null, error: null, confirmar: false } });
+const verCRM = () => esAdmin() || esPresupuestos();
+
+A.crmEstado = async () => {
+  if (!verCRM() || V.crm.busy) return;
+  V.crm.busy = true; render();
+  try {
+    const r = await visitasDB.teamleaderEstado();
+    V.crm = { ...V.crm, cargado: true, conectado: !!(r && r.conectado), expira: (r && r.expira_at) || null, error: null };
+  } catch (e) {
+    V.crm = { ...V.crm, cargado: true, error: msgError(e) };
+  }
+  V.crm.busy = false; render();
+};
+
+A.crmConectar = async () => {
+  if (!verCRM() || V.crm.busy) return;
+  if (!navigator.onLine) { avisar('Sin conexión.'); return; }
+  V.crm.busy = true; V.crm.error = null; render();
+  try {
+    const r = await visitasDB.teamleaderIniciar();
+    V.crm.busy = false; render();
+    if (r && r.url) {
+      // Se abre en otra pestaña: al volver, el botón "Comprobar" dice si cuajó.
+      window.open(r.url, '_blank', 'noopener');
+      toast('Autoriza la app en Teamleader y vuelve aquí.');
+    }
+  } catch (e) {
+    V.crm.busy = false; V.crm.error = msgError(e); render();
+  }
+};
+
+A.crmDesconectar = async () => {
+  if (!esAdmin()) return;
+  if (!V.crm.confirmar) { V.crm.confirmar = true; render(); setTimeout(() => { if (V.crm.confirmar) { V.crm.confirmar = false; if (V.view === 'ajustes') render(); } }, 3500); return; }
+  V.crm.confirmar = false; V.crm.busy = true; render();
+  try {
+    await visitasDB.teamleaderDesconectar();
+    V.crm = { ...V.crm, conectado: false, expira: null, error: null };
+    toast('Teamleader desconectado.');
+  } catch (e) { V.crm.error = msgError(e); }
+  V.crm.busy = false; render();
+};
 
 function agNuevaCita(clienteId, desdeAlta) {
   if (!puedeCitar()) return;
@@ -5976,6 +6059,28 @@ function vCitaVer() {
 }
 
 /**
+ * El cliente en Teamleader: si está, se dice y ya; si falló, se ve por qué y
+ * se reintenta. Sin enlaces al CRM: cada móvil no tiene por qué tener sesión.
+ */
+function agCRMHTML(c) {
+  if (!puedeCitar()) return '';
+  const d = V.cliCRM && V.cliCRM.id === c.id ? V.cliCRM : null;
+  const trabajando = d && d.estado === 'subiendo';
+  if (!d && c.tl_id && !c.tl_error) return '';       // ya está en el CRM, sin novedad
+  return `<div class="card" style="margin-bottom:18px">
+    <div class="row g8"><span class="lbl">Teamleader</span></div>
+    ${trabajando ? '<div class="sub" style="margin-top:7px;font-size:13px">Creándolo en el CRM…</div>' : ''}
+    ${d && d.estado === 'ok' ? `<div class="sub" style="margin-top:7px;font-size:13px">✓ ${d.creado ? 'Creado en el CRM' : 'Ya estaba en el CRM: se ha enlazado'}.</div>` : ''}
+    ${d && d.estado === 'error' ? `<div class="sub" style="margin-top:7px;font-size:13px;color:var(--rojo)">${d.sinConectar
+        ? 'El CRM no está conectado. Lo conecta Administración desde Ajustes → Teamleader; mientras, el cliente se queda guardado aquí.'
+        : 'No se pudo crear: ' + esc(d.error || '')}</div>` : ''}
+    ${!d && c.tl_error ? `<div class="sub" style="margin-top:7px;font-size:13px;color:var(--rojo)">No se pudo crear: ${esc(c.tl_error)}</div>` : ''}
+    ${!d && !c.tl_id && !c.tl_error ? '<div class="sub" style="margin-top:7px;font-size:13px">Todavía no está en el CRM.</div>' : ''}
+    ${!trabajando ? `<button class="pill" data-a="cliCRMReintentar" data-id="${c.id}" style="margin-top:10px;padding:11px;width:100%;text-align:center">${c.tl_id ? 'Repasarlo en el CRM' : 'Crearlo en el CRM'}</button>` : ''}
+  </div>`;
+}
+
+/**
  * La fila del cliente en la hoja de Drive: si algo falló, se ve aquí y se
  * reintenta. Sin enlaces a Drive: el móvil de cada uno está con su cuenta de
  * Google, no con la de la empresa, y el enlace no le abriría nada.
@@ -6050,6 +6155,7 @@ function vClienteVer() {
       ${c.nota ? `<div class="fila"><span class="k">Nota</span><span class="v">${esc(c.nota)}</span></div>` : ''}
     </div>` : ''}
     ${agCarpetaHTML(c)}
+    ${agCRMHTML(c)}
     <div class="lbl" style="margin-bottom:12px">Historial</div>
     <div class="ag-linea">
       ${items.map(hito).join('')}
@@ -6692,6 +6798,10 @@ document.addEventListener('click', (e) => {
   if (a === 'compartirVisita') return A.compartirVisita();
   if (a === 'visitaDrive') return A.visitaDrive();
   if (a === 'cliDriveReintentar') return A.cliDriveReintentar(d.id);
+  if (a === 'cliCRMReintentar') return A.cliCRMReintentar(d.id);
+  if (a === 'crmConectar') return A.crmConectar();
+  if (a === 'crmEstado') return A.crmEstado();
+  if (a === 'crmDesconectar') return A.crmDesconectar();
   if (a === 'elegirUser') return A.elegirUser(d.id);
   if (a === 'pinTecla') return A.pinTecla(d.k);
   if (a === 'volverLogin') return A.volverLogin();

@@ -349,6 +349,33 @@ export async function guardarCliente(cliente) {
   );
 }
 
+/* ---------------------------------------------------------------------------
+ * Teamleader (sql/etapa31)
+ *
+ * La app no habla nunca con el CRM: se lo pide a su backend, que es quien
+ * guarda el permiso. Aquí no hay ni client_id ni tokens.
+ * ------------------------------------------------------------------------- */
+
+/** Crea el cliente en el CRM (contacto o empresa) y guarda su id. */
+export async function clienteATeamleader(clienteId) {
+  return invocar('teamleader-cliente', { cliente_id: clienteId });
+}
+
+/** ¿Está conectado el CRM? Devuelve { conectado, expira_at }. */
+export async function teamleaderEstado() {
+  return invocar('teamleader-oauth', { accion: 'estado' });
+}
+
+/** Devuelve la dirección a la que hay que ir para autorizar la integración. */
+export async function teamleaderIniciar() {
+  return invocar('teamleader-oauth', { accion: 'iniciar' });
+}
+
+/** Borra el permiso guardado. Solo Administración. */
+export async function teamleaderDesconectar() {
+  return invocar('teamleader-oauth', { accion: 'desconectar' });
+}
+
 /**
  * Avisa por correo de UNA cita: nueva, cambiada o anulada (sql/etapa30).
  * La función decide sola qué toca contar y a quién, y marca la cita para no
