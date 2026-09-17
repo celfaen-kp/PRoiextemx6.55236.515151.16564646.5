@@ -173,7 +173,7 @@ a:hover{color:var(--tinta)}
 /* Sobre fondo oscuro (login, PIN, parte guardado) la marca de agua va en
    blanco y solo el sello de la S: el logotipo entero se repetía con el de
    arriba y, al ser negro, se veía como una mancha. */
-.scroll.marca-clara::before{background-image:url('logo-s-blanco.png');opacity:.13}
+.scroll.marca-clara::before{background-image:url('logo-s-blanco.png');opacity:.3}
 .pie{flex:none;display:flex;gap:10px;padding:12px 20px calc(14px + var(--safe-b));background:var(--papel);border-top:1px solid var(--l1)}
 .pie .btn{padding:16px}
 .pie .btn-gris{flex:0 0 34%}
@@ -273,7 +273,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '12.6'; // versión visible de la app (única fuente)
+const APP_VERSION = '12.7'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -4300,7 +4300,7 @@ function vP3() {
 }
 function vOk() {
   const p = S.partes.find((x) => x.id === V.verParte);
-  return `<div class="scroll marca-clara" style="background:var(--verde);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px;text-align:center">
+  return `<div class="scroll sin-marca" style="background:var(--verde);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px;text-align:center">
     <img src="logo-blanco.png" alt="" style="width:150px;max-width:52%;margin-bottom:26px">
     <div class="av" style="width:78px;height:78px;background:#fff;color:var(--verde-o);font-size:34px">✓</div>
     <div style="font:600 30px/1.1 var(--cond);color:#fff;margin-top:22px">Parte guardado</div>
