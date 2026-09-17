@@ -273,7 +273,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '12.8'; // versión visible de la app (única fuente)
+const APP_VERSION = '12.9'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -2465,6 +2465,41 @@ A.cambiarRol = (id) => { const u = S.users.find((x) => x.id === id); u.rol = u.r
 // que no puede estar en la app. Por eso la hoja se comporta distinto según de
 // quién sea el PIN, en vez de fingir que lo cambia.
 A.editarPin = (id) => { V.sheet = { tipo: 'pin', id, actual: '', val: '', val2: '', busy: false, manual: false }; render(); };
+
+// A dónde se le escribe: su correo de verdad si lo tiene, si no el de acceso.
+const correoDeEmpleado = (row) => (row && ((row.email_avisos || '').trim() || (row.email || '').trim())) || '';
+
+A.correoIngreso = (id) => {
+  if (!esAdmin()) return;
+  V.sheet = { tipo: 'ingreso', id, val: '', busy: false }; render();
+};
+/**
+ * Reenvía el correo de ingreso. El PIN no se puede leer de ninguna parte (en
+ * Supabase solo queda su huella), así que el que se escriba aquí SE LE DEJA
+ * PUESTO antes de mandarlo: así el del correo siempre le funciona.
+ */
+A.enviarIngreso = async () => {
+  const s = V.sheet; if (!s || s.busy) return;
+  if (!/^\d{4}$/.test(s.val)) { avisar('El PIN son 4 números.'); return; }
+  if (!navigator.onLine) { avisar('Sin conexión — no se ha enviado.'); return; }
+  const row = empRowById(empIdDeUser(s.id));
+  if (!row || !row.user_id) { avisar('Esa persona todavía no tiene acceso creado.'); return; }
+  s.busy = true; render();
+  let pinPuesto = false;
+  try {
+    await sysAuth.adminCambiarPin(row.id, s.val);
+    pinPuesto = true;
+    const r = await sysAuth.enviarBienvenida(row.id, s.val, 'bienvenida');
+    V.sheet = null; render();
+    toast('Correo de ingreso enviado a ' + ((r && r.para) || 'su correo') + '.');
+  } catch (e) {
+    s.busy = false; render();
+    const m = e && e.noDesplegada ? 'falta desplegar la función correo-bienvenida.' : (e && e.message) || 'error';
+    // Si el PIN ya se cambió y lo que falló fue el correo, hay que decirlo: esa
+    // persona entra con el nuevo aunque no le haya llegado nada.
+    avisar((pinPuesto ? 'El PIN le quedó puesto en ' + s.val + ', pero el correo no salió: ' : 'No se pudo enviar: ') + m);
+  }
+};
 A.guardarPin = async () => {
   const s = V.sheet;
   if (s.busy) return;
@@ -3708,6 +3743,12 @@ function vEmpleado() {
           : esc(d.nombre) + ' todavía no puede entrar: crea su acceso.'}</div></div>
       <div style="font:400 20px/1 var(--sans);color:var(--t3)">›</div>
     </div>
+
+    ${row && row.user_id && V.empEmp !== (yo() || {}).id ? `<div class="card row" data-a="correoIngreso" data-id="${V.empEmp}" style="margin-top:12px;cursor:pointer">
+      <div class="grow"><div style="font:500 15px var(--sans)">Enviar correo de ingreso</div>
+      <div class="sub" style="font-size:12px;margin-top:4px">Su PIN, el enlace de la app y cómo instalarla, a ${esc(correoDeEmpleado(row) || 'su correo')}.</div></div>
+      <div style="font:400 20px/1 var(--sans);color:var(--t3)">›</div>
+    </div>` : ''}
 
     <div class="tiny" style="margin-top:14px">${altaEmp(row) ? 'Alta: ' + fechaConAnio(altaEmp(row)) : ''}${row && row.fecha_baja ? ' · Baja: ' + fechaConAnio(row.fecha_baja + 'T12:00') : ''}</div>
     <button class="btn btn-gris" data-a="abrirPlanilla" data-id="${V.empEmp}" style="margin-top:16px;border-radius:14px">Ver planilla de horas</button>` : `<div class="tiny" style="margin-top:16px">Al guardar se crea el perfil. Para que pueda iniciar sesión hay que crear su acceso (te lo indicaremos).</div>`}
@@ -6488,6 +6529,24 @@ function sheet() {
       </div>
     </div></div>`;
   }
+  if (s.tipo === 'ingreso') {
+    const u = userById(s.id);
+    const row = empRowById(empIdDeUser(s.id));
+    const para = correoDeEmpleado(row);
+    return `<div class="sheet"><div>
+      <div style="font:600 25px/1.15 var(--cond)">Correo de ingreso</div>
+      <div class="sub" style="margin-top:8px">${para
+        ? 'A <b>' + esc(u.nombre) + '</b>, a <b>' + esc(para) + '</b>: su PIN, el enlace de la app y cómo dejarla instalada en el móvil o en el ordenador.'
+        : '<b>' + esc(u.nombre) + '</b> no tiene ningún correo en su ficha. Ponle uno antes (Email para avisos).'}</div>
+      ${para ? `<div class="lbl" style="margin:16px 0 6px">PIN que va en el correo</div>
+      <input class="inp" data-f="ingresoPin" inputmode="numeric" maxlength="4" value="${esc(s.val)}" placeholder="0000" style="font:600 22px var(--cond);text-align:center;letter-spacing:.3em">
+      <div class="sub" style="font-size:12px;margin-top:6px">El PIN no se puede consultar en ningún sitio, así que el que pongas aquí <b>se le deja puesto</b> antes de mandarlo. Si es el mismo que ya tenía, para él no cambia nada.</div>` : ''}
+      <div class="row g8" style="margin-top:18px">
+        <button class="btn btn-gris" data-a="cerrarSheet" style="border-radius:99px">Cancelar</button>
+        ${para ? `<button class="btn btn-verde" data-a="enviarIngreso" style="font-size:14px" ${s.busy ? 'disabled' : ''}>${s.busy ? 'Enviando…' : 'Enviar correo'}</button>` : ''}
+      </div>
+    </div></div>`;
+  }
   if (s.tipo === 'user') {
     return `<div class="sheet"><div>
       <div style="font:600 25px/1.15 var(--cond)">Nuevo empleado</div>
@@ -6743,6 +6802,8 @@ document.addEventListener('click', (e) => {
   if (a === 'toggleOpt') return A.toggleOpt(d.k);
   if (a === 'cambiarRol') return A.cambiarRol(d.id);
   if (a === 'editarPin') return A.editarPin(d.id);
+  if (a === 'correoIngreso') return A.correoIngreso(d.id);
+  if (a === 'enviarIngreso') return A.enviarIngreso();
   if (a === 'guardarPin') return A.guardarPin();
   if (a === 'addUser') return A.addUser();
   if (a === 'guardarUser') return A.guardarUser();
@@ -6791,6 +6852,7 @@ document.addEventListener('input', (e) => {
   if (f === 'impGrupoNota') { const l = (V.impGrupoLineas || [])[Number(t.dataset.i)]; if (l) l.nota = t.value; return; }
   if (f === 'envCopia') { if (V.sheet) V.sheet.copia = t.value; return; }
   if (f === 'empPin') { t.value = t.value.replace(/\D/g, '').slice(0, 4); A.empCampo('pin', t.value); return; }
+  if (f === 'ingresoPin') { t.value = t.value.replace(/\D/g, '').slice(0, 4); V.sheet.val = t.value; return; }
   if (f === 'empNombreCompleto') { A.empCampo('nombreCompleto', t.value); return; }
   if (f === 'empFechaAlta') { A.empCampo('fechaAlta', t.value); return; }
   if (f === 'empVacaciones') { t.value = t.value.replace(/\D/g, '').slice(0, 3); A.empCampo('vacacionesAnuales', t.value); return; }
