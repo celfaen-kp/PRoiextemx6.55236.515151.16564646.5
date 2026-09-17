@@ -273,7 +273,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '13.2'; // versión visible de la app (única fuente)
+const APP_VERSION = '13.3'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -5544,6 +5544,73 @@ async function clienteACRM(id) {
 }
 A.cliCRMReintentar = (id) => clienteACRM(id);
 
+/* ---------- buscar un cliente que ya está en Teamleader ----------
+ * Antes de dar de alta a alguien, mirar si el CRM ya lo tiene. Así no se crean
+ * dos fichas del mismo señor, una en cada sitio.
+ */
+Object.assign(V, { crmBuscar: { texto: '', busy: false, hecho: false, error: null, filas: [] } });
+
+let crmBuscarT;
+A.crmTexto = (t) => {
+  V.crmBuscar.texto = t;
+  clearTimeout(crmBuscarT);
+  if (String(t || '').trim().length < 2) { V.crmBuscar.filas = []; V.crmBuscar.hecho = false; pintarCRM(); return; }
+  crmBuscarT = setTimeout(() => A.crmBuscarYa(), 450);
+};
+// Se repinta solo el trozo de resultados: un render entero cerraría el teclado
+// a media palabra, como ya pasa con el buscador de clientes.
+const pintarCRM = () => {
+  const box = document.getElementById('crm-resultados');
+  if (box) box.innerHTML = crmResultadosHTML(); else render();
+};
+A.crmBuscarYa = async () => {
+  const q = String(V.crmBuscar.texto || '').trim();
+  if (q.length < 2 || V.crmBuscar.busy) return;
+  if (!navigator.onLine) { avisar('Sin conexión.'); return; }
+  V.crmBuscar.busy = true; V.crmBuscar.error = null; pintarCRM();
+  try {
+    const r = await visitasDB.buscarEnCRM(q);
+    V.crmBuscar.filas = (r && r.resultados) || [];
+  } catch (e) {
+    V.crmBuscar.filas = []; V.crmBuscar.error = msgError(e);
+  }
+  V.crmBuscar.busy = false; V.crmBuscar.hecho = true; pintarCRM();
+};
+/** Trae ese cliente del CRM a la app y sigue como si lo acabaras de dar de alta. */
+A.crmTraer = async (tlId, tipo, yaEnApp) => {
+  if (V.crmBuscar.busy) return;
+  if (yaEnApp) { V.clienteDraft = null; V.clienteVerId = yaEnApp; V.view = 'clienteVer'; return render(); }
+  V.crmBuscar.busy = true; render();
+  try {
+    const r = await visitasDB.importarDelCRM(tlId, tipo);
+    const c = r && r.cliente;
+    V.crmBuscar = { texto: '', busy: false, hecho: false, error: null, filas: [] };
+    V.clienteDraft = null;
+    await A.cargarAgenda();
+    if (c) { V.clienteVerId = c.id; toast(c.nombre + ' traído del CRM.'); return agNuevaCita(c.id, true); }
+    render();
+  } catch (e) {
+    V.crmBuscar.busy = false; render();
+    avisar('No se pudo traer del CRM: ' + msgError(e));
+  }
+};
+
+/* ---------- clientes que entran por la web (sql/etapa32) ---------- */
+A.leadsBuscar = async () => {
+  if (!puedeCitar() || V.agenda.cargando) return;
+  if (!navigator.onLine) { avisar('Sin conexión.'); return; }
+  V.leadsBusy = true; render();
+  try {
+    const r = await visitasDB.buscarLeadsWeb();
+    const n = (r && r.nuevos) || 0;
+    toast(n ? (n === 1 ? '1 cliente nuevo de la web.' : n + ' clientes nuevos de la web.') : 'Nada nuevo por ahora.');
+    if (n) await A.cargarAgenda();
+  } catch (e) {
+    avisar('No se pudo mirar la web: ' + msgError(e));
+  }
+  V.leadsBusy = false; render();
+};
+
 /* ---------- conectar la app con Teamleader (una sola vez) ---------- */
 Object.assign(V, { crm: { cargado: false, busy: false, conectado: false, expira: null, error: null, confirmar: false } });
 const verCRM = () => esAdmin() || esPresupuestos();
@@ -5921,8 +5988,70 @@ function vClientes() {
   </div>
   <div class="scroll pad pb-nav">
     ${agAvisoHTML()}
+    ${webListaHTML()}
     <div id="clientes-lista">${clientesListaHTML()}</div>
   </div>`;
+}
+
+/**
+ * Los que han entrado por la web (sql/etapa32): aparte y por delante, porque
+ * son los que están esperando a que alguien les llame.
+ */
+function webListaHTML() {
+  if (!puedeCitar()) return '';
+  const web = (V.agenda.clientes || []).filter((c) => c.lead_at && !(c.citas || []).length);
+  const boton = `<button class="pill" data-a="leadsBuscar" style="padding:8px 14px;font-size:12px" ${V.leadsBusy ? 'disabled' : ''}>${V.leadsBusy ? 'Mirando…' : 'Mirar ahora'}</button>`;
+  if (!web.length) {
+    return `<div class="row" style="justify-content:space-between;align-items:center;margin-bottom:16px">
+      <span class="lbl">De la web · ninguno pendiente</span>${boton}</div>`;
+  }
+  const cuando = (iso) => {
+    const dias = Math.floor((Date.now() - new Date(iso).getTime()) / 86400000);
+    return dias <= 0 ? 'hoy' : dias === 1 ? 'ayer' : 'hace ' + dias + ' días';
+  };
+  return `<div class="row" style="justify-content:space-between;align-items:center;margin-bottom:10px">
+    <span class="lbl">De la web · ${web.length} sin cita</span>${boton}</div>
+  ${web.sort((a, b) => String(b.lead_at).localeCompare(String(a.lead_at))).map((c) => `<div class="card" data-a="ag_abrirCliente" data-id="${c.id}" style="margin-bottom:11px;cursor:pointer;box-shadow:0 0 0 1.5px var(--ambar),var(--sh)">
+    <div class="row g8"><span class="badge" style="background:var(--ambar);color:var(--tinta)">Web</span>
+      <span class="tiny">Llegó ${cuando(c.lead_at)}</span></div>
+    <div class="h2" style="margin-top:9px">${esc(c.nombre)}</div>
+    <div class="sub" style="margin-top:4px">${esc([agTipoNombre(c), c.telefono, c.poblacion].filter(Boolean).join(' · ') || 'Sin más datos')}</div>
+    ${puedeCitar() ? `<button class="pill pill-verde" data-a="ag_nuevaCita" data-id="${c.id}" style="margin-top:12px;padding:11px;width:100%;text-align:center">Ponerle cita</button>` : ''}
+  </div>`).join('')}
+  <div style="height:12px"></div>`;
+}
+
+/**
+ * Antes de escribir a mano, mirar si ese cliente ya está en Teamleader: los de
+ * la web y los de siempre están allí, y volver a darlos de alta deja dos fichas
+ * del mismo señor.
+ */
+function buscadorCRMHTML() {
+  const b = V.crmBuscar;
+  return `<div class="card" style="margin-bottom:18px;background:rgba(20,23,15,.03)">
+    <div class="lbl">¿Ya está en Teamleader?</div>
+    <div class="sub" style="font-size:12px;margin-top:6px">Los que entran por la web y los clientes de siempre ya están en el CRM. Búscalo antes de escribirlo a mano.</div>
+    <div class="row g8" style="margin-top:12px">
+      <input class="inp grow" id="crm-buscar" data-f="crmTexto" value="${esc(b.texto || '')}" placeholder="Nombre, teléfono, email o NIF" autocomplete="off" autocapitalize="off">
+      <button class="pill" data-a="crmBuscarYa" style="padding:13px 16px">Buscar</button>
+    </div>
+    <div id="crm-resultados">${crmResultadosHTML()}</div>
+  </div>`;
+}
+
+function crmResultadosHTML() {
+  const b = V.crmBuscar;
+  const fila = (x) => `<div class="card row" data-a="crmTraer" data-id="${esc(x.tl_id)}" data-t="${esc(x.tipo)}" data-en="${esc(x.cliente_id || '')}" style="margin-bottom:8px;cursor:pointer">
+    <div class="av" style="width:36px;height:36px;background:rgba(20,23,15,.06);color:var(--t2);font-size:13px">${esc(inicialesCli(x.nombre))}</div>
+    <div class="grow"><div style="font:600 15px/1.2 var(--sans)">${esc(x.nombre)}</div>
+    <div class="sub" style="font-size:12px;margin-top:3px">${esc([x.tipo === 'company' ? 'Empresa' : 'Particular', x.telefono, x.poblacion].filter(Boolean).join(' · '))}</div></div>
+    ${x.cliente_id ? '<span class="badge" style="background:rgba(20,23,15,.06);color:var(--t2)">Ya está</span>' : '<div style="font:400 20px/1 var(--sans);color:var(--t3)">›</div>'}
+  </div>`;
+  if (b.busy) return '<div class="sub" style="font-size:12px;margin-top:10px">Buscando en el CRM…</div>';
+  if (b.error) return `<div class="sub" style="font-size:12px;margin-top:10px;color:var(--rojo)">${esc(b.error)}</div>`;
+  if (b.filas.length) return `<div style="margin-top:12px">${b.filas.map(fila).join('')}</div>`;
+  if (b.hecho) return '<div class="sub" style="font-size:12px;margin-top:10px">No aparece en el CRM. Dalo de alta aquí abajo.</div>';
+  return '';
 }
 
 function vClienteNuevo() {
@@ -5938,6 +6067,7 @@ function vClienteNuevo() {
     ${nuevo ? '<div class="pasos"><i class="on"></i><i></i></div>' : ''}
   </div>
   <div class="scroll pad sin-marca" style="padding-bottom:30px">
+    ${nuevo ? buscadorCRMHTML() : ''}
     <div class="campo" style="margin-top:0"><div class="lbl">Tipo</div>
       <div class="wrap">${AG_TIPOS.map(([k, l]) => `<span class="chip ${d.tipo === k ? 'sel' : ''}" data-a="ag_cliTipo" data-t="${k}" style="cursor:pointer">${l}</span>`).join('')}</div></div>
     ${campo('nombre', 'Nombre<span style="color:var(--rojo)"> *</span>', 'autocapitalize="words"', d.tipo === 'particular' ? 'Nombre y apellidos' : 'Razón social o nombre')}
@@ -6849,6 +6979,9 @@ document.addEventListener('click', (e) => {
   if (a === 'visitaDrive') return A.visitaDrive();
   if (a === 'cliDriveReintentar') return A.cliDriveReintentar(d.id);
   if (a === 'cliCRMReintentar') return A.cliCRMReintentar(d.id);
+  if (a === 'crmBuscarYa') return A.crmBuscarYa();
+  if (a === 'crmTraer') return A.crmTraer(d.id, d.t, d.en);
+  if (a === 'leadsBuscar') return A.leadsBuscar();
   if (a === 'crmConectar') return A.crmConectar();
   if (a === 'crmEstado') return A.crmEstado();
   if (a === 'crmDesconectar') return A.crmDesconectar();
@@ -7013,6 +7146,7 @@ document.addEventListener('input', (e) => {
   if (f === 'envCopia') { if (V.sheet) V.sheet.copia = t.value; return; }
   if (f === 'empPin') { t.value = t.value.replace(/\D/g, '').slice(0, 4); A.empCampo('pin', t.value); return; }
   if (f === 'ingresoPin') { t.value = t.value.replace(/\D/g, '').slice(0, 4); V.sheet.val = t.value; return; }
+  if (f === 'crmTexto') { A.crmTexto(t.value); return; }
   if (f === 'empNombreCompleto') { A.empCampo('nombreCompleto', t.value); return; }
   if (f === 'empFechaAlta') { A.empCampo('fechaAlta', t.value); return; }
   if (f === 'empVacaciones') { t.value = t.value.replace(/\D/g, '').slice(0, 3); A.empCampo('vacacionesAnuales', t.value); return; }

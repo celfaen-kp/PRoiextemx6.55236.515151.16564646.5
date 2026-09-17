@@ -22,9 +22,15 @@
 //
 // QUIÉN PUEDE: presupuestos, jefes y Administración.
 //
+// TAMBIÉN SIRVE PARA BUSCAR EN EL CRM desde la app, para no volver a dar de
+// alta a alguien que ya está allí: se busca por nombre, email, teléfono o NIF, y
+// el que se elija se copia a la app enganchado a su ficha del CRM.
+//
 // USO (POST con JSON):
-//   { "cliente_id": "uuid" }
+//   { "cliente_id": "uuid" }                     crea (o engancha) ese cliente
 //   { "cliente_id": "uuid", "solo_ver": true }   dice qué haría, sin tocar el CRM
+//   { "accion": "buscar", "texto": "riera" }     busca en el CRM
+//   { "accion": "importar", "tl_id": "...", "tipo": "contact" }   lo trae a la app
 // =============================================================================
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
@@ -125,6 +131,101 @@ Deno.serve(async (req) => {
 
   let b: Record<string, unknown>;
   try { b = await req.json(); } catch { return json({ error: 'Petición mal formada.' }, 400); }
+  const accion = limpio(b.accion);
+
+  // --- buscar en el CRM ---------------------------------------------------------
+  if (accion === 'buscar') {
+    const texto = limpio(b.texto);
+    if (texto.length < 2) return json({ error: 'Escribe al menos dos letras.' }, 400);
+    let token: string;
+    try { token = await tokenValido(sb); }
+    catch (e) {
+      return json({ error: (e as Error).message, sin_permiso: e instanceof SinPermiso },
+        e instanceof SinPermiso ? 409 : 502);
+    }
+    try {
+      const filtro = { filter: { term: texto }, page: { size: 15, number: 1 } };
+      const [c, e] = await Promise.all([
+        crm(token, 'contacts.list', filtro),
+        crm(token, 'companies.list', filtro),
+      ]);
+      // deno-lint-ignore no-explicit-any
+      const primero = (arr: any[], campo: string) => limpio((arr || []).find((x: any) => x?.[campo])?.[campo]);
+      // deno-lint-ignore no-explicit-any
+      const señas = (x: any) => {
+        const a = (x?.addresses || [])[0]?.address || {};
+        return { direccion: limpio(a.line_1), poblacion: limpio(a.city) };
+      };
+      // deno-lint-ignore no-explicit-any
+      const salida = (arr: any[], esEmpresa: boolean) => (arr || []).map((x: any) => ({
+        tl_id: x.id,
+        tipo: esEmpresa ? 'company' : 'contact',
+        nombre: esEmpresa ? limpio(x.name) : [limpio(x.first_name), limpio(x.last_name)].filter(Boolean).join(' '),
+        email: primero(x.emails, 'email'),
+        telefono: primero(x.telephones, 'number'),
+        ...señas(x),
+      })).filter((x) => x.nombre);
+      const todos = [...salida(c?.data, false), ...salida(e?.data, true)];
+
+      // Marcar los que ya están en la app, para no ofrecer un duplicado.
+      const ids = todos.map((x) => x.tl_id);
+      const enApp = new Map<string, string>();
+      if (ids.length) {
+        const { data: hay } = await sb.from('clientes_cache').select('id, tl_id').in('tl_id', ids);
+        (hay || []).forEach((f) => enApp.set(String(f.tl_id), String(f.id)));
+      }
+      return json({
+        ok: true,
+        resultados: todos.map((x) => ({ ...x, cliente_id: enApp.get(String(x.tl_id)) || null })),
+      });
+    } catch (e) { return json({ error: (e as Error).message }, 502); }
+  }
+
+  // --- traerse uno del CRM a la app ---------------------------------------------
+  if (accion === 'importar') {
+    const tlId = limpio(b.tl_id);
+    if (!tlId) return json({ error: 'Falta el cliente del CRM.' }, 400);
+    const esEmpresa = limpio(b.tipo) === 'company';
+
+    const { data: ya } = await sb.from('clientes_cache').select('*').eq('tl_id', tlId).maybeSingle();
+    if (ya) return json({ ok: true, ya_estaba: true, cliente: ya });
+
+    let token: string;
+    try { token = await tokenValido(sb); }
+    catch (e) {
+      return json({ error: (e as Error).message, sin_permiso: e instanceof SinPermiso },
+        e instanceof SinPermiso ? 409 : 502);
+    }
+    try {
+      const info = await crm(token, esEmpresa ? 'companies.info' : 'contacts.info', { id: tlId });
+      const x = info?.data;
+      if (!x) return json({ error: 'Ese cliente ya no está en el CRM.' }, 404);
+      const a = (x.addresses || [])[0]?.address || {};
+      // deno-lint-ignore no-explicit-any
+      const primero = (arr: any[], campo: string) => limpio((arr || []).find((y: any) => y?.[campo])?.[campo]);
+      const ahora = new Date().toISOString();
+      const fila = {
+        nombre: esEmpresa ? limpio(x.name) : [limpio(x.first_name), limpio(x.last_name)].filter(Boolean).join(' '),
+        tipo: esEmpresa ? 'empresa' : 'particular',
+        tl_tipo: esEmpresa ? 'company' : 'contact',
+        tl_id: tlId,
+        tl_at: ahora,
+        email: primero(x.emails, 'email') || null,
+        telefono: primero(x.telephones, 'number') || null,
+        nif: limpio(x.vat_number || x.national_identification_number) || null,
+        direccion: limpio(a.line_1) || null,
+        poblacion: limpio(a.city) || null,
+        origen: 'cliente_existente',
+        pendiente_alta: false,
+        sincronizado_at: ahora,
+      };
+      if (!fila.nombre) return json({ error: 'Ese cliente del CRM no tiene nombre.' }, 400);
+      const { data: creado, error } = await sb.from('clientes_cache').insert(fila).select().single();
+      if (error) return json({ error: 'No se pudo guardar en la app: ' + error.message }, 500);
+      return json({ ok: true, cliente: creado });
+    } catch (e) { return json({ error: (e as Error).message }, 502); }
+  }
+
   const clienteId = limpio(b.cliente_id);
   if (!/^[0-9a-f-]{36}$/i.test(clienteId)) return json({ error: 'Falta el id del cliente.' }, 400);
   const soloVer = b.solo_ver === true;

@@ -361,6 +361,21 @@ export async function clienteATeamleader(clienteId) {
   return invocar('teamleader-cliente', { cliente_id: clienteId });
 }
 
+/** Busca en el CRM por nombre, email, teléfono o NIF. */
+export async function buscarEnCRM(texto) {
+  return invocar('teamleader-cliente', { accion: 'buscar', texto });
+}
+
+/** Se trae a la app un cliente que ya estaba en el CRM. */
+export async function importarDelCRM(tlId, tipo) {
+  return invocar('teamleader-cliente', { accion: 'importar', tl_id: tlId, tipo });
+}
+
+/** Mira si han entrado clientes nuevos por la web (sql/etapa32). */
+export async function buscarLeadsWeb(dias) {
+  return invocar('teamleader-leads', dias ? { dias } : {});
+}
+
 /** ¿Está conectado el CRM? Devuelve { conectado, expira_at }. */
 export async function teamleaderEstado() {
   return invocar('teamleader-oauth', { accion: 'estado' });
