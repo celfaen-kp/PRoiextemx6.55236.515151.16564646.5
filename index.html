@@ -273,7 +273,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '13.1'; // versión visible de la app (única fuente)
+const APP_VERSION = '13.2'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -2798,6 +2798,33 @@ document.addEventListener('scroll', (e) => {
   if (e.target.classList && (e.target.classList.contains('scroll') || e.target.classList.contains('hoja'))) scrollMemo[V.view] = e.target.scrollTop;
 }, true);
 
+/* --- cómo llegar ---------------------------------------------------------
+ * Un mismo botón para la obra, la cita y el cliente. En iPhone se abre Mapas y
+ * en lo demás Google Maps, y en los dos casos ya con la ruta puesta: lo que
+ * hace falta es salir conduciendo, no ver el sitio en el mapa.
+ * ----------------------------------------------------------------------- */
+const SVG_MAPA = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 21s-6.5-6.2-6.5-11.2a6.5 6.5 0 0113 0C18.5 14.8 12 21 12 21z" stroke="currentColor" stroke-width="1.7"/><circle cx="12" cy="9.8" r="2.3" stroke="currentColor" stroke-width="1.7"/></svg>';
+const SVG_TEL = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6.5 3.5l3 3-2 2.5a12 12 0 005.5 5.5l2.5-2 3 3-2 3C9 18 6 15 3.5 7.5l3-4z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>';
+
+const esIPhone = () => /iPad|iPhone|iPod/.test(navigator.userAgent)
+  || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+
+function urlComoLlegar(dir) {
+  const q = encodeURIComponent(String(dir || '').trim());
+  return esIPhone()
+    ? 'https://maps.apple.com/?daddr=' + q + '&dirflg=d'
+    : 'https://www.google.com/maps/dir/?api=1&destination=' + q;
+}
+
+/** El botón redondo de la cabecera oscura (obra, cita, cliente). */
+const accionComoLlegar = (dir) => (String(dir || '').trim()
+  ? `<a class="ag-accion" href="${esc(urlComoLlegar(dir))}" target="_blank" rel="noopener"><i>${SVG_MAPA}</i>Cómo llegar</a>`
+  : '');
+const accionLlamar = (tel) => {
+  const t = String(tel || '').replace(/[^\d+]/g, '');
+  return t ? `<a class="ag-accion" href="tel:${esc(t)}"><i>${SVG_TEL}</i>Llamar</a>` : '';
+};
+
 /* --- login --- */
 function vLogin() {
   const avc = (r) => r === 'admin' ? 'background:var(--ambar);color:var(--tinta)' : r === 'jefe' ? 'background:var(--verde-c);color:#fff' : 'background:rgba(255,255,255,.16);color:#fff';
@@ -2980,6 +3007,7 @@ function vObra() {
     <div class="back" data-a="ir" data-v="obras">‹ Obras</div>
     <div style="font:600 27px/1.1 var(--cond)">${esc(o.titulo)}</div>
     <div class="sub" style="color:rgba(255,255,255,.5);margin-top:6px">${esc([o.cliente, o.dir].filter(Boolean).join(' · ') || 'Sin cliente ni dirección')}</div>
+    ${o.dir ? `<div class="ag-acciones" style="justify-content:flex-start;gap:26px">${accionComoLlegar(o.dir)}</div>` : ''}
     ${puedeCrear() ? `<div class="row g8" style="margin-top:16px">
       <button class="pill pill-verde grow" data-a="nuevoParte" data-id="${o.id}" style="padding:14px">Nuevo parte</button>
       <button class="pill grow" data-a="editarObra" data-id="${o.id}" style="padding:14px;background:rgba(255,255,255,.12);color:#fff">Editar</button>
@@ -5253,10 +5281,11 @@ function vVisitaNueva() {
 
 function vVisita() {
   const vv = V.visitaVer;
-  const cab = (t, s) => `<div class="hdr-dark">
+  const cab = (t, s, dir) => `<div class="hdr-dark">
     <div class="volver" data-a="ir" data-v="visitas">‹ Visitas</div>
     <div style="font:600 27px/1.1 var(--cond)">${esc(t)}</div>
     ${s ? `<div class="sub" style="color:rgba(255,255,255,.5);margin-top:6px">${esc(s)}</div>` : ''}
+    ${dir ? `<div class="ag-acciones" style="justify-content:flex-start;gap:26px">${accionComoLlegar(dir)}</div>` : ''}
   </div>`;
   if (!vv) return cab('Visita', 'Cargando…') + '<div class="scroll pad pb-nav sin-marca"></div>';
 
@@ -5324,7 +5353,8 @@ function vVisita() {
       : 'No se pudo copiar a Drive: ' + esc(dr.error || '')}</div>` : v.drive_at ? `<div class="tiny" style="margin-top:10px">✓ Copiada a Drive el ${fechaCorta(v.drive_at)}</div>` : ''}
   </div>`;
 
-  return cab(v.direccion || 'Visita', [cli && cli.nombre, v.poblacion, v.codigo].filter(Boolean).join(' · '))
+  return cab(v.direccion || 'Visita', [cli && cli.nombre, v.poblacion, v.codigo].filter(Boolean).join(' · '),
+    [v.direccion, v.poblacion].filter(Boolean).join(', '))
     + `<div class="scroll pad pb-nav sin-marca">
       ${bloque}
       ${papel}
@@ -6048,8 +6078,8 @@ function vCitaVer() {
     <div style="font:600 27px/1.1 var(--cond);margin-top:8px">${esc(c.nombre || 'Cliente')}</div>
     <div class="sub" style="color:rgba(255,255,255,.5);margin-top:6px">${esc(dir || 'Sin dirección')}</div>
     <div class="ag-acciones">
-      ${tel ? `<a class="ag-accion" href="tel:${esc(tel)}"><i>${icono.tel}</i>Llamar</a>` : ''}
-      ${dir ? `<a class="ag-accion" href="https://www.google.com/maps/search/?api=1&amp;query=${encodeURIComponent(dir)}" target="_blank" rel="noopener"><i>${icono.mapa}</i>Cómo llegar</a>` : ''}
+      ${accionLlamar(tel)}
+      ${accionComoLlegar(dir)}
       ${puedeCitar() && pendiente ? `<div class="ag-accion" data-a="ag_editarCita" data-id="${x.id}"><i>${icono.cal}</i>Cambiar</div>` : ''}
     </div>
   </div>
@@ -6157,6 +6187,10 @@ function vClienteVer() {
     <div class="volver" data-a="ag_volver" data-v="clientes">‹ Clientes</div>
     <div style="font:600 27px/1.1 var(--cond)">${esc(c.nombre)}</div>
     <div class="sub" style="color:rgba(255,255,255,.5);margin-top:6px">${esc([agTipoNombre(c), c.poblacion, c.telefono].filter(Boolean).join(' · '))}</div>
+    ${(c.direccion || c.poblacion) || c.telefono ? `<div class="ag-acciones" style="justify-content:flex-start;gap:26px">
+      ${accionLlamar(c.telefono)}
+      ${accionComoLlegar([c.direccion, c.poblacion].filter(Boolean).join(', '))}
+    </div>` : ''}
     ${puedeCitar() ? `<div class="row g8" style="margin-top:14px">
       <button class="pill pill-verde grow" data-a="ag_nuevaCita" data-id="${c.id}" style="padding:13px">+ Nueva cita</button>
       <button class="pill grow" data-a="ag_editarCliente" data-id="${c.id}" style="padding:13px;background:rgba(255,255,255,.12);color:#fff">Editar</button>
