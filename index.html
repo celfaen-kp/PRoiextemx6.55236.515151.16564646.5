@@ -273,7 +273,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '13.3'; // versión visible de la app (única fuente)
+const APP_VERSION = '13.4'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -467,14 +467,24 @@ function mapObraDeDB(row) {
     email: row.email_cliente || '',
     estado: row.estado || 'En curso',
     creado_en: row.creado_en,
+    // Enlace con el cliente de Teamleader (sql/etapa33). Si esa etapa todavía
+    // no se ha ejecutado, las columnas no vienen y esto queda a null.
+    tlId: row.tl_id || null,
+    tlTipo: row.tl_tipo || null,
   };
 }
+
+// Qué columnas trae hoy `obras` en Supabase. Igual que columnaEmp: sirve para no
+// mandar campos que PostgREST no conoce, que tirarían la fila entera.
+let obraColumnas = {};
+const columnaObra = (k) => Object.prototype.hasOwnProperty.call(obraColumnas, k);
 
 async function sincronizarObras() {
   if (!V.user || sincObras) return;
   sincObras = true;
   try {
     const filas = await Sysefen.db.listarObras();
+    if (filas && filas.length) obraColumnas = filas[0];
     S.obras = (filas || []).map(mapObraDeDB);
   } catch (e) { /* sin conexión / RLS: se mantiene el estado actual */ }
   finally { sincObras = false; }
@@ -705,6 +715,9 @@ const puedeCrear = () => ['admin', 'jefe'].includes(rol());
 // Presupuestos (Ramón): toma datos en casa del cliente. No ficha ni hace partes.
 const esPresupuestos = () => rol() === 'presupuestos';
 const esComercial = () => ['presupuestos', 'jefe', 'admin'].includes(rol());
+// La agenda de Ramón es cosa suya y de Administración: los jefes de obra tienen
+// lo suyo. Va también en las políticas de Supabase (sql/etapa33), no solo aquí.
+const verAgenda = () => ['presupuestos', 'admin'].includes(rol());
 function rolNombre(r) { return r === 'admin' ? 'Administración' : r === 'jefe' ? 'Jefe de obra' : r === 'presupuestos' ? 'Presupuestos' : 'Operario'; }
 // equipo() = empleados ACTIVOS no admin (para operaciones nuevas: fichaje, imputación, partes).
 const equipo = () => S.users.filter((u) => u.rol !== 'admin' && u.rol !== 'presupuestos' && u.activo !== false);
@@ -1858,8 +1871,34 @@ A.confirmarFichaje = async () => {
 };
 
 /* alta de obra (public.obras). La obra NO tiene lista de empleados. */
-A.nuevaObra = () => { V.draft = { cliente: '', dir: '', email: '' }; V.view = 'alta'; render(); };
-A.editarObra = (id) => { const o = obraById(id); if (!o) return; V.draft = { id: o.id, nombre: o.nombre, cliente: o.cliente, dir: o.dir, email: o.email }; V.view = 'alta'; render(); };
+A.nuevaObra = () => { V.draft = { cliente: '', dir: '', email: '' }; V.crmBuscar = { texto: '', busy: false, hecho: false, error: null, filas: [] }; V.view = 'alta'; render(); };
+
+/**
+ * Engancha la obra con un cliente de Teamleader: el nombre queda exactamente
+ * como está en el CRM, y la obra guarda su id. Así, el día que los partes o
+ * las horas tengan que subir al CRM, ya se sabe de quién son.
+ */
+A.obraDelCRM = (tlId, tipo) => {
+  const d = V.draft; if (!d) return;
+  const x = (V.crmBuscar.filas || []).find((f) => String(f.tl_id) === String(tlId));
+  if (!x) return;
+  d.cliente = x.nombre;
+  d.tlId = x.tl_id;
+  d.tlTipo = x.tipo;
+  if (!String(d.dir || '').trim()) d.dir = [x.direccion, x.poblacion].filter(Boolean).join(', ');
+  if (!String(d.email || '').trim() && x.email) d.email = x.email;
+  if (!String(d.nombre || '').trim()) d.nombre = x.nombre;
+  V.crmBuscar = { texto: '', busy: false, hecho: false, error: null, filas: [] };
+  toast('Obra enganchada a ' + x.nombre + ' en Teamleader.');
+  render();
+};
+A.obraSoltarCRM = () => { if (V.draft) { V.draft.tlId = null; V.draft.tlTipo = null; render(); } };
+A.editarObra = (id) => {
+  const o = obraById(id); if (!o) return;
+  V.draft = { id: o.id, nombre: o.nombre, cliente: o.cliente, dir: o.dir, email: o.email, tlId: o.tlId || null, tlTipo: o.tlTipo || null };
+  V.crmBuscar = { texto: '', busy: false, hecho: false, error: null, filas: [] };
+  V.view = 'alta'; render();
+};
 A.guardarObra = async () => {
   const d = V.draft;
   if (!(d.nombre || '').trim() && !(d.cliente || '').trim()) { avisar('Pon al menos el nombre de la obra o el cliente.'); return; }
@@ -1870,6 +1909,9 @@ A.guardarObra = async () => {
     direccion: d.dir || null,
     email_cliente: d.email || null,
   };
+  // Solo si la etapa 33 está ejecutada: si no, PostgREST rechazaría la fila
+  // entera por columnas que no conoce y no se podría guardar nada.
+  if (columnaObra('tl_id')) { campos.tl_id = d.tlId || null; campos.tl_tipo = d.tlTipo || null; }
   try {
     if (d.id) {
       await Sysefen.db.actualizarObra(d.id, campos);
@@ -2775,12 +2817,12 @@ function render() {
   else if (v === 'visitas' && esComercial()) html = vVisitas();
   else if (v === 'visita' && esComercial()) html = vVisita();
   else if (v === 'visitaNueva' && esComercial()) html = vVisitaNueva();
-  else if (v === 'agenda' && esComercial()) html = vAgenda();
-  else if (v === 'clientes' && esComercial()) html = vClientes();
+  else if (v === 'agenda' && verAgenda()) html = vAgenda();
+  else if (v === 'clientes' && verAgenda()) html = vClientes();
   else if (v === 'clienteNuevo' && puedeCitar()) html = vClienteNuevo();
-  else if (v === 'clienteVer' && esComercial()) html = vClienteVer();
+  else if (v === 'clienteVer' && verAgenda()) html = vClienteVer();
   else if (v === 'citaNueva' && puedeCitar()) html = vCitaNueva();
-  else if (v === 'citaVer' && esComercial()) html = vCitaVer();
+  else if (v === 'citaVer' && verAgenda()) html = vCitaVer();
   if (V.user && ['hoy', 'obras', 'obra', 'partes', 'horas', 'imputar', 'empleados', 'ajustes', 'visitas', 'visita', 'agenda', 'clientes', 'clienteVer'].includes(v)) html += nav(v);
   if (!navigator.onLine && V.user) html = '<div class="offline">Sin conexión — todo se guarda en el móvil</div>' + html;
   // Red de seguridad: si un sheet revienta al pintarse (p. ej. depende de
@@ -3007,6 +3049,7 @@ function vObra() {
     <div class="back" data-a="ir" data-v="obras">‹ Obras</div>
     <div style="font:600 27px/1.1 var(--cond)">${esc(o.titulo)}</div>
     <div class="sub" style="color:rgba(255,255,255,.5);margin-top:6px">${esc([o.cliente, o.dir].filter(Boolean).join(' · ') || 'Sin cliente ni dirección')}</div>
+    ${o.tlId ? '<div class="tiny" style="color:var(--verde-c);margin-top:6px">✓ Cliente enlazado con Teamleader</div>' : ''}
     ${o.dir ? `<div class="ag-acciones" style="justify-content:flex-start;gap:26px">${accionComoLlegar(o.dir)}</div>` : ''}
     ${puedeCrear() ? `<div class="row g8" style="margin-top:16px">
       <button class="pill pill-verde grow" data-a="nuevoParte" data-id="${o.id}" style="padding:14px">Nuevo parte</button>
@@ -3167,6 +3210,28 @@ function docsObraHTML(o) {
     <div class="tiny" style="margin-top:8px">Foto o PDF. Solo lo ven jefes y Administración.</div>` : ''}`;
 }
 
+/** El cliente de la obra, buscado en Teamleader en vez de escrito a mano. */
+function obraCRMHTML(d) {
+  if (d.tlId) {
+    return `<div class="card row" style="background:#e3efe5;margin-bottom:6px">
+      <div class="grow"><div class="row g8"><span class="dot" style="width:8px;height:8px;background:var(--verde)"></span>
+        <span class="lbl" style="color:var(--verde-o)">Cliente de Teamleader</span></div>
+        <div style="font:600 15px var(--sans);margin-top:7px">${esc(d.cliente || '')}</div>
+        <div class="sub" style="font-size:12px;margin-top:3px">${d.tlTipo === 'company' ? 'Empresa' : 'Particular'} · la obra queda enganchada a su ficha del CRM.</div></div>
+      <span class="tiny" data-a="obraSoltarCRM" style="cursor:pointer;text-decoration:underline;color:var(--t2)">Soltar</span>
+    </div>`;
+  }
+  return `<div class="card" style="margin-bottom:6px;background:rgba(20,23,15,.03)">
+    <div class="lbl">Buscar el cliente en Teamleader</div>
+    <div class="sub" style="font-size:12px;margin-top:6px">Si lo enganchas, el nombre queda igual que en el CRM y la obra se queda enlazada con su ficha. Opcional.</div>
+    <div class="row g8" style="margin-top:12px">
+      <input class="inp grow" id="crm-buscar" data-f="crmTexto" value="${esc(V.crmBuscar.texto || '')}" placeholder="Nombre, teléfono, email o NIF" autocomplete="off" autocapitalize="off">
+      <button class="pill" data-a="crmBuscarYa" style="padding:13px 16px">Buscar</button>
+    </div>
+    <div id="crm-resultados">${crmResultadosHTML()}</div>
+  </div>`;
+}
+
 function vAlta() {
   const d = V.draft;
   const campos = [
@@ -3183,7 +3248,8 @@ function vAlta() {
   <div class="scroll pad" style="padding-bottom:40px">
     ${campos.map(([k, l, ph]) => `<div style="margin-bottom:14px"><div class="lbl" style="margin-bottom:7px">${l}</div>
       <input class="inp" data-f="${k}" value="${esc(d[k] || '')}" placeholder="${ph}" ${k === 'email' ? 'type="email" inputmode="email" autocapitalize="off"' : ''}></div>`).join('')}
-    <div class="tiny" style="margin-top:6px">La obra no lleva lista de empleados. Cualquier empleado puede fichar y trabajar en cualquier obra; las horas se asignan luego al imputar.</div>
+    ${obraCRMHTML(d)}
+    <div class="tiny" style="margin-top:14px">La obra no lleva lista de empleados. Cualquier empleado puede fichar y trabajar en cualquier obra; las horas se asignan luego al imputar.</div>
   </div>`;
 }
 
@@ -6374,7 +6440,7 @@ function nav(v) {
     : esAdmin()
     ? [['hoy', 'Hoy', '99px'], ['empleados', 'Empleados', '4px'], ['obras', 'Obras', '5px'], ['partes', 'Partes', '3px'], ['horas', 'Horas', '2px'], ['agenda', 'Citas', '6px'], ['ajustes', 'Ajustes', '99px']]
     : puedeCrear()
-    ? [['hoy', 'Hoy', '99px'], ['obras', 'Obras', '5px'], ['partes', 'Partes', '3px'], ['horas', 'Horas', '2px'], ['agenda', 'Citas', '6px'], ['ajustes', 'Ajustes', '99px']]
+    ? [['hoy', 'Hoy', '99px'], ['obras', 'Obras', '5px'], ['partes', 'Partes', '3px'], ['horas', 'Horas', '2px'], ['ajustes', 'Ajustes', '99px']]
     : [['hoy', 'Hoy', '99px'], ['obras', 'Obras', '5px'], ['horas', 'Horas', '2px'], ['ajustes', 'Perfil', '99px']];
   const act = (id) => v === id
     || (id === 'obras' && v === 'obra')
@@ -6980,7 +7046,8 @@ document.addEventListener('click', (e) => {
   if (a === 'cliDriveReintentar') return A.cliDriveReintentar(d.id);
   if (a === 'cliCRMReintentar') return A.cliCRMReintentar(d.id);
   if (a === 'crmBuscarYa') return A.crmBuscarYa();
-  if (a === 'crmTraer') return A.crmTraer(d.id, d.t, d.en);
+  if (a === 'crmTraer') return V.view === 'alta' ? A.obraDelCRM(d.id, d.t) : A.crmTraer(d.id, d.t, d.en);
+  if (a === 'obraSoltarCRM') return A.obraSoltarCRM();
   if (a === 'leadsBuscar') return A.leadsBuscar();
   if (a === 'crmConectar') return A.crmConectar();
   if (a === 'crmEstado') return A.crmEstado();
