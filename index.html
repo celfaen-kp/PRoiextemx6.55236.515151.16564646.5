@@ -170,6 +170,10 @@ a:hover{color:var(--tinta)}
 
 /* Toma de datos (rol presupuestos) */
 .scroll.sin-marca::before{display:none}
+/* Sobre fondo oscuro (login, PIN, parte guardado) la marca de agua va en
+   blanco y solo el sello de la S: el logotipo entero se repetía con el de
+   arriba y, al ser negro, se veía como una mancha. */
+.scroll.marca-clara::before{background-image:url('logo-s-blanco.png');opacity:.13}
 .pie{flex:none;display:flex;gap:10px;padding:12px 20px calc(14px + var(--safe-b));background:var(--papel);border-top:1px solid var(--l1)}
 .pie .btn{padding:16px}
 .pie .btn-gris{flex:0 0 34%}
@@ -269,7 +273,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '12.5'; // versión visible de la app (única fuente)
+const APP_VERSION = '12.6'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -2743,7 +2747,7 @@ document.addEventListener('scroll', (e) => {
 /* --- login --- */
 function vLogin() {
   const avc = (r) => r === 'admin' ? 'background:var(--ambar);color:var(--tinta)' : r === 'jefe' ? 'background:var(--verde-c);color:#fff' : 'background:rgba(255,255,255,.16);color:#fff';
-  return `<div class="scroll" style="background:var(--tinta);padding:calc(56px + var(--safe-t)) 24px calc(30px + var(--safe-b))">
+  return `<div class="scroll marca-clara" style="background:var(--tinta);padding:calc(56px + var(--safe-t)) 24px calc(30px + var(--safe-b))">
     <img src="logo-blanco.png" alt="Sysefen" style="width:196px;max-width:64%;display:block;margin-bottom:20px">
     <div class="sub" style="color:rgba(255,255,255,.5)">Control horario y partes de trabajo</div>
     <div class="lbl" style="color:rgba(255,255,255,.4);margin:30px 0 12px">¿Quién eres?</div>
@@ -2763,7 +2767,7 @@ function vLogin() {
   </div>`;
 }
 function vOtroUsuario() {
-  return `<div class="scroll" style="background:var(--tinta);padding:calc(44px + var(--safe-t)) 24px calc(26px + var(--safe-b))">
+  return `<div class="scroll marca-clara" style="background:var(--tinta);padding:calc(44px + var(--safe-t)) 24px calc(26px + var(--safe-b))">
     <div class="volver" data-a="volverLogin" style="color:rgba(255,255,255,.6)">‹ Volver</div>
     <div style="font:600 27px/1.1 var(--cond);color:#fff;margin-top:18px">Entra con tu nombre</div>
     <div class="sub" style="color:rgba(255,255,255,.5);margin-top:8px">Para la primera vez en este móvil. Después ya sales en la lista.</div>
@@ -2776,7 +2780,7 @@ function vOtroUsuario() {
 function vPin() {
   const u = V.pinUser;
   const teclas = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '', '0', 'del'];
-  return `<div class="scroll" style="background:var(--tinta);padding:calc(44px + var(--safe-t)) 24px calc(26px + var(--safe-b))">
+  return `<div class="scroll marca-clara" style="background:var(--tinta);padding:calc(44px + var(--safe-t)) 24px calc(26px + var(--safe-b))">
     <div class="volver" data-a="volverLogin" style="color:rgba(255,255,255,.6)">‹ Cambiar de usuario</div>
     <div class="col" style="align-items:center;margin-top:22px">
       ${!u.id ? `<div class="av ${V.err ? 'shake' : ''}" style="width:64px;height:64px;font-size:25px;background:rgba(255,255,255,.16);color:#fff">${esc(ini(u.nombre || '?'))}</div>` : avatarHTML(u.id, `width:64px;height:64px;font-size:25px;background:${u.rol === 'admin' ? 'var(--ambar);color:var(--tinta)' : u.rol === 'jefe' ? 'var(--verde-c);color:#fff' : 'rgba(255,255,255,.16);color:#fff'}`, '', V.err ? 'shake' : '')}
@@ -4296,7 +4300,7 @@ function vP3() {
 }
 function vOk() {
   const p = S.partes.find((x) => x.id === V.verParte);
-  return `<div class="scroll" style="background:var(--verde);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px;text-align:center">
+  return `<div class="scroll marca-clara" style="background:var(--verde);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px;text-align:center">
     <img src="logo-blanco.png" alt="" style="width:150px;max-width:52%;margin-bottom:26px">
     <div class="av" style="width:78px;height:78px;background:#fff;color:var(--verde-o);font-size:34px">✓</div>
     <div style="font:600 30px/1.1 var(--cond);color:#fff;margin-top:22px">Parte guardado</div>
