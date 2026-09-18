@@ -273,7 +273,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '13.8'; // versión visible de la app (única fuente)
+const APP_VERSION = '13.9'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -5231,6 +5231,31 @@ async function graciasVisita(id, otraVez) {
 }
 A.graciasVisita = () => { const vv = V.visitaVer; if (vv) graciasVisita(vv.visita.id, true); };
 
+/* ---------- borrar una visita ----------
+ * No estaba en la app: solo se podía llevar por delante borrando al cliente
+ * entero. Para las pruebas, y para una visita empezada por error, hace falta.
+ */
+A.borrarVisita = (id) => {
+  if (!esComercial()) return;
+  const vv = V.visitaVer; if (!vv || vv.visita.id !== id) return;
+  V.sheet = { tipo: 'borrarVisita', id, codigo: vv.visita.codigo || '', fotos: (vv.adjuntos || []).length, busy: false };
+  render();
+};
+A.confirmarBorrarVisita = async () => {
+  const s = V.sheet; if (!s || s.tipo !== 'borrarVisita' || s.busy) return;
+  if (!navigator.onLine) { avisar('Sin conexión: no se ha borrado.'); return; }
+  s.busy = true; render();
+  try {
+    await visitasDB.borrarVisitaConFotos(s.id);
+    V.sheet = null; V.visitaVer = null; V.view = 'visitas';
+    toast('Visita borrada.');
+    A.cargarVisitas(); A.cargarAgenda(); render();
+  } catch (e) {
+    s.busy = false; render();
+    avisar(msgError(e));
+  }
+};
+
 /** Cómo quedó ese correo, en la ficha de la visita. */
 function graciasHTML(v) {
   const g = V.okGracias;
@@ -5594,6 +5619,7 @@ function vVisita() {
           ${miniaturas(f.categoria)}
           ${vForm.resumenHTML(vSchemas.ESQUEMAS[f.categoria], f.datos)}
         </div>`).join('')}
+      ${esComercial() ? `<div style="text-align:center;margin-top:24px"><span class="tiny" data-a="borrarVisita" data-id="${v.id}" style="color:var(--rojo);cursor:pointer;text-decoration:underline">Borrar esta visita</span></div>` : ''}
     </div>`;
 }
 
@@ -6022,18 +6048,31 @@ function agBorrarCliente(id) {
   const c = agCliente(id); if (!c || !puedeCitar()) return;
   V.sheet = {
     tipo: 'borrarCliente', id, nombre: c.nombre || '',
-    visitas: (c.visitas || []).length, citas: (c.citas || []).length, busy: false,
+    visitas: (c.visitas || []).length, citas: (c.citas || []).length,
+    busy: false, comprobando: true,
   };
   render();
+  // Lo que tenga cargado la pantalla puede ser de hace rato: se le pregunta a la
+  // base qué cuelga de él AHORA, que es lo que se va a borrar de verdad.
+  visitasDB.loQueCuelgaDe(id).then((r) => {
+    const s = V.sheet;
+    if (!s || s.tipo !== 'borrarCliente' || s.id !== id) return;
+    s.visitas = r.visitas; s.citas = r.citas; s.comprobando = false;
+    if (!s.visitas) s.seguro = false;
+    render();
+  }).catch(() => {
+    const s = V.sheet;
+    if (s && s.tipo === 'borrarCliente' && s.id === id) { s.comprobando = false; render(); }
+  });
 }
 async function agConfirmarBorrarCliente() {
-  const s = V.sheet; if (!s || s.tipo !== 'borrarCliente' || s.busy) return;
+  const s = V.sheet; if (!s || s.tipo !== 'borrarCliente' || s.busy || s.comprobando) return;
   // Con visitas hay que tocar dos veces: se lleva por delante trabajo hecho.
   if (s.visitas && !s.seguro) { s.seguro = true; render(); return; }
   if (!navigator.onLine) { avisar('Sin conexión: no se ha borrado.'); return; }
   s.busy = true; render();
   try {
-    await visitasDB.borrarCliente(s.id, !!s.visitas);
+    await visitasDB.borrarCliente(s.id);
     if (V.clienteVerId === s.id) { V.clienteVerId = null; V.view = 'clientes'; }
     V.sheet = null;
     toast('Cliente borrado.');
@@ -6844,6 +6883,17 @@ function sheet() {
       </div>
     </div></div>`;
   }
+  if (s.tipo === 'borrarVisita') {
+    return `<div class="sheet"><div>
+      <div style="font:600 23px/1.15 var(--cond)">¿Borrar la visita${s.codigo ? ' ' + esc(s.codigo) : ''}?</div>
+      <div class="sub" style="margin-top:8px">Se borra la ficha entera${s.fotos ? ' y sus ' + s.fotos + (s.fotos === 1 ? ' foto' : ' fotos') : ''}. No se puede recuperar.</div>
+      <div class="sub" style="margin-top:10px;font-size:13px">Lo que ya esté en Drive o en Teamleader se queda allí: esto borra lo de la app.</div>
+      <div class="row g8" style="margin-top:18px">
+        <button class="btn btn-gris" data-a="cerrarSheet" style="border-radius:99px">Cancelar</button>
+        <button class="btn btn-rojo" data-a="confirmarBorrarVisita" style="font-size:14px" ${s.busy ? 'disabled' : ''}>${s.busy ? 'Borrando…' : 'Borrar'}</button>
+      </div>
+    </div></div>`;
+  }
   if (s.tipo === 'borrarCliente') {
     const lleva = [
       s.citas ? (s.citas === 1 ? 'su cita' : 'sus ' + s.citas + ' citas') : '',
@@ -6857,8 +6907,8 @@ function sheet() {
         : 'Tiene trabajo de visita guardado. Si es un cliente de prueba, adelante; si no, míralo dos veces.'}</span></div>` : ''}
       <div class="row g8" style="margin-top:18px">
         <button class="btn btn-gris" data-a="cerrarSheet" style="border-radius:99px">Cancelar</button>
-        <button class="btn btn-rojo" data-a="ag_confirmarBorrarCliente" style="font-size:14px" ${s.busy ? 'disabled' : ''}>${
-          s.busy ? 'Borrando…' : s.visitas && !s.seguro ? 'Borrar de todas formas' : 'Borrar'}</button>
+        <button class="btn btn-rojo" data-a="ag_confirmarBorrarCliente" style="font-size:14px" ${s.busy || s.comprobando ? 'disabled' : ''}>${
+          s.comprobando ? 'Mirando…' : s.busy ? 'Borrando…' : s.visitas && !s.seguro ? 'Borrar de todas formas' : 'Borrar'}</button>
       </div>
     </div></div>`;
   }
@@ -7212,6 +7262,8 @@ document.addEventListener('click', (e) => {
   if (a === 'compartirVisita') return A.compartirVisita();
   if (a === 'visitaDrive') return A.visitaDrive();
   if (a === 'graciasVisita') return A.graciasVisita();
+  if (a === 'borrarVisita') return A.borrarVisita(d.id);
+  if (a === 'confirmarBorrarVisita') return A.confirmarBorrarVisita();
   if (a === 'cliDriveReintentar') return A.cliDriveReintentar(d.id);
   if (a === 'cliCRMReintentar') return A.cliCRMReintentar(d.id);
   if (a === 'crmBuscarYa') return A.crmBuscarYa();

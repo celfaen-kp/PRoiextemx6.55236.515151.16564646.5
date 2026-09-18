@@ -426,29 +426,58 @@ export async function borrarCita(id) {
   return true;
 }
 
+/** Borra una visita con sus fotos. Las fichas y los adjuntos van en cascada. */
+export async function borrarVisitaConFotos(id) {
+  const rutas = await rutasFotos(id);
+  if (rutas.length) {
+    try { await supabase.storage.from('visitas').remove(rutas); } catch (_) { /* huérfana */ }
+  }
+  await borrarVisita(id, true);
+  const queda = unwrap(await supabase.from('visitas').select('id').eq('id', id)) || [];
+  if (queda.length) {
+    throw new Error('No se ha podido borrar: esa visita la hizo otra persona. Pídeselo a Administración.');
+  }
+  return true;
+}
+
+/** Lo que cuelga de un cliente AHORA MISMO, preguntado a la base. */
+export async function loQueCuelgaDe(id) {
+  const visitas = unwrap(await supabase.from('visitas').select('id, codigo, estado').eq('cliente_id', id)) || [];
+  const citas = unwrap(await supabase.from('citas').select('id').eq('cliente_id', id)) || [];
+  return { visitas: visitas.length, citas: citas.length, listaVisitas: visitas };
+}
+
 /**
- * Borra un cliente con todo lo suyo: sus citas (van en cascada) y, si se pide,
- * también sus visitas con sus fichas y sus fotos.
+ * Borra un cliente con todo lo suyo: sus visitas (con fichas y fotos) y sus
+ * citas, que sí van en cascada.
  *
  * Las visitas hay que quitarlas a mano y ANTES: la base no las borra en cascada
  * a propósito, para que nadie se lleve por delante el trabajo de una visita sin
- * enterarse.
+ * enterarse. Se preguntan a la base en este momento, no se fía de lo que
+ * tuviera la pantalla cargado, que puede ser de hace rato.
  */
-export async function borrarCliente(id, conVisitas) {
-  if (conVisitas) {
-    const visitas = unwrap(
-      await supabase.from('visitas').select('id').eq('cliente_id', id)
-    ) || [];
-    for (const v of visitas) {
-      const rutas = await rutasFotos(v.id);
-      if (rutas.length) {
-        // Si alguna foto no se deja borrar, se sigue: peor es dejar el cliente
-        // a medio borrar.
-        try { await supabase.storage.from('visitas').remove(rutas); } catch (_) { /* huérfana */ }
-      }
-      await borrarVisita(v.id, true);
+export async function borrarCliente(id) {
+  const visitas = unwrap(await supabase.from('visitas').select('id').eq('cliente_id', id)) || [];
+  for (const v of visitas) {
+    const rutas = await rutasFotos(v.id);
+    if (rutas.length) {
+      // Si alguna foto no se deja borrar, se sigue: peor es dejar el cliente a
+      // medio borrar que dejarse una foto suelta en el almacén.
+      try { await supabase.storage.from('visitas').remove(rutas); } catch (_) { /* huérfana */ }
     }
+    await borrarVisita(v.id, true);
   }
+
+  // Comprobación: si alguna visita no se dejó borrar (por permisos), el borrado
+  // del cliente fallaría con un error de la base que no dice nada. Mejor
+  // contarlo aquí, que aquí se sabe por qué.
+  const quedan = unwrap(await supabase.from('visitas').select('id').eq('cliente_id', id)) || [];
+  if (quedan.length) {
+    throw new Error('No se han podido borrar ' +
+      (quedan.length === 1 ? 'una visita suya' : quedan.length + ' visitas suyas') +
+      '. Suele ser porque las hizo otra persona: pídeselo a Administración.');
+  }
+
   const { error } = await supabase.from('clientes_cache').delete().eq('id', id);
   if (error) throw error;
   return true;
