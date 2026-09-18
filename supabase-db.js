@@ -453,6 +453,17 @@ export async function subirParteADrive(parteId, pdfBlob) {
   return data;
 }
 
+/**
+ * Qué periodos tiene ya firmados esa persona. Un empleado solo ve los suyos
+ * (política documentos_select), que es justo lo que hace falta aquí.
+ */
+export async function periodosFirmados(empleadoId, periodos) {
+  let q = supabase.from('documentos').select('periodo')
+    .eq('tipo', 'planilla').eq('empleado_id', empleadoId);
+  if (periodos && periodos.length) q = q.in('periodo', periodos);
+  return (unwrap(await q) || []).map((d) => d.periodo);
+}
+
 /* ---------------- cuaderno de fallos (sql/etapa35) ---------------- */
 // Apuntar no puede fallar hacia fuera: si el cuaderno no está o la red se cae,
 // se pierde ese apunte y ya. Lo que no puede es romper lo que estaba haciendo
@@ -671,6 +682,7 @@ export default {
   subirPlanillaADrive,
   subirParteADrive,
   apuntarError, listarErrores, borrarErrores,
+  periodosFirmados,
   listarAusencias, marcarAusencia, quitarAusencia,
   listarFestivos, ponerFestivo, quitarFestivo,
   listarIncidencias, crearIncidencia,

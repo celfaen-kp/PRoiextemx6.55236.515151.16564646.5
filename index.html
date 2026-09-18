@@ -315,7 +315,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '14.3'; // versión visible de la app (única fuente)
+const APP_VERSION = '14.4'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -406,7 +406,7 @@ async function restaurarSesion() {
     }
   } catch (e) { /* sin token y sin red: se queda en login */ }
   render();
-  refrescarDatos().then(render);
+  refrescarDatos().then(() => { render(); comprobarFirmaPendiente(); });
 }
 
 /* ---------- cuaderno de fallos (sql/etapa35) --------------------------------
@@ -952,8 +952,62 @@ function minutosMes(uid_) {
     .reduce((t, f) => t + minEntre(f.entrada, f.salida || new Date().toISOString()), 0);
 }
 
+/* ---------- firmar las horas del mes pasado ---------------------------------
+ * Desde el quinto día hábil, a quien no haya firmado el mes anterior se le
+ * recuerda al entrar. No es por correo: se ve dentro de la app, que es donde
+ * está la firma, y no se quita hasta que firma.
+ *
+ * Presupuestos y Administración quedan fuera: no fichan, así que no tienen
+ * horas que firmar.
+ * ------------------------------------------------------------------------- */
+function quintoDiaHabil(anio, mes) {
+  let habiles = 0;
+  for (let dia = 1; dia <= 15; dia++) {
+    const d = new Date(anio, mes - 1, dia);
+    const finde = d.getDay() === 0 || d.getDay() === 6;
+    const fecha = fechaLocal(d);
+    // Un festivo del calendario común tampoco cuenta como hábil.
+    if (!finde && !festivoDe(fecha)) habiles++;
+    if (habiles === 5) return fecha;
+  }
+  return fechaLocal(new Date(anio, mes - 1, 7));
+}
+
+const mesAnteriorDe = (mes) => {
+  const [a, m] = String(mes).split('-').map(Number);
+  const d = new Date(a, m - 2, 1);
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+};
+
+// Minutos fichados por esa persona en un mes cualquiera ('YYYY-MM').
+const minutosDelMes = (uid_, mes) => S.fichajes
+  .filter((f) => f.userId === uid_ && fechaLocal(f.entrada).slice(0, 7) === mes && f.salida)
+  .reduce((t, f) => t + minEntre(f.entrada, f.salida), 0);
+
+async function comprobarFirmaPendiente() {
+  V.firmaPendiente = null;
+  const u = yo();
+  if (!u || !['operario', 'jefe'].includes(u.rol) || !navigator.onLine) return;
+  const hoy = hoyISO();
+  const [anio, mes] = hoy.slice(0, 7).split('-').map(Number);
+  if (hoy < quintoDiaHabil(anio, mes)) return;      // todavía no toca dar la lata
+  const pasado = mesAnteriorDe(hoy.slice(0, 7));
+  if (minutosDelMes(u.id, pasado) <= 0) return;     // no trabajó: nada que firmar
+  const empId = empIdDeUser(u.id);
+  if (!empId) return;
+  try {
+    const firmados = await Sysefen.db.periodosFirmados(empId, [pasado]);
+    if (!firmados.includes(pasado)) { V.firmaPendiente = pasado; render(); }
+  } catch (e) { registrarError('comprobarFirmaPendiente', e); }
+}
+
 /* ---------- acciones ---------- */
 const A = {};
+A.firmarMesPendiente = () => {
+  const mes = V.firmaPendiente; if (!mes) return;
+  V.planMes = mes;
+  A.abrirPlanilla(V.user.id);
+};
 A.elegirUser = (id) => { V.pinUser = S.users.find((u) => u.id === id); V.pin = ''; V.pinBusy = false; V.err = false; V.view = 'pin'; render(); };
 A.otroUsuario = () => { V.loginNombre = ''; V.view = 'otroUsuario'; render(); };
 A.otroUsuarioSeguir = () => {
@@ -999,7 +1053,7 @@ A.pinTecla = (k) => {
       V.pinUser = null; V.pin = ''; V.pinBusy = false; V.view = 'hoy';
       if (S.bienvenida) { S.bienvenida = false; save(); }
       render();
-      refrescarDatos().then(render);
+      refrescarDatos().then(() => { render(); comprobarFirmaPendiente(); });
     }).catch((err) => {
       V.pinBusy = false; V.err = true; V.pin = '';
       if (err && err.message && !/PIN incorrecto/.test(err.message)) avisar(err.message);
@@ -1708,6 +1762,8 @@ A.repetirFirmaPlanilla = () => { V.planFirma = ''; render(); };
 // además se archiva el PDF en Supabase: planillas/<empleado>/<año>/<archivo>.
 A.imprimirPlanillaFirmada = async () => {
   if (!V.planFirma) { V.sheet = null; render(); imprimirPlanilla(V.planEmp, V.planMes); return; }
+  // Si lo que se firma es justo el mes que se le estaba recordando, fuera aviso.
+  if (V.firmaPendiente && V.planMes === V.firmaPendiente && (V.planRango || 'mes') === 'mes') V.firmaPendiente = null;
   const userId = V.planEmp, mes = V.planMes, rango = V.planRango || 'mes';
   const anio = mes.slice(0, 4);
   const doc = rango === 'mes' ? { periodo: mes, carpeta: anio, nombre: 'planilla-' + mes + '.pdf' }
@@ -3169,6 +3225,12 @@ function vHoy() {
     ${S.opts.gps ? `<div class="row" style="justify-content:center;gap:7px;margin-top:12px"><span class="dot" style="width:6px;height:6px;background:rgba(255,255,255,.6)"></span><span class="tiny" style="color:rgba(255,255,255,.5)">Ubicación registrada al fichar</span></div>` : ''}
   </div>
   <div class="hoja"><div class="hoja-contenido">
+    ${V.firmaPendiente ? `<div class="card" data-a="firmarMesPendiente" style="margin-bottom:12px;cursor:pointer;box-shadow:0 0 0 1.5px var(--ambar),var(--sh)">
+      <div class="row g8"><span class="dot" style="width:8px;height:8px;background:var(--ambar)"></span><span class="lbl" style="color:var(--ambar-o)">Te faltan por firmar</span></div>
+      <div class="h2" style="margin-top:9px">Las horas de ${esc(mesLargo(V.firmaPendiente))}</div>
+      <div class="sub" style="margin-top:6px;font-size:13px">Repásalas y fírmalas: es tu registro de jornada y la empresa tiene que guardarlo.</div>
+      <button class="pill pill-verde" data-a="firmarMesPendiente" style="margin-top:12px;padding:11px;width:100%;text-align:center">Ver y firmar</button>
+    </div>` : ''}
     ${S.obras.length ? '' : `<div class="card"><div class="h2">Todavía no hay obras</div><div class="sub" style="margin-top:6px">Se pueden crear más adelante: para fichar no hacen falta.</div>
       ${puedeCrear() ? '<button class="btn btn-verde" data-a="nuevaObra" style="margin-top:14px">Crear obra</button>' : ''}</div>`}
 
@@ -7583,6 +7645,7 @@ document.addEventListener('click', (e) => {
   if (a === 'abrirImputEmp') { e.stopPropagation(); return A.abrirImputEmp(d.id); }
   if (a === 'abrirRevisarImp') return A.abrirRevisarImp();
   if (a === 'abrirErrores') return A.abrirErrores();
+  if (a === 'firmarMesPendiente') return A.firmarMesPendiente();
   if (a === 'borrarErrores') return A.borrarErrores();
   if (a === 'revEmp') return A.revEmp(d.id);
   if (a === 'revMes') return A.revMes(d.n);
