@@ -174,6 +174,44 @@ a:hover{color:var(--tinta)}
    blanco y solo el sello de la S: el logotipo entero se repetía con el de
    arriba y, al ser negro, se veía como una mancha. */
 .scroll.marca-clara::before{background-image:url('logo-s-blanco.png');opacity:.3}
+
+/* --- Portada -------------------------------------------------------------
+   Foto de fondo fija (no se mueve al desplazar la lista) y un velo oscuro
+   encima: sin él, los nombres blancos se pierden sobre el cielo claro. */
+.login-fondo{position:relative;background:#0d1a12;isolation:isolate}
+.login-fondo::before{
+  content:'';position:fixed;inset:0;z-index:-2;
+  background:url('fondo-login.jpg') center/cover no-repeat;
+}
+.login-fondo::after{
+  content:'';position:fixed;inset:0;z-index:-1;
+  background:linear-gradient(180deg,rgba(8,16,11,.78) 0%,rgba(8,16,11,.55) 28%,rgba(8,16,11,.72) 62%,rgba(8,16,11,.92) 100%);
+}
+.login-marca{position:relative;z-index:1}
+.login-lema{font:400 15px/1.3 var(--script);color:var(--verde-c);margin-top:8px}
+.login-claim{
+  position:absolute;top:calc(52px + var(--safe-t));right:22px;text-align:right;
+  font:500 11px/1.65 var(--mono);letter-spacing:.18em;text-transform:uppercase;
+  color:rgba(255,255,255,.72);
+}
+.login-claim i{display:block;width:44px;height:2px;background:var(--verde-c);margin:10px 0 0 auto}
+/* Tarjetas de cristal: se ve la foto detrás, pero el nombre se lee. */
+.login-tarjeta{
+  padding:14px;border-radius:18px;cursor:pointer;
+  background:rgba(14,26,18,.52);border:1px solid rgba(255,255,255,.12);
+  backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+}
+.login-tarjeta:active{background:rgba(14,26,18,.72)}
+.login-pie{display:flex;align-items:flex-end;margin-top:26px;gap:12px}
+.login-pie-txt{display:flex;align-items:center;gap:9px;font:500 9.5px/1.5 var(--mono);letter-spacing:.14em;text-transform:uppercase;color:rgba(255,255,255,.5)}
+.login-pie-txt.der{text-align:right}
+.login-pie-txt i{color:var(--verde-c);flex:none}
+.login-tuerca{
+  position:absolute;right:18px;bottom:calc(14px + var(--safe-b));
+  width:38px;height:38px;border-radius:99px;display:flex;align-items:center;justify-content:center;
+  color:rgba(255,255,255,.38);cursor:pointer;
+}
+.login-tuerca:active{color:#fff;background:rgba(255,255,255,.12)}
 .pie{flex:none;display:flex;gap:10px;padding:12px 20px calc(14px + var(--safe-b));background:var(--papel);border-top:1px solid var(--l1)}
 .pie .btn{padding:16px}
 .pie .btn-gris{flex:0 0 34%}
@@ -273,7 +311,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '13.9'; // versión visible de la app (única fuente)
+const APP_VERSION = '14.0'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -849,6 +887,13 @@ A.otroUsuarioSeguir = () => {
   V.pinUser = { id: null, nombre, email }; V.pin = ''; V.pinBusy = false; V.err = false; V.view = 'pin'; render();
 };
 A.volverLogin = () => { V.pinUser = null; V.pin = ''; V.pinBusy = false; V.err = false; V.view = 'login'; render(); };
+// La tuerca de la portada. Administración no sale en la lista para que no la
+// tenga a mano cualquiera; el PIN es el mismo de siempre.
+A.entrarAdmin = () => {
+  const u = S.users.find((x) => x.rol === 'admin' && x.activo !== false);
+  if (!u) { avisar('No hay cuenta de Administración en este móvil.'); return; }
+  A.elegirUser(u.id);
+};
 A.pinTecla = (k) => {
   if (V.pinBusy) return;
   if (k === 'del') { V.pin = V.pin.slice(0, -1); return render(); }
@@ -2902,25 +2947,44 @@ const accionLlamar = (tel) => {
 };
 
 /* --- login --- */
+// La tuerca de abajo a la derecha: Administración no sale en la lista, para que
+// no la tenga a mano cualquiera que coja un móvil. Lleva al mismo PIN de siempre.
+const SVG_TUERCA = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="3.2" stroke="currentColor" stroke-width="1.6"/><path d="M12 2.8v2.4M12 18.8v2.4M21.2 12h-2.4M5.2 12H2.8M18.5 5.5l-1.7 1.7M7.2 16.8l-1.7 1.7M18.5 18.5l-1.7-1.7M7.2 7.2L5.5 5.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>';
+const SVG_HOJA = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M20 4s-1 11-8.5 11S4 10 4 10s8-1 11-6z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M4 20c3-6 7-9 12-11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>';
+
 function vLogin() {
-  const avc = (r) => r === 'admin' ? 'background:var(--ambar);color:var(--tinta)' : r === 'jefe' ? 'background:var(--verde-c);color:#fff' : 'background:rgba(255,255,255,.16);color:#fff';
-  return `<div class="scroll marca-clara" style="background:var(--tinta);padding:calc(56px + var(--safe-t)) 24px calc(30px + var(--safe-b))">
-    <img src="logo-blanco.png" alt="Sysefen" style="width:196px;max-width:64%;display:block;margin-bottom:20px">
-    <div class="sub" style="color:rgba(255,255,255,.5)">Control horario y partes de trabajo</div>
-    <div class="lbl" style="color:rgba(255,255,255,.4);margin:30px 0 12px">¿Quién eres?</div>
+  const avc = (r) => r === 'jefe' ? 'background:var(--verde-c);color:#fff' : 'background:rgba(255,255,255,.18);color:#fff';
+  // Administración fuera de la lista: se entra por la tuerca.
+  const gente = S.users.filter((u) => u.activo !== false && u.rol !== 'admin');
+  return `<div class="scroll login-fondo" style="padding:calc(50px + var(--safe-t)) 22px calc(22px + var(--safe-b))">
+    <div class="login-marca">
+      <img src="logo-blanco.png" alt="Sysefen" style="width:230px;max-width:70%;display:block">
+      <div class="sub" style="color:rgba(255,255,255,.62);margin-top:10px;letter-spacing:.08em">CRM</div>
+      <div class="login-lema">Hoy construimos un futuro más limpio</div>
+    </div>
+    <div class="login-claim">Personas<br>Proyectos<br>Energía<br>Futuro<i></i></div>
+
+    <div class="lbl" style="color:rgba(255,255,255,.62);margin:34px 0 12px">¿Quién eres?</div>
     <div class="col g8">
-      ${S.users.filter((u) => u.activo !== false).map((u) => `<div class="row" data-a="elegirUser" data-id="${u.id}" style="padding:14px;border-radius:16px;background:rgba(255,255,255,.07);cursor:pointer">
+      ${gente.map((u) => `<div class="row login-tarjeta" data-a="elegirUser" data-id="${u.id}">
         ${avatarHTML(u.id, `width:42px;height:42px;font-size:17px;${avc(u.rol)}`)}
         <div class="grow">
           <div style="font:600 17px/1.1 var(--sans);color:#fff">${esc(u.nombre)}</div>
-          <div style="font:400 12px/1 var(--mono);letter-spacing:.06em;text-transform:uppercase;color:rgba(255,255,255,.45);margin-top:5px">${rolNombre(u.rol)}</div>
+          <div style="font:400 12px/1 var(--mono);letter-spacing:.06em;text-transform:uppercase;color:rgba(255,255,255,.55);margin-top:5px">${rolNombre(u.rol)}</div>
         </div>
-        <div style="font:400 20px/1 var(--sans);color:rgba(255,255,255,.35)">›</div>
+        <div style="font:400 20px/1 var(--sans);color:rgba(255,255,255,.45)">›</div>
       </div>`).join('')}
     </div>
-    <div data-a="otroUsuario" style="margin-top:12px;padding:14px;border-radius:16px;border:1px dashed rgba(255,255,255,.22);text-align:center;font:500 14px/1.3 var(--sans);color:rgba(255,255,255,.7);cursor:pointer">¿No sales en la lista? Entra con tu nombre</div>
-    <div style="text-align:center;margin-top:26px"><span class="tiny" data-a="instalar" style="color:rgba(255,255,255,.4);cursor:pointer;text-decoration:underline">Instalar en la pantalla de inicio</span></div>
-    <div class="tiny" style="text-align:center;margin-top:14px;color:rgba(255,255,255,.32)">Versión ${APP_VERSION}</div>
+
+    <div style="text-align:center;margin-top:24px"><span class="tiny" data-a="instalar" style="color:rgba(255,255,255,.55);cursor:pointer;text-decoration:underline">Instalar en la pantalla de inicio</span></div>
+    <div class="tiny" style="text-align:center;margin-top:12px;color:rgba(255,255,255,.42)">Versión ${APP_VERSION}</div>
+
+    <div class="login-pie">
+      <div class="login-pie-txt"><i>${SVG_HOJA}</i><span>Energía<br>que impulsa<br>personas</span></div>
+      <div class="grow"></div>
+      <div class="login-pie-txt der"><span>Eficiencia<br>hoy, mañana<br>y siempre</span></div>
+    </div>
+    <div class="login-tuerca" data-a="entrarAdmin" aria-label="Ajustes">${SVG_TUERCA}</div>
   </div>`;
 }
 function vOtroUsuario() {
@@ -7276,6 +7340,7 @@ document.addEventListener('click', (e) => {
   if (a === 'elegirUser') return A.elegirUser(d.id);
   if (a === 'pinTecla') return A.pinTecla(d.k);
   if (a === 'volverLogin') return A.volverLogin();
+  if (a === 'entrarAdmin') return A.entrarAdmin();
   if (a === 'otroUsuario') return A.otroUsuario();
   if (a === 'otroUsuarioSeguir') return A.otroUsuarioSeguir();
   if (a === 'ir') return A.ir(d.v);
