@@ -177,22 +177,26 @@ a:hover{color:var(--tinta)}
 
 /* --- Portada -------------------------------------------------------------
    Foto de fondo fija (no se mueve al desplazar la lista) y un velo oscuro
-   encima: sin él, los nombres blancos se pierden sobre el cielo claro. */
+   encima: sin él, los nombres blancos se pierden sobre el cielo claro.
+   El texto de arriba cae justo sobre el sol de la foto, que es la zona más
+   clara, así que además lleva sombra propia. */
 .login-fondo{position:relative;background:#0d1a12;isolation:isolate}
 .login-fondo::before{
   content:'';position:fixed;inset:0;z-index:-2;
+  width:auto;height:auto;margin:0;opacity:1;
   background:url('fondo-login.jpg') center/cover no-repeat;
 }
+@media (max-width:520px){ .login-fondo::before{height:auto;margin:0} }
 .login-fondo::after{
   content:'';position:fixed;inset:0;z-index:-1;
-  background:linear-gradient(180deg,rgba(8,16,11,.78) 0%,rgba(8,16,11,.55) 28%,rgba(8,16,11,.72) 62%,rgba(8,16,11,.92) 100%);
+  background:linear-gradient(180deg,rgba(8,16,11,.84) 0%,rgba(8,16,11,.72) 34%,rgba(8,16,11,.80) 64%,rgba(8,16,11,.95) 100%);
 }
 .login-marca{position:relative;z-index:1}
-.login-lema{font:400 15px/1.3 var(--script);color:var(--verde-c);margin-top:8px}
+.login-lema{font:400 16px/1.35 var(--script);color:#9fd8ab;margin-top:8px;text-shadow:0 1px 8px rgba(0,0,0,.75)}
 .login-claim{
   position:absolute;top:calc(52px + var(--safe-t));right:22px;text-align:right;
   font:500 11px/1.65 var(--mono);letter-spacing:.18em;text-transform:uppercase;
-  color:rgba(255,255,255,.72);
+  color:rgba(255,255,255,.82);text-shadow:0 1px 8px rgba(0,0,0,.7);
 }
 .login-claim i{display:block;width:44px;height:2px;background:var(--verde-c);margin:10px 0 0 auto}
 /* Tarjetas de cristal: se ve la foto detrás, pero el nombre se lee. */
@@ -311,7 +315,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '14.0'; // versión visible de la app (única fuente)
+const APP_VERSION = '14.1'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -2959,7 +2963,7 @@ function vLogin() {
   return `<div class="scroll login-fondo" style="padding:calc(50px + var(--safe-t)) 22px calc(22px + var(--safe-b))">
     <div class="login-marca">
       <img src="logo-blanco.png" alt="Sysefen" style="width:230px;max-width:70%;display:block">
-      <div class="sub" style="color:rgba(255,255,255,.62);margin-top:10px;letter-spacing:.08em">CRM</div>
+      <div class="sub" style="color:rgba(255,255,255,.8);margin-top:10px;letter-spacing:.14em;text-shadow:0 1px 8px rgba(0,0,0,.7)">CRM</div>
       <div class="login-lema">Hoy construimos un futuro más limpio</div>
     </div>
     <div class="login-claim">Personas<br>Proyectos<br>Energía<br>Futuro<i></i></div>
