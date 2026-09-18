@@ -453,6 +453,29 @@ export async function subirParteADrive(parteId, pdfBlob) {
   return data;
 }
 
+/* ---------------- cuaderno de fallos (sql/etapa35) ---------------- */
+// Apuntar no puede fallar hacia fuera: si el cuaderno no está o la red se cae,
+// se pierde ese apunte y ya. Lo que no puede es romper lo que estaba haciendo
+// el usuario por intentar registrar un error.
+
+export async function apuntarError(fila) {
+  const { error } = await supabase.from('errores').insert(fila);
+  if (error) throw error;
+  return true;
+}
+
+export async function listarErrores(limite = 150) {
+  return unwrap(await supabase.from('errores').select('*')
+    .order('creado_en', { ascending: false }).limit(limite)) || [];
+}
+
+export async function borrarErrores() {
+  // Sin filtro PostgREST se niega a borrar; este siempre se cumple.
+  const { error } = await supabase.from('errores').delete().gt('id', 0);
+  if (error) throw error;
+  return true;
+}
+
 /* ---------------- ausencias (vacaciones, festivos, bajas) ---------------- */
 // sql/etapa17. Marcan un día completo sin trabajo. No tocan los fichajes: un
 // día puede tener las dos cosas (media jornada y luego permiso), y la planilla
@@ -647,6 +670,7 @@ export default {
   guardarPlanillaFirmada,
   subirPlanillaADrive,
   subirParteADrive,
+  apuntarError, listarErrores, borrarErrores,
   listarAusencias, marcarAusencia, quitarAusencia,
   listarFestivos, ponerFestivo, quitarFestivo,
   listarIncidencias, crearIncidencia,

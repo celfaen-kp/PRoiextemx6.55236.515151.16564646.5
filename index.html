@@ -315,7 +315,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '14.2'; // versión visible de la app (única fuente)
+const APP_VERSION = '14.3'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -407,6 +407,42 @@ async function restaurarSesion() {
   } catch (e) { /* sin token y sin red: se queda en login */ }
   render();
   refrescarDatos().then(render);
+}
+
+/* ---------- cuaderno de fallos (sql/etapa35) --------------------------------
+ * La app se calla muchos errores a propósito: en un sótano sin cobertura, dar
+ * la lata cada diez segundos sería peor. Pero ese silencio también se traga los
+ * fallos de verdad, y entonces la app enseña datos viejos sin que nadie se
+ * entere. Aquí se apuntan, para que Administración pueda mirarlos.
+ *
+ * Reglas de la casa:
+ *   · Nunca estorba: si apuntar falla, se pierde el apunte y punto.
+ *   · Sin cobertura no se apunta: eso no es un fallo, es un sótano.
+ *   · Uno por sitio y sesión: si algo falla en bucle, no se llena la tabla.
+ * ------------------------------------------------------------------------- */
+const fallosVistos = new Set();
+
+function registrarError(donde, e) {
+  try {
+    if (!navigator.onLine || !V.user) return;
+    const mensaje = String((e && e.message) || e || 'error').slice(0, 400);
+    // Lo que de verdad es falta de red no interesa: ya se ve en pantalla.
+    if (/failed to fetch|networkerror|load failed|network request failed/i.test(mensaje)) return;
+    const clave = donde + '|' + mensaje;
+    if (fallosVistos.has(clave)) return;
+    fallosVistos.add(clave);
+    const u = yo() || {};
+    Sysefen.db.apuntarError({
+      empleado_id: empIdDeUser(V.user.id) || null,
+      nombre: u.nombre || null,
+      rol: u.rol || null,
+      vista: V.view || null,
+      donde,
+      mensaje,
+      version: APP_VERSION,
+      agente: String(navigator.userAgent || '').slice(0, 200),
+    }).catch(() => { /* si falta la etapa 35, se pierde el apunte */ });
+  } catch (_) { /* apuntar un fallo no puede provocar otro */ }
 }
 
 /* ---------- hasta dónde miramos atrás ---------------------------------------
@@ -523,7 +559,7 @@ async function sincronizarFichajes() {
     if (!Object.keys(empIdPorNombre).length) await cargarMapaEmpleados();
     const filas = await Sysefen.db.listarFichajes(new Date(desdeCargado() + 'T00:00:00').toISOString());
     S.fichajes = filas.map(mapFichajeDeDB).filter((f) => f.userId);
-  } catch (e) { /* sin conexión / RLS: se mantiene el estado actual */ }
+  } catch (e) { registrarError('sincronizarFichajes', e); /* se mantiene lo que haya */ }
   finally { sincronizando = false; }
 }
 
@@ -563,7 +599,7 @@ async function sincronizarObras() {
     const filas = await Sysefen.db.listarObras();
     if (filas && filas.length) obraColumnas = filas[0];
     S.obras = (filas || []).map(mapObraDeDB);
-  } catch (e) { /* sin conexión / RLS: se mantiene el estado actual */ }
+  } catch (e) { registrarError('sincronizarObras', e); /* se mantiene lo que haya */ }
   finally { sincObras = false; }
 }
 
@@ -619,7 +655,7 @@ async function sincronizarImputaciones() {
       puedeCrear() ? { desde: desdeCargado() } : { empleadoId: miEmpId(), desde: desdeCargado() }
     );
     S.imputaciones = (filas || []).map(mapImputacionDeDB).filter((i) => i.userId);
-  } catch (e) { /* sin conexión / RLS: se mantiene lo que haya */ }
+  } catch (e) { registrarError('sincronizarImputaciones', e); /* se mantiene lo que haya */ }
   finally { sincImp = false; }
 }
 
@@ -695,7 +731,7 @@ async function sincronizarPartes() {
     S.partes = (filas || [])
       .map((row) => mapParteDeDB(row, horasPorParte[row.id], matsPorParte[row.id], adjPorParte[row.id]))
       .sort((a, b) => String(b.creado || '').localeCompare(String(a.creado || '')));
-  } catch (e) { /* sin conexión / RLS: se mantiene lo que haya */ }
+  } catch (e) { registrarError('sincronizarPartes', e); /* se mantiene lo que haya */ }
   finally { sincPartes = false; }
 }
 
@@ -708,7 +744,7 @@ async function sincronizarAusencias() {
       fecha: a.fecha, tipo: a.tipo, nota: a.nota,
     })).filter((a) => a.userId);
     S.festivos = (await Sysefen.db.listarFestivos()) || [];
-  } catch (e) { /* si falta la etapa17, la app sigue sin vacaciones ni festivos */ }
+  } catch (e) { registrarError('sincronizarAusencias', e); /* sigue sin vacaciones */ }
 }
 const refrescarDatos = () => esPresupuestos() ? Promise.all([cargarAvatares()]) : Promise.all([sincronizarFichajes(), sincronizarObras(), sincronizarImputaciones(), sincronizarPartes(), cargarAvatares(), sincronizarAusencias()]);
 
@@ -1091,6 +1127,36 @@ A.volverImputar = () => {
  * como se guardaron, y desde cualquier día se entra a corregirlo.
  * ------------------------------------------------------------------------- */
 Object.assign(V, { revEmp: null, revMes: null });
+
+/* ---------- Administración · ver el cuaderno de fallos ---------- */
+Object.assign(V, { errores: { filas: [], cargando: false, error: null, borrando: false } });
+
+A.abrirErrores = async () => {
+  if (!esAdmin()) return;
+  V.view = 'errores'; scrollMemo.errores = 0;
+  V.errores = { filas: V.errores.filas, cargando: true, error: null, borrando: false };
+  render();
+  try {
+    V.errores.filas = await Sysefen.db.listarErrores();
+  } catch (e) {
+    const m = msgError(e);
+    V.errores.error = /does not exist|schema cache|PGRST20[05]/i.test(m)
+      ? 'Falta ejecutar sql/etapa35_errores.sql en Supabase.' : m;
+  }
+  V.errores.cargando = false; render();
+};
+
+A.borrarErrores = async () => {
+  if (!esAdmin() || V.errores.borrando) return;
+  if (!V.errores.confirmar) { V.errores.confirmar = true; render(); return; }
+  V.errores.confirmar = false; V.errores.borrando = true; render();
+  try {
+    await Sysefen.db.borrarErrores();
+    V.errores.filas = [];
+    toast('Cuaderno vaciado.');
+  } catch (e) { avisar('No se pudo vaciar: ' + msgError(e)); }
+  V.errores.borrando = false; render();
+};
 
 A.abrirRevisarImp = () => {
   if (!esAdmin()) return;
@@ -2947,6 +3013,7 @@ function render() {
   else if (v === 'horas') html = vHoras();
   else if (v === 'resumenImp') html = vResumenImp();
   else if (v === 'revisarImp' && esAdmin()) html = vRevisarImp();
+  else if (v === 'errores' && esAdmin()) html = vErrores();
   else if (v === 'imputar' && puedeCrear()) html = vImputar();
   else if (v === 'imputarGrupo' && puedeCrear()) html = vImputarGrupo();
   else if (v === 'imputarEmp' && puedeCrear()) html = vImputarEmpleado();
@@ -2968,7 +3035,7 @@ function render() {
   else if (v === 'clienteVer' && verAgenda()) html = vClienteVer();
   else if (v === 'citaNueva' && puedeCitar()) html = vCitaNueva();
   else if (v === 'citaVer' && verAgenda()) html = vCitaVer();
-  if (V.user && ['hoy', 'obras', 'obra', 'partes', 'horas', 'imputar', 'empleados', 'ajustes', 'visitas', 'visita', 'agenda', 'clientes', 'clienteVer', 'revisarImp'].includes(v)) html += nav(v);
+  if (V.user && ['hoy', 'obras', 'obra', 'partes', 'horas', 'imputar', 'empleados', 'ajustes', 'visitas', 'visita', 'agenda', 'clientes', 'clienteVer', 'revisarImp', 'errores'].includes(v)) html += nav(v);
   if (!navigator.onLine && V.user) html = '<div class="offline">Sin conexión — todo se guarda en el móvil</div>' + html;
   // Red de seguridad: si un sheet revienta al pintarse (p. ej. depende de
   // datos que cambiaron justo antes, como el usuario tras salir), que se
@@ -3726,6 +3793,41 @@ const RESUMEN_RANGOS = [['hoy', 'Hoy'], ['semana', 'Semana'], ['mes', 'Mes'], ['
 // La barra va SIEMPRE en el orden de la paleta, no por horas: solo en ese orden
 // los vecinos se distinguen con daltonismo (el verde de 'sysefen' junto al
 // naranja de despacho no). La lista de abajo sí va por horas: lleva el nombre.
+function vErrores() {
+  const e = V.errores;
+  const cuando = (iso) => {
+    const d = new Date(iso);
+    return fechaCorta(iso) + ' · ' + String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+  };
+  return `<div class="hdr">
+    <div class="row" style="justify-content:space-between">
+      <div class="h1" style="font-size:24px">Fallos</div>
+      <div data-a="ir" data-v="ajustes" class="volver der">Cerrar</div>
+    </div>
+    <div class="sub" style="margin-top:8px">${e.cargando ? 'Mirando…'
+      : e.filas.length ? e.filas.length + (e.filas.length === 1 ? ' apunte' : ' apuntes') + ' · lo de hace más de 90 días se borra solo'
+      : 'Nada apuntado'}</div>
+  </div>
+  <div class="scroll pad pb-nav">
+    ${e.error ? `<div class="card" style="background:var(--rojo-cl);margin-bottom:14px">
+      <div style="font:600 14px var(--sans);color:var(--rojo)">${esc(e.error)}</div></div>` : ''}
+    ${!e.cargando && !e.filas.length && !e.error ? `<div class="card">
+      <div class="h2">Todo en orden</div>
+      <div class="sub" style="margin-top:6px">Aquí aparece lo que la app se calla para no dar la lata: una consulta que falla, algo que no sube. Si está vacío, es buena señal.</div>
+    </div>` : ''}
+    ${e.filas.map((f) => `<div class="card" style="margin-bottom:9px">
+      <div class="row" style="justify-content:space-between;align-items:baseline;gap:10px">
+        <div class="lbl" style="color:var(--rojo)">${esc(f.donde || '')}</div>
+        <span class="tiny">${esc(cuando(f.creado_en))}</span>
+      </div>
+      <div style="font:400 13px/1.45 var(--sans);margin-top:8px;word-break:break-word">${esc(f.mensaje || '')}</div>
+      <div class="tiny" style="margin-top:8px;opacity:.75">${esc([f.nombre, f.vista, f.version ? 'v' + f.version : ''].filter(Boolean).join(' · '))}</div>
+    </div>`).join('')}
+    ${e.filas.length ? `<button class="pill ${e.confirmar ? 'pill-rojo' : ''}" data-a="borrarErrores" style="margin-top:12px;padding:12px;width:100%;text-align:center" ${e.borrando ? 'disabled' : ''}>${
+      e.borrando ? 'Vaciando…' : e.confirmar ? '¿Seguro? Toca otra vez' : 'Vaciar el cuaderno'}</button>` : ''}
+  </div>`;
+}
+
 function vRevisarImp() {
   const u = userById(V.revEmp);
   const mes = V.revMes || hoyISO().slice(0, 7);
@@ -4410,7 +4512,13 @@ function vAjustes() {
       </div>`).join('')}
     </div>` : ''}
 
-    ${esAdmin() ? `<div class="card row" data-a="ir" data-v="empleados" style="margin-top:14px;cursor:pointer">
+    ${esAdmin() ? `<div class="card row" data-a="abrirErrores" style="margin-top:14px;cursor:pointer">
+      <div class="grow"><div style="font:600 15px var(--sans)">Fallos</div>
+      <div class="sub" style="font-size:12px;margin-top:4px">Lo que la app se calla para no dar la lata: consultas que fallan, cosas que no suben. Si está vacío, bien.</div></div>
+      <div style="font:400 20px/1 var(--sans);color:var(--t3)">›</div>
+    </div>
+
+    <div class="card row" data-a="ir" data-v="empleados" style="margin-top:14px;cursor:pointer">
       <div class="grow"><div style="font:600 15px var(--sans)">Empleados</div>
       <div class="sub" style="font-size:12px;margin-top:4px">Alta, edición, rol, activar/desactivar y planilla de horas.</div></div>
       <div style="font:400 20px/1 var(--sans);color:var(--t3)">›</div>
@@ -6782,6 +6890,7 @@ function nav(v) {
   const act = (id) => v === id
     || (id === 'obras' && v === 'obra')
     || (id === 'horas' && ['imputar', 'revisarImp', 'resumenImp'].includes(v))
+    || (id === 'ajustes' && v === 'errores')
     || (id === 'empleados' && (v === 'empleado' || v === 'planilla'))
     || (id === 'visitas' && v === 'visita')
     || (id === 'agenda' && (v === 'citaVer' || (!esPresupuestos() && (v === 'clientes' || v === 'clienteVer'))))
@@ -7473,6 +7582,8 @@ document.addEventListener('click', (e) => {
   if (a === 'impGrupoGuardar') return A.impGrupoGuardar();
   if (a === 'abrirImputEmp') { e.stopPropagation(); return A.abrirImputEmp(d.id); }
   if (a === 'abrirRevisarImp') return A.abrirRevisarImp();
+  if (a === 'abrirErrores') return A.abrirErrores();
+  if (a === 'borrarErrores') return A.borrarErrores();
   if (a === 'revEmp') return A.revEmp(d.id);
   if (a === 'revMes') return A.revMes(d.n);
   if (a === 'revDia') return A.revDia(d.f);
