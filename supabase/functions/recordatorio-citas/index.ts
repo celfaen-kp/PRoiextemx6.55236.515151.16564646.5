@@ -186,10 +186,12 @@ function correoClienteHTML(d: any) {
     </table>
     ${d.calendario ? `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin-top:20px;">
       <tr><td style="border:1.5px solid ${COLOR.verde};border-radius:99px;">
-        <a href="${escHtml(d.calendario)}" style="display:inline-block;padding:12px 24px;font-family:${FUENTE};font-size:13px;font-weight:700;letter-spacing:.5px;color:${COLOR.verde};text-decoration:none;">Añadir a mi calendario</a>
+        <a href="${escHtml(d.calendario)}" style="display:inline-block;padding:12px 24px;font-family:${FUENTE};font-size:13px;font-weight:700;letter-spacing:.5px;color:${COLOR.verde};text-decoration:none;">${d.calendarioQuitar ? 'Quitarla de mi calendario' : 'Añadir a mi calendario'}</a>
       </td></tr>
     </table>
-    <p style="margin:10px 0 0;font-size:12px;line-height:18px;color:${COLOR.suave};">Se guarda en el calendario de su propio móvil. También puede tocar el archivo adjunto de este correo.</p>` : ''}
+    <p style="margin:10px 0 0;font-size:12px;line-height:18px;color:${COLOR.suave};">${d.calendarioQuitar
+      ? 'Se quita del calendario de su propio móvil.'
+      : 'Se guarda en el calendario de su propio móvil.'}</p>` : ''}
     <p style="margin:22px 0 0;font-size:14px;line-height:22px;color:${COLOR.suave};">${d.anulada
       ? 'Si desea concertar una nueva cita, puede llamarnos al'
       : 'Si usted lo desea, puede cambiar su cita contactando con nosotros en el'} <a href="${TEL_LINK}" style="color:${COLOR.verde};text-decoration:none;font-weight:700;">${escHtml(TEL)}</a>.</p>`;
@@ -249,10 +251,9 @@ function correoTecnicoHTML(d: any) {
     </table>
     ${d.calendario ? `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin-top:10px;">
       <tr><td style="border:1.5px solid ${COLOR.verde};border-radius:99px;">
-        <a href="${escHtml(d.calendario)}" style="display:inline-block;padding:12px 24px;font-family:${FUENTE};font-size:13px;font-weight:700;letter-spacing:.5px;color:${COLOR.verde};text-decoration:none;">Añadir a mi calendario</a>
+        <a href="${escHtml(d.calendario)}" style="display:inline-block;padding:12px 24px;font-family:${FUENTE};font-size:13px;font-weight:700;letter-spacing:.5px;color:${COLOR.verde};text-decoration:none;">${d.calendarioQuitar ? 'Quitarla de mi calendario' : 'Añadir a mi calendario'}</a>
       </td></tr>
-    </table>` : ''}
-    ${d.conAdjunto ? `<p style="margin:10px 0 0;font-size:12px;line-height:18px;color:${COLOR.suave};">${d.citas.length === 1 ? 'El archivo adjunto guarda la cita' : 'Los archivos adjuntos guardan las citas'} en el calendario del móvil.</p>` : ''}`;
+    </table>` : ''}`;
   return marcoCorreo({
     logoUrl: d.logoUrl,
     preheader: n === 1 ? `${d.citas[0].etiqueta} a las ${d.citas[0].hora} · ${d.citas[0].cliente}` : `${n} citas en las próximas horas`,
@@ -260,80 +261,6 @@ function correoTecnicoHTML(d: any) {
     pie: 'Aviso automático de la agenda de Sysefen.',
   });
 }
-
-/* ---------------------------------------------------------------------------
- * La cita, para el calendario del móvil
- *
- * Se manda como archivo .ics adjunto, que es lo que entienden todos: el iPhone
- * lo enseña como un evento para añadir de un toque, y Gmail y Outlook igual.
- * Va con el MISMO identificador siempre, así que cuando la cita cambia de hora
- * el calendario corrige la que ya estaba en vez de crear otra; y si se anula,
- * el archivo dice que se borre.
- * ------------------------------------------------------------------------- */
-const enUTC = (iso: string) => new Date(iso).toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
-
-// Las líneas largas hay que partirlas a 75 octetos, y las comas y los puntos y
-// coma van escapados: si no, algunos calendarios se atragantan.
-function lineaICS(campo: string, valor: string) {
-  const limpio = String(valor || '').replace(/\\/g, '\\\\').replace(/[,;]/g, (c) => '\\' + c).replace(/\r?\n/g, '\\n');
-  let linea = campo + ':' + limpio;
-  const trozos: string[] = [];
-  while (linea.length > 73) { trozos.push(linea.slice(0, 73)); linea = ' ' + linea.slice(73); }
-  trozos.push(linea);
-  return trozos.join('\r\n');
-}
-
-// deno-lint-ignore no-explicit-any
-function citaICS(d: any) {
-  const inicio = new Date(d.inicio);
-  const fin = new Date(inicio.getTime() + (d.duracion_min || 60) * 60000);
-  const anulada = d.tipo === 'anulada';
-  // SEQUENCE tiene que ir subiendo para que el calendario acepte el cambio.
-  const secuencia = Math.max(0, Math.floor((Date.now() - Date.UTC(2026, 0, 1)) / 1000));
-  const cuerpo = [
-    'BEGIN:VCALENDAR',
-    'VERSION:2.0',
-    'PRODID:-//Sysefen//Agenda//ES',
-    'CALSCALE:GREGORIAN',
-    'METHOD:' + (anulada ? 'CANCEL' : 'PUBLISH'),
-    'BEGIN:VEVENT',
-    lineaICS('UID', d.id + '@sysefen.com'),
-    'DTSTAMP:' + enUTC(new Date().toISOString()),
-    'DTSTART:' + enUTC(d.inicio),
-    'DTEND:' + enUTC(fin.toISOString()),
-    'SEQUENCE:' + secuencia,
-    'STATUS:' + (anulada ? 'CANCELLED' : 'CONFIRMED'),
-    lineaICS('SUMMARY', d.titulo),
-    d.donde ? lineaICS('LOCATION', d.donde) : '',
-    d.detalle ? lineaICS('DESCRIPTION', d.detalle) : '',
-    'BEGIN:VALARM',
-    'TRIGGER:-PT2H',
-    'ACTION:DISPLAY',
-    lineaICS('DESCRIPTION', d.titulo),
-    'END:VALARM',
-    'END:VEVENT',
-    'END:VCALENDAR',
-  ].filter(Boolean).join('\r\n');
-  return cuerpo + '\r\n';
-}
-
-// Resend quiere el adjunto en base64. `btoa` no traga acentos, así que se pasa
-// por bytes primero.
-function base64(texto: string) {
-  const bytes = new TextEncoder().encode(texto);
-  let bin = '';
-  for (let i = 0; i < bytes.length; i += 0x8000) {
-    bin += String.fromCharCode.apply(null, Array.from(bytes.subarray(i, i + 0x8000)));
-  }
-  return btoa(bin);
-}
-
-// deno-lint-ignore no-explicit-any
-const adjuntoCita = (d: any) => [{
-  filename: 'cita-sysefen.ics',
-  content: base64(citaICS(d)),
-  content_type: 'text/calendar; charset=utf-8; method=' + (d.tipo === 'anulada' ? 'CANCEL' : 'PUBLISH'),
-}];
 
 // Enlace al calendario DEL MÓVIL. Apunta a la función `cita-ics`, que sirve la
 // cita como archivo: el iPhone abre Calendario y Android ofrece guardarla, cada
@@ -397,15 +324,11 @@ Deno.serve(async (req) => {
     auth: { persistSession: false },
   });
 
-  // deno-lint-ignore no-explicit-any
-  const mandar = async (para: string, asunto: string, texto: string, html: string, adjuntos?: any[]) => {
+  const mandar = async (para: string, asunto: string, texto: string, html: string) => {
     const r = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: { Authorization: 'Bearer ' + RESEND, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        from: REMITENTE, to: [para], subject: asunto, text: texto, html,
-        attachments: adjuntos && adjuntos.length ? adjuntos : undefined,
-      }),
+      body: JSON.stringify({ from: REMITENTE, to: [para], subject: asunto, text: texto, html }),
     });
     if (!r.ok) {
       const res = await r.json().catch(() => ({}));
@@ -453,17 +376,7 @@ Deno.serve(async (req) => {
     const horaU = hora(c.inicio);
     const rotuloU = tipo === 'anulada' ? 'Cita anulada' : tipo === 'cambio' ? 'Cambio de cita' : 'Cita confirmada';
 
-    // deno-lint-ignore no-explicit-any
-    const correos: { para: string; asunto: string; texto: string; html: string; quien: string; adjuntos?: any[] }[] = [];
-
-    // La misma cita, contada para el calendario de cada uno.
-    const paraCalendario = (titulo: string) => ({
-      id: c.id, inicio: c.inicio, duracion_min: c.duracion_min || 60,
-      titulo, donde: dondeU,
-      detalle: [motivoU ? mayus(motivoU) : '', c.nota ? 'Nota: ' + c.nota : '', 'Sysefen · ' + TEL]
-        .filter(Boolean).join('\n'),
-      tipo,
-    });
+    const correos: { para: string; asunto: string; texto: string; html: string; quien: string }[] = [];
 
     if (esEmail(c.cliente?.email)) {
       const asunto = `${rotuloU}${motivoU && tipo !== 'anulada' ? ` para la ${motivoU}` : ''} · ${diaU} a las ${horaU}`;
@@ -485,13 +398,13 @@ Deno.serve(async (req) => {
               `Si usted lo desea, puede cambiar su cita contactando con nosotros en el ${TEL}.`) +
         `\n\nUn saludo,\nSysefen · Eficiencia Energética\n\n` +
         `(Este correo se envía automáticamente. Por favor, no responda a esta dirección.)`;
-      const calCliente = paraCalendario('Visita de Sysefen' + (motivoU ? ' · ' + mayus(motivoU) : ''));
-      const enlaceCliente = tipo === 'anulada' ? '' : await urlCalendario(CLAVE, c.id, 'c');
+      // También en la anulación: el mismo enlace devuelve entonces una cancelación,
+      // que le quita la cita del calendario de un toque.
+      const enlaceCliente = await urlCalendario(CLAVE, c.id, 'c');
       correos.push({
         quien: 'cliente', para: String(c.cliente.email).trim(), asunto, texto,
-        adjuntos: adjuntoCita(calCliente),
         html: correoClienteHTML({
-          calendario: enlaceCliente,
+          calendario: enlaceCliente, calendarioQuitar: tipo === 'anulada',
           logoUrl: LOGO_URL, nombre: c.cliente.nombre,
           etiqueta: tipo === 'nueva' ? 'Su cita' : mayus(cuandoCorto(c.inicio, ahoraU)),
           dia: diaU, hora: horaU, direccion: dondeU, motivo: motivoU,
@@ -516,14 +429,12 @@ Deno.serve(async (req) => {
         `${tipo === 'cambio' && c.cambio_desde ? `\n  Antes era: ${mayus(diaLargo(c.cambio_desde))}, ${hora(c.cambio_desde)}` : ''}` +
         `${c.nota ? `\n  Nota: ${c.nota}` : ''}` +
         `\n\nLo tienes todo en la Agenda de la app: ${APP_URL}`;
-      const calTecnico = paraCalendario((tipo === 'anulada' ? 'ANULADA · ' : '') + quienCli + (motivoU ? ' · ' + mayus(motivoU) : ''));
-      const enlaceTecnico = tipo === 'anulada' ? '' : await urlCalendario(CLAVE, c.id, 't');
+      const enlaceTecnico = await urlCalendario(CLAVE, c.id, 't');
       correos.push({
         quien: 'instalador', para: String(c.empleado.email_avisos).trim(), asunto, texto,
-        adjuntos: adjuntoCita(calTecnico),
         html: correoTecnicoHTML({
           logoUrl: LOGO_URL, appUrl: APP_URL, nombre: c.empleado.nombre, aviso: tipo,
-          calendario: enlaceTecnico, conAdjunto: true,
+          calendario: enlaceTecnico, calendarioQuitar: tipo === 'anulada',
           citas: [{
             etiqueta: tipo === 'anulada' ? 'Anulada' : mayus(cuandoCorto(c.inicio, ahoraU)),
             dia: diaCorto(c.inicio), hora: horaU, duracion: duracionTxt(c.duracion_min || 60),
@@ -538,7 +449,7 @@ Deno.serve(async (req) => {
     const falloU: string[] = [];
     let okU = 0;
     for (const m of correos) {
-      try { await mandar(m.para, m.asunto, m.texto, m.html, m.adjuntos); okU++; }
+      try { await mandar(m.para, m.asunto, m.texto, m.html); okU++; }
       catch (e) { falloU.push(`${m.quien} ${m.para}: ${(e as Error).message}`); }
     }
 
@@ -645,15 +556,11 @@ Deno.serve(async (req) => {
     ventana = 'próximas 24 horas';
   }
 
-  // deno-lint-ignore no-explicit-any
-  const enviarCorreo = async (para: string, asunto: string, texto: string, html: string, adjuntos?: any[]) => {
+  const enviarCorreo = async (para: string, asunto: string, texto: string, html: string) => {
     const r = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: { Authorization: 'Bearer ' + RESEND, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        from: REMITENTE, to: [para], subject: asunto, text: texto, html,
-        attachments: adjuntos && adjuntos.length ? adjuntos : undefined,
-      }),
+      body: JSON.stringify({ from: REMITENTE, to: [para], subject: asunto, text: texto, html }),
     });
     if (!r.ok) {
       const res = await r.json().catch(() => ({}));
@@ -719,13 +626,6 @@ Deno.serve(async (req) => {
   // --- correos a clientes --------------------------------------------------------
   const motivoDe = (c: Cita) => (c.categorias?.length ? 'instalación de ' + listaCategorias(c.categorias) : '');
   // La cita para el calendario, como la ve el cliente.
-  const calDeCita = (c: Cita, titulo: string) => ({
-    id: c.id, inicio: c.inicio, duracion_min: c.duracion_min || 60,
-    titulo, donde: dondeDe(c),
-    detalle: ['Sysefen · ' + TEL].join('\n'),
-    tipo: 'recordatorio',
-  });
-
   // Los enlaces del calendario se firman de uno en uno; se preparan antes de
   // montar los correos, que ahí ya no se puede esperar a nada.
   const enlaces = new Map<string, { c: string; t: string }>();
@@ -735,7 +635,6 @@ Deno.serve(async (req) => {
 
   const aClientes = citas.filter((c) => esEmail(c.cliente?.email)).map((c) => ({
     para: String(c.cliente!.email).trim(),
-    adjuntos: adjuntoCita(calDeCita(c, 'Visita de Sysefen' + (motivoDe(c) ? ' · ' + mayus(motivoDe(c)) : ''))),
     asunto: c.cambio_desde
       ? `Cambio de cita${motivoDe(c) ? ` para la ${motivoDe(c)}` : ''} · ${cuandoCorto(c.inicio, ahora)} a las ${hora(c.inicio)}`
       : motivoDe(c)
@@ -773,11 +672,6 @@ Deno.serve(async (req) => {
   }
   const aTecnicos = [...porTecnico.entries()].map(([para, t]) => ({
     para,
-    adjuntos: t.citas.map((c, i) => ({
-      filename: t.citas.length === 1 ? 'cita-sysefen.ics' : `cita-sysefen-${i + 1}.ics`,
-      content: base64(citaICS(calDeCita(c, (c.cliente?.nombre || 'Cliente') + (motivoDe(c) ? ' · ' + mayus(motivoDe(c)) : '')))),
-      content_type: 'text/calendar; charset=utf-8; method=PUBLISH',
-    })),
     asunto: t.citas.length === 1
       ? `Cita ${cuandoCorto(t.citas[0].inicio, ahora)} a las ${hora(t.citas[0].inicio)} · ${t.citas[0].cliente?.nombre || 'Cliente'}`
       : `Tus próximas citas (${t.citas.length})`,
@@ -790,7 +684,7 @@ Deno.serve(async (req) => {
       ).join('\n\n') +
       `\n\nLo tienes todo en la Agenda de la app: ${APP_URL}`,
     html: correoTecnicoHTML({
-      logoUrl: LOGO_URL, appUrl: APP_URL, nombre: t.nombre, conAdjunto: true,
+      logoUrl: LOGO_URL, appUrl: APP_URL, nombre: t.nombre,
       calendario: t.citas.length === 1 ? ((enlaces.get(t.citas[0].id) || {}).t || '') : '',
       citas: t.citas.map((c) => ({
         etiqueta: mayus(cuandoCorto(c.inicio, ahora)), dia: diaCorto(c.inicio), hora: hora(c.inicio),
@@ -814,11 +708,11 @@ Deno.serve(async (req) => {
   const errores: string[] = [];
   let clientesOk = 0, tecnicosOk = 0;
   for (const m of aClientes) {
-    try { await enviarCorreo(m.para, m.asunto, m.texto, m.html, m.adjuntos); clientesOk++; }
+    try { await enviarCorreo(m.para, m.asunto, m.texto, m.html); clientesOk++; }
     catch (e) { errores.push(`${m.para}: ${(e as Error).message}`); }
   }
   for (const m of aTecnicos) {
-    try { await enviarCorreo(m.para, m.asunto, m.texto, m.html, m.adjuntos); tecnicosOk++; }
+    try { await enviarCorreo(m.para, m.asunto, m.texto, m.html); tecnicosOk++; }
     catch (e) { errores.push(`${m.para}: ${(e as Error).message}`); }
   }
 
