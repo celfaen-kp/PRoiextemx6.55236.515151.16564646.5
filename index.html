@@ -273,7 +273,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '13.4'; // versión visible de la app (única fuente)
+const APP_VERSION = '13.5'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -979,7 +979,40 @@ A.abrirImputHoy = (userId) => {
   V.impFecha = hoyISO();
   A.abrirImputEmp(userId);
 };
-A.volverImputar = () => { V.impEmp = null; V.impDraft = null; V.impBorrar = []; V.view = 'imputar'; render(); };
+A.volverImputar = () => {
+  V.impEmp = null; V.impDraft = null; V.impBorrar = [];
+  // Si se entró a corregir desde "Revisar imputaciones", se vuelve allí.
+  V.view = V.impVolver || 'imputar'; V.impVolver = null; render();
+};
+
+/* --- ADMINISTRACIÓN · revisar y corregir lo ya imputado ---------------------
+ * Imputar y revisar son dos cosas distintas: para imputar ya sabes el día, y
+ * para revisar lo que buscas es justamente el día que no cuadra. Aquí se ve el
+ * mes entero de una persona, con lo que falta o sobra cada día y las líneas tal
+ * como se guardaron, y desde cualquier día se entra a corregirlo.
+ * ------------------------------------------------------------------------- */
+Object.assign(V, { revEmp: null, revMes: null });
+
+A.abrirRevisarImp = () => {
+  if (!esAdmin()) return;
+  if (!V.revEmp || !S.users.some((u) => u.id === V.revEmp)) V.revEmp = (equipo()[0] || {}).id || null;
+  if (!V.revMes) V.revMes = hoyISO().slice(0, 7);
+  V.view = 'revisarImp'; scrollMemo.revisarImp = 0; render();
+  refrescarDatos().then(render);
+};
+A.revEmp = (id) => { V.revEmp = id; scrollMemo.revisarImp = 0; render(); };
+A.revMes = (n) => {
+  const [a, m] = String(V.revMes || hoyISO().slice(0, 7)).split('-').map(Number);
+  const d = new Date(a, m - 1 + Number(n), 1);
+  const mes = fechaLocal(d).slice(0, 7);
+  if (mes > hoyISO().slice(0, 7)) return;          // el futuro no tiene horas
+  V.revMes = mes; scrollMemo.revisarImp = 0; render();
+};
+A.revDia = (fecha) => {
+  if (!esAdmin() || !V.revEmp) return;
+  V.impFecha = fecha; V.impVolver = 'revisarImp';
+  A.abrirImputEmp(V.revEmp);
+};
 
 /* --- imputación en GRUPO: mismo bloque de horas a varias personas a la vez.
    Cada "Aplicar" INSERTA una línea nueva por persona seleccionada (nunca
@@ -2802,6 +2835,7 @@ function render() {
   else if (v === 'partes') html = vPartes();
   else if (v === 'horas') html = vHoras();
   else if (v === 'resumenImp') html = vResumenImp();
+  else if (v === 'revisarImp' && esAdmin()) html = vRevisarImp();
   else if (v === 'imputar' && puedeCrear()) html = vImputar();
   else if (v === 'imputarGrupo' && puedeCrear()) html = vImputarGrupo();
   else if (v === 'imputarEmp' && puedeCrear()) html = vImputarEmpleado();
@@ -2823,7 +2857,7 @@ function render() {
   else if (v === 'clienteVer' && verAgenda()) html = vClienteVer();
   else if (v === 'citaNueva' && puedeCitar()) html = vCitaNueva();
   else if (v === 'citaVer' && verAgenda()) html = vCitaVer();
-  if (V.user && ['hoy', 'obras', 'obra', 'partes', 'horas', 'imputar', 'empleados', 'ajustes', 'visitas', 'visita', 'agenda', 'clientes', 'clienteVer'].includes(v)) html += nav(v);
+  if (V.user && ['hoy', 'obras', 'obra', 'partes', 'horas', 'imputar', 'empleados', 'ajustes', 'visitas', 'visita', 'agenda', 'clientes', 'clienteVer', 'revisarImp'].includes(v)) html += nav(v);
   if (!navigator.onLine && V.user) html = '<div class="offline">Sin conexión — todo se guarda en el móvil</div>' + html;
   // Red de seguridad: si un sheet revienta al pintarse (p. ej. depende de
   // datos que cambiaron justo antes, como el usuario tras salir), que se
@@ -3349,6 +3383,11 @@ function vHoras() {
       <div class="tiny" style="color:rgba(255,255,255,.5);margin-top:5px">Distribuir la jornada por obra, despacho, desplazamiento…</div></div>
       <div class="av" style="width:28px;height:28px;background:var(--ambar);color:var(--tinta);font-size:15px">→</div>
     </div>` : ''}
+    ${esAdmin() ? `<div class="card row" data-a="abrirRevisarImp" style="margin-bottom:12px;cursor:pointer">
+      <div class="grow"><div style="font:600 15px/1 var(--sans)">Revisar imputaciones</div>
+      <div class="tiny" style="margin-top:5px">Mes a mes y persona a persona: qué día no cuadra y qué se imputó. Desde ahí se corrige.</div></div>
+      <div style="font:400 20px/1 var(--sans);color:var(--t3)">›</div>
+    </div>` : ''}
     <div class="card row" data-a="abrirResumenImp" style="margin-bottom:12px;cursor:pointer">
       <div class="grow"><div style="font:600 15px/1 var(--sans)">Resumen por categoría</div>
       <div class="tiny" style="margin-top:5px">Cuánto se usó en obra, despacho, desplazamiento… por día, semana, mes o año</div></div>
@@ -3558,6 +3597,85 @@ const RESUMEN_RANGOS = [['hoy', 'Hoy'], ['semana', 'Semana'], ['mes', 'Mes'], ['
 // los vecinos se distinguen con daltonismo (el verde de 'sysefen' junto al
 // naranja de despacho no). La lista de abajo sí va por horas: lleva el nombre.
 const IMP_ORDEN_BARRA = ['obra', 'despacho', 'preparacion', 'desplazamiento', 'otros', 'sysefen'];
+function vRevisarImp() {
+  const u = userById(V.revEmp);
+  const mes = V.revMes || hoyISO().slice(0, 7);
+  const [anio, m] = mes.split('-').map(Number);
+  const ultimo = new Date(anio, m, 0).getDate();
+  const hoy = hoyISO();
+  const nombreMes = new Date(anio, m - 1, 1).toLocaleDateString('es-ES', { month: 'long', year: 'numeric' });
+  const catLab = (c) => (IMP_CATS.find((x) => x[0] === c) || [c, c])[1];
+
+  // Solo los días con algo: presencia fichada o líneas imputadas.
+  const dias = [];
+  for (let d = ultimo; d >= 1; d--) {
+    const fecha = `${mes}-${String(d).padStart(2, '0')}`;
+    if (fecha > hoy) continue;
+    const pres = presenciaCerradaDia(V.revEmp, fecha);
+    const disp = disponibleImputar(V.revEmp, fecha);
+    const lineas = impLineasDe(V.revEmp, fecha);
+    const imp = lineas.reduce((t, l) => t + (l.minutos || 0), 0);
+    if (!pres && !imp && !lineas.length) continue;
+    dias.push({ fecha, pres, disp, imp, lineas });
+  }
+
+  const totPres = dias.reduce((t, d) => t + d.disp, 0);
+  const totImp = dias.reduce((t, d) => t + d.imp, 0);
+  const problemas = dias.filter((d) => d.imp !== d.disp).length;
+
+  const estado = (d) => {
+    if (d.imp > d.disp) return ['var(--rojo)', 'Sobra ' + durMin(d.imp - d.disp)];
+    if (d.imp < d.disp) return ['var(--ambar-o)', 'Falta ' + durMin(d.disp - d.imp)];
+    return ['var(--verde-o)', 'Cuadra'];
+  };
+
+  return `<div class="hdr">
+    <div class="row" style="justify-content:space-between">
+      <div class="h1" style="font-size:24px">Revisar imputaciones</div>
+      <div data-a="ir" data-v="horas" class="volver der">Cerrar</div>
+    </div>
+    <div class="wrap" style="margin-top:12px">${equipoTodos().filter((x) => x.rol !== 'presupuestos').map((x) =>
+      `<div class="chip ${x.id === V.revEmp ? 'on' : ''}" data-a="revEmp" data-id="${x.id}" style="cursor:pointer">${esc(x.nombre)}</div>`).join('')}</div>
+    <div class="row" style="justify-content:space-between;align-items:center;margin-top:12px">
+      <div class="pill" data-a="revMes" data-n="-1" style="padding:8px 14px;cursor:pointer">‹</div>
+      <div style="font:600 15px var(--cond);text-transform:capitalize">${esc(nombreMes)}</div>
+      <div class="pill" data-a="revMes" data-n="1" style="padding:8px 14px;cursor:pointer;${mes >= hoy.slice(0, 7) ? 'opacity:.3' : ''}">›</div>
+    </div>
+  </div>
+  <div class="scroll pad pb-nav">
+    <div class="card" style="margin-bottom:14px">
+      <div class="row" style="gap:14px">
+        <div><div class="lbl">Jornada</div><div class="num" style="font-size:17px;margin-top:4px">${durMin(totPres)}</div></div>
+        <div><div class="lbl">Imputado</div><div class="num" style="font-size:17px;margin-top:4px">${durMin(totImp)}</div></div>
+        <div><div class="lbl">Días a revisar</div><div class="num" style="font-size:17px;margin-top:4px;color:${problemas ? 'var(--ambar-o)' : 'var(--verde-o)'}">${problemas}</div></div>
+      </div>
+      <div class="tiny" style="margin-top:10px">Toca un día para corregirlo. Se abre la misma pantalla de imputar, ya en ese día y esa persona.</div>
+    </div>
+    ${dias.map((d) => {
+      const [color, txt] = estado(d);
+      const ult = impUltimaImputacion(V.revEmp, d.fecha);
+      return `<div class="card" data-a="revDia" data-f="${d.fecha}" style="margin-bottom:10px;cursor:pointer">
+        <div class="row" style="align-items:baseline;justify-content:space-between;gap:12px">
+          <div class="h2 grow" style="font-size:16px">${esc(agMayus(fechaLarga(d.fecha)))}</div>
+          <span class="badge" style="background:rgba(20,23,15,.05);color:${color}">${txt}</span>
+        </div>
+        <div class="row" style="gap:14px;margin-top:10px">
+          <div><div class="lbl">Jornada</div><div class="num" style="font-size:14px;margin-top:3px">${durMin(d.disp)}</div></div>
+          <div><div class="lbl">Imputado</div><div class="num" style="font-size:14px;margin-top:3px">${durMin(d.imp)}</div></div>
+        </div>
+        ${d.lineas.length ? `<div class="col g8" style="margin-top:12px;padding-top:10px;border-top:1px solid var(--l1)">
+          ${d.lineas.map((l) => `<div class="row" style="justify-content:space-between;gap:12px;align-items:baseline">
+            <div class="grow" style="font:500 14px/1.3 var(--sans)">${esc(catLab(l.categoria))}${l.obraId ? ' · ' + esc((obraById(l.obraId) || {}).titulo || '') : ''}
+              ${l.nota ? `<div class="tiny" style="margin-top:3px">${esc(l.nota)}</div>` : ''}</div>
+            <div class="num" style="font-size:14px;flex:none">${durMin(l.minutos || 0)}</div>
+          </div>`).join('')}
+        </div>` : '<div class="tiny" style="margin-top:10px">Sin imputar nada este día.</div>'}
+        ${ult ? `<div class="tiny" style="margin-top:10px;opacity:.7">Última vez: ${esc(ult.nombre)} · ${new Date(ult.en).toLocaleString('es-ES', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</div>` : ''}
+      </div>`;
+    }).join('') || '<div class="card"><div class="sub">Sin jornadas fichadas en este mes.</div></div>'}
+  </div>`;
+}
+
 function vResumenImp() {
   const rango = V.resumenRango || 'mes';
   const { filas, totalMin } = resumenCategorias(rango);
@@ -6444,7 +6562,7 @@ function nav(v) {
     : [['hoy', 'Hoy', '99px'], ['obras', 'Obras', '5px'], ['horas', 'Horas', '2px'], ['ajustes', 'Perfil', '99px']];
   const act = (id) => v === id
     || (id === 'obras' && v === 'obra')
-    || (id === 'horas' && v === 'imputar')
+    || (id === 'horas' && ['imputar', 'revisarImp', 'resumenImp'].includes(v))
     || (id === 'empleados' && (v === 'empleado' || v === 'planilla'))
     || (id === 'visitas' && v === 'visita')
     || (id === 'agenda' && (v === 'citaVer' || (!esPresupuestos() && (v === 'clientes' || v === 'clienteVer'))))
@@ -7120,6 +7238,10 @@ document.addEventListener('click', (e) => {
   if (a === 'impGrupoDelLinea') return A.impGrupoDelLinea(+d.i);
   if (a === 'impGrupoGuardar') return A.impGrupoGuardar();
   if (a === 'abrirImputEmp') { e.stopPropagation(); return A.abrirImputEmp(d.id); }
+  if (a === 'abrirRevisarImp') return A.abrirRevisarImp();
+  if (a === 'revEmp') return A.revEmp(d.id);
+  if (a === 'revMes') return A.revMes(d.n);
+  if (a === 'revDia') return A.revDia(d.f);
   if (a === 'abrirImputHoy') { e.stopPropagation(); return A.abrirImputHoy(d.id); }
   if (a === 'volverImputar') return A.volverImputar();
   if (a === 'impCat') return A.impCat(+d.i, d.c);
