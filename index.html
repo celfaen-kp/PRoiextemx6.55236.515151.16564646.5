@@ -315,7 +315,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '14.1'; // versión visible de la app (única fuente)
+const APP_VERSION = '14.2'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -409,6 +409,41 @@ async function restaurarSesion() {
   refrescarDatos().then(render);
 }
 
+/* ---------- hasta dónde miramos atrás ---------------------------------------
+ * La app se bajaba TODO el historial en cada arranque: fichajes, imputaciones y
+ * partes desde el principio de los tiempos. Con 8 personas y unos meses no se
+ * nota; a los dos años son decenas de miles de filas en cada apertura, en un
+ * móvil y con datos móviles.
+ *
+ * Ahora se baja una ventana reciente, y las pantallas que miran más atrás
+ * (planilla de meses viejos, revisar imputaciones, resumen del año, total de
+ * una obra, exportar) piden que se amplíe antes de pintarse. Una consulta más
+ * ancha contiene a la estrecha, así que ampliar es volver a bajar: no hay que
+ * mezclar nada ni cuadrar duplicados.
+ * ------------------------------------------------------------------------- */
+const DIAS_VENTANA = 120;
+let rangoDesde = null;
+let ampliando = null;
+// Perezosa a propósito: `fechaLocal` se declara más abajo, así que no se puede
+// llamar mientras se evalúa el módulo.
+const desdeCargado = () => rangoDesde
+  || (rangoDesde = fechaLocal(new Date(Date.now() - DIAS_VENTANA * 86400000)));
+
+async function asegurarDesde(fechaISO) {
+  const f = String(fechaISO || '').slice(0, 10);
+  if (!f || f >= desdeCargado()) return false;
+  if (!navigator.onLine) { avisar('Sin conexión: solo se ven los últimos meses.'); return false; }
+  rangoDesde = f;
+  toast('Cargando el historial…');
+  if (ampliando) { try { await ampliando; } catch (e) { /* da igual, se repite */ } }
+  ampliando = refrescarDatos();
+  try { await ampliando; } finally { ampliando = null; }
+  render();
+  return true;
+}
+// Todo el historial, para exportar y para la planilla completa.
+const asegurarTodo = () => asegurarDesde('2015-01-01');
+
 /* ---------- fichajes: espejo en memoria de public.fichajes (Supabase) ---------- */
 let empIdPorNombre = {};   // 'Bayron' -> uuid empleados.id
 let nombrePorEmpId = {};   // uuid empleados.id -> 'Bayron'
@@ -486,7 +521,7 @@ async function sincronizarFichajes() {
   sincronizando = true;
   try {
     if (!Object.keys(empIdPorNombre).length) await cargarMapaEmpleados();
-    const filas = await Sysefen.db.listarFichajes();
+    const filas = await Sysefen.db.listarFichajes(new Date(desdeCargado() + 'T00:00:00').toISOString());
     S.fichajes = filas.map(mapFichajeDeDB).filter((f) => f.userId);
   } catch (e) { /* sin conexión / RLS: se mantiene el estado actual */ }
   finally { sincronizando = false; }
@@ -581,7 +616,7 @@ async function sincronizarImputaciones() {
   try {
     if (!Object.keys(empIdPorNombre).length) await cargarMapaEmpleados();
     const filas = await Sysefen.db.listarImputaciones(
-      puedeCrear() ? {} : { empleadoId: miEmpId() }
+      puedeCrear() ? { desde: desdeCargado() } : { empleadoId: miEmpId(), desde: desdeCargado() }
     );
     S.imputaciones = (filas || []).map(mapImputacionDeDB).filter((i) => i.userId);
   } catch (e) { /* sin conexión / RLS: se mantiene lo que haya */ }
@@ -642,13 +677,17 @@ async function sincronizarPartes() {
   sincPartes = true;
   try {
     if (!Object.keys(empIdPorNombre).length) await cargarMapaEmpleados();
-    const [filas, horasFilas, matsFilas, adjFilas] = await Promise.all([
-      Sysefen.db.listarPartes(),
-      Sysefen.db.listarHorasPartes(),
-      Sysefen.db.listarMaterialesPartes(),
+    // Primero los partes de la ventana, y solo después sus horas, materiales y
+    // fotos: pidiéndolas por los ids que han salido, en vez de bajar las de
+    // todos los partes de la historia.
+    const filas = await Sysefen.db.listarPartes(null, desdeCargado());
+    const ids = (filas || []).map((f) => f.id);
+    const [horasFilas, matsFilas, adjFilas] = await Promise.all([
+      Sysefen.db.listarHorasPartes(ids),
+      Sysefen.db.listarMaterialesPartes(ids),
       // Si falta la Etapa 12 la tabla no existe: se sigue sin adjuntos en vez
       // de dejar la lista de partes en blanco.
-      Sysefen.db.listarAdjuntosPartes().catch(() => []),
+      Sysefen.db.listarAdjuntosPartes(ids).catch(() => []),
     ]);
     const horasPorParte = {}; (horasFilas || []).forEach((h) => { (horasPorParte[h.parte_id] = horasPorParte[h.parte_id] || []).push(h); });
     const matsPorParte = {}; (matsFilas || []).forEach((m) => { (matsPorParte[m.parte_id] = matsPorParte[m.parte_id] || []).push(m); });
@@ -947,14 +986,25 @@ A.salir = () => {
   sysAuth.logout().catch(() => {});
 };
 A.ir = (v) => { V.view = v; render(); if (v === 'visitas') A.cargarVisitas(); if (AG_VISTAS.includes(v)) A.cargarAgenda(); if (v === 'ajustes' && verCRM() && !V.crm.cargado) A.crmEstado(); if (['hoy', 'obras', 'obra', 'partes', 'horas'].includes(v)) refrescarDatos().then(render); };
-A.verObra = (id) => { V.obraId = id; V.obraRango = 'total'; V.view = 'obra'; render(); refrescarDatos().then(render); if (puedeCrear()) A.cargarDocsObra(id); };
+A.verObra = (id) => {
+  V.obraId = id; V.obraRango = 'total'; V.view = 'obra'; render();
+  // El total de una obra se cuenta desde que se abrió, que puede ser de antes
+  // de la ventana que tenemos cargada.
+  const o = obraById(id);
+  asegurarDesde(o && o.creado_en ? String(o.creado_en).slice(0, 10) : null)
+    .then(() => refrescarDatos()).then(render);
+  if (puedeCrear()) A.cargarDocsObra(id);
+};
 A.obraRango = (r) => { V.obraRango = r; render(); };
 // (Sin "obra de hoy": el fichaje NUNCA lleva obra — se guarda con obraId null —
 // así que preseleccionar una solo hacía creer que las horas se estaban
 // asignando ahí. La obra se decide al imputar o al hacer el parte.)
 A.tabHoras = (t) => { V.tabHoras = t; render(); };
 A.abrirResumenImp = () => { V.resumenRango = 'mes'; V.view = 'resumenImp'; render(); refrescarDatos().then(render); };
-A.resumenRango = (r) => { V.resumenRango = r; render(); };
+A.resumenRango = (r) => {
+  V.resumenRango = r; render();
+  if (r === 'ano') asegurarDesde(hoyISO().slice(0, 4) + '-01-01');
+};
 
 /* --- imputación de horas --- */
 const impDraftDeLineas = (userId, fecha) => impLineasDe(userId, fecha).map((l) => ({
@@ -1047,7 +1097,7 @@ A.abrirRevisarImp = () => {
   if (!V.revEmp || !S.users.some((u) => u.id === V.revEmp)) V.revEmp = (equipo()[0] || {}).id || null;
   if (!V.revMes) V.revMes = hoyISO().slice(0, 7);
   V.view = 'revisarImp'; scrollMemo.revisarImp = 0; render();
-  refrescarDatos().then(render);
+  asegurarDesde(V.revMes + '-01').then(() => refrescarDatos()).then(render);
 };
 A.revEmp = (id) => { V.revEmp = id; scrollMemo.revisarImp = 0; render(); };
 A.revMes = (n) => {
@@ -1056,6 +1106,7 @@ A.revMes = (n) => {
   const mes = fechaLocal(d).slice(0, 7);
   if (mes > hoyISO().slice(0, 7)) return;          // el futuro no tiene horas
   V.revMes = mes; scrollMemo.revisarImp = 0; render();
+  asegurarDesde(mes + '-01');
 };
 A.revDia = (fecha) => {
   if (!esAdmin() || !V.revEmp) return;
@@ -1558,15 +1609,21 @@ A.abrirPlanilla = (userId) => {
   if (!V.planMes) V.planMes = hoyISO().slice(0, 7);
   V.planRango = 'mes';
   V.view = 'planilla'; render();
-  refrescarDatos().then(render);
+  asegurarDesde(V.planMes + '-01').then(() => refrescarDatos()).then(render);
 };
 A.planMesNav = (delta) => {
   const [y, m] = (V.planMes || hoyISO().slice(0, 7)).split('-').map(Number);
   const d = new Date(y, m - 1 + Number(delta), 1);
   V.planMes = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
   render();
+  asegurarDesde(V.planMes + '-01');
 };
-A.planRango = (r) => { V.planRango = r; render(); };
+A.planRango = (r) => {
+  V.planRango = r; render();
+  // "Año" e "Historial completo" miran mucho más atrás que la ventana normal.
+  if (r === 'ano') asegurarDesde((V.planMes || hoyISO()).slice(0, 4) + '-01-01');
+  else if (r === 'historial') asegurarTodo();
+};
 // El rango (mes / año / historial) se elige AL imprimir o exportar, no antes:
 // es una decisión del momento de sacar el papel, no un estado de la pantalla.
 A.abrirRangoPlanilla = (modo) => { V.sheet = { tipo: 'rangoPlanilla', modo }; render(); };
@@ -1709,7 +1766,10 @@ function mesesEnRango(userId, rango, mesBase) {
   }
   return [mesBase];
 }
-A.exportarPlanillaCSV = () => {
+A.exportarPlanillaCSV = async () => {
+  const rangoPedido = V.planRango || 'mes';
+  if (rangoPedido === 'historial') await asegurarTodo();
+  else if (rangoPedido === 'ano') await asegurarDesde((V.planMes || hoyISO()).slice(0, 4) + '-01-01');
   const userId = V.planEmp;
   const u = userById(userId);
   const rango = V.planRango || 'mes';
@@ -2014,7 +2074,8 @@ A.cerrarObra = async (id) => {
   catch (e) { avisar('No se pudo cambiar el estado: ' + (e && e.message ? e.message : 'error')); }
 };
 A.imprimirHorasObra = () => { imprimirHorasObra(V.obraId, V.obraRango || 'total'); };
-A.exportarHorasObraCSV = () => {
+A.exportarHorasObraCSV = async () => {
+  { const o = obraById(V.obraId); if (o && o.creado_en) await asegurarDesde(String(o.creado_en).slice(0, 10)); }
   const o = obraById(V.obraId); if (!o) return;
   const rango = V.obraRango || 'total';
   const filas = [['Empleado', 'Minutos', 'Horas']];
@@ -2672,6 +2733,7 @@ A.guardarUser = () => {
   save(); V.sheet = null; render();
 };
 A.exportar = async () => {
+  await asegurarTodo();
   await sincronizarFichajes();
   const filas = [['Empleado', 'Fecha', 'Entrada', 'Salida', 'Horas']];
   S.fichajes.slice().sort((a, b) => a.entrada.localeCompare(b.entrada)).forEach((f) => {

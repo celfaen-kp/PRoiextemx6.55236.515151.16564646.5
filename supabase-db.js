@@ -195,10 +195,23 @@ export function escucharFichajes(cb) {
 
 /* ---------------- partes ---------------- */
 
-export async function listarPartes(obraId) {
+export async function listarPartes(obraId, desde) {
   let q = supabase.from('partes').select('*').order('creado_en', { ascending: false });
   if (obraId) q = q.eq('obra_id', obraId);
+  // `desde` acota a los últimos meses: la app no necesita el historial entero
+  // para pintar la pantalla de partes, y bajarlo cada vez no escala.
+  if (desde) q = q.gte('fecha', desde);
   return unwrap(await q);
+}
+
+// Las tablas que cuelgan del parte aceptan un id o una lista: así se piden solo
+// las de los partes que se han traído, no las de todos los de la historia.
+function acotarPorParte(q, parteId) {
+  if (Array.isArray(parteId)) {
+    return parteId.length ? q.in('parte_id', parteId)
+      : q.eq('parte_id', '00000000-0000-0000-0000-000000000000');
+  }
+  return parteId ? q.eq('parte_id', parteId) : q;
 }
 
 export async function crearParte(parte) {
@@ -221,15 +234,11 @@ export async function guardarMaterialesParte(parteId, filas) {
 
 // Lectura de líneas de horas/materiales. Sin parteId, todas las visibles (RLS).
 export async function listarHorasPartes(parteId) {
-  let q = supabase.from('parte_horas').select('*');
-  if (parteId) q = q.eq('parte_id', parteId);
-  return unwrap(await q);
+  return unwrap(await acotarPorParte(supabase.from('parte_horas').select('*'), parteId));
 }
 
 export async function listarMaterialesPartes(parteId) {
-  let q = supabase.from('parte_materiales').select('*');
-  if (parteId) q = q.eq('parte_id', parteId);
-  return unwrap(await q);
+  return unwrap(await acotarPorParte(supabase.from('parte_materiales').select('*'), parteId));
 }
 
 /* ---------------- adjuntos de partes (fotos) ---------------- */
@@ -279,9 +288,8 @@ export async function subirAdjunto(parteId, adj) {
 
 // Filas de adjuntos visibles (RLS las acota). Sin parteId, todas.
 export async function listarAdjuntosPartes(parteId) {
-  let q = supabase.from('parte_adjuntos').select('*').order('creado_en', { ascending: true });
-  if (parteId) q = q.eq('parte_id', parteId);
-  return unwrap(await q);
+  return unwrap(await acotarPorParte(
+    supabase.from('parte_adjuntos').select('*').order('creado_en', { ascending: true }), parteId));
 }
 
 // Enlaces temporales para mirar las fotos. Una hora por defecto: suficiente
@@ -592,11 +600,12 @@ export async function presenciaDiaria(fecha) {
 }
 
 // Líneas de imputación. RLS acota: jefe/admin ven todas; el empleado, las suyas.
-export async function listarImputaciones({ fecha, empleadoId } = {}) {
+export async function listarImputaciones({ fecha, desde, empleadoId } = {}) {
   let q = supabase.from('imputaciones').select('*')
     .order('empleado_id', { ascending: true })
     .order('categoria', { ascending: true });
   if (fecha) q = q.eq('fecha', fecha);
+  else if (desde) q = q.gte('fecha', desde);
   if (empleadoId) q = q.eq('empleado_id', empleadoId);
   return unwrap(await q);
 }
