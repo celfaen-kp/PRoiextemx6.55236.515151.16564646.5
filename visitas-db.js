@@ -66,6 +66,7 @@ const CAMPOS_VISITA = `
   origen, plazo_deseado, interesa_financiacion, interesa_subvencion,
   estado, observaciones, tl_deal_id, tl_deal_fase,
   sync_estado, sync_error, sync_at, drive_id, drive_at, drive_carpeta_id,
+  gracias_at,
   created_at, updated_at
 `;
 
@@ -128,11 +129,20 @@ export async function guardarVisita(id, cambios) {
   );
 }
 
-export async function borrarVisita(id) {
-  // Solo borradores. Las sincronizadas ya viven en el CRM.
-  return unwrap(
-    await supabase.from('visitas').delete().eq('id', id).eq('estado', 'borrador')
-  );
+export async function borrarVisita(id, forzar) {
+  // Por defecto solo borradores: una visita cerrada es trabajo hecho. `forzar`
+  // es para cuando se borra el cliente entero, que se lo lleva todo por delante.
+  let q = supabase.from('visitas').delete().eq('id', id);
+  if (!forzar) q = q.eq('estado', 'borrador');
+  return unwrap(await q);
+}
+
+/** Las fotos de una visita, para poder quitarlas del almacén al borrarla. */
+export async function rutasFotos(visitaId) {
+  const filas = unwrap(
+    await supabase.from('visita_adjuntos').select('storage_path').eq('visita_id', visitaId)
+  ) || [];
+  return filas.map((f) => f.storage_path).filter(Boolean);
 }
 
 /* ---------------------------------------------------------------------------
@@ -361,6 +371,14 @@ export async function clienteATeamleader(clienteId) {
   return invocar('teamleader-cliente', { cliente_id: clienteId });
 }
 
+/**
+ * Le da las gracias al cliente por la visita y le dice que en unos días tendrá
+ * su presupuesto (sql/etapa34). No lleva ninguno de los datos que se tomaron.
+ */
+export async function correoGraciasVisita(visitaId, otraVez) {
+  return invocar('correo-visita', { visita_id: visitaId, otra_vez: !!otraVez });
+}
+
 /** Busca en el CRM por nombre, email, teléfono o NIF. */
 export async function buscarEnCRM(texto) {
   return invocar('teamleader-cliente', { accion: 'buscar', texto });
@@ -408,8 +426,29 @@ export async function borrarCita(id) {
   return true;
 }
 
-/** Borra un cliente y, en cascada, sus citas. Falla si tiene visitas. */
-export async function borrarCliente(id) {
+/**
+ * Borra un cliente con todo lo suyo: sus citas (van en cascada) y, si se pide,
+ * también sus visitas con sus fichas y sus fotos.
+ *
+ * Las visitas hay que quitarlas a mano y ANTES: la base no las borra en cascada
+ * a propósito, para que nadie se lleve por delante el trabajo de una visita sin
+ * enterarse.
+ */
+export async function borrarCliente(id, conVisitas) {
+  if (conVisitas) {
+    const visitas = unwrap(
+      await supabase.from('visitas').select('id').eq('cliente_id', id)
+    ) || [];
+    for (const v of visitas) {
+      const rutas = await rutasFotos(v.id);
+      if (rutas.length) {
+        // Si alguna foto no se deja borrar, se sigue: peor es dejar el cliente
+        // a medio borrar.
+        try { await supabase.storage.from('visitas').remove(rutas); } catch (_) { /* huérfana */ }
+      }
+      await borrarVisita(v.id, true);
+    }
+  }
   const { error } = await supabase.from('clientes_cache').delete().eq('id', id);
   if (error) throw error;
   return true;

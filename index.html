@@ -273,7 +273,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '13.7'; // versión visible de la app (única fuente)
+const APP_VERSION = '13.8'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -4940,7 +4940,11 @@ A.guardarVisita = async (completar, trasGuardar) => {
     V.visitaBusy = false;
     if (typeof trasGuardar === 'function') { toast('Visita guardada como borrador.'); A.cargarVisitas(); return trasGuardar(); }
     toast(completar ? 'Visita cerrada. Ya se puede enviar a Teamleader.' : 'Guardada. La sigues cuando quieras.');
-    if (completar) { A.cargarVisitas(); await A.verVisita(guardada.id); return subirVisitaDrive(); }
+    if (completar) {
+      A.cargarVisitas(); await A.verVisita(guardada.id);
+      graciasVisita(guardada.id);
+      return subirVisitaDrive();
+    }
     V.view = esPresupuestos() ? 'agenda' : 'visitas'; render(); A.cargarVisitas();
   } catch (e) {
     V.visitaBusy = false; guardarBorradorVisita(); render();
@@ -4985,7 +4989,7 @@ A.editarVisita = async (id) => {
   }
 };
 A.verVisita = async (id) => {
-  V.visitaVer = null; V.okVisitaDrive = null; V.view = 'visita'; scrollMemo.visita = 0; render();
+  V.visitaVer = null; V.okVisitaDrive = null; V.okGracias = null; V.view = 'visita'; scrollMemo.visita = 0; render();
   try {
     V.visitaVer = await visitasDB.verVisita(id);
     render();
@@ -5206,6 +5210,43 @@ A.compartirVisita = async () => {
     avisar('No se pudo preparar el PDF: ' + msgError(e));
   }
 };
+
+/**
+ * El correo de gracias al cliente. Sale solo al cerrar la visita, y una sola
+ * vez: lo controla `visitas.gracias_at` en el servidor, así que reabrir y volver
+ * a cerrar no le escribe otra vez.
+ */
+async function graciasVisita(id, otraVez) {
+  if (!id || !navigator.onLine) return;
+  V.okGracias = { estado: 'enviando' }; render();
+  try {
+    const r = await visitasDB.correoGraciasVisita(id, otraVez);
+    V.okGracias = r && r.enviado ? { estado: 'ok', para: r.para }
+      : r && r.ya_enviado ? { estado: 'ya' }
+      : { estado: 'nada', motivo: (r && r.nada) || '' };
+  } catch (e) {
+    V.okGracias = { estado: 'error', error: msgError(e) };
+  }
+  render();
+}
+A.graciasVisita = () => { const vv = V.visitaVer; if (vv) graciasVisita(vv.visita.id, true); };
+
+/** Cómo quedó ese correo, en la ficha de la visita. */
+function graciasHTML(v) {
+  const g = V.okGracias;
+  const enviado = g ? (g.estado === 'ok' || g.estado === 'ya') : !!(v && v.gracias_at);
+  return `<div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--l1)">
+    <div class="tiny"${g && g.estado === 'error' ? ' style="color:var(--rojo)"' : ''}>${
+      g && g.estado === 'enviando' ? 'Escribiendo al cliente…'
+      : g && g.estado === 'ok' ? '✓ Correo de gracias enviado a ' + esc(g.para || '')
+      : g && g.estado === 'ya' ? '✓ Ya se le dio las gracias'
+      : g && g.estado === 'nada' ? 'No se le ha escrito: ' + esc(g.motivo || 'sin email')
+      : g && g.estado === 'error' ? 'No se pudo escribir al cliente: ' + esc(g.error || '')
+      : enviado ? '✓ Se le dio las gracias al cliente'
+      : 'Al cerrar la visita se le dan las gracias al cliente. Ese correo no lleva ninguno de los datos que has tomado.'}</div>
+    ${!g || g.estado !== 'enviando' ? `<button class="pill" data-a="graciasVisita" style="margin-top:8px;padding:10px;width:100%;text-align:center;font-size:13px">${enviado ? 'Volver a enviarlo' : 'Enviar el correo de gracias'}</button>` : ''}
+  </div>`;
+}
 
 // Copia a Drive. Sale sola al cerrar la visita y se puede reintentar a mano.
 async function subirVisitaDrive() {
@@ -5538,6 +5579,7 @@ function vVisita() {
       dr.estado === 'subiendo' ? 'Subiendo el PDF y las fotos…'
       : dr.estado === 'ok' ? '✓ En Drive' + (dr.archivo ? ' como ' + esc(dr.archivo) : '') + (dr.fotos ? ' · ' + dr.fotos + (dr.fotos === 1 ? ' foto' : ' fotos') : '')
       : 'No se pudo copiar a Drive: ' + esc(dr.error || '')}</div>` : v.drive_at ? `<div class="tiny" style="margin-top:10px">✓ Copiada a Drive el ${fechaCorta(v.drive_at)}</div>` : ''}
+    ${graciasHTML(v)}
   </div>`;
 
   return cab(v.direccion || 'Visita', [cli && cli.nombre, v.poblacion, v.codigo].filter(Boolean).join(' · '),
@@ -5985,11 +6027,13 @@ function agBorrarCliente(id) {
   render();
 }
 async function agConfirmarBorrarCliente() {
-  const s = V.sheet; if (!s || s.tipo !== 'borrarCliente' || s.busy || s.visitas) return;
+  const s = V.sheet; if (!s || s.tipo !== 'borrarCliente' || s.busy) return;
+  // Con visitas hay que tocar dos veces: se lleva por delante trabajo hecho.
+  if (s.visitas && !s.seguro) { s.seguro = true; render(); return; }
   if (!navigator.onLine) { avisar('Sin conexión: no se ha borrado.'); return; }
   s.busy = true; render();
   try {
-    await visitasDB.borrarCliente(s.id);
+    await visitasDB.borrarCliente(s.id, !!s.visitas);
     if (V.clienteVerId === s.id) { V.clienteVerId = null; V.view = 'clientes'; }
     V.sheet = null;
     toast('Cliente borrado.');
@@ -5999,7 +6043,7 @@ async function agConfirmarBorrarCliente() {
     s.busy = false; render();
     const m = msgError(e);
     avisar(/23503|foreign key|viola/i.test(m)
-      ? 'Ese cliente tiene visitas guardadas: no se puede borrar.'
+      ? 'Algo suyo sigue enganchado y la base no deja borrarlo. Cuéntamelo y lo miro.'
       : 'No se pudo borrar: ' + agErrorTxt(e));
   }
 }
@@ -6186,7 +6230,10 @@ function vClientes() {
  */
 function webListaHTML() {
   if (!puedeCitar()) return '';
-  const web = (V.agenda.clientes || []).filter((c) => c.lead_at && !(c.citas || []).length);
+  // Ya visitado o ya citado deja de estar pendiente, aunque la visita se hiciera
+  // sin pasar por una cita.
+  const web = (V.agenda.clientes || []).filter((c) => c.lead_at
+    && !(c.citas || []).length && !(c.visitas || []).length);
   const boton = `<button class="pill" data-a="leadsBuscar" style="padding:8px 14px;font-size:12px" ${V.leadsBusy ? 'disabled' : ''}>${V.leadsBusy ? 'Mirando…' : 'Mirar ahora'}</button>`;
   if (!web.length) {
     return `<div class="row" style="justify-content:space-between;align-items:center;margin-bottom:16px">
@@ -6798,20 +6845,20 @@ function sheet() {
     </div></div>`;
   }
   if (s.tipo === 'borrarCliente') {
-    if (s.visitas) {
-      return `<div class="sheet"><div>
-        <div style="font:600 23px/1.15 var(--cond)">No se puede borrar</div>
-        <div class="sub" style="margin-top:8px"><b>${esc(s.nombre)}</b> tiene ${s.visitas === 1 ? '1 visita guardada' : s.visitas + ' visitas guardadas'} con sus fichas y fotos. Borrar el cliente dejaría ese trabajo sin dueño.</div>
-        <div class="sub" style="margin-top:10px">Si ya no trabajáis con él, lo más limpio es dejarlo como está: sin citas por delante no molesta en la agenda.</div>
-        <button class="btn btn-verde" data-a="cerrarSheet" style="margin-top:16px">Entendido</button>
-      </div></div>`;
-    }
+    const lleva = [
+      s.citas ? (s.citas === 1 ? 'su cita' : 'sus ' + s.citas + ' citas') : '',
+      s.visitas ? (s.visitas === 1 ? 'su visita, con la ficha y las fotos' : 'sus ' + s.visitas + ' visitas, con sus fichas y sus fotos') : '',
+    ].filter(Boolean).join(' y ');
     return `<div class="sheet"><div>
-      <div style="font:600 23px/1.15 var(--cond)">¿Borrar a ${esc(s.nombre)}?</div>
-      <div class="sub" style="margin-top:8px">Se borra su ficha${s.citas ? ' y también ' + (s.citas === 1 ? 'su cita' : 'sus ' + s.citas + ' citas') : ''}. No se puede recuperar.</div>
+      <div style="font:600 23px/1.15 var(--cond)">${s.seguro ? '¿Seguro del todo?' : '¿Borrar a ' + esc(s.nombre) + '?'}</div>
+      <div class="sub" style="margin-top:8px">Se borra su ficha${lleva ? ' y también ' + lleva : ''}. No se puede recuperar.</div>
+      ${s.visitas ? `<div class="aviso-rojo" style="margin-top:12px"><span class="ex">!</span><span style="font:400 13px/1.4 var(--sans)">${s.seguro
+        ? 'Esa visita es trabajo hecho y pagado. Si la subiste a Drive o al CRM, allí se queda; aquí desaparece.'
+        : 'Tiene trabajo de visita guardado. Si es un cliente de prueba, adelante; si no, míralo dos veces.'}</span></div>` : ''}
       <div class="row g8" style="margin-top:18px">
         <button class="btn btn-gris" data-a="cerrarSheet" style="border-radius:99px">Cancelar</button>
-        <button class="btn btn-rojo" data-a="ag_confirmarBorrarCliente" style="font-size:14px" ${s.busy ? 'disabled' : ''}>${s.busy ? 'Borrando…' : 'Borrar'}</button>
+        <button class="btn btn-rojo" data-a="ag_confirmarBorrarCliente" style="font-size:14px" ${s.busy ? 'disabled' : ''}>${
+          s.busy ? 'Borrando…' : s.visitas && !s.seguro ? 'Borrar de todas formas' : 'Borrar'}</button>
       </div>
     </div></div>`;
   }
@@ -7164,6 +7211,7 @@ document.addEventListener('click', (e) => {
   if (a === 'exportarVisitasCSV') return A.exportarVisitasCSV();
   if (a === 'compartirVisita') return A.compartirVisita();
   if (a === 'visitaDrive') return A.visitaDrive();
+  if (a === 'graciasVisita') return A.graciasVisita();
   if (a === 'cliDriveReintentar') return A.cliDriveReintentar(d.id);
   if (a === 'cliCRMReintentar') return A.cliCRMReintentar(d.id);
   if (a === 'crmBuscarYa') return A.crmBuscarYa();

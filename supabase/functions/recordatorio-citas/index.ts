@@ -189,7 +189,7 @@ function correoClienteHTML(d: any) {
         <a href="${escHtml(d.calendario)}" style="display:inline-block;padding:12px 24px;font-family:${FUENTE};font-size:13px;font-weight:700;letter-spacing:.5px;color:${COLOR.verde};text-decoration:none;">Añadir a mi calendario</a>
       </td></tr>
     </table>
-    <p style="margin:10px 0 0;font-size:12px;line-height:18px;color:${COLOR.suave};">También puede tocar el archivo adjunto de este correo para guardarla en el calendario del móvil.</p>` : ''}
+    <p style="margin:10px 0 0;font-size:12px;line-height:18px;color:${COLOR.suave};">Se guarda en el calendario de su propio móvil. También puede tocar el archivo adjunto de este correo.</p>` : ''}
     <p style="margin:22px 0 0;font-size:14px;line-height:22px;color:${COLOR.suave};">${d.anulada
       ? 'Si desea concertar una nueva cita, puede llamarnos al'
       : 'Si usted lo desea, puede cambiar su cita contactando con nosotros en el'} <a href="${TEL_LINK}" style="color:${COLOR.verde};text-decoration:none;font-weight:700;">${escHtml(TEL)}</a>.</p>`;
@@ -335,20 +335,23 @@ const adjuntoCita = (d: any) => [{
   content_type: 'text/calendar; charset=utf-8; method=' + (d.tipo === 'anulada' ? 'CANCEL' : 'PUBLISH'),
 }];
 
-// Enlace para añadirlo a Google Calendar desde el ordenador, donde un adjunto
-// se maneja peor.
-// deno-lint-ignore no-explicit-any
-function urlGoogleCalendar(d: any) {
-  const inicio = new Date(d.inicio);
-  const fin = new Date(inicio.getTime() + (d.duracion_min || 60) * 60000);
-  const p = new URLSearchParams({
-    action: 'TEMPLATE',
-    text: d.titulo,
-    dates: enUTC(d.inicio) + '/' + enUTC(fin.toISOString()),
-  });
-  if (d.donde) p.set('location', d.donde);
-  if (d.detalle) p.set('details', d.detalle);
-  return 'https://calendar.google.com/calendar/render?' + p.toString();
+// Enlace al calendario DEL MÓVIL. Apunta a la función `cita-ics`, que sirve la
+// cita como archivo: el iPhone abre Calendario y Android ofrece guardarla, cada
+// uno en el suyo. Nada de cuentas de Google.
+//
+// El enlace va firmado con AVISOS_CLAVE para que no se pueda adivinar cambiando
+// el id en la dirección. La firma se calcula igual en las dos funciones.
+async function firmaDe(clave: string, dato: string) {
+  const key = await crypto.subtle.importKey(
+    'raw', new TextEncoder().encode(clave), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  const mac = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(dato));
+  return Array.from(new Uint8Array(mac)).map((b) => b.toString(16).padStart(2, '0')).join('').slice(0, 32);
+}
+
+async function urlCalendario(clave: string, citaId: string, quien: string) {
+  const base = (Deno.env.get('SUPABASE_URL') || '') + '/functions/v1/cita-ics';
+  const k = await firmaDe(clave, citaId + '.' + quien);
+  return `${base}?c=${encodeURIComponent(citaId)}&q=${quien}&k=${k}`;
 }
 
 const mayus = (s: string) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
@@ -483,11 +486,12 @@ Deno.serve(async (req) => {
         `\n\nUn saludo,\nSysefen · Eficiencia Energética\n\n` +
         `(Este correo se envía automáticamente. Por favor, no responda a esta dirección.)`;
       const calCliente = paraCalendario('Visita de Sysefen' + (motivoU ? ' · ' + mayus(motivoU) : ''));
+      const enlaceCliente = tipo === 'anulada' ? '' : await urlCalendario(CLAVE, c.id, 'c');
       correos.push({
         quien: 'cliente', para: String(c.cliente.email).trim(), asunto, texto,
         adjuntos: adjuntoCita(calCliente),
         html: correoClienteHTML({
-          calendario: tipo === 'anulada' ? '' : urlGoogleCalendar(calCliente),
+          calendario: enlaceCliente,
           logoUrl: LOGO_URL, nombre: c.cliente.nombre,
           etiqueta: tipo === 'nueva' ? 'Su cita' : mayus(cuandoCorto(c.inicio, ahoraU)),
           dia: diaU, hora: horaU, direccion: dondeU, motivo: motivoU,
@@ -513,12 +517,13 @@ Deno.serve(async (req) => {
         `${c.nota ? `\n  Nota: ${c.nota}` : ''}` +
         `\n\nLo tienes todo en la Agenda de la app: ${APP_URL}`;
       const calTecnico = paraCalendario((tipo === 'anulada' ? 'ANULADA · ' : '') + quienCli + (motivoU ? ' · ' + mayus(motivoU) : ''));
+      const enlaceTecnico = tipo === 'anulada' ? '' : await urlCalendario(CLAVE, c.id, 't');
       correos.push({
         quien: 'instalador', para: String(c.empleado.email_avisos).trim(), asunto, texto,
         adjuntos: adjuntoCita(calTecnico),
         html: correoTecnicoHTML({
           logoUrl: LOGO_URL, appUrl: APP_URL, nombre: c.empleado.nombre, aviso: tipo,
-          calendario: tipo === 'anulada' ? '' : urlGoogleCalendar(calTecnico), conAdjunto: true,
+          calendario: enlaceTecnico, conAdjunto: true,
           citas: [{
             etiqueta: tipo === 'anulada' ? 'Anulada' : mayus(cuandoCorto(c.inicio, ahoraU)),
             dia: diaCorto(c.inicio), hora: horaU, duracion: duracionTxt(c.duracion_min || 60),
@@ -721,6 +726,13 @@ Deno.serve(async (req) => {
     tipo: 'recordatorio',
   });
 
+  // Los enlaces del calendario se firman de uno en uno; se preparan antes de
+  // montar los correos, que ahí ya no se puede esperar a nada.
+  const enlaces = new Map<string, { c: string; t: string }>();
+  for (const c of citas) {
+    enlaces.set(c.id, { c: await urlCalendario(CLAVE, c.id, 'c'), t: await urlCalendario(CLAVE, c.id, 't') });
+  }
+
   const aClientes = citas.filter((c) => esEmail(c.cliente?.email)).map((c) => ({
     para: String(c.cliente!.email).trim(),
     adjuntos: adjuntoCita(calDeCita(c, 'Visita de Sysefen' + (motivoDe(c) ? ' · ' + mayus(motivoDe(c)) : ''))),
@@ -742,7 +754,7 @@ Deno.serve(async (req) => {
       `Un saludo,\nSysefen · Eficiencia Energética\n\n` +
       `(Este correo se envía automáticamente. Por favor, no responda a esta dirección.)`,
     html: correoClienteHTML({
-      calendario: urlGoogleCalendar(calDeCita(c, 'Visita de Sysefen' + (motivoDe(c) ? ' · ' + mayus(motivoDe(c)) : ''))),
+      calendario: (enlaces.get(c.id) || {}).c || '',
       logoUrl: LOGO_URL, nombre: c.cliente!.nombre, etiqueta: mayus(cuandoCorto(c.inicio, ahora)),
       dia: mayus(diaLargo(c.inicio)), hora: hora(c.inicio), direccion: dondeDe(c), motivo: motivoDe(c),
       tecnico: c.empleado?.nombre || '', duracion: duracionTxt(c.duracion_min || 60),
@@ -779,9 +791,7 @@ Deno.serve(async (req) => {
       `\n\nLo tienes todo en la Agenda de la app: ${APP_URL}`,
     html: correoTecnicoHTML({
       logoUrl: LOGO_URL, appUrl: APP_URL, nombre: t.nombre, conAdjunto: true,
-      calendario: t.citas.length === 1
-        ? urlGoogleCalendar(calDeCita(t.citas[0], (t.citas[0].cliente?.nombre || 'Cliente') + (motivoDe(t.citas[0]) ? ' · ' + mayus(motivoDe(t.citas[0])) : '')))
-        : '',
+      calendario: t.citas.length === 1 ? ((enlaces.get(t.citas[0].id) || {}).t || '') : '',
       citas: t.citas.map((c) => ({
         etiqueta: mayus(cuandoCorto(c.inicio, ahora)), dia: diaCorto(c.inicio), hora: hora(c.inicio),
         duracion: duracionTxt(c.duracion_min || 60), cliente: c.cliente?.nombre || 'Cliente',
