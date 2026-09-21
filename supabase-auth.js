@@ -39,7 +39,7 @@ export function listaEmpleadosLogin() {
 // `emailFallback` permite entrar a empleados dados de alta desde la app
 // (no incluidos en el mapa fijo CUENTAS): su email viene de public.empleados.
 // Lanza Error con mensaje corto en español si algo falla.
-export async function loginConPin(nombre, pin, emailFallback) {
+export async function loginConPin(nombre, pin, emailFallback, captchaToken) {
   const cuenta = cuentaPorNombre(nombre);
   const email = cuenta ? cuenta.email : (emailFallback || '').trim().toLowerCase();
   if (!email) throw new Error('Empleado no reconocido.');
@@ -48,11 +48,19 @@ export async function loginConPin(nombre, pin, emailFallback) {
   const { data, error } = await supabase.auth.signInWithPassword({
     email,
     password: claveInterna(pin),
+    // Comprobación antirrobots (Turnstile). Si en Supabase no está activada,
+    // sobra y no molesta; si lo está y falta, el error se distingue abajo.
+    options: captchaToken ? { captchaToken } : undefined,
   });
 
   if (error) {
     if (/invalid login credentials/i.test(error.message)) {
       throw new Error('PIN incorrecto.');
+    }
+    if (/captcha/i.test(error.message)) {
+      const e = new Error('No se pudo comprobar que no eres un robot. Prueba otra vez.');
+      e.captcha = true;
+      throw e;
     }
     throw new Error('No se pudo entrar: ' + error.message);
   }
@@ -97,11 +105,16 @@ export async function empleadoActual() {
 // (anon) Supabase solo deja tocar la contraseña propia. Hace falta la clave
 // service_role, que no debe vivir nunca en la app — sería una función de
 // servidor (Edge Function) o hacerlo a mano en el panel de Supabase.
-export async function cambiarPinPropio(pinActual, pinNuevo) {
+export async function cambiarPinPropio(pinActual, pinNuevo, captchaToken) {
   if (!/^\d{4}$/.test(String(pinNuevo).trim())) throw new Error('El PIN nuevo son 4 números.');
   const { data: { user } } = await supabase.auth.getUser();
   if (!user || !user.email) throw new Error('No hay sesión abierta.');
-  const prueba = await supabase.auth.signInWithPassword({ email: user.email, password: claveInterna(pinActual) });
+  // Comprobar el PIN actual vuelve a pasar por el login, así que si hay
+  // captcha activo también hace falta su token.
+  const prueba = await supabase.auth.signInWithPassword({
+    email: user.email, password: claveInterna(pinActual),
+    options: captchaToken ? { captchaToken } : undefined,
+  });
   if (prueba.error) throw new Error('El PIN actual no es correcto.');
   const { error } = await supabase.auth.updateUser({ password: claveInterna(pinNuevo) });
   if (error) throw new Error(error.message);

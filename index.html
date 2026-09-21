@@ -216,6 +216,13 @@ a:hover{color:var(--tinta)}
   color:rgba(255,255,255,.38);cursor:pointer;
 }
 .login-tuerca:active{color:#fff;background:rgba(255,255,255,.12)}
+
+/* La comprobación antirrobots vive FUERA de #app: la pantalla se repinta con
+   cada cifra del PIN, y ahí dentro el widget se destruiría a media palabra y
+   perdería el token. En modo "interaction-only" no se ve nada; solo aparece
+   cuando Cloudflare quiere que alguien confirme que es una persona. */
+#captcha{position:fixed;left:50%;bottom:calc(22px + var(--safe-b));transform:translateX(-50%);z-index:80;display:none}
+body.con-captcha #captcha{display:block}
 .pie{flex:none;display:flex;gap:10px;padding:12px 20px calc(14px + var(--safe-b));background:var(--papel);border-top:1px solid var(--l1)}
 .pie .btn{padding:16px}
 .pie .btn-gris{flex:0 0 34%}
@@ -298,6 +305,7 @@ a:hover{color:var(--tinta)}
 </head>
 <body>
 <div id="app"></div>
+<div id="captcha" aria-hidden="true"></div>
 <div id="print"></div>
 
 <script type="module">
@@ -315,7 +323,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '14.4'; // versión visible de la app (única fuente)
+const APP_VERSION = '14.5'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -407,6 +415,73 @@ async function restaurarSesion() {
   } catch (e) { /* sin token y sin red: se queda en login */ }
   render();
   refrescarDatos().then(() => { render(); comprobarFirmaPendiente(); });
+}
+
+/* ---------- comprobación antirrobots (Cloudflare Turnstile) -----------------
+ * Frena a quien pruebe PIN a lo bruto con un script. Al empleado normalmente no
+ * le aparece nada: el widget va en modo "interaction-only" y solo se enseña si
+ * Cloudflare duda.
+ *
+ * La llave de aquí es la PÚBLICA, va en la app a propósito. La secreta vive en
+ * Supabase (Authentication → Attack Protection) y nunca pasa por el navegador.
+ *
+ * Si Turnstile no carga, o la llave está vacía, se entra sin token: mientras la
+ * comprobación no esté activada en Supabase, la app funciona igual que siempre.
+ * ------------------------------------------------------------------------- */
+const TURNSTILE_KEY = '0x4AAAAAAE-DRMi7Yz4YV_t8';
+let turnstileScript = null;
+let captchaId = null;
+let captchaEspera = null;
+
+function cargarTurnstile() {
+  if (!TURNSTILE_KEY) return Promise.resolve(false);
+  if (window.turnstile) return Promise.resolve(true);
+  if (turnstileScript) return turnstileScript;
+  turnstileScript = new Promise((ok) => {
+    const t = document.createElement('script');
+    t.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
+    t.async = true; t.defer = true;
+    t.onload = () => ok(true);
+    t.onerror = () => { turnstileScript = null; ok(false); };
+    document.head.appendChild(t);
+  });
+  return turnstileScript;
+}
+
+async function montarCaptcha() {
+  if (!TURNSTILE_KEY || captchaId !== null) return;
+  const caja = document.getElementById('captcha'); if (!caja) return;
+  if (!(await cargarTurnstile()) || !window.turnstile) return;
+  if (captchaId !== null) return;
+  try {
+    captchaId = window.turnstile.render(caja, {
+      sitekey: TURNSTILE_KEY,
+      theme: 'dark',
+      execution: 'execute',       // el token se pide cuando hace falta, no al cargar
+      appearance: 'interaction-only',
+      callback: (t) => { if (captchaEspera) captchaEspera(t); },
+      'error-callback': () => { if (captchaEspera) captchaEspera(null); },
+      'expired-callback': () => { if (captchaEspera) captchaEspera(null); },
+    });
+  } catch (e) { registrarError('montarCaptcha', e); }
+}
+
+/**
+ * Un token nuevo para esta entrada. Los de Turnstile son de un solo uso, así
+ * que cada intento pide el suyo. Si no hay widget, o tarda demasiado, devuelve
+ * null y se entra sin él: si en Supabase no está activado, da igual; y si lo
+ * está, el error que vuelve lo dice con todas las letras.
+ */
+function tokenCaptcha(msMax = 9000) {
+  if (!TURNSTILE_KEY || !window.turnstile || captchaId === null) return Promise.resolve(null);
+  return new Promise((ok) => {
+    let hecho = false;
+    const fin = (t) => { if (hecho) return; hecho = true; captchaEspera = null; ok(t || null); };
+    captchaEspera = fin;
+    try { window.turnstile.reset(captchaId); window.turnstile.execute(captchaId); }
+    catch (e) { fin(null); }
+    setTimeout(() => fin(null), msMax);
+  });
 }
 
 /* ---------- cuaderno de fallos (sql/etapa35) --------------------------------
@@ -1038,9 +1113,11 @@ A.pinTecla = (k) => {
     // corregida después). Si un empleado dado de alta desde la app da PIN
     // incorrecto, se prueba una vez con el email que le toca por su nombre.
     const emailAlt = sysAuth.cuentaPorNombre(pu.nombre) ? '' : emailSugerido(pu.nombre);
-    sysAuth.loginConPin(pu.nombre, pin, pu.email).catch((err) => {
+    // Cada intento con su token: los de Turnstile son de un solo uso, así que
+    // el reintento con el otro email necesita uno nuevo.
+    tokenCaptcha().then((t) => sysAuth.loginConPin(pu.nombre, pin, pu.email, t)).catch(async (err) => {
       if (err && /PIN incorrecto/.test(err.message || '') && emailAlt && emailAlt !== String(pu.email || '').toLowerCase()) {
-        return sysAuth.loginConPin(pu.nombre, pin, emailAlt);
+        return sysAuth.loginConPin(pu.nombre, pin, emailAlt, await tokenCaptcha());
       }
       throw err;
     }).then(async (res) => {
@@ -2821,7 +2898,7 @@ A.guardarPin = async () => {
   try {
     if (propio) {
       // El propio PIN se cambia con la sesión abierta: no hace falta servidor.
-      await sysAuth.cambiarPinPropio(s.actual, s.val);
+      await sysAuth.cambiarPinPropio(s.actual, s.val, await tokenCaptcha());
       V.sheet = null; toast('PIN cambiado. Úsalo la próxima vez que entres.'); render();
       return;
     }
@@ -3101,6 +3178,10 @@ function render() {
   if (V.view === 'p2') montarFirma();
   if (V.sheet && V.sheet.tipo === 'firmaPlanilla') montarFirmaPlanilla();
   if (V.view === 'imputarEmp' || V.view === 'imputarGrupo' || V.view === 'p1' || V.view === 'citaNueva') montarRelojes();
+  // El widget vive fuera de #app para que no lo borre cada repintado; aquí solo
+  // se enseña u oculta y, la primera vez, se monta.
+  document.body.classList.toggle('con-captcha', V.view === 'pin' || (V.sheet && V.sheet.tipo === 'pin'));
+  if (V.view === 'pin' || V.view === 'login') montarCaptcha();
   const sc = app.querySelector('.scroll,.hoja'); if (sc && scrollMemo[V.view] != null) sc.scrollTop = scrollMemo[V.view];
 }
 const scrollMemo = {};
