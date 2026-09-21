@@ -326,7 +326,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '14.6'; // versión visible de la app (única fuente)
+const APP_VERSION = '14.7'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -433,8 +433,6 @@ async function restaurarSesion() {
  * ------------------------------------------------------------------------- */
 const TURNSTILE_KEY = '0x4AAAAAAE-DRMi7Yz4YV_t8';
 let turnstileScript = null;
-let captchaId = null;
-let captchaEspera = null;
 
 function cargarTurnstile() {
   if (!TURNSTILE_KEY) return Promise.resolve(false);
@@ -451,39 +449,51 @@ function cargarTurnstile() {
   return turnstileScript;
 }
 
-async function montarCaptcha() {
-  if (!TURNSTILE_KEY || captchaId !== null) return;
-  const caja = document.getElementById('captcha'); if (!caja) return;
-  if (!(await cargarTurnstile()) || !window.turnstile) return;
-  if (captchaId !== null) return;
-  try {
-    captchaId = window.turnstile.render(caja, {
-      sitekey: TURNSTILE_KEY,
-      theme: 'dark',
-      execution: 'execute',       // el token se pide cuando hace falta, no al cargar
-      appearance: 'interaction-only',
-      callback: (t) => { if (captchaEspera) captchaEspera(t); },
-      'error-callback': () => { if (captchaEspera) captchaEspera(null); },
-      'expired-callback': () => { if (captchaEspera) captchaEspera(null); },
-    });
-  } catch (e) { registrarError('montarCaptcha', e); }
-}
-
 /**
  * Un token nuevo para esta entrada. Los de Turnstile son de un solo uso, así
- * que cada intento pide el suyo. Si no hay widget, o tarda demasiado, devuelve
- * null y se entra sin él: si en Supabase no está activado, da igual; y si lo
- * está, el error que vuelve lo dice con todas las letras.
+ * que cada intento monta su widget, espera el token y lo quita.
+ *
+ * Antes se montaba uno solo, escondido, al abrir la portada, y en cada PIN se
+ * hacía reset + execute: en el iPhone a veces no contestaba a tiempo, la app
+ * entraba sin token y Supabase decía que no, con el PIN bien puesto. Ahora:
+ * widget nuevo cada vez, en una caja visible (si está oculta, Cloudflare puede
+ * no llegar a arrancarlo), y si Cloudflare pide que se toque la casilla, se
+ * le avisa a la persona y se le da un minuto en vez de nueve segundos.
+ *
+ * Si Turnstile no carga, devuelve null y se entra sin él: si en Supabase no
+ * está activado, da igual; y si lo está, el error que vuelve lo dice.
  */
-function tokenCaptcha(msMax = 9000) {
-  if (!TURNSTILE_KEY || !window.turnstile || captchaId === null) return Promise.resolve(null);
+async function tokenCaptcha() {
+  if (!TURNSTILE_KEY) return null;
+  const caja = document.getElementById('captcha');
+  if (!caja || !(await cargarTurnstile()) || !window.turnstile) return null;
   return new Promise((ok) => {
-    let hecho = false;
-    const fin = (t) => { if (hecho) return; hecho = true; captchaEspera = null; ok(t || null); };
-    captchaEspera = fin;
-    try { window.turnstile.reset(captchaId); window.turnstile.execute(captchaId); }
-    catch (e) { fin(null); }
-    setTimeout(() => fin(null), msMax);
+    let id = null, hecho = false, reloj = null;
+    const esperar = (ms) => { clearTimeout(reloj); reloj = setTimeout(() => fin(null), ms); };
+    const fin = (t) => {
+      if (hecho) return; hecho = true; clearTimeout(reloj);
+      try { if (id !== null) window.turnstile.remove(id); } catch (e) { /* ya no estaba */ }
+      caja.innerHTML = '';
+      document.body.classList.remove('con-captcha');
+      if (V.captchaToca) { V.captchaToca = false; render(); }
+      ok(t || null);
+    };
+    document.body.classList.add('con-captcha');
+    try {
+      id = window.turnstile.render(caja, {
+        sitekey: TURNSTILE_KEY,
+        theme: 'dark',
+        appearance: 'interaction-only',
+        callback: (t) => fin(t),
+        'error-callback': (c) => { registrarError('captcha', new Error('Turnstile ' + c)); fin(null); return true; },
+        'expired-callback': () => fin(null),
+        'timeout-callback': () => fin(null),
+        // Cloudflare duda y enseña la casilla: hay que decírselo a la persona
+        // y darle tiempo para tocarla.
+        'before-interactive-callback': () => { V.captchaToca = true; render(); esperar(60000); },
+      });
+    } catch (e) { registrarError('tokenCaptcha', e); fin(null); return; }
+    esperar(20000);
   });
 }
 
@@ -3181,10 +3191,10 @@ function render() {
   if (V.view === 'p2') montarFirma();
   if (V.sheet && V.sheet.tipo === 'firmaPlanilla') montarFirmaPlanilla();
   if (V.view === 'imputarEmp' || V.view === 'imputarGrupo' || V.view === 'p1' || V.view === 'citaNueva') montarRelojes();
-  // El widget vive fuera de #app para que no lo borre cada repintado; aquí solo
-  // se enseña u oculta y, la primera vez, se monta.
-  document.body.classList.toggle('con-captcha', V.view === 'pin' || (V.sheet && V.sheet.tipo === 'pin'));
-  if (V.view === 'pin' || V.view === 'login') montarCaptcha();
+  // Se va bajando Turnstile mientras se elige nombre y PIN, para que al meter
+  // la última cifra ya esté listo. El widget lo monta tokenCaptcha() en cada
+  // intento, fuera de #app para que no lo borre ningún repintado.
+  if (V.view === 'pin' || V.view === 'login' || (V.sheet && V.sheet.tipo === 'pin')) cargarTurnstile();
   // En el iPhone con la app instalada, la pantalla a veces queda un pelo más
   // corta que el móvil y por abajo asoma el fondo de la página: sin esto, una
   // franja clara bajo la portada y el PIN, que son oscuros.
@@ -3283,7 +3293,7 @@ function vPin() {
     <div class="col" style="align-items:center;margin-top:22px">
       ${!u.id ? `<div class="av ${V.err ? 'shake' : ''}" style="width:64px;height:64px;font-size:25px;background:rgba(255,255,255,.16);color:#fff">${esc(ini(u.nombre || '?'))}</div>` : avatarHTML(u.id, `width:64px;height:64px;font-size:25px;background:${u.rol === 'admin' ? 'var(--ambar);color:var(--tinta)' : u.rol === 'jefe' ? 'var(--verde-c);color:#fff' : 'rgba(255,255,255,.16);color:#fff'}`, '', V.err ? 'shake' : '')}
       <div style="font:600 25px/1.1 var(--cond);color:#fff;margin-top:14px">${esc(u.nombre)}</div>
-      <div class="tiny" style="color:rgba(255,255,255,.45);margin-top:7px;letter-spacing:.1em;text-transform:uppercase">${V.err ? 'PIN incorrecto' : V.pinBusy ? 'Comprobando…' : 'Introduce tu PIN'}</div>
+      <div class="tiny" style="color:rgba(255,255,255,.45);margin-top:7px;letter-spacing:.1em;text-transform:uppercase">${V.err ? 'PIN incorrecto' : V.captchaToca ? 'Toca la casilla de abajo' : V.pinBusy ? 'Comprobando…' : 'Introduce tu PIN'}</div>
     </div>
     <div class="pin-dots ${V.err ? 'shake' : ''}">${[0, 1, 2, 3].map((i) => `<i class="${i < V.pin.length ? 'on' : ''}"></i>`).join('')}</div>
     <div class="pin-pad">${teclas.map((k) => k === '' ? '<span></span>' : `<button data-a="pinTecla" data-k="${k}" class="${k === 'del' ? 'plain' : ''}">${k === 'del' ? '←' : k}</button>`).join('')}</div>
