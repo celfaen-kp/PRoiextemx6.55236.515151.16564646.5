@@ -119,7 +119,17 @@ export async function guardarOCrearVisita(fila) {
     .select(CAMPOS_VISITA).maybeSingle();
   if (upd.error) throw upd.error;
   if (upd.data) return upd.data;
-  return crearVisita(fila);
+  try {
+    return await crearVisita(fila);
+  } catch (e) {
+    // No se pudo cambiar (0 filas) y tampoco crear porque ya existe: la visita
+    // es de otra persona y Supabase no deja tocarla. Antes salía un "duplicate
+    // key" que no se entendía.
+    if (e && (e.code === '23505' || /duplicate key/i.test(e.message || ''))) {
+      throw new Error('Esta visita la empezó otra persona y todavía no tienes permiso para cambiarla. Hay que ejecutar sql/etapa37_visitas_equipo.sql en Supabase.');
+    }
+    throw e;
+  }
 }
 
 export async function guardarVisita(id, cambios) {
