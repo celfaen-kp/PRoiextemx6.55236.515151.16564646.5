@@ -272,6 +272,14 @@ export async function clienteADrive(clienteId) {
   return invocar('cliente-drive', { cliente_id: clienteId });
 }
 
+/**
+ * Apunta en la hoja a todos los clientes que aún no estén: los que entran por
+ * la web y los traídos del CRM. Devuelve { apuntados, fallos }.
+ */
+export async function clientesPendientesADrive() {
+  return invocar('cliente-drive', { pendientes: true });
+}
+
 /** Sube el PDF de la visita y sus fotos a la carpeta del cliente. */
 export async function subirVisitaADrive(visitaId, pdfBlob) {
   const buf = new Uint8Array(await pdfBlob.arrayBuffer());

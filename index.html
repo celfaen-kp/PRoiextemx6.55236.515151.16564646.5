@@ -210,8 +210,11 @@ a:hover{color:var(--tinta)}
 .login-pie-txt{display:flex;align-items:center;gap:9px;font:500 9.5px/1.5 var(--mono);letter-spacing:.14em;text-transform:uppercase;color:rgba(255,255,255,.5)}
 .login-pie-txt.der{text-align:right}
 .login-pie-txt i{color:var(--verde-c);flex:none}
+/* La tuerca va en el flujo, al final de la lista y pegada a la derecha. Con
+   position:absolute se anclaba al borde de la pantalla y, en cuanto la lista
+   no cabía y había que desplazar, se quedaba flotando encima de un nombre. */
 .login-tuerca{
-  position:absolute;right:18px;bottom:calc(14px + var(--safe-b));
+  margin:10px -6px 0 auto;
   width:38px;height:38px;border-radius:99px;display:flex;align-items:center;justify-content:center;
   color:rgba(255,255,255,.38);cursor:pointer;
 }
@@ -323,7 +326,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '14.5'; // versión visible de la app (única fuente)
+const APP_VERSION = '14.6'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -3182,6 +3185,10 @@ function render() {
   // se enseña u oculta y, la primera vez, se monta.
   document.body.classList.toggle('con-captcha', V.view === 'pin' || (V.sheet && V.sheet.tipo === 'pin'));
   if (V.view === 'pin' || V.view === 'login') montarCaptcha();
+  // En el iPhone con la app instalada, la pantalla a veces queda un pelo más
+  // corta que el móvil y por abajo asoma el fondo de la página: sin esto, una
+  // franja clara bajo la portada y el PIN, que son oscuros.
+  document.documentElement.style.background = V.user ? '' : v === 'login' ? '#0d1a12' : 'var(--tinta)';
   const sc = app.querySelector('.scroll,.hoja'); if (sc && scrollMemo[V.view] != null) sc.scrollTop = scrollMemo[V.view];
 }
 const scrollMemo = {};
@@ -6063,7 +6070,26 @@ A.cargarAgenda = async () => {
     ag.citas = citas; ag.clientes = clientes; ag.error = null;
   } catch (e) { ag.error = msgError(e); }
   finally { ag.cargando = false; ag.cargado = true; if (AG_VISTAS.includes(V.view)) render(); }
+  clientesPendientesAHoja();
 };
+
+/**
+ * Los clientes que llegan de la web (o del CRM) entran en la app sin pasar por
+ * el formulario, y nadie los apuntaba en la hoja de Drive: había que darle al
+ * botón en cada ficha. Ahora el servidor los apunta solo cada cuarto de hora
+ * (teamleader-leads); esto es para no esperar: si al abrir la agenda queda
+ * alguno fuera, se le pide que los apunte ya. Una vez por sesión, en silencio.
+ */
+let pendientesPedidos = false;
+async function clientesPendientesAHoja() {
+  if (pendientesPedidos || !puedeCitar() || !navigator.onLine) return;
+  if (!V.agenda.clientes.some((c) => !c.drive_at)) return;
+  pendientesPedidos = true;
+  try {
+    const r = await visitasDB.clientesPendientesADrive();
+    if (r && r.apuntados) await A.cargarAgenda();
+  } catch (e) { registrarError('clientesPendientesAHoja', e); }
+}
 
 /* ---------- acciones: un solo despachador para todo lo que empieza por ag_ ---------- */
 A.ag = (a, d, e) => {
@@ -6223,7 +6249,7 @@ A.crmTraer = async (tlId, tipo, yaEnApp) => {
     V.crmBuscar = { texto: '', busy: false, hecho: false, error: null, filas: [] };
     V.clienteDraft = null;
     await A.cargarAgenda();
-    if (c) { V.clienteVerId = c.id; toast(c.nombre + ' traído del CRM.'); return agNuevaCita(c.id, true); }
+    if (c) { clienteADrive(c.id); V.clienteVerId = c.id; toast(c.nombre + ' traído del CRM.'); return agNuevaCita(c.id, true); }
     render();
   } catch (e) {
     V.crmBuscar.busy = false; render();

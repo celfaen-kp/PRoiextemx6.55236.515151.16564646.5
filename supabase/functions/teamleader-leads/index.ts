@@ -11,6 +11,10 @@
 // ella). O sea: lo que ha entrado por la web, o lo que alguien haya escrito a
 // mano en Teamleader. En los dos casos hace falta lo mismo: llamar y citar.
 //
+// LOS APUNTA EN LA HOJA DE CLIENTES: al acabar llama a `cliente-drive` con
+// { pendientes: true }, que escribe en "Clientes Sysefen" a todo el que aún no
+// esté. Para eso `cliente-drive` tiene que ir con "Verify JWT" desactivado.
+//
 // NO PISA NADA: si ese cliente ya está en la app (mismo tl_id), se deja como
 // está. Y la primera pasada solo mira los últimos 7 días, para no arrastrar
 // todo el histórico del CRM de golpe.
@@ -240,8 +244,24 @@ Deno.serve(async (req) => {
     }
     await sb.from('ajustes').upsert({ clave: 'tl_leads_desde', valor: masNuevo, updated_at: ahora });
 
+    // Y a la hoja de clientes de Drive, sin que nadie tenga que darle a nada.
+    // Se le pide a `cliente-drive` que apunte a todos los que falten (no solo a
+    // los de ahora: si una pasada anterior falló con Google, se recuperan aquí).
+    // Si Google falla, los clientes ya están en la app igual; no se rompe nada.
+    let hoja: unknown = null;
+    try {
+      const r = await fetch(Deno.env.get('SUPABASE_URL') + '/functions/v1/cliente-drive', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-clave': CLAVE },
+        body: JSON.stringify({ pendientes: true }),
+      });
+      hoja = await r.json().catch(() => ({ error: 'respuesta rara: ' + r.status }));
+    } catch (e) {
+      hoja = { error: (e as Error).message };
+    }
+
     return json({ ok: true, desde, mirados: contactos.length + empresas.length, nuevos: guardados,
-      nombres: nuevas.map((n) => n.nombre) });
+      nombres: nuevas.map((n) => n.nombre), hoja });
   } catch (e) {
     return json({ error: (e as Error).message }, 502);
   }
