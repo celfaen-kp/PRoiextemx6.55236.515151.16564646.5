@@ -688,3 +688,34 @@ export default {
   listarIncidencias, crearIncidencia,
   presenciaDiaria, listarImputaciones, proponerImputaciones, guardarImputaciones, borrarImputacion,
 };
+
+/* ---------------- material pendiente y notas (sql/etapa36) ---------------- */
+
+export async function listarMaterial() {
+  return unwrap(await supabase.from('material_pedidos').select('*')
+    .order('hecho_en', { ascending: false, nullsFirst: true }).order('creado_en', { ascending: false }).limit(400));
+}
+
+export async function crearMaterial(fila) {
+  return unwrap(await supabase.from('material_pedidos').insert(fila).select().single());
+}
+
+export async function actualizarMaterial(id, cambios) {
+  return unwrap(await supabase.from('material_pedidos').update(cambios).eq('id', id).select().single());
+}
+
+export async function borrarMaterial(id) {
+  return unwrap(await supabase.from('material_pedidos').delete().eq('id', id));
+}
+
+export async function listarNotas() {
+  return unwrap(await supabase.from('notas_equipo').select('*').order('creado_en', { ascending: false }).limit(200));
+}
+
+export async function crearNota(fila) {
+  return unwrap(await supabase.from('notas_equipo').insert(fila).select().single());
+}
+
+export async function borrarNota(id) {
+  return unwrap(await supabase.from('notas_equipo').delete().eq('id', id));
+}

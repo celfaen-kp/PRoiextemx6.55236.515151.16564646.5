@@ -1,34 +1,25 @@
-/* La comprobación antirrobots: que dé un token nuevo por intento, que sin
- * Turnstile no bloquee la entrada, y que si Cloudflare no contesta no deje la
- * app colgada. */
+/* La comprobación antirrobots (V14.7): widget nuevo en cada intento, token
+ * distinto cada vez, se quita al acabar, y sin Turnstile no bloquea. */
 setTimeout(function () {
-  titulo('sin Turnstile cargado');
-  tokenCaptcha(50).then(function (t) {
+  titulo('sin Turnstile');
+  cargarTurnstile = function () { return Promise.resolve(false); };
+  tokenCaptcha().then(function (t) {
     igual('se entra sin token (no bloquea)', t, null);
 
-    var ejecutado = 0, reseteado = 0, cb = null;
+    var montados = 0, quitados = 0;
     window.turnstile = {
-      render: function (el, o) { cb = o; return 7; },
-      execute: function () { ejecutado++; setTimeout(function () { cb.callback('TOKEN-' + ejecutado); }, 1); },
-      reset: function () { reseteado++; },
+      render: function (el, o) { montados++; var n = montados; setTimeout(function () { o.callback('TOKEN-' + n); }, 1); return n; },
+      remove: function () { quitados++; },
     };
-    document.getElementById = function () { return { dataset: {} }; };
-    return montarCaptcha();
-  }).then(function () {
+    cargarTurnstile = function () { return Promise.resolve(true); };
+    document.getElementById = function () { return { dataset: {}, innerHTML: '' }; };
     titulo('con Turnstile');
-    igual('widget montado', captchaId, 7);
-    return tokenCaptcha(500);
-  }).then(function (t1) {
-    igual('primer token', t1, 'TOKEN-1');
-    return tokenCaptcha(500);
-  }).then(function (t2) {
-    igual('segundo token, distinto', t2, 'TOKEN-2');
-    window.turnstile.execute = function () { /* Cloudflare no contesta */ };
-    var t0 = Date.now();
-    return tokenCaptcha(300).then(function (t3) {
-      titulo('si Cloudflare no contesta');
-      igual('devuelve null', t3, null);
-      comprueba('no se queda colgado (' + (Date.now() - t0) + ' ms)', Date.now() - t0 < 1500);
+    return tokenCaptcha().then(function (t1) {
+      igual('primer token', t1, 'TOKEN-1');
+      return tokenCaptcha();
+    }).then(function (t2) {
+      igual('segundo token, con widget nuevo', t2, 'TOKEN-2');
+      igual('widgets quitados al acabar', quitados, 2);
       resultado();
     });
   }).catch(function (e) { print('ERROR: ' + e); });

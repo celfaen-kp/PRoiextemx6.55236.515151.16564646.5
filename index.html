@@ -226,6 +226,31 @@ a:hover{color:var(--tinta)}
    cuando Cloudflare quiere que alguien confirme que es una persona. */
 #captcha{position:fixed;left:50%;bottom:calc(22px + var(--safe-b));transform:translateX(-50%);z-index:80;display:none}
 body.con-captcha #captcha{display:block}
+
+/* Material pendiente y notas (sql/etapa36) */
+.m-aviso{background:#f8efdc;border-radius:16px;padding:14px 15px;margin-bottom:12px;cursor:pointer;box-shadow:0 0 0 1px rgba(201,138,36,.25)}
+.m-tabs{display:flex;gap:4px;background:rgba(20,23,15,.06);padding:4px;border-radius:99px}
+.m-tabs div{flex:1;text-align:center;padding:9px 4px;border-radius:99px;font:600 13px var(--sans);cursor:pointer;color:var(--t2)}
+.m-tabs div.on{background:#fff;color:var(--tinta);box-shadow:var(--sh)}
+.m-mic,.m-mas{flex:none;width:50px;border-radius:14px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:#fff}
+.m-mic{background:var(--tinta)}
+.m-mic.oye{background:var(--rojo);animation:m-lat 1s infinite}
+@keyframes m-lat{50%{box-shadow:0 0 0 7px rgba(168,64,42,.18)}}
+.m-mas{background:var(--verde);font:600 26px/1 var(--sans)}
+.m-item{display:flex;gap:12px;align-items:flex-start;padding:13px 0;border-bottom:1px solid var(--l1)}
+.m-item:last-child{border-bottom:none}
+.m-check{flex:none;width:26px;height:26px;border-radius:8px;border:2px solid var(--l2);margin-top:1px;cursor:pointer;display:flex;align-items:center;justify-content:center;color:#fff}
+.m-check.ok{background:var(--verde-c);border-color:var(--verde-c)}
+.m-t{font:500 16px/1.3 var(--sans);overflow-wrap:anywhere}
+.m-item.hecho .m-t{text-decoration:line-through;color:var(--t3)}
+.m-etq{display:inline-block;font:500 10px/1 var(--mono);letter-spacing:.06em;text-transform:uppercase;padding:5px 7px;border-radius:6px;margin:6px 5px 0 0}
+.m-comp{background:#f8efdc;color:var(--ambar-o)}
+.m-desp{background:#e6eef7;color:#2b4f7a}
+.m-obra{background:rgba(20,23,15,.06);color:var(--t2)}
+.m-urge{background:var(--rojo-cl);color:var(--rojo)}
+.m-llevo{flex:none;font:600 11px/1 var(--mono);letter-spacing:.05em;text-transform:uppercase;padding:8px 10px;border-radius:99px;background:rgba(20,23,15,.06);cursor:pointer;margin-top:1px}
+.m-llevo.mio{background:var(--verde);color:#fff}
+.m-nota{background:#fffbea;border-radius:16px;padding:14px 15px;box-shadow:var(--sh);margin-bottom:10px}
 .pie{flex:none;display:flex;gap:10px;padding:12px 20px calc(14px + var(--safe-b));background:var(--papel);border-top:1px solid var(--l1)}
 .pie .btn{padding:16px}
 .pie .btn-gris{flex:0 0 34%}
@@ -326,7 +351,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '14.7'; // versión visible de la app (única fuente)
+const APP_VERSION = '14.8'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -417,7 +442,7 @@ async function restaurarSesion() {
     }
   } catch (e) { /* sin token y sin red: se queda en login */ }
   render();
-  refrescarDatos().then(() => { render(); comprobarFirmaPendiente(); });
+  refrescarDatos().then(() => { render(); comprobarFirmaPendiente(); A.cargarMaterial(); });
 }
 
 /* ---------- comprobación antirrobots (Cloudflare Turnstile) -----------------
@@ -1143,7 +1168,7 @@ A.pinTecla = (k) => {
       V.pinUser = null; V.pin = ''; V.pinBusy = false; V.view = 'hoy';
       if (S.bienvenida) { S.bienvenida = false; save(); }
       render();
-      refrescarDatos().then(() => { render(); comprobarFirmaPendiente(); });
+      refrescarDatos().then(() => { render(); comprobarFirmaPendiente(); A.cargarMaterial(); });
     }).catch((err) => {
       V.pinBusy = false; V.err = true; V.pin = '';
       if (err && err.message && !/PIN incorrecto/.test(err.message)) avisar(err.message);
@@ -1165,7 +1190,7 @@ A.salir = () => {
   V.view = 'login'; render();
   sysAuth.logout().catch(() => {});
 };
-A.ir = (v) => { V.view = v; render(); if (v === 'visitas') A.cargarVisitas(); if (AG_VISTAS.includes(v)) A.cargarAgenda(); if (v === 'ajustes' && verCRM() && !V.crm.cargado) A.crmEstado(); if (['hoy', 'obras', 'obra', 'partes', 'horas'].includes(v)) refrescarDatos().then(render); };
+A.ir = (v) => { V.view = v; render(); if (['hoy', 'material', 'obra', 'agenda'].includes(v)) A.cargarMaterial(); if (v === 'visitas') A.cargarVisitas(); if (AG_VISTAS.includes(v)) A.cargarAgenda(); if (v === 'ajustes' && verCRM() && !V.crm.cargado) A.crmEstado(); if (['hoy', 'obras', 'obra', 'partes', 'horas'].includes(v)) refrescarDatos().then(render); };
 A.verObra = (id) => {
   V.obraId = id; V.obraRango = 'total'; V.view = 'obra'; render();
   // El total de una obra se cuenta desde que se abrió, que puede ser de antes
@@ -1174,6 +1199,7 @@ A.verObra = (id) => {
   asegurarDesde(o && o.creado_en ? String(o.creado_en).slice(0, 10) : null)
     .then(() => refrescarDatos()).then(render);
   if (puedeCrear()) A.cargarDocsObra(id);
+  A.cargarMaterial();
 };
 A.obraRango = (r) => { V.obraRango = r; render(); };
 // (Sin "obra de hoy": el fichaje NUNCA lleva obra — se guarda con obraId null —
@@ -3168,6 +3194,7 @@ function render() {
   else if (v === 'planilla' && (esAdmin() || V.planEmp === V.user.id)) html = vPlanilla();
   else if (v === 'importar' && esAdmin()) html = vImportar();
   else if (v === 'ajustes') html = vAjustes();
+  else if (v === 'material') html = vMaterial();
   else if (v === 'p1') html = vP1();
   else if (v === 'p2') html = vP2();
   else if (v === 'p3') html = vP3();
@@ -3181,7 +3208,7 @@ function render() {
   else if (v === 'clienteVer' && verAgenda()) html = vClienteVer();
   else if (v === 'citaNueva' && puedeCitar()) html = vCitaNueva();
   else if (v === 'citaVer' && verAgenda()) html = vCitaVer();
-  if (V.user && ['hoy', 'obras', 'obra', 'partes', 'horas', 'imputar', 'empleados', 'ajustes', 'visitas', 'visita', 'agenda', 'clientes', 'clienteVer', 'revisarImp', 'errores'].includes(v)) html += nav(v);
+  if (V.user && ['hoy', 'obras', 'obra', 'partes', 'horas', 'imputar', 'empleados', 'ajustes', 'material', 'visitas', 'visita', 'agenda', 'clientes', 'clienteVer', 'revisarImp', 'errores'].includes(v)) html += nav(v);
   if (!navigator.onLine && V.user) html = '<div class="offline">Sin conexión — todo se guarda en el móvil</div>' + html;
   // Red de seguridad: si un sheet revienta al pintarse (p. ej. depende de
   // datos que cambiaron justo antes, como el usuario tras salir), que se
@@ -3323,6 +3350,7 @@ function vHoy() {
     ${S.opts.gps ? `<div class="row" style="justify-content:center;gap:7px;margin-top:12px"><span class="dot" style="width:6px;height:6px;background:rgba(255,255,255,.6)"></span><span class="tiny" style="color:rgba(255,255,255,.5)">Ubicación registrada al fichar</span></div>` : ''}
   </div>
   <div class="hoja"><div class="hoja-contenido">
+    ${matAvisoHoyHTML()}
     ${V.firmaPendiente ? `<div class="card" data-a="firmarMesPendiente" style="margin-bottom:12px;cursor:pointer;box-shadow:0 0 0 1.5px var(--ambar),var(--sh)">
       <div class="row g8"><span class="dot" style="width:8px;height:8px;background:var(--ambar)"></span><span class="lbl" style="color:var(--ambar-o)">Te faltan por firmar</span></div>
       <div class="h2" style="margin-top:9px">Las horas de ${esc(mesLargo(V.firmaPendiente))}</div>
@@ -3373,6 +3401,7 @@ function vHoyAdmin(u) {
     <div style="font:400 13px/1.4 var(--sans);margin-top:8px;color:rgba(255,255,255,.55)">Gestión. No necesitas fichar. Puedes consultar y corregir los fichajes del equipo.</div>
   </div>
   <div class="hoja"><div class="hoja-contenido">
+    ${matAvisoHoyHTML()}
     <div class="lbl" style="font-weight:600;font-size:12px;color:var(--t2);margin-bottom:10px">Equipo ahora</div>
     <div class="col g8">${equipo().map((x) => {
       const fx = fichajeAbierto(x.id);
@@ -3466,6 +3495,7 @@ function vObra() {
       <button class="pill grow" data-a="exportarHorasObraCSV" style="padding:12px;text-align:center">Exportar CSV</button>
     </div>` : ''}
     ${puedeCrear() ? docsObraHTML(o) : ''}
+    ${matObraHTML(o)}
     <div class="lbl" style="font-weight:600;font-size:12px;color:var(--t2);margin:22px 0 10px">Partes de esta obra</div>
     ${partes.length ? partes.map(cardParte).join('') : '<div class="card"><div class="sub">Todavía no hay partes en esta obra.</div></div>'}
     ${puedeCrear() ? `<button class="btn btn-gris" data-a="cerrarObra" data-id="${o.id}" style="margin-top:14px;border-radius:99px">${o.estado === 'Cerrada' ? 'Reabrir obra' : 'Marcar obra como cerrada'}</button>` : ''}
@@ -3599,6 +3629,308 @@ function docsObraHTML(o) {
     ${docs && docs.length ? `<div class="card" style="padding:4px 15px">${docs.map(fila).join('')}</div>` : ''}
     ${!falta ? `<div class="dash" data-a="nuevoDocObra" style="margin-top:10px;display:block">+ Añadir albarán o recibo</div>
     <div class="tiny" style="margin-top:8px">Foto o PDF. Solo lo ven jefes y Administración.</div>` : ''}`;
+}
+
+/* ---------- material pendiente y notas del equipo (sql/etapa36) ------------
+ * Una lista común: lo que hay que comprar o traer del despacho. Cualquiera lo
+ * apunta (escrito o dictado), otro se apunta a llevarlo para que no lo compren
+ * dos, y al tacharlo se le puede poner obra e importe: lo tachado con obra es
+ * MATERIAL EXTRA de esa obra (sale en su ficha, aparte de los partes).
+ * ------------------------------------------------------------------------- */
+Object.assign(V, {
+  mat: { items: [], notas: [], cargado: false, cargando: false, error: null, tab: 'pend', filtro: 'todo', avisado: false },
+  matNuevo: { texto: '', tipo: 'comprar', obraId: null, urgente: false, voz: false },
+  notaNueva: { texto: '', voz: false },
+  dicta: null,
+});
+const faltaTablaMat = (msg) => /does not exist|schema cache|PGRST205|material_pedidos|notas_equipo/i.test(String(msg || '')) && /exist|schema|PGRST205/i.test(String(msg || ''));
+const nombreEmp = (empId) => { const r = empRowById(empId); return r ? String(r.nombre || '').split(' ')[0] : '—'; };
+const matPend = () => V.mat.items.filter((i) => !i.hecho_en);
+const obrasAbiertas = () => S.obras.filter((o) => o.estado !== 'Cerrada');
+const obraTitulo = (id) => { const o = obraById(id); return o ? o.titulo : ''; };
+function cuandoCorto(iso) {
+  if (!iso) return '';
+  const d = new Date(iso), hoy = hoyISO();
+  const dia = fechaLocal(iso);
+  const ayer = fechaLocal(new Date(Date.now() - 86400000).toISOString());
+  return (dia === hoy ? 'hoy' : dia === ayer ? 'ayer' : fechaCorta(iso)) + ' ' + hhmm(d.toISOString());
+}
+
+A.cargarMaterial = async () => {
+  const m = V.mat; if (m.cargando || !V.user) return;
+  m.cargando = true;
+  try {
+    if (!empRows.length) { try { await cargarMapaEmpleados(); } catch (e) { /* nombres vacíos */ } }
+    if (!S.obras.length) { try { await sincronizarObras(); } catch (e) { /* sin obras */ } }
+    const [items, notas] = await Promise.all([Sysefen.db.listarMaterial(), Sysefen.db.listarNotas()]);
+    m.items = items || []; m.notas = notas || []; m.error = null;
+  } catch (e) { m.error = (e && e.message) || 'error'; }
+  finally { m.cargando = false; m.cargado = true; }
+  // Al entrar: si hay algo URGENTE que nadie se ha apuntado a llevar, se avisa
+  // una vez por sesión. Lo demás ya está en el recuadro amarillo de Hoy.
+  if (!m.avisado && !V.sheet && ['hoy', 'agenda'].includes(V.view) && matPend().some((i) => i.urgente && !i.lleva_id)) {
+    m.avisado = true; V.sheet = { tipo: 'matAviso' };
+  }
+  if (['hoy', 'material', 'obra', 'agenda'].includes(V.view)) render();
+};
+
+/* --- apuntar --- */
+A.matTipo = (t) => { V.matNuevo.tipo = t; render(); };
+A.matUrgente = () => { V.matNuevo.urgente = !V.matNuevo.urgente; render(); };
+A.matObra = (id) => { V.matNuevo.obraId = V.matNuevo.obraId === id ? null : id; render(); };
+A.matAnadir = async () => {
+  const n = V.matNuevo, texto = String(n.texto || '').trim();
+  if (!texto) { const el = document.getElementById('mat-texto'); if (el) el.focus(); return; }
+  if (!navigator.onLine) { avisar('Sin conexión: no se ha apuntado.'); return; }
+  try {
+    const fila = await Sysefen.db.crearMaterial({ texto, tipo: n.tipo, obra_id: n.obraId || null, urgente: !!n.urgente, voz: !!n.voz, pedido_por: miEmpId() || undefined });
+    V.mat.items.unshift(fila);
+    V.matNuevo = { texto: '', tipo: n.tipo, obraId: null, urgente: false, voz: false };
+    toast('Apuntado.'); render();
+  } catch (e) { avisar(faltaTablaMat(e.message) ? 'Falta preparar Supabase (sql/etapa36_material.sql).' : 'No se pudo apuntar: ' + e.message); }
+};
+A.matLlevo = async (id) => {
+  const i = V.mat.items.find((x) => x.id === id); if (!i) return;
+  const yoId = miEmpId(); if (!yoId) return;
+  const antes = i.lleva_id;
+  i.lleva_id = antes === yoId ? null : yoId; render();
+  try { Object.assign(i, await Sysefen.db.actualizarMaterial(id, { lleva_id: i.lleva_id })); }
+  catch (e) { i.lleva_id = antes; render(); avisar('No se pudo guardar: ' + e.message); }
+};
+
+/* --- tachar, poner obra e importe, borrar --- */
+A.matAbrir = (id) => {
+  const i = V.mat.items.find((x) => x.id === id); if (!i) return;
+  V.sheet = { tipo: 'matItem', id, obraId: i.obra_id || null, importe: i.importe != null ? String(i.importe).replace('.', ',') : '', busy: false, borrar: false };
+  render();
+};
+A.matItemObra = (oid) => { const s = V.sheet; if (s && s.tipo === 'matItem') { s.obraId = s.obraId === oid ? null : oid; render(); } };
+A.matGuardarItem = async (hecho) => {
+  const s = V.sheet; if (!s || s.tipo !== 'matItem' || s.busy) return;
+  const i = V.mat.items.find((x) => x.id === s.id); if (!i) return;
+  let importe = null;
+  if (String(s.importe || '').trim()) {
+    importe = numeroVisita(s.importe, false);
+    if (importe == null || importe < 0) { avisar('El importe no es un número.'); return; }
+  }
+  const cambios = { obra_id: s.obraId || null, importe };
+  if (hecho === true) Object.assign(cambios, { hecho_en: new Date().toISOString(), hecho_por: miEmpId() || null });
+  if (hecho === false) Object.assign(cambios, { hecho_en: null, hecho_por: null });
+  s.busy = true; render();
+  try {
+    Object.assign(i, await Sysefen.db.actualizarMaterial(i.id, cambios));
+    V.sheet = null; toast(hecho === true ? 'Tachado.' : hecho === false ? 'Vuelve a estar pendiente.' : 'Guardado.'); render();
+  } catch (e) { s.busy = false; render(); avisar('No se pudo guardar: ' + e.message); }
+};
+A.matBorrar = async () => {
+  const s = V.sheet; if (!s || s.tipo !== 'matItem' || s.busy) return;
+  if (!s.borrar) { s.borrar = true; return render(); }
+  s.busy = true; render();
+  try {
+    await Sysefen.db.borrarMaterial(s.id);
+    V.mat.items = V.mat.items.filter((x) => x.id !== s.id);
+    V.sheet = null; toast('Borrado.'); render();
+  } catch (e) { s.busy = false; render(); avisar('No se pudo borrar: ' + e.message); }
+};
+
+/* --- notas --- */
+A.notaGuardar = async () => {
+  const n = V.notaNueva, texto = String(n.texto || '').trim(); if (!texto) return;
+  if (!navigator.onLine) { avisar('Sin conexión: la nota no se ha guardado.'); return; }
+  try {
+    const fila = await Sysefen.db.crearNota({ texto, voz: !!n.voz, autor_id: miEmpId() || undefined });
+    V.mat.notas.unshift(fila); V.notaNueva = { texto: '', voz: false }; toast('Nota guardada.'); render();
+  } catch (e) { avisar(faltaTablaMat(e.message) ? 'Falta preparar Supabase (sql/etapa36_material.sql).' : 'No se pudo guardar: ' + e.message); }
+};
+A.notaBorrar = async (id) => {
+  if (V.notaBorrando !== id) { V.notaBorrando = id; render(); setTimeout(() => { if (V.notaBorrando === id) { V.notaBorrando = null; render(); } }, 3500); return; }
+  V.notaBorrando = null;
+  try { await Sysefen.db.borrarNota(id); V.mat.notas = V.mat.notas.filter((x) => x.id !== id); render(); }
+  catch (e) { avisar('No se pudo borrar: ' + e.message); }
+};
+
+/* --- dictado ---------------------------------------------------------------
+ * Con el reconocimiento de voz del navegador. Si el móvil no lo deja (algunos
+ * iPhone con la app instalada), se avisa de que el micrófono del teclado sirve
+ * igual. Mientras se dicta NO se repinta la pantalla: se escribe directo en la
+ * caja, para no perder el foco ni lo dicho.
+ * ------------------------------------------------------------------------- */
+let dictado = null;
+A.dictar = (donde) => {
+  if (dictado) { dictado.stop(); return; }
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) { avisar('Este móvil no deja dictar aquí. Toca la caja de texto y usa el micrófono del teclado.'); return; }
+  const campo = donde === 'nota' ? V.notaNueva : V.matNuevo;
+  const caja = () => document.getElementById(donde === 'nota' ? 'nota-texto' : 'mat-texto');
+  const base = String(campo.texto || '').trim();
+  let final = '';
+  const rec = new SR();
+  rec.lang = 'es-ES'; rec.interimResults = true; rec.continuous = donde === 'nota';
+  rec.onresult = (e) => {
+    let parcial = '';
+    for (let k = e.resultIndex; k < e.results.length; k++) {
+      if (e.results[k].isFinal) final += e.results[k][0].transcript; else parcial += e.results[k][0].transcript;
+    }
+    campo.texto = [base, final.trim()].filter(Boolean).join(' ');
+    campo.voz = true;
+    const c = caja(); if (c) c.value = [campo.texto, parcial.trim()].filter(Boolean).join(' ');
+  };
+  const fin = () => { dictado = null; V.dicta = null; render(); };
+  rec.onend = fin;
+  rec.onerror = (e) => { if (e && e.error === 'not-allowed') avisar('Sin permiso para el micrófono. Puedes usar el del teclado.'); };
+  try { rec.start(); dictado = rec; V.dicta = donde; render(); }
+  catch (e) { avisar('No se pudo empezar a dictar. Usa el micrófono del teclado.'); }
+};
+
+/* --- pintar --- */
+const SVG_MIC = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>';
+const SVG_OK = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5 9-10"/></svg>';
+
+function matEtiquetas(i, sinObra) {
+  return `${i.urgente && !i.hecho_en ? '<span class="m-etq m-urge">Urgente</span>' : ''}<span class="m-etq ${i.tipo === 'despacho' ? 'm-desp' : 'm-comp'}">${i.tipo === 'despacho' ? 'Del despacho' : 'Comprar'}</span>${i.obra_id && !sinObra ? `<span class="m-etq m-obra">${esc(obraTitulo(i.obra_id) || 'Obra')}</span>` : ''}`;
+}
+function matItemHTML(i, sinObra) {
+  const yoId = miEmpId();
+  const mio = i.lleva_id && i.lleva_id === yoId;
+  return `<div class="m-item ${i.hecho_en ? 'hecho' : ''}">
+    <div class="m-check ${i.hecho_en ? 'ok' : ''}" data-a="matAbrir" data-id="${i.id}">${i.hecho_en ? SVG_OK : ''}</div>
+    <div class="grow" data-a="matAbrir" data-id="${i.id}" style="cursor:pointer">
+      <div class="m-t">${esc(i.texto)}</div>
+      <div>${matEtiquetas(i, sinObra)}</div>
+      <div class="tiny" style="margin-top:7px">${i.hecho_en
+        ? `✓ ${esc(nombreEmp(i.hecho_por))} · ${cuandoCorto(i.hecho_en)}${i.importe != null ? ` · <b style="color:var(--tinta)">${euros(i.importe)}</b>` : ''}`
+        : `${i.voz ? '🎙 ' : ''}Pide ${esc(nombreEmp(i.pedido_por))} · ${cuandoCorto(i.creado_en)}${i.lleva_id ? ` · <b style="color:var(--verde)">lo lleva ${mio ? 'tú' : esc(nombreEmp(i.lleva_id))}</b>` : ''}`}</div>
+    </div>
+    ${i.hecho_en ? '' : `<button class="m-llevo ${mio ? 'mio' : ''}" data-a="matLlevo" data-id="${i.id}">${mio ? 'Lo llevo' : i.lleva_id ? 'Yo mejor' : 'Lo llevo yo'}</button>`}
+  </div>`;
+}
+
+/** El recuadro amarillo de arriba en Hoy. */
+function matAvisoHoyHTML() {
+  const m = V.mat;
+  if (m.error && faltaTablaMat(m.error)) return '';
+  const p = matPend(), urg = p.filter((i) => i.urgente).length;
+  return `<div class="m-aviso" data-a="ir" data-v="material">
+    <div class="row"><div class="grow">
+      <div class="lbl" style="color:var(--ambar-o)">Material pendiente</div>
+      <div style="font:600 18px/1.2 var(--cond);margin-top:6px">${!m.cargado ? 'Cargando…' : p.length ? `${p.length} ${p.length === 1 ? 'cosa' : 'cosas'} por comprar o traer${urg ? ` · <span style="color:var(--rojo)">${urg} urgente${urg > 1 ? 's' : ''}</span>` : ''}` : 'Nada pendiente'}</div>
+      <div class="sub ell" style="margin-top:4px;font-size:13px">${p.length ? esc(p.slice(0, 3).map((i) => i.texto).join(' · ')) : 'Apunta aquí lo que haga falta, y las notas para el equipo.'}</div>
+    </div><div style="font:400 22px var(--sans);color:var(--ambar-o)">›</div></div>
+  </div>`;
+}
+
+function vMaterial() {
+  const m = V.mat, p = matPend(), n = V.matNuevo;
+  const falta = m.error && faltaTablaMat(m.error);
+  const lista = m.tab === 'hecho'
+    ? m.items.filter((i) => i.hecho_en).slice(0, 60)
+    : p.filter((i) => m.filtro === 'todo' || (m.filtro === 'mio' ? i.lleva_id === miEmpId() : i.tipo === m.filtro))
+      .sort((a, b) => (b.urgente - a.urgente));
+  const tab = (k, t) => `<div class="${m.tab === k ? 'on' : ''}" data-a="matTab" data-t="${k}">${t}</div>`;
+  let cuerpo;
+  if (falta) {
+    cuerpo = `<div class="card" style="background:var(--rojo-cl)"><div style="font:600 14px var(--sans);color:var(--rojo)">Falta preparar Supabase</div>
+      <div class="sub" style="font-size:13px;margin-top:6px;color:var(--rojo)">Hay que ejecutar sql/etapa36_material.sql en el SQL Editor.</div></div>`;
+  } else if (m.tab === 'notas') {
+    cuerpo = `<div class="card" style="margin-bottom:14px">
+      <textarea class="inp" id="nota-texto" data-f="notaTexto" rows="3" placeholder="Escribe o dicta una nota para todos…">${esc(V.notaNueva.texto)}</textarea>
+      <div class="row g8" style="margin-top:10px">
+        <button class="btn btn-gris" data-a="dictar" data-d="nota" style="flex:1;display:flex;gap:8px;justify-content:center;align-items:center;border-radius:99px;${V.dicta === 'nota' ? 'background:var(--rojo);color:#fff' : ''}">${SVG_MIC} ${V.dicta === 'nota' ? 'Parar' : 'Dictar'}</button>
+        <button class="btn btn-verde" data-a="notaGuardar" style="flex:1">Guardar</button>
+      </div>
+    </div>
+    ${m.notas.map((x) => `<div class="m-nota"><div style="font:400 15px/1.45 var(--sans);white-space:pre-wrap">${esc(x.texto)}</div>
+      <div class="row" style="margin-top:9px"><div class="tiny grow">${x.voz ? '🎙 ' : ''}${esc(nombreEmp(x.autor_id))} · ${cuandoCorto(x.creado_en)}</div>
+      ${x.autor_id === miEmpId() || puedeCrear() ? `<span class="tiny" data-a="notaBorrar" data-id="${x.id}" style="cursor:pointer;${V.notaBorrando === x.id ? 'color:var(--rojo);font-weight:600' : 'text-decoration:underline'}">${V.notaBorrando === x.id ? '¿Seguro?' : 'Borrar'}</span>` : ''}</div></div>`).join('')
+      || '<div class="sub" style="text-align:center;padding:14px">Todavía no hay notas.</div>'}`;
+  } else {
+    cuerpo = `${m.tab === 'pend' ? `<div class="card" style="margin-bottom:14px">
+      <div class="row" style="gap:8px;align-items:stretch">
+        <input class="inp grow" id="mat-texto" data-f="matTexto" value="${esc(n.texto)}" placeholder="¿Qué hace falta?" autocomplete="off" enterkeyhint="done">
+        <button class="m-mic ${V.dicta === 'mat' ? 'oye' : ''}" data-a="dictar" data-d="mat" aria-label="Dictar">${SVG_MIC}</button>
+        <button class="m-mas" data-a="matAnadir" aria-label="Apuntar">+</button>
+      </div>
+      <div class="wrap" style="margin-top:10px">
+        <div class="chip ${n.tipo === 'comprar' ? 'on' : ''}" data-a="matTipo" data-t="comprar">Comprar</div>
+        <div class="chip ${n.tipo === 'despacho' ? 'on' : ''}" data-a="matTipo" data-t="despacho">Del despacho</div>
+        <div class="chip ${n.urgente ? 'alerta' : ''}" data-a="matUrgente">Urgente</div>
+      </div>
+      ${obrasAbiertas().length ? `<div class="lbl" style="margin:12px 0 7px">¿Para qué obra? (opcional)</div>
+      <div class="wrap">${obrasAbiertas().map((o) => `<div class="chip ${n.obraId === o.id ? 'sel' : ''}" data-a="matObra" data-id="${o.id}" style="font-size:12px;padding:8px 11px">${esc(o.titulo)}</div>`).join('')}</div>` : ''}
+    </div>
+    <div class="wrap" style="margin-bottom:10px">${[['todo', 'Todo'], ['comprar', 'Comprar'], ['despacho', 'Del despacho'], ['mio', 'Lo llevo yo']]
+      .map(([k, t]) => `<div class="chip ${m.filtro === k ? 'on' : ''}" data-a="matFiltro" data-k="${k}" style="padding:8px 12px;font-size:12px">${t}</div>`).join('')}</div>` : ''}
+    ${!m.cargado ? '<div class="tiny">Cargando…</div>' : `<div class="card" style="padding:2px 15px">${lista.map((i) => matItemHTML(i)).join('') || '<div class="sub" style="padding:16px 0;text-align:center">Nada por aquí.</div>'}</div>`}
+    ${m.error && !falta ? `<div class="tiny" style="margin-top:10px;color:var(--rojo)">No se pudo cargar: ${esc(m.error)}</div>` : ''}`;
+  }
+  return `<div class="hdr">
+    ${marcaSysefen(false)}
+    <div class="h1">Material y notas</div>
+    <div class="sub" style="margin-top:6px">Lo ve todo el equipo. Toca una línea para tacharla.</div>
+    <div class="m-tabs" style="margin-top:14px">${tab('pend', `Pendiente${p.length ? ' · ' + p.length : ''}`)}${tab('notas', `Notas${m.notas.length ? ' · ' + m.notas.length : ''}`)}${tab('hecho', 'Hecho')}</div>
+  </div>
+  <div class="scroll pad pb-nav">${cuerpo}</div>`;
+}
+
+/** En la ficha de la obra: lo que se ha ido comprando o trayendo para ella. */
+function matObraHTML(o) {
+  const m = V.mat;
+  if (m.error && faltaTablaMat(m.error)) return '';
+  const suyos = m.items.filter((i) => i.obra_id === o.id);
+  const hechos = suyos.filter((i) => i.hecho_en), pend = suyos.filter((i) => !i.hecho_en);
+  const total = hechos.reduce((t, i) => t + (Number(i.importe) || 0), 0);
+  const sinPrecio = hechos.filter((i) => i.importe == null).length;
+  return `<div class="row" style="justify-content:space-between;align-items:baseline;margin:22px 0 10px">
+      <div class="lbl" style="font-weight:600;font-size:12px;color:var(--t2)">Material extra</div>
+      ${hechos.length ? `<div class="tiny">${hechos.length} · ${euros(total)}${sinPrecio ? ` · ${sinPrecio} sin precio` : ''}</div>` : ''}
+    </div>
+    ${suyos.length ? `<div class="card" style="padding:2px 15px">${[...pend, ...hechos].map((i) => matItemHTML(i, true)).join('')}</div>` : `<div class="card"><div class="sub">${m.cargado ? 'Nada apuntado para esta obra.' : 'Cargando…'}</div></div>`}
+    <div class="dash" data-a="matParaObra" data-id="${o.id}" style="margin-top:10px;display:block">+ Pedir material para esta obra</div>`;
+}
+// Enter en la caja de apuntar = darle al "+".
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && e.target && e.target.id === 'mat-texto') { e.preventDefault(); A.matAnadir(); }
+});
+A.matParaObra = (id) => { V.matNuevo.obraId = id; V.mat.tab = 'pend'; V.mat.filtro = 'todo'; A.ir('material'); setTimeout(() => { const el = document.getElementById('mat-texto'); if (el) el.focus(); }, 50); };
+
+function sheetMat(s) {
+  if (s.tipo === 'matAviso') {
+    const p = matPend().filter((i) => !i.lleva_id).sort((a, b) => b.urgente - a.urgente);
+    return `<div class="sheet"><div style="max-height:82vh;overflow-y:auto">
+      <div class="lbl" style="color:var(--ambar-o)">Antes de salir</div>
+      <div style="font:700 25px/1.1 var(--cond);margin-top:8px">Hace falta material</div>
+      <div class="sub" style="margin-top:6px">Nadie lo lleva todavía. Si pasas por la tienda o por el despacho, apúntate.</div>
+      <div style="margin-top:8px">${p.slice(0, 4).map((i) => matItemHTML(i)).join('')}</div>
+      <button class="btn" data-a="matVerTodo" style="margin-top:14px">Ver todo (${matPend().length})</button>
+      <button class="btn btn-gris" data-a="cerrarSheet" style="margin-top:8px;border-radius:99px">Ahora no</button>
+    </div></div>`;
+  }
+  if (s.tipo === 'matItem') {
+    const i = V.mat.items.find((x) => x.id === s.id); if (!i) { V.sheet = null; return ''; }
+    const puedeBorrar = i.pedido_por === miEmpId() || puedeCrear();
+    const obras = obrasAbiertas().concat(i.obra_id && !obrasAbiertas().some((o) => o.id === i.obra_id) && obraById(i.obra_id) ? [obraById(i.obra_id)] : []);
+    return `<div class="sheet"><div style="max-height:86vh;overflow-y:auto">
+      <div>${matEtiquetas(i, true)}</div>
+      <div style="font:600 21px/1.2 var(--sans);margin-top:10px">${esc(i.texto)}</div>
+      <div class="tiny" style="margin-top:6px">Pide ${esc(nombreEmp(i.pedido_por))} · ${cuandoCorto(i.creado_en)}</div>
+      ${obras.length ? `<div class="lbl" style="margin:18px 0 8px">Obra</div>
+      <div class="wrap">${obras.map((o) => `<div class="chip ${s.obraId === o.id ? 'sel' : ''}" data-a="matItemObra" data-id="${o.id}" style="font-size:12px;padding:8px 11px">${esc(o.titulo)}</div>`).join('')}</div>` : ''}
+      <div class="lbl" style="margin:16px 0 8px">Lo que costó (opcional)</div>
+      <input class="inp" data-f="matImporte" value="${esc(s.importe)}" inputmode="decimal" placeholder="0,00 €">
+      <div class="tiny" style="margin-top:6px">Con obra, cuenta como material extra de esa obra.</div>
+      ${i.hecho_en
+        ? `<div class="row g8" style="margin-top:18px">
+            <button class="btn btn-gris" data-a="matGuardarItem" data-h="no" style="border-radius:99px">Volver a pendiente</button>
+            <button class="btn btn-verde" data-a="matGuardarItem" style="flex:1" ${s.busy ? 'disabled' : ''}>Guardar</button></div>`
+        : `<button class="btn btn-verde" data-a="matGuardarItem" data-h="si" style="margin-top:18px" ${s.busy ? 'disabled' : ''}>✓ Ya está, tachar</button>
+           <button class="btn btn-gris" data-a="matGuardarItem" style="margin-top:8px;border-radius:99px" ${s.busy ? 'disabled' : ''}>Guardar sin tachar</button>`}
+      <div class="row g8" style="margin-top:8px">
+        <button class="btn btn-gris" data-a="cerrarSheet" style="border-radius:99px">Cerrar</button>
+        ${puedeBorrar ? `<button class="btn ${s.borrar ? 'btn-rojo' : 'btn-gris'}" data-a="matBorrar" style="border-radius:99px;${s.borrar ? '' : 'color:var(--rojo)'}">${s.borrar ? '¿Seguro? Borrar' : 'Borrar'}</button>` : ''}
+      </div>
+    </div></div>`;
+  }
+  return null;
 }
 
 /** El cliente de la obra, buscado en Teamleader en vez de escrito a mano. */
@@ -5021,7 +5353,7 @@ Object.assign(V, {
   visitaVer: null, confirmarDescartar: false,
 });
 
-const VISITA_VISTAS = ['visitas', 'visita', 'visitaNueva', 'ajustes', 'agenda', 'clientes', 'clienteNuevo', 'clienteVer', 'citaNueva', 'citaVer'];
+const VISITA_VISTAS = ['visitas', 'visita', 'visitaNueva', 'ajustes', 'material', 'agenda', 'clientes', 'clienteNuevo', 'clienteVer', 'citaNueva', 'citaVer'];
 const PASOS_VISITA = ['Cliente', 'El inmueble', '¿Qué se presupuesta?', 'Fichas', 'Cierre'];
 const KEY_VISITA = 'sysefen.visita.borrador';
 const CAMPOS_COMUN = vSchemas.COMUN.secciones.flatMap((s) => s.campos);
@@ -7060,12 +7392,12 @@ A.visitaSeguirMedias = () => { V.sheet = null; A.seguirBorrador(); };
 /* --- nav --- */
 function nav(v) {
   const items = esPresupuestos()
-    ? [['agenda', 'Agenda', '5px'], ['clientes', 'Clientes', '3px'], ['ajustes', 'Perfil', '99px']]
+    ? [['agenda', 'Agenda', '5px'], ['clientes', 'Clientes', '3px'], ['material', 'Material', '4px'], ['ajustes', 'Perfil', '99px']]
     : esAdmin()
     ? [['hoy', 'Hoy', '99px'], ['empleados', 'Empleados', '4px'], ['obras', 'Obras', '5px'], ['partes', 'Partes', '3px'], ['horas', 'Horas', '2px'], ['agenda', 'Citas', '6px'], ['ajustes', 'Ajustes', '99px']]
     : puedeCrear()
-    ? [['hoy', 'Hoy', '99px'], ['obras', 'Obras', '5px'], ['partes', 'Partes', '3px'], ['horas', 'Horas', '2px'], ['ajustes', 'Ajustes', '99px']]
-    : [['hoy', 'Hoy', '99px'], ['obras', 'Obras', '5px'], ['horas', 'Horas', '2px'], ['ajustes', 'Perfil', '99px']];
+    ? [['hoy', 'Hoy', '99px'], ['obras', 'Obras', '5px'], ['partes', 'Partes', '3px'], ['horas', 'Horas', '2px'], ['material', 'Material', '4px'], ['ajustes', 'Ajustes', '99px']]
+    : [['hoy', 'Hoy', '99px'], ['obras', 'Obras', '5px'], ['horas', 'Horas', '2px'], ['material', 'Material', '4px'], ['ajustes', 'Perfil', '99px']];
   const act = (id) => v === id
     || (id === 'obras' && v === 'obra')
     || (id === 'horas' && ['imputar', 'revisarImp', 'resumenImp'].includes(v))
@@ -7080,6 +7412,7 @@ function nav(v) {
 /* --- sheets --- */
 function sheet() {
   const s = V.sheet;
+  const sm = sheetMat(s); if (sm !== null) return sm;
   if (s.tipo === 'menuUsuario') {
     const u = yo();
     return `<div class="sheet"><div>
@@ -7698,6 +8031,24 @@ document.addEventListener('click', (e) => {
   if (a === 'otroUsuario') return A.otroUsuario();
   if (a === 'otroUsuarioSeguir') return A.otroUsuarioSeguir();
   if (a === 'ir') return A.ir(d.v);
+  if (a.startsWith('mat') || a.startsWith('nota') || a === 'dictar') {
+    if (a === 'matTab') { V.mat.tab = d.t; return render(); }
+    if (a === 'matFiltro') { V.mat.filtro = d.k; return render(); }
+    if (a === 'matTipo') return A.matTipo(d.t);
+    if (a === 'matUrgente') return A.matUrgente();
+    if (a === 'matObra') return A.matObra(d.id);
+    if (a === 'matAnadir') return A.matAnadir();
+    if (a === 'matLlevo') { e.stopPropagation(); return A.matLlevo(d.id); }
+    if (a === 'matAbrir') return A.matAbrir(d.id);
+    if (a === 'matItemObra') return A.matItemObra(d.id);
+    if (a === 'matGuardarItem') return A.matGuardarItem(d.h === 'si' ? true : d.h === 'no' ? false : undefined);
+    if (a === 'matBorrar') return A.matBorrar();
+    if (a === 'matParaObra') return A.matParaObra(d.id);
+    if (a === 'matVerTodo') { V.sheet = null; V.mat.tab = 'pend'; return A.ir('material'); }
+    if (a === 'notaGuardar') return A.notaGuardar();
+    if (a === 'notaBorrar') return A.notaBorrar(d.id);
+    if (a === 'dictar') return A.dictar(d.d);
+  }
   if (a === 'verObra') return A.verObra(d.id);
   if (a === 'nuevaObra') return A.nuevaObra();
   if (a === 'editarObra') { e.stopPropagation(); return A.editarObra(d.id); }
@@ -7839,6 +8190,9 @@ document.addEventListener('input', (e) => {
   if (f === 'ag_cita') { if (V.citaDraft) V.citaDraft[t.dataset.k] = t.value; return; }
   if (f === 'ag_citaFecha') { if (V.citaDraft) { sincronizarRuedas(); V.citaDraft.dia = t.value || null; render(); } return; }
   if (f === 'loginNombre') { V.loginNombre = t.value; return; }
+  if (f === 'matTexto') { V.matNuevo.texto = t.value; V.matNuevo.voz = false; return; }
+  if (f === 'notaTexto') { V.notaNueva.texto = t.value; return; }
+  if (f === 'matImporte') { if (V.sheet) V.sheet.importe = t.value; return; }
   if (f === 'visitaBuscar') return A.visitaBuscar(t.value);
   if (f === 'visitaCli') { const c = V.visitaDraft && V.visitaDraft._cliente; if (c) { c[t.dataset.k] = t.value; guardarBorradorVisita(); } return; }
   if (f === 'docProveedor') { if (V.sheet) V.sheet.proveedor = t.value; return; }
