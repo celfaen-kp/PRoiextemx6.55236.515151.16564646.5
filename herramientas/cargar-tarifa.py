@@ -3,7 +3,8 @@
 Sysefen · Cargar una tarifa de fabricante en `productos` (sql/etapa38)
 
 QUÉ HACE:
-  Lee un CSV de herramientas/tarifas/ (el que sacan los extractores) y lo mete
+  Lee un CSV de la carpeta de tarifas (SYSEFEN DATA/07-Tarifas para app, en
+  el Drive; el que sacan los extractores) y lo mete
   en la tabla `productos`, colgado de su fila de `tarifas`. Es idempotente por
   (tarifa_id, referencia): se puede ejecutar dos veces y la segunda no hace
   nada.
@@ -45,7 +46,11 @@ LA CLAVE:
 import csv, json, os, re, sys, urllib.error, urllib.parse, urllib.request
 
 RAIZ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-CARPETA = os.path.join(RAIZ, 'herramientas', 'tarifas')
+# Las tarifas viven fuera del repo, en el Drive de la empresa (el repo es
+# público y el histórico de presupuestos no debe estar en él). Si algún día se
+# mueven, se pasa la carpeta en SYSEFEN_TARIFAS sin tocar esto.
+CARPETA = os.environ.get('SYSEFEN_TARIFAS') or os.path.expanduser(
+    '~/Library/CloudStorage/GoogleDrive-celfaen@gmail.com/Mi unidad/SYSEFEN DATA/07-Tarifas para app')
 
 # Fichero -> nombre de la fila en `tarifas` (la semilla de la etapa 38)
 TARIFAS = {

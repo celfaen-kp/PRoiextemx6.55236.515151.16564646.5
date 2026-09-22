@@ -19,6 +19,9 @@ analizar nada.
   de 2026 del histórico llevan precios que no están en ella (el 2026/596:
   VWL 85/6 a 10.235 € contra 9.710 € en la 2025), así que la suite los usa
   para probar la cadena de precios, no para comparar con el catálogo.
+- **Las tarifas y el histórico ya no están en `herramientas/tarifas/`**: viven
+  en el Drive, `SYSEFEN DATA/07-Tarifas para app` (el repo es público). El
+  cargador y las pruebas los buscan ahí (o en `SYSEFEN_TARIFAS`).
 - **Cadena de precios** (`supabase/functions/presupuestar/cadena.js`): en
   céntimos enteros; un descuento global se aplica línea a línea redondeando
   cada línea (así cuadra el 2026/596: 17.599,06 y no 17.599,05).

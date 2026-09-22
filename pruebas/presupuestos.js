@@ -1,6 +1,7 @@
 /* Motor de presupuestos · la suite con los presupuestos de verdad
  *
- * Los casos salen de herramientas/tarifas/presupuestos-historicos-lineas.csv:
+ * Los casos salen de presupuestos-historicos-lineas.csv, en la carpeta de
+ * tarifas del Drive (SYSEFEN DATA/07-Tarifas para app, fuera del repo):
  * las líneas de los presupuestos cerrados de Sysefen tal como salieron en el
  * PDF. Los descuentos de línea vienen como una línea aparte ("-15% Descuento")
  * justo debajo de la línea a la que se aplican; aquí se vuelven a pegar a su
@@ -18,9 +19,8 @@
  * se comparan con las del PDF. */
 load(RUTA_TMP + '/cadena.js');
 
-var RAIZ = '.';
-function leerCSV(ruta) {
-  var txt = read(RAIZ + '/' + ruta).replace(/\r/g, '');
+function leerCSV(nombre) {
+  var txt = read(RUTA_TARIFAS + '/' + nombre).replace(/\r/g, '');
   var filas = [], campo = '', fila = [], dentro = false;
   for (var i = 0; i < txt.length; i++) {
     var c = txt[i];
@@ -53,7 +53,7 @@ function lineasDe(filas) {
   return out;
 }
 
-var historico = leerCSV('herramientas/tarifas/presupuestos-historicos-lineas.csv');
+var historico = leerCSV('presupuestos-historicos-lineas.csv');
 var presupuestos = {}, orden = [];
 historico.forEach(function (r) {
   var k = r.presupuesto + ' · ' + r.fichero;
@@ -117,7 +117,7 @@ var MARCAS = { VAILLANT: 'vaillant-2025', MIDEA: 'midea-2026', SAUNIER: 'saunier
 var precios = {};
 Object.keys(MARCAS).forEach(function (m) {
   precios[m] = {};
-  leerCSV('herramientas/tarifas/' + MARCAS[m] + '.csv').forEach(function (p) { precios[m][Number(p.precio_tarifa).toFixed(2)] = p.referencia; });
+  leerCSV(MARCAS[m] + '.csv').forEach(function (p) { precios[m][Number(p.precio_tarifa).toFixed(2)] = p.referencia; });
 });
 var marcaDe = function (k) { var f = k.toUpperCase(); return Object.keys(MARCAS).filter(function (m) { return f.indexOf(m) > -1; })[0]; };
 // El material de marca es el que lleva descuento de línea: es el que tiene que

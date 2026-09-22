@@ -5,6 +5,6 @@ copia-*.json
 herramientas/google-credenciales.json
 herramientas/google-refresh-token.txt
 
-# Presupuestos cerrados de clientes (precios, descuentos, algún nombre): el
-# repo es público. Se quedan en la carpeta de Drive; las pruebas los leen de ahí.
-herramientas/tarifas/presupuestos-historicos-lineas.csv
+# Las tarifas y el histórico de presupuestos viven fuera del repo (es público),
+# en el Drive: SYSEFEN DATA/07-Tarifas para app. Por si alguien los copia aquí:
+herramientas/tarifas/
