@@ -7,6 +7,24 @@ analizar nada.
 
 ---
 
+## 0 · Decisiones posteriores (22-09-2026) · mandan sobre lo de abajo
+
+- **Sin descuentos automáticos.** El motor saca el presupuesto a PVP de
+  tarifa, sin el −15 % de línea ni el −10 % global. Al final hay una opción
+  para poner un % de descuento si se quiere; lo elige la persona.
+  `sql/etapa39_sin_descuentos_automaticos.sql` desactiva `politica_descuentos`.
+  Motivo: en el histórico el descuento de línea va del 10 al 25 % sin regla
+  clara (15 % ×35, 10 % ×7, 18 % ×4, 20 % ×3, 25 % ×1, 100 % ×1).
+- **Tarifa Vaillant: la 2025.** No hay tarifa 2026 publicada. Los presupuestos
+  de 2026 del histórico llevan precios que no están en ella (el 2026/596:
+  VWL 85/6 a 10.235 € contra 9.710 € en la 2025), así que la suite los usa
+  para probar la cadena de precios, no para comparar con el catálogo.
+- **Cadena de precios** (`supabase/functions/presupuestar/cadena.js`): en
+  céntimos enteros; un descuento global se aplica línea a línea redondeando
+  cada línea (así cuadra el 2026/596: 17.599,06 y no 17.599,05).
+
+---
+
 ## 1 · Qué se quiere conseguir
 
 Que una ficha de visita se convierta sola en un presupuesto con líneas,
