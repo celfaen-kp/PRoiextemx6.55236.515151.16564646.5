@@ -397,6 +397,50 @@ export async function correoGraciasVisita(visitaId, otraVez) {
   return invocar('correo-visita', { visita_id: visitaId, otra_vez: !!otraVez });
 }
 
+/* ---------------------------------------------------------------------------
+ * Motor de presupuestos (sql/etapa38 y 41)
+ *
+ * La app no calcula nada: le pasa la visita a la función `presupuestar` y
+ * recibe las líneas ya con su precio. Las reglas y la tarifa viven en Supabase,
+ * así que cambiar un precio no es tocar la app.
+ * ------------------------------------------------------------------------- */
+
+/** Calcula el presupuesto de una visita. Con `guardar: false` no escribe nada. */
+export async function presupuestarVisita(visitaId, categoria, opciones) {
+  const o = opciones || {};
+  return invocar('presupuestar', {
+    visita_id: visitaId,
+    categoria,
+    guardar: o.guardar === true,
+    dto_global_pct: o.dtoGlobalPct == null ? undefined : o.dtoGlobalPct,
+    lineas_extra: o.lineasExtra && o.lineasExtra.length ? o.lineasExtra : undefined,
+  });
+}
+
+/** Los presupuestos ya guardados de una visita, con sus líneas. */
+export async function presupuestosDeVisita(visitaId) {
+  return unwrap(
+    await supabase.from('presupuestos')
+      .select('*, lineas:presupuesto_lineas(*), incidencias:presupuesto_incidencias(*)')
+      .eq('visita_id', visitaId)
+      .order('created_at', { ascending: false })
+  ) || [];
+}
+
+/** Busca en el catálogo para añadir la máquina a mano. */
+export async function buscarProductos(texto, familia) {
+  const q = String(texto || '').trim();
+  if (q.length < 2) return [];
+  let consulta = supabase.from('productos')
+    .select('referencia, nombre, familia, unidad, precio_tarifa, detalle_tecnico, especificaciones, iva')
+    .eq('activo', true)
+    .or(`nombre.ilike.%${q}%,referencia.ilike.%${q}%`)
+    .order('nombre')
+    .limit(25);
+  if (familia) consulta = consulta.eq('familia', familia);
+  return unwrap(await consulta) || [];
+}
+
 /** Busca en el CRM por nombre, email, teléfono o NIF. */
 export async function buscarEnCRM(texto) {
   return invocar('teamleader-cliente', { accion: 'buscar', texto });

@@ -23,6 +23,9 @@
 //   { ..., "datos": { ... } }          para probar sin tocar la visita
 //   { ..., "dto_global_pct": 10 }      descuento al pie, lo elige la persona
 //   { ..., "guardar": false }          calcula y devuelve, sin escribir nada
+//   { ..., "lineas_extra": [ ... ] }   lo que pone la persona: la máquina, o
+//                                      cualquier línea suelta. Van al final,
+//                                      marcadas como 'manual'.
 // =============================================================================
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
@@ -142,7 +145,34 @@ Deno.serve(async (req) => {
   const dtoGlobal = b.dto_global_pct != null
     ? Number(b.dto_global_pct)
     : Number(((dtos.data || []).find((d) => d.ambito === 'global') || {}).descuento_pct || 0);
+  // Lo que ha puesto la persona va detrás de lo que propuso el motor, y marcado
+  // como suyo: así se distingue de un vistazo qué salió de las reglas.
+  // deno-lint-ignore no-explicit-any
+  const extra = (Array.isArray(b.lineas_extra) ? b.lineas_extra : []).map((l: any) => ({
+    producto_ref: l.producto_ref || null,
+    descripcion: String(l.descripcion || '').slice(0, 300) || 'Línea añadida',
+    detalle_tecnico: l.detalle_tecnico || null,
+    especificaciones: Array.isArray(l.especificaciones) ? l.especificaciones : [],
+    cantidad: Number(l.cantidad) || 1,
+    unidad: l.unidad || 'ud',
+    precio_tarifa: Number(l.precio_tarifa) || 0,
+    dto_linea_pct: Number(l.dto_linea_pct) || 0,
+    iva: l.iva == null ? 21 : Number(l.iva),
+    seccion: l.seccion || 'Equipos',
+    origen: 'manual',
+    origen_regla_id: null,
+    origen_inputs: null,
+    confirmada: true,
+  }));
+  res.lineas = res.lineas.concat(extra);
+  res.lineas.forEach((l, i) => { l.orden = i + 1; });
+
   const totales = cadenaPrecios(res.lineas, dtoGlobal);
+
+  const incidenciasUtiles = extra.length
+    ? res.incidencias.filter((i) => i.codigo !== 'sin_lineas')
+    : res.incidencias;
+  res.incidencias = incidenciasUtiles;
 
   const salida = {
     ok: true,

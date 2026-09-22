@@ -365,7 +365,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '15.0'; // versión visible de la app (única fuente)
+const APP_VERSION = '15.1'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -6358,6 +6358,7 @@ function vVisita() {
     [v.direccion, v.poblacion].filter(Boolean).join(', '))
     + `<div class="scroll pad pb-nav sin-marca">
       ${bloque}
+      ${presupuestoHTML(v, fichas)}
       ${papel}
       <div class="lbl" style="margin:24px 0 10px">Inmueble</div>
       <div class="card" style="padding:4px 15px 10px">${vForm.resumenHTML(vSchemas.COMUN, v)}</div>
@@ -6369,6 +6370,192 @@ function vVisita() {
       ${esComercial() ? `<div style="text-align:center;margin-top:24px"><span class="tiny" data-a="borrarVisita" data-id="${v.id}" style="color:var(--rojo);cursor:pointer;text-decoration:underline">Borrar esta visita</span></div>` : ''}
     </div>`;
 }
+
+/* =============================================================================
+ * MOTOR DE PRESUPUESTOS · el presupuesto de una visita (sql/etapa38 y 41)
+ *
+ * El patrón, de MOTOR-PRESUPUESTOS.md: el motor propone, la persona confirma.
+ * La app no calcula nada; pide el cálculo a la función `presupuestar` y enseña
+ * lo que vuelve, diciendo de dónde sale cada línea. Lo que el motor no sabe
+ * —hoy, la máquina— lo pone la persona desde el catálogo.
+ * ============================================================================= */
+Object.assign(V, {
+  presu: { cat: null, cargando: false, error: null, datos: null, dto: 0,
+           extra: [], guardando: false, buscar: '', buscando: false, resultados: [], guardado: null },
+});
+
+const CATS_CON_MOTOR = ['aire_acondicionado'];
+
+function presuResultadosHTML() {
+  const p = V.presu;
+  if (p.buscando) return '<div class="sub" style="font-size:12px;margin-top:10px">Buscando en el catálogo…</div>';
+  if (!p.resultados.length) {
+    return String(p.buscar || '').trim().length < 2 ? ''
+      : '<div class="sub" style="font-size:12px;margin-top:10px">Nada con ese nombre. Si la tarifa de esa marca no está cargada, todavía no se puede elegir aquí.</div>';
+  }
+  return `<div style="margin-top:10px">${p.resultados.map((x) => `<div class="card row" data-a="presuAnadir" data-ref="${esc(x.referencia)}" style="margin-bottom:8px;cursor:pointer;padding:11px 13px">
+    <div class="grow"><div style="font:600 14px/1.25 var(--sans)">${esc(x.nombre)}</div>
+    <div class="sub" style="font-size:12px;margin-top:3px">${esc(x.referencia)}${x.familia ? ' · ' + esc(x.familia) : ''}</div></div>
+    <div class="num" style="font-size:14px;flex:none">${eur(x.precio_tarifa)}</div>
+  </div>`).join('')}</div>`;
+}
+
+/** La tarjeta del presupuesto dentro de la ficha de la visita. */
+function presupuestoHTML(v, fichas) {
+  if (!esPresupuestos() && !esAdmin()) return '';
+  const cats = (fichas || []).map((f) => f.categoria).filter((c) => CATS_CON_MOTOR.includes(c));
+  if (!cats.length) return '';
+  const p = V.presu;
+  const d = p.datos;
+
+  const secciones = [];
+  if (d && d.lineas) {
+    d.lineas.forEach((l) => {
+      const nombre = l.seccion || 'Otros';
+      let s = secciones.find((x) => x.nombre === nombre);
+      if (!s) { s = { nombre, lineas: [] }; secciones.push(s); }
+      s.lineas.push(l);
+    });
+  }
+  const deOrigen = { regla: 'regla', partida: 'partida', mano_obra: 'mano de obra', manual: 'a mano', ia: 'sugerida' };
+
+  return `<div class="card" style="margin-top:12px">
+    <div class="row g8"><span class="lbl">Presupuesto</span><div class="grow"></div>
+      ${d ? `<span class="tiny">reglas ${esc(d.conjunto_version || '')}</span>` : ''}</div>
+    <div class="sub" style="margin-top:6px;font-size:13px">El motor propone a partir de la ficha; tú confirmas. Los precios salen de la tarifa cargada, no de la app.</div>
+
+    ${!d ? `<div class="row g8" style="margin-top:14px">
+      ${cats.map((c) => `<button class="pill grow" data-a="presuCalcular" data-c="${c}" style="padding:12px;text-align:center;background:var(--tinta);color:#fff" ${p.cargando ? 'disabled' : ''}>${p.cargando ? 'Calculando…' : 'Calcular ' + esc(nombreCat(c))}</button>`).join('')}
+    </div>` : ''}
+    ${p.error ? `<div class="aviso-rojo" style="margin-top:12px"><span class="ex">!</span><span style="font:400 13px/1.4 var(--sans)">${esc(p.error)}</span></div>` : ''}
+
+    ${d ? `
+      ${(d.incidencias || []).length ? `<div style="margin-top:12px">${d.incidencias.map((i) => `<div class="tiny" style="margin-top:6px;color:${i.nivel === 'error' ? 'var(--rojo)' : 'var(--ambar-o)'}">${i.nivel === 'error' ? '⚠' : '·'} ${esc(i.mensaje)}</div>`).join('')}</div>` : ''}
+
+      ${secciones.map((s) => `<div style="margin-top:16px">
+        <div class="lbl" style="font-size:11px">${esc(s.nombre)}</div>
+        ${s.lineas.map((l) => `<div style="padding:9px 0;border-bottom:1px solid var(--l1)">
+          <div class="row" style="align-items:baseline;justify-content:space-between;gap:12px">
+            <div class="grow" style="font:500 14px/1.3 var(--sans)">${esc(l.descripcion)}</div>
+            <div class="num" style="font-size:14px;flex:none">${eur(l.importe)}</div>
+          </div>
+          <div class="tiny" style="margin-top:3px;opacity:.75">${esc(String(l.cantidad))} ${esc(l.unidad || 'ud')} × ${eur(l.precio_tarifa)}${l.dto_linea_pct ? ' · −' + l.dto_linea_pct + '%' : ''} · ${esc(deOrigen[l.origen] || l.origen)}</div>
+        </div>`).join('')}
+      </div>`).join('')}
+
+      <div style="margin-top:16px;padding-top:12px;border-top:2px solid var(--tinta)">
+        <div class="row" style="justify-content:space-between"><span class="sub">Suma</span><span class="num" style="font-size:15px">${eur(d.totales.bruto)}</span></div>
+        ${d.totales.dto_linea ? `<div class="row" style="justify-content:space-between;margin-top:4px"><span class="sub">Descuento de línea</span><span class="num" style="font-size:15px">${eur(d.totales.dto_linea)}</span></div>` : ''}
+        <div class="row g8" style="align-items:center;margin-top:10px">
+          <span class="sub grow">Descuento al pie</span>
+          <input class="inp" data-f="presuDto" value="${esc(String(p.dto || 0))}" inputmode="decimal" style="width:76px;padding:8px 10px;text-align:right">
+          <span class="sub">%</span>
+          <button class="pill" data-a="presuRecalcular" style="padding:8px 12px">Aplicar</button>
+        </div>
+        <div class="row" style="justify-content:space-between;margin-top:12px">
+          <span style="font:600 16px var(--sans)">Total sin IVA</span>
+          <span class="num" style="font-size:22px">${eur(d.totales.total)}</span>
+        </div>
+      </div>
+
+      <div style="margin-top:18px;padding-top:12px;border-top:1px solid var(--l1)">
+        <div class="lbl" style="font-size:11px">Añadir del catálogo</div>
+        <div class="sub" style="font-size:12px;margin-top:6px">La máquina la eliges tú: el motor no la adivina mientras no haya tarifas de aire cargadas.</div>
+        <div class="row g8" style="margin-top:10px">
+          <input class="inp grow" id="presu-buscar" data-f="presuTexto" value="${esc(p.buscar || '')}" placeholder="Nombre o referencia" autocomplete="off">
+          <button class="pill" data-a="presuBuscar" style="padding:13px 16px">Buscar</button>
+        </div>
+        <div id="presu-resultados">${presuResultadosHTML()}</div>
+        ${p.extra.length ? `<div style="margin-top:12px">${p.extra.map((l, i) => `<div class="row g8" style="align-items:center;padding:7px 0;border-bottom:1px solid var(--l1)">
+          <div class="grow"><div style="font:500 13px/1.25 var(--sans)">${esc(l.descripcion)}</div>
+          <div class="tiny" style="margin-top:2px">${eur(l.precio_tarifa)}</div></div>
+          <input class="inp" data-f="presuCantidad" data-i="${i}" value="${esc(String(l.cantidad))}" inputmode="decimal" style="width:60px;padding:7px 8px;text-align:center">
+          <span class="tiny" data-a="presuQuitarExtra" data-i="${i}" style="color:var(--rojo);cursor:pointer">Quitar</span>
+        </div>`).join('')}
+        <button class="pill" data-a="presuRecalcular" style="margin-top:10px;padding:10px;width:100%;text-align:center">Recalcular con lo añadido</button></div>` : ''}
+      </div>
+
+      <button class="btn btn-verde" data-a="presuGuardar" style="margin-top:16px" ${p.guardando ? 'disabled' : ''}>${p.guardando ? 'Guardando…' : p.guardado ? 'Guardar otra versión' : 'Guardar este presupuesto'}</button>
+      ${p.guardado ? '<div class="tiny" style="margin-top:8px;text-align:center">✓ Guardado. Queda con la versión de reglas y la tarifa con las que se calculó.</div>' : ''}
+    ` : ''}
+  </div>`;
+}
+const eur = (n) => (Number(n) || 0).toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' €';
+
+A.presuCalcular = async (categoria) => {
+  const vv = V.visitaVer; if (!vv || !esPresupuestos() && !esAdmin()) return;
+  if (!navigator.onLine) { avisar('Sin conexión: el presupuesto se calcula en el servidor.'); return; }
+  const p = V.presu;
+  p.cat = categoria; p.cargando = true; p.error = null; render();
+  try {
+    p.datos = await visitasDB.presupuestarVisita(vv.visita.id, categoria, {
+      guardar: false, dtoGlobalPct: p.dto, lineasExtra: p.extra,
+    });
+  } catch (e) {
+    p.datos = null; p.error = msgError(e);
+  }
+  p.cargando = false; render();
+};
+
+A.presuDto = (v) => {
+  const n = Math.max(0, Math.min(100, Number(String(v).replace(',', '.')) || 0));
+  V.presu.dto = n;
+};
+A.presuRecalcular = () => { if (V.presu.cat) A.presuCalcular(V.presu.cat); };
+
+A.presuGuardar = async () => {
+  const vv = V.visitaVer, p = V.presu;
+  if (!vv || !p.cat || p.guardando) return;
+  p.guardando = true; render();
+  try {
+    const r = await visitasDB.presupuestarVisita(vv.visita.id, p.cat, {
+      guardar: true, dtoGlobalPct: p.dto, lineasExtra: p.extra,
+    });
+    p.datos = r; p.guardado = r.presupuesto_id || null;
+    toast('Presupuesto guardado' + (r.estado === 'revisar' ? ' · queda por revisar.' : '.'));
+  } catch (e) { avisar('No se pudo guardar: ' + msgError(e)); }
+  p.guardando = false; render();
+};
+
+/* --- añadir la máquina, del catálogo o a mano --- */
+let presuBuscarT;
+A.presuTexto = (t) => {
+  V.presu.buscar = t;
+  clearTimeout(presuBuscarT);
+  if (String(t || '').trim().length < 2) { V.presu.resultados = []; return pintarPresuBusqueda(); }
+  presuBuscarT = setTimeout(() => A.presuBuscar(), 450);
+};
+const pintarPresuBusqueda = () => {
+  const caja = document.getElementById('presu-resultados');
+  if (caja) caja.innerHTML = presuResultadosHTML(); else render();
+};
+A.presuBuscar = async () => {
+  const p = V.presu;
+  if (String(p.buscar || '').trim().length < 2 || p.buscando) return;
+  p.buscando = true; pintarPresuBusqueda();
+  try { p.resultados = await visitasDB.buscarProductos(p.buscar); }
+  catch (e) { p.resultados = []; avisar('No se pudo buscar en el catálogo: ' + msgError(e)); }
+  p.buscando = false; pintarPresuBusqueda();
+};
+A.presuAnadir = (ref) => {
+  const p = V.presu;
+  const x = (p.resultados || []).find((r) => r.referencia === ref); if (!x) return;
+  p.extra.push({
+    producto_ref: x.referencia, descripcion: x.nombre, detalle_tecnico: x.detalle_tecnico || null,
+    especificaciones: x.especificaciones || [], cantidad: 1, unidad: x.unidad || 'ud',
+    precio_tarifa: x.precio_tarifa, iva: x.iva == null ? 21 : x.iva, seccion: 'Equipos',
+  });
+  p.buscar = ''; p.resultados = [];
+  A.presuRecalcular();
+};
+A.presuQuitarExtra = (i) => {
+  V.presu.extra.splice(Number(i), 1);
+  A.presuRecalcular();
+};
+A.presuCantidadExtra = (i, v) => {
+  const l = V.presu.extra[Number(i)]; if (!l) return;
+  l.cantidad = Math.max(0, Number(String(v).replace(',', '.')) || 0);
+};
 
 /* =============================================================================
  * AGENDA DE PRESUPUESTOS · clientes y citas (fase A)
@@ -8070,6 +8257,12 @@ document.addEventListener('click', (e) => {
   if (a === 'compartirVisita') return A.compartirVisita();
   if (a === 'visitaDrive') return A.visitaDrive();
   if (a === 'graciasVisita') return A.graciasVisita();
+  if (a === 'presuCalcular') return A.presuCalcular(d.c);
+  if (a === 'presuRecalcular') return A.presuRecalcular();
+  if (a === 'presuGuardar') return A.presuGuardar();
+  if (a === 'presuBuscar') return A.presuBuscar();
+  if (a === 'presuAnadir') return A.presuAnadir(d.ref);
+  if (a === 'presuQuitarExtra') return A.presuQuitarExtra(d.i);
   if (a === 'borrarVisita') return A.borrarVisita(d.id);
   if (a === 'confirmarBorrarVisita') return A.confirmarBorrarVisita();
   if (a === 'cliDriveReintentar') return A.cliDriveReintentar(d.id);
@@ -8272,6 +8465,9 @@ document.addEventListener('input', (e) => {
   if (f === 'empPin') { t.value = t.value.replace(/\D/g, '').slice(0, 4); A.empCampo('pin', t.value); return; }
   if (f === 'ingresoPin') { t.value = t.value.replace(/\D/g, '').slice(0, 4); V.sheet.val = t.value; return; }
   if (f === 'crmTexto') { A.crmTexto(t.value); return; }
+  if (f === 'presuTexto') { A.presuTexto(t.value); return; }
+  if (f === 'presuDto') { A.presuDto(t.value); return; }
+  if (f === 'presuCantidad') { A.presuCantidadExtra(t.dataset.i, t.value); return; }
   if (f === 'empNombreCompleto') { A.empCampo('nombreCompleto', t.value); return; }
   if (f === 'empFechaAlta') { A.empCampo('fechaAlta', t.value); return; }
   if (f === 'empVacaciones') { t.value = t.value.replace(/\D/g, '').slice(0, 3); A.empCampo('vacacionesAnuales', t.value); return; }
