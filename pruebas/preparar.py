@@ -46,4 +46,14 @@ piezas = [
 for f in ('supabase-db.js', 'supabase-auth.js', 'visitas-db.js', 'supabase/functions/presupuestar/cadena.js'):
     (FUERA / pathlib.Path(f).name).write_text(sin_modulos(f))
 
+# Las piezas del motor de presupuestos (módulos ES sin dependencias).
+for f in ('cadena.js', 'formulas.js', 'motor.js'):
+    ruta = BASE / 'supabase' / 'functions' / 'presupuestar' / f
+    if ruta.exists():
+        t = re.sub(r"^export ", "", ruta.read_text(), flags=re.M)
+        # Las piezas se cargan una detrás de otra con load(), así que los nombres
+        # ya están a mano: los import sobran y jsc no los entiende.
+        t = re.sub(r"^import .*?;\n", "", t, flags=re.M)
+        (FUERA / f).write_text(t)
+
 print('preparado en', FUERA)
