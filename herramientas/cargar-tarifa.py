@@ -116,15 +116,23 @@ def config():
     url = re.search(r"SUPABASE_URL\s*=\s*'([^']+)'", txt)
     if not url:
         sys.exit('No encuentro SUPABASE_URL en supabase-client.js')
-    key = os.environ.get('SUPABASE_SERVICE_ROLE_KEY', '').strip()
-    if not key:
+    key = os.environ.get('SUPABASE_SERVICE_ROLE_KEY', '').strip().strip('"\'')
+    if not key or key == 'TU_CLAVE':
         sys.exit('Falta la clave: ejecútalo con SUPABASE_SERVICE_ROLE_KEY=... delante '
                  '(Supabase → Settings → API Keys → secret). O usa --prueba.')
+    if key.startswith('sb_publishable_'):
+        sys.exit('Esa es la clave pública (sb_publishable_…). Hace falta la SECRETA: '
+                 'Settings → API Keys → Secret keys, la que empieza por sb_secret_.')
     return url.group(1).rstrip('/'), key
 
 
 def pedir(base, key, ruta, datos=None, metodo=None, prefer=None):
-    cab = {'apikey': key, 'Authorization': 'Bearer ' + key, 'Content-Type': 'application/json'}
+    cab = {'apikey': key, 'Content-Type': 'application/json'}
+    # Las claves nuevas (sb_secret_…) no son un JWT: van solo en `apikey`, y en
+    # Authorization Supabase las rechaza. La service_role antigua (eyJ…) va en
+    # las dos.
+    if not key.startswith('sb_'):
+        cab['Authorization'] = 'Bearer ' + key
     if prefer:
         cab['Prefer'] = prefer
     cuerpo = json.dumps(datos).encode() if datos is not None else None
@@ -134,7 +142,14 @@ def pedir(base, key, ruta, datos=None, metodo=None, prefer=None):
             txt = r.read().decode()
             return json.loads(txt) if txt else None
     except urllib.error.HTTPError as e:
-        raise RuntimeError(f'HTTP {e.code} en {ruta}\n{e.read().decode()[:400]}')
+        detalle = e.read().decode()[:400]
+        if e.code in (401, 403):
+            sys.exit(f'Supabase no acepta la clave (HTTP {e.code}). Tiene que ser la SECRETA '
+                     f'(sb_secret_… o la service_role eyJ…), copiada entera.\n{detalle}')
+        if e.code == 404 or 'does not exist' in detalle or 'PGRST205' in detalle:
+            sys.exit('La tabla no existe todavía: ejecuta antes sql/etapa38_motor_presupuestos.sql '
+                     f'en Supabase.\n{detalle}')
+        raise RuntimeError(f'HTTP {e.code} en {ruta}\n{detalle}')
 
 
 def id_tarifa(base, key, nombre):
