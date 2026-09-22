@@ -1,0 +1,6 @@
+potencia_kw,familia,gama,ref_vaillant,nombre_vaillant,precio_vaillant,ref_saunier,nombre_saunier,precio_saunier,ratio
+4,bomba_calor,basico_r290,0020306791,aroTHERM plus 4 básico sensoCOMFORT inalámbrico,8755.00,0020307741,Pack Genia Air Max 4 con MiPro Sense inalámbrico HASTA FIN DE EXISTENCIAS GENERACION,9230.00,1.0543
+6,bomba_calor,basico_r290,0020306793,aroTHERM plus 6 básico sensoCOMFORT inalámbrico,9385.00,0020307768,Ampliación cascada Genia Air Max 6,9565.00,1.0192
+8,bomba_calor,basico_r290,0020306795,aroTHERM plus 8 básico sensoCOMFORT inalámbrico,9710.00,0020307745,Pack Genia Air Max 8 con MiPro Sense inalámbrico,10235.00,1.0541
+12,bomba_calor,basico_r290,0020306797,aroTHERM plus 12 básico sensoCOMFORT inalámbrico,12780.00,0020307747,Pack Genia Air Max 12 con MiPro Sense inalámbrico (230V),13465.00,1.0536
+15,bomba_calor,basico_r290,0020306801,aroTHERM plus 15 básico sensoCOMFORT inalámbrico,13395.00,0020307751,Pack Genia Air Max 15 con MiPro Sense inalámbrico (230V),14115.00,1.0538

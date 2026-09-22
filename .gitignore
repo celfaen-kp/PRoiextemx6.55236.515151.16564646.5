@@ -4,3 +4,7 @@ copia-*.json
 # Credenciales de Google para subir planillas a Drive: nunca a GitHub
 herramientas/google-credenciales.json
 herramientas/google-refresh-token.txt
+
+# Presupuestos cerrados de clientes (precios, descuentos, algún nombre): el
+# repo es público. Se quedan en la carpeta de Drive; las pruebas los leen de ahí.
+herramientas/tarifas/presupuestos-historicos-lineas.csv

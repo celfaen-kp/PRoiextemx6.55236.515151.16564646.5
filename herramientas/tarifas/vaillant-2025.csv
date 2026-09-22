@@ -1,0 +1,361 @@
+referencia,nombre,familia,unidad,precio_tarifa,iva,atributos
+0020306791,aroTHERM plus 4 básico sensoCOMFORT inalámbrico,bomba_calor,ud,8755.00,21,"{""potencia_kw"": 4.0, ""control"": ""inalambrico""}"
+0020306792,aroTHERM plus 4 básico sensoCOMFORT cableado,bomba_calor,ud,8665.00,21,"{""potencia_kw"": 4.0, ""control"": ""cableado""}"
+0020306793,aroTHERM plus 6 básico sensoCOMFORT inalámbrico,bomba_calor,ud,9385.00,21,"{""potencia_kw"": 6.0, ""control"": ""inalambrico""}"
+0020306794,aroTHERM plus 6 básico sensoCOMFORT cableado,bomba_calor,ud,9295.00,21,"{""potencia_kw"": 6.0, ""control"": ""cableado""}"
+0020306795,aroTHERM plus 8 básico sensoCOMFORT inalámbrico,bomba_calor,ud,9710.00,21,"{""potencia_kw"": 8.0, ""control"": ""inalambrico""}"
+0020306796,aroTHERM plus 8 básico sensoCOMFORT cableado,bomba_calor,ud,9620.00,21,"{""potencia_kw"": 8.0, ""control"": ""cableado""}"
+0020306797,aroTHERM plus 12 básico sensoCOMFORT inalámbrico,bomba_calor,ud,12780.00,21,"{""potencia_kw"": 12.0, ""control"": ""inalambrico""}"
+0020306798,aroTHERM plus 12 básico sensoCOMFORT cableado,bomba_calor,ud,12690.00,21,"{""potencia_kw"": 12.0, ""control"": ""cableado""}"
+0020306799,aroTHERM plus 12 básico sensoCOMFORT inalámbrico 400V,bomba_calor,ud,13515.00,21,"{""potencia_kw"": 12.0, ""trifasica"": true, ""control"": ""inalambrico""}"
+0020306800,aroTHERM plus 12 básico sensoCOMFORT cableado 400V,bomba_calor,ud,13425.00,21,"{""potencia_kw"": 12.0, ""trifasica"": true, ""control"": ""cableado""}"
+0020306801,aroTHERM plus 15 básico sensoCOMFORT inalámbrico,bomba_calor,ud,13395.00,21,"{""potencia_kw"": 15.0, ""control"": ""inalambrico""}"
+0020306802,aroTHERM plus 15 básico sensoCOMFORT cableado,bomba_calor,ud,13305.00,21,"{""potencia_kw"": 15.0, ""control"": ""cableado""}"
+0020306803,aroTHERM plus 15 básico sensoCOMFORT inalámbrico 400V,bomba_calor,ud,14150.00,21,"{""potencia_kw"": 15.0, ""trifasica"": true, ""control"": ""inalambrico""}"
+0020306804,aroTHERM plus 15 básico sensoCOMFORT cableado 400V,bomba_calor,ud,14060.00,21,"{""potencia_kw"": 15.0, ""trifasica"": true, ""control"": ""cableado""}"
+0020306891,Ampliación cascadas aroTHERM plus 4,cascada,ud,8440.00,21,{}
+0020306892,Ampliación cascadas aroTHERM plus 6,cascada,ud,9070.00,21,{}
+0020306893,Ampliación cascadas aroTHERM plus 8,cascada,ud,9395.00,21,{}
+0020306894,Ampliación cascadas aroTHERM plus 12,cascada,ud,12465.00,21,{}
+0020306895,Ampliación cascadas aroTHERM plus 12 400V,cascada,ud,13200.00,21,"{""trifasica"": true}"
+0020306896,Ampliación cascadas aroTHERM plus 15,cascada,ud,13080.00,21,{}
+0020306897,Ampliación cascadas aroTHERM plus 15 400V,cascada,ud,13835.00,21,"{""trifasica"": true}"
+0020306805,aroTHERM plus 4 autónomo sensoCOMFORT inalámbrico,bomba_calor,ud,10620.00,21,"{""potencia_kw"": 4.0, ""control"": ""inalambrico""}"
+0020306806,aroTHERM plus 4 autónomo sensoCOMFORT cableado,bomba_calor,ud,10530.00,21,"{""potencia_kw"": 4.0, ""control"": ""cableado""}"
+0020306807,aroTHERM plus 6 autónomo sensoCOMFORT inalámbrico,bomba_calor,ud,11250.00,21,"{""potencia_kw"": 6.0, ""control"": ""inalambrico""}"
+0020306808,aroTHERM plus 6 autónomo sensoCOMFORT cableado,bomba_calor,ud,11160.00,21,"{""potencia_kw"": 6.0, ""control"": ""cableado""}"
+0020306809,aroTHERM plus 8 autónomo sensoCOMFORT inalámbrico,bomba_calor,ud,11575.00,21,"{""potencia_kw"": 8.0, ""control"": ""inalambrico""}"
+0020306810,aroTHERM plus 8 autónomo sensoCOMFORT cableado,bomba_calor,ud,11485.00,21,"{""potencia_kw"": 8.0, ""control"": ""cableado""}"
+0020306811,aroTHERM plus 12 autónomo sensoCOMFORT inalámbrico,bomba_calor,ud,14645.00,21,"{""potencia_kw"": 12.0, ""control"": ""inalambrico""}"
+0020306812,aroTHERM plus 12 autónomo sensoCOMFORT cableado,bomba_calor,ud,14555.00,21,"{""potencia_kw"": 12.0, ""control"": ""cableado""}"
+0020306813,aroTHERM plus 12 autónomo sensoCOMFORT inalámbrico 400V,bomba_calor,ud,15380.00,21,"{""potencia_kw"": 12.0, ""trifasica"": true, ""control"": ""inalambrico""}"
+0020306814,aroTHERM plus 12 autónomo sensoCOMFORT cableado 400V,bomba_calor,ud,15290.00,21,"{""potencia_kw"": 12.0, ""trifasica"": true, ""control"": ""cableado""}"
+0020306815,aroTHERM plus 15 autónomo sensoCOMFORT inalámbrico,bomba_calor,ud,15260.00,21,"{""potencia_kw"": 15.0, ""control"": ""inalambrico""}"
+0020306816,aroTHERM plus 15 autónomo sensoCOMFORT cableado,bomba_calor,ud,15170.00,21,"{""potencia_kw"": 15.0, ""control"": ""cableado""}"
+0020306817,aroTHERM plus 15 autónomo sensoCOMFORT inalámbrico 400V,bomba_calor,ud,16015.00,21,"{""potencia_kw"": 15.0, ""trifasica"": true, ""control"": ""inalambrico""}"
+0020306818,aroTHERM plus 15 autónomo sensoCOMFORT cableado 400V,bomba_calor,ud,15925.00,21,"{""potencia_kw"": 15.0, ""trifasica"": true, ""control"": ""cableado""}"
+0020309003,aroTHERM plus 6 autónomo sensoCOMFORT inalámbrico ACS (150 l),bomba_calor,ud,12235.00,21,"{""potencia_kw"": 6.0, ""control"": ""inalambrico""}"
+0020309004,aroTHERM plus 6 autónomo sensoCOMFORT cableado ACS (150 l),bomba_calor,ud,12145.00,21,"{""potencia_kw"": 6.0, ""control"": ""cableado""}"
+0020309005,aroTHERM plus 8 autónomo sensoCOMFORT inalámbrico ACS (150 l),bomba_calor,ud,12560.00,21,"{""potencia_kw"": 8.0, ""control"": ""inalambrico""}"
+0020309006,aroTHERM plus 8 autónomo sensoCOMFORT cableado ACS (150 l),bomba_calor,ud,12470.00,21,"{""potencia_kw"": 8.0, ""control"": ""cableado""}"
+0020309007,aroTHERM plus 12 autónomo sensoCOMFORT inalámbrico ACS (200 l),bomba_calor,ud,16560.00,21,"{""potencia_kw"": 12.0, ""control"": ""inalambrico""}"
+0020309008,aroTHERM plus 12 autónomo sensoCOMFORT cableado ACS (200 l),bomba_calor,ud,16470.00,21,"{""potencia_kw"": 12.0, ""control"": ""cableado""}"
+0020306871,aroTHERM plus 12 autónomo sensoCOMFORT inalámbrico ACS (500 l),bomba_calor,ud,18195.00,21,"{""potencia_kw"": 12.0, ""control"": ""inalambrico""}"
+0020306872,aroTHERM plus 12 autónomo sensoCOMFORT cableado ACS (500 l),bomba_calor,ud,18105.00,21,"{""potencia_kw"": 12.0, ""control"": ""cableado""}"
+0020309009,aroTHERM plus 12 autónomo sensoCOMFORT inalámbrico 400V ACS (200 l),bomba_calor,ud,17295.00,21,"{""potencia_kw"": 12.0, ""trifasica"": true, ""control"": ""inalambrico""}"
+0020309010,aroTHERM plus 12 autónomo sensoCOMFORT cableado 400V ACS (200 l),bomba_calor,ud,17205.00,21,"{""potencia_kw"": 12.0, ""trifasica"": true, ""control"": ""cableado""}"
+0020306877,aroTHERM plus 12 autónomo sensoCOMFORT inalámbrico 400V ACS (500 l),bomba_calor,ud,18930.00,21,"{""potencia_kw"": 12.0, ""trifasica"": true, ""control"": ""inalambrico""}"
+0020306878,aroTHERM plus 12 autónomo sensoCOMFORT cableado 400V ACS (500 l),bomba_calor,ud,18840.00,21,"{""potencia_kw"": 12.0, ""trifasica"": true, ""control"": ""cableado""}"
+0020309011,aroTHERM plus 15 autónomo sensoCOMFORT inalámbrico ACS (200 l),bomba_calor,ud,17175.00,21,"{""potencia_kw"": 15.0, ""control"": ""inalambrico""}"
+0020309012,aroTHERM plus 15 autónomo sensoCOMFORT cableado ACS (200 l),bomba_calor,ud,17085.00,21,"{""potencia_kw"": 15.0, ""control"": ""cableado""}"
+0020306883,aroTHERM plus 15 autónomo sensoCOMFORT inalámbrico ACS (500 l),bomba_calor,ud,18810.00,21,"{""potencia_kw"": 15.0, ""control"": ""inalambrico""}"
+0020306884,aroTHERM plus 15 autónomo sensoCOMFORT cableado ACS (500 l),bomba_calor,ud,18720.00,21,"{""potencia_kw"": 15.0, ""control"": ""cableado""}"
+0020309013,aroTHERM plus 15 autónomo sensoCOMFORT inalámbrico 400V ACS (200 l),bomba_calor,ud,17930.00,21,"{""potencia_kw"": 15.0, ""trifasica"": true, ""control"": ""inalambrico""}"
+0020309014,aroTHERM plus 15 autónomo sensoCOMFORT cableado 400V ACS (200 l),bomba_calor,ud,17840.00,21,"{""potencia_kw"": 15.0, ""trifasica"": true, ""control"": ""cableado""}"
+0020306889,aroTHERM plus 15 autónomo sensoCOMFORT inalámbrico 400V ACS (500 l),bomba_calor,ud,19565.00,21,"{""potencia_kw"": 15.0, ""trifasica"": true, ""control"": ""inalambrico""}"
+0020306890,aroTHERM plus 15 autónomo sensoCOMFORT cableado 400V ACS (500 l),bomba_calor,ud,19475.00,21,"{""potencia_kw"": 15.0, ""trifasica"": true, ""control"": ""cableado""}"
+0020306898,aroTHERM plus 4 compacto sensoCOMFORT inalámbrico,bomba_calor,ud,12155.00,21,"{""potencia_kw"": 4.0, ""control"": ""inalambrico""}"
+0020306899,aroTHERM plus 4 compacto sensoCOMFORT cableado,bomba_calor,ud,12065.00,21,"{""potencia_kw"": 4.0, ""control"": ""cableado""}"
+0020306900,aroTHERM plus 6 compacto sensoCOMFORT inalámbrico,bomba_calor,ud,12785.00,21,"{""potencia_kw"": 6.0, ""control"": ""inalambrico""}"
+0020306901,aroTHERM plus 6 compacto sensoCOMFORT cableado,bomba_calor,ud,12695.00,21,"{""potencia_kw"": 6.0, ""control"": ""cableado""}"
+0020306902,aroTHERM plus 8 compacto sensoCOMFORT inalámbrico,bomba_calor,ud,13110.00,21,"{""potencia_kw"": 8.0, ""control"": ""inalambrico""}"
+0020306903,aroTHERM plus 8 compacto sensoCOMFORT cableado,bomba_calor,ud,13020.00,21,"{""potencia_kw"": 8.0, ""control"": ""cableado""}"
+0020306904,aroTHERM plus 12 compacto sensoCOMFORT inalámbrico,bomba_calor,ud,16180.00,21,"{""potencia_kw"": 12.0, ""control"": ""inalambrico""}"
+0020306905,aroTHERM plus 12 compacto sensoCOMFORT cableado,bomba_calor,ud,16090.00,21,"{""potencia_kw"": 12.0, ""control"": ""cableado""}"
+0020306906,aroTHERM plus 12 compacto sensoCOMFORT inalámbrico 400V,bomba_calor,ud,16915.00,21,"{""potencia_kw"": 12.0, ""trifasica"": true, ""control"": ""inalambrico""}"
+0020306907,aroTHERM plus 12 compacto sensoCOMFORT cableado 400V,bomba_calor,ud,16825.00,21,"{""potencia_kw"": 12.0, ""trifasica"": true, ""control"": ""cableado""}"
+0020306908,aroTHERM plus 15 compacto sensoCOMFORT inalámbrico,bomba_calor,ud,16795.00,21,"{""potencia_kw"": 15.0, ""control"": ""inalambrico""}"
+0020306909,aroTHERM plus 15 compacto sensoCOMFORT cableado,bomba_calor,ud,16705.00,21,"{""potencia_kw"": 15.0, ""control"": ""cableado""}"
+0020306910,aroTHERM plus 15 compacto sensoCOMFORT inalámbrico 400V,bomba_calor,ud,17550.00,21,"{""potencia_kw"": 15.0, ""trifasica"": true, ""control"": ""inalambrico""}"
+0020306911,aroTHERM plus 15 compacto sensoCOMFORT cableado 400V,bomba_calor,ud,17460.00,21,"{""potencia_kw"": 15.0, ""trifasica"": true, ""control"": ""cableado""}"
+8000036533,aroTHERM Split plus 4 uniTOWER sensoCOMFORT inalámbrico un circ.,bomba_calor,ud,10640.00,21,"{""potencia_kw"": 4.0, ""control"": ""inalambrico""}"
+8000036536,aroTHERM Split plus 4 uniTOWER sensoCOMFORT cableado un circ.,bomba_calor,ud,10550.00,21,"{""potencia_kw"": 4.0, ""control"": ""cableado""}"
+8000036520,aroTHERM Split plus 6 uniTOWER sensoCOMFORT inalámbrico un circ.,bomba_calor,ud,11050.00,21,"{""potencia_kw"": 6.0, ""control"": ""inalambrico""}"
+8000036544,aroTHERM Split plus 6 uniTOWER sensoCOMFORT cableado un circ.,bomba_calor,ud,10960.00,21,"{""potencia_kw"": 6.0, ""control"": ""cableado""}"
+8000036542,aroTHERM Split plus 8 uniTOWER sensoCOMFORT inalámbrico un circ.,bomba_calor,ud,11600.00,21,"{""potencia_kw"": 8.0, ""control"": ""inalambrico""}"
+8000036635,aroTHERM Split plus 8 uniTOWER sensoCOMFORT cableado un circ.,bomba_calor,ud,11510.00,21,"{""potencia_kw"": 8.0, ""control"": ""cableado""}"
+0010030540,aroTHERM Split 12 uniTOWER sensoCOMFORT inalámbrico,bomba_calor,ud,13655.00,21,"{""potencia_kw"": 12.0, ""control"": ""inalambrico""}"
+0010030547,aroTHERM Split 12 uniTOWER sensoCOMFORT cableado,bomba_calor,ud,13565.00,21,"{""potencia_kw"": 12.0, ""control"": ""cableado""}"
+0010030541,aroTHERM Split 12 uniTOWER sensoCOMFORT inalámbrico 400V,bomba_calor,ud,14100.00,21,"{""potencia_kw"": 12.0, ""trifasica"": true, ""control"": ""inalambrico""}"
+0010030548,aroTHERM Split 12 uniTOWER sensoCOMFORT cableado 400V,bomba_calor,ud,14010.00,21,"{""potencia_kw"": 12.0, ""trifasica"": true, ""control"": ""cableado""}"
+8000036636,aroTHERM Split plus 4 uniTOWER sensoCOMFORT inalámbrico dos circ.,bomba_calor,ud,12300.00,21,"{""potencia_kw"": 4.0, ""control"": ""inalambrico""}"
+8000036639,aroTHERM Split plus 4 uniTOWER sensoCOMFORT cableado dos circ.,bomba_calor,ud,12210.00,21,"{""potencia_kw"": 4.0, ""control"": ""cableado""}"
+8000036637,aroTHERM Split plus 6 uniTOWER sensoCOMFORT inalámbrico dos circ.,bomba_calor,ud,12710.00,21,"{""potencia_kw"": 6.0, ""control"": ""inalambrico""}"
+8000036640,aroTHERM Split plus 6 uniTOWER sensoCOMFORT cableado dos circ.,bomba_calor,ud,12620.00,21,"{""potencia_kw"": 6.0, ""control"": ""cableado""}"
+8000036638,aroTHERM Split plus 8 uniTOWER sensoCOMFORT inalámbrico dos circ.,bomba_calor,ud,13295.00,21,"{""potencia_kw"": 8.0, ""control"": ""inalambrico""}"
+8000037097,aroTHERM Split plus 8 uniTOWER sensoCOMFORT cableado dos circ.,bomba_calor,ud,13205.00,21,"{""potencia_kw"": 8.0, ""control"": ""cableado""}"
+8000037099,aroTHERM Split plus 4 sensoCOMFORT inalámbrico 230V,bomba_calor,ud,8290.00,21,"{""potencia_kw"": 4.0, ""control"": ""inalambrico""}"
+8000037112,aroTHERM Split plus 4 sensoCOMFORT cableado 230V,bomba_calor,ud,8200.00,21,"{""potencia_kw"": 4.0, ""control"": ""cableado""}"
+8000037100,aroTHERM Split plus 6 sensoCOMFORT inalámbrico 230V,bomba_calor,ud,8700.00,21,"{""potencia_kw"": 6.0, ""control"": ""inalambrico""}"
+8000037113,aroTHERM Split plus 6 sensoCOMFORT cableado 230V,bomba_calor,ud,8610.00,21,"{""potencia_kw"": 6.0, ""control"": ""cableado""}"
+8000037111,aroTHERM Split plus 8 sensoCOMFORT inalámbrico 230V,bomba_calor,ud,9265.00,21,"{""potencia_kw"": 8.0, ""control"": ""inalambrico""}"
+8000037114,aroTHERM Split plus 8 sensoCOMFORT cableado 230V,bomba_calor,ud,9175.00,21,"{""potencia_kw"": 8.0, ""control"": ""cableado""}"
+0010030526,aroTHERM Split 12 sensoCOMFORT inalámbrico 230V,bomba_calor,ud,11520.00,21,"{""potencia_kw"": 12.0, ""control"": ""inalambrico""}"
+0010030533,aroTHERM Split 12 sensoCOMFORT cableado 230V,bomba_calor,ud,11430.00,21,"{""potencia_kw"": 12.0, ""control"": ""cableado""}"
+0010030527,aroTHERM Split 12 sensoCOMFORT inalámbrico 400V,bomba_calor,ud,11965.00,21,"{""potencia_kw"": 12.0, ""trifasica"": true, ""control"": ""inalambrico""}"
+0010030534,aroTHERM Split 12 sensoCOMFORT cableado 400V,bomba_calor,ud,11875.00,21,"{""potencia_kw"": 12.0, ""trifasica"": true, ""control"": ""cableado""}"
+8000037115,aroTHERM Split plus 4 230V sensoCOMFORT inalámbrico ACS (200 l),bomba_calor,ud,10205.00,21,"{""potencia_kw"": 4.0, ""control"": ""inalambrico""}"
+8000037118,aroTHERM Split plus 4 230V sensoCOMFORT cableado ACS (200 l),bomba_calor,ud,10115.00,21,"{""potencia_kw"": 4.0, ""control"": ""cableado""}"
+8000037116,aroTHERM Split plus 6 230V sensoCOMFORT inalámbrico ACS (200 l),bomba_calor,ud,10615.00,21,"{""potencia_kw"": 6.0, ""control"": ""inalambrico""}"
+8000037119,aroTHERM Split plus 6 230V sensoCOMFORT cableado ACS (200 l),bomba_calor,ud,10525.00,21,"{""potencia_kw"": 6.0, ""control"": ""cableado""}"
+8000037117,aroTHERM Split plus 8 230V sensoCOMFORT inalámbrico ACS (200 l),bomba_calor,ud,11180.00,21,"{""potencia_kw"": 8.0, ""control"": ""inalambrico""}"
+8000037120,aroTHERM Split plus 8 230V sensoCOMFORT cableado ACS (200 l),bomba_calor,ud,11090.00,21,"{""potencia_kw"": 8.0, ""control"": ""cableado""}"
+0010030559,aroTHERM Split 12 230V sensoCOMFORT inalámbrico ACS (200 l),bomba_calor,ud,13435.00,21,"{""potencia_kw"": 12.0, ""control"": ""inalambrico""}"
+0010030566,aroTHERM Split 12 230V sensoCOMFORT cableado ACS (200 l),bomba_calor,ud,13345.00,21,"{""potencia_kw"": 12.0, ""control"": ""cableado""}"
+0020315931,aroTHERM Split 12 400V sensoCOMFORT inalámbrico ACS (200 l),bomba_calor,ud,13880.00,21,"{""potencia_kw"": 12.0, ""trifasica"": true, ""control"": ""inalambrico""}"
+0020315932,aroTHERM Split 12 400V sensoCOMFORT cableado ACS (200 l),bomba_calor,ud,13790.00,21,"{""potencia_kw"": 12.0, ""trifasica"": true, ""control"": ""cableado""}"
+8000037924,Ampliación cascadas Split plus 4 230V,cascada,ud,7665.00,21,{}
+8000037925,Ampliación cascadas Split plus 6 230V,cascada,ud,8075.00,21,{}
+8000037926,Ampliación cascadas Split plus 8 230V,cascada,ud,8625.00,21,{}
+0010030554,Ampliación cascadas Split 12,cascada,ud,11165.00,21,{}
+0010030555,Ampliación cascadas Split 12 400V,cascada,ud,11610.00,21,"{""trifasica"": true}"
+0020275156,flexoTHERM 5 sensoCOMFORT inalámbrico,bomba_calor,ud,11965.00,21,"{""potencia_kw"": 5.0, ""control"": ""inalambrico""}"
+0020231528,flexoTHERM 5 sensoCOMFORT cableado,bomba_calor,ud,11875.00,21,"{""potencia_kw"": 5.0, ""control"": ""cableado""}"
+0020275157,flexoTHERM 8 sensoCOMFORT inalámbrico,bomba_calor,ud,13495.00,21,"{""potencia_kw"": 8.0, ""control"": ""inalambrico""}"
+0020231529,flexoTHERM 8 sensoCOMFORT cableado,bomba_calor,ud,13405.00,21,"{""potencia_kw"": 8.0, ""control"": ""cableado""}"
+0020275158,flexoTHERM 11 sensoCOMFORT inalámbrico,bomba_calor,ud,14380.00,21,"{""potencia_kw"": 11.0, ""control"": ""inalambrico""}"
+0020231530,flexoTHERM 11 sensoCOMFORT cableado,bomba_calor,ud,14290.00,21,"{""potencia_kw"": 11.0, ""control"": ""cableado""}"
+0020275161,flexoTHERM 11 400V sensoCOMFORT inalámbrico,bomba_calor,ud,14380.00,21,"{""potencia_kw"": 11.0, ""trifasica"": true, ""control"": ""inalambrico""}"
+0020231522,flexoTHERM 11 400V sensoCOMFORT cableado,bomba_calor,ud,14290.00,21,"{""potencia_kw"": 11.0, ""trifasica"": true, ""control"": ""cableado""}"
+0020275162,flexoTHERM 15 400V sensoCOMFORT inalámbrico,bomba_calor,ud,15235.00,21,"{""potencia_kw"": 15.0, ""trifasica"": true, ""control"": ""inalambrico""}"
+0020231523,flexoTHERM 15 400V sensoCOMFORT cableado,bomba_calor,ud,15145.00,21,"{""potencia_kw"": 15.0, ""trifasica"": true, ""control"": ""cableado""}"
+0020275163,flexoTHERM 19 400V sensoCOMFORT inalámbrico,bomba_calor,ud,16415.00,21,"{""potencia_kw"": 19.0, ""trifasica"": true, ""control"": ""inalambrico""}"
+0020231524,flexoTHERM 19 400V sensoCOMFORT cableado,bomba_calor,ud,16325.00,21,"{""potencia_kw"": 19.0, ""trifasica"": true, ""control"": ""cableado""}"
+0020275164,flexoTHERM 5 fluoCOLLECT sensoCOMFORT inalámbrico,bomba_calor,ud,14285.00,21,"{""potencia_kw"": 5.0, ""control"": ""inalambrico""}"
+0020231542,flexoTHERM 5 fluoCOLLECT sensoCOMFORT cableado,bomba_calor,ud,14195.00,21,"{""potencia_kw"": 5.0, ""control"": ""cableado""}"
+0020275165,flexoTHERM 8 fluoCOLLECT sensoCOMFORT inalámbrico,bomba_calor,ud,15815.00,21,"{""potencia_kw"": 8.0, ""control"": ""inalambrico""}"
+0020231543,flexoTHERM 8 fluoCOLLECT sensoCOMFORT cableado,bomba_calor,ud,15725.00,21,"{""potencia_kw"": 8.0, ""control"": ""cableado""}"
+0020275166,flexoTHERM 11 fluoCOLLECT sensoCOMFORT inalámbrico,bomba_calor,ud,16700.00,21,"{""potencia_kw"": 11.0, ""control"": ""inalambrico""}"
+0020231544,flexoTHERM 11 fluoCOLLECT sensoCOMFORT cableado,bomba_calor,ud,16610.00,21,"{""potencia_kw"": 11.0, ""control"": ""cableado""}"
+0020275169,flexoTHERM 11 400V fluoCOLLECT sensoCOMFORT inalámbrico,bomba_calor,ud,16700.00,21,"{""potencia_kw"": 11.0, ""trifasica"": true, ""control"": ""inalambrico""}"
+0020231536,flexoTHERM 11 400V fluoCOLLECT sensoCOMFORT cableado,bomba_calor,ud,16610.00,21,"{""potencia_kw"": 11.0, ""trifasica"": true, ""control"": ""cableado""}"
+0020275170,flexoTHERM 15 400V fluoCOLLECT sensoCOMFORT inalámbrico,bomba_calor,ud,18175.00,21,"{""potencia_kw"": 15.0, ""trifasica"": true, ""control"": ""inalambrico""}"
+0020231537,flexoTHERM 15 400V fluoCOLLECT sensoCOMFORT cableado,bomba_calor,ud,18085.00,21,"{""potencia_kw"": 15.0, ""trifasica"": true, ""control"": ""cableado""}"
+0020275171,flexoTHERM 19 400V fluoCOLLECT sensoCOMFORT inalámbrico,bomba_calor,ud,19355.00,21,"{""potencia_kw"": 19.0, ""trifasica"": true, ""control"": ""inalambrico""}"
+0020231538,flexoTHERM 19 400V fluoCOLLECT sensoCOMFORT cableado,bomba_calor,ud,19265.00,21,"{""potencia_kw"": 19.0, ""trifasica"": true, ""control"": ""cableado""}"
+0020275177,flexoCOMPACT 5 sensoCOMFORT inalámbrico,regulacion,ud,16415.00,21,"{""control"": ""inalambrico""}"
+0020231531,flexoCOMPACT 5 sensoCOMFORT cableado,regulacion,ud,16325.00,21,"{""control"": ""cableado""}"
+0020275178,flexoCOMPACT 8 sensoCOMFORT inalámbrico,regulacion,ud,16980.00,21,"{""control"": ""inalambrico""}"
+0020231532,flexoCOMPACT 8 sensoCOMFORT cableado,regulacion,ud,16890.00,21,"{""control"": ""cableado""}"
+0020275179,flexoCOMPACT 11 sensoCOMFORT inalámbrico,regulacion,ud,17590.00,21,"{""control"": ""inalambrico""}"
+0020231533,flexoCOMPACT 11 sensoCOMFORT cableado,regulacion,ud,17500.00,21,"{""control"": ""cableado""}"
+0020275182,flexoCOMPACT 11 400V sensoCOMFORT inalámbrico,regulacion,ud,17570.00,21,"{""trifasica"": true, ""control"": ""inalambrico""}"
+0020231527,flexoCOMPACT 11 400V sensoCOMFORT cableado,regulacion,ud,17480.00,21,"{""trifasica"": true, ""control"": ""cableado""}"
+0020275183,flexoCOMPACT 5 fluoCOLLECT sensoCOMFORT inalámbrico,regulacion,ud,18735.00,21,"{""control"": ""inalambrico""}"
+0020231545,flexoCOMPACT 5 fluoCOLLECT sensoCOMFORT cableado,regulacion,ud,18645.00,21,"{""control"": ""cableado""}"
+0020275184,flexoCOMPACT 8 fluoCOLLECT sensoCOMFORT inalámbrico,regulacion,ud,19300.00,21,"{""control"": ""inalambrico""}"
+0020231546,flexoCOMPACT 8 fluoCOLLECT sensoCOMFORT cableado,regulacion,ud,19210.00,21,"{""control"": ""cableado""}"
+0020275185,flexoCOMPACT 11 fluoCOLLECT sensoCOMFORT inalámbrico,regulacion,ud,19910.00,21,"{""control"": ""inalambrico""}"
+0020231547,flexoCOMPACT 11 fluoCOLLECT sensoCOMFORT cableado,regulacion,ud,19820.00,21,"{""control"": ""cableado""}"
+0020275188,flexoCOMPACT 11 fluoCOLLECT 400V sensoCOMFORT inalámbrico,regulacion,ud,19890.00,21,"{""trifasica"": true, ""control"": ""inalambrico""}"
+0020231541,flexoCOMPACT 11 fluoCOLLECT 400V sensoCOMFORT cableado,regulacion,ud,19800.00,21,"{""trifasica"": true, ""control"": ""cableado""}"
+0010037620,geoTHERM perform VWS 260/3 S1,bomba_calor,ud,25155.00,21,{}
+0010037621,geoTHERM perform VWS 400/3 S1,bomba_calor,ud,38135.00,21,{}
+0010037622,geoTHERM perform VWS 780/3 S1,bomba_calor,ud,47830.00,21,{}
+0010037630,Control VRT 310,regulacion,ud,510.00,21,{}
+0010037632,Módulo auxiliar VR 640,regulacion,ud,1275.00,21,{}
+0010040731,Sonda temperatura para passive cooling,accesorio,ud,75.00,21,{}
+0010037625,Válvula de 3 vías DN40. Compatible con VWS 260/3 S1,accesorio,ud,555.00,21,{}
+0010037626,Válvula de 3 vías DN50. Compatible con VWS 400/3 S1 y VWS 780/3 S1,accesorio,ud,610.00,21,{}
+0010041870,Interfaz Modbus para equipos de geoTHERM perform,bomba_calor,ud,805.00,21,{}
+0020260921,sensoCOMFORT Control cableado principal para la generación y distribución de energía.,regulacion,ud,345.00,21,"{""control"": ""cableado""}"
+0020260925,sensoCOMFORT Remoto Control para gestionar cada circuito / zona adicional.,regulacion,ud,190.00,21,{}
+0020260937,sensoCOMFORT Radio Control inalámbrico principal para la generación y distribución de energía.,regulacion,ud,435.00,21,"{""control"": ""inalambrico""}"
+0020260940,sensoCOMFORT Remoto Control inalámbrico para gestionar cada circuito / zona adicional.,regulacion,ud,240.00,21,"{""control"": ""inalambrico""}"
+0020184844,VR 70 Módulo eBUS para gestionar 2 circuitos de mezcla / 2 zonas y otras funcionalidades.,regulacion,ud,275.00,21,{}
+0020184847,VR 71 Módulo eBUS para gestionar 3 circuitos de mezcla / 3 zonas y otras funcionalidades.,regulacion,ud,330.00,21,{}
+0010037342,Módulo myVAILLANT Módulo de conectividad myVAILLANT VR 940f.,regulacion,ud,235.00,21,{}
+0020151256,Termómetro compatible con modelo 150l,otros,ud,85.00,21,{}
+0010003776,Termómetro compatible con modelos >150l,otros,ud,85.00,21,{}
+0020230734,Resistencia eléctrica 2/4/6 kW (3ph) compatible con modelos BR y MR a partir de 300 litros,otros,ud,585.00,21,{}
+0010026717,VWZ MPS 30 mural B 30 380/545 1/2” - 3/4” 6 100,otros,ud,840.00,21,{}
+0010034126,VP RW 45/2 B mural B 45 365/895 6 a 1 1/4” 3 85,deposito_inercia,ud,920.00,21,{}
+0020249971,VPS R 100/1 M mural A 100 550/932 8 a 1 1/2” 3 95,deposito_inercia,ud,1095.00,21,{}
+8000013753,"VI 80 Mural B 80 480x749 6 a 1""1/4 6 110",deposito_inercia,ud,1075.00,21,{}
+8000013817,"VI 150 Suelo C 140 480x1155 8 a 1""1/4 6 110",deposito_inercia,ud,1120.00,21,{}
+0010009455,VI 200 suelo B 200 620/985 8 a 1 1/2” 6 100,deposito_inercia,ud,1170.00,21,{}
+0010009456,VI 370 suelo C 370 620/1.725 6 a 2” 6 100,deposito_inercia,ud,1605.00,21,{}
+8000013824,"Resistencia 2,2 kW para depósitos VI 80, VI 150, VI 200 y VI 370",deposito_inercia,ud,225.00,21,{}
+0010040065,Carcasa metálica aislante para VPM 135-180/4 W,otros,ud,1185.00,21,{}
+0010040066,Bomba circuladora de ACS para VPM 90/4 W,accesorio,ud,910.00,21,{}
+0010040067,Bomba circuladora de ACS para VPM 135-180/4 W,accesorio,ud,1010.00,21,{}
+0010005891,"Tubo PE-Xa con barrera 16 mm x 200 m 3 1,8 200",otros,ud,1.42,21,{}
+0020115236,"Tubo PE-Xa con barrera 16 mm x 500 m 3 1,8 500",otros,ud,1.42,21,{}
+0020254298,Tubo PE-RT (II)/EVOH/PE-RT (III) básico con barrera 17 mm x 200m 5 2 200,otros,ud,1.44,21,{}
+0020254299,Tubo PE-RT (II)/EVOH/PE-RT (III) básico con barrera 17 mm x 500m 5 2 500,otros,ud,1.42,21,{}
+0020254301,Tubo Multicapa PE-RT/Al/PE-RT 16 mm x 200m 5 2 200,otros,ud,1.49,21,{}
+0020254302,Tubo Multicapa PE-RT/Al/PE-RT 16 mm x 500m 5 2 500,otros,ud,1.49,21,{}
+8000013928,"Tubo PEX-a para autofijación 16 mm x 200m 5 1,8 200",otros,ud,2.47,21,{}
+0020254321,"Conexión eurocono a tubo de 16 x 2 mm (3/4"") (2 uds)",otros,ud,8.00,21,{}
+0010030522,"Conexión eurocono a tubo de 16 x 1,8 mm (3/4"") (2 uds)",otros,ud,8.00,21,{}
+0020254322,"Conexión eurocono a tubo de 17 x 2 mm (3/4"") (2 uds)",otros,ud,8.00,21,{}
+0020148120,Curva plástico SRR 16 mm,otros,ud,2.00,21,{}
+0020254576,Curva plástico SRR 16-17 mm,otros,ud,2.00,21,{}
+0020331790,Manguito para la reparación de fisuras o grietas en el tubo,accesorio,ud,26.00,21,{}
+8000013943,Liso térmico 10.000 x 1.000 EPS con grafito,otros,ud,16.60,21,{}
+8000040670,Zócalo perimetral con tira de adhesivo 7 mm x 150 mm x 50 m,otros,ud,61.00,21,{}
+0020206459,Grapa para panel aislante 16-20 mm (300 uds.),otros,ud,40.00,21,{}
+0020254308,Colectores termoplásticos 4 vías,otros,ud,299.00,21,{}
+0020254310,Colectores termoplásticos 6 vías,otros,ud,367.00,21,{}
+0020254312,Colectores termoplásticos 8 vías,otros,ud,462.00,21,{}
+0020254314,Colectores termoplásticos 10 vías,otros,ud,533.00,21,{}
+0020254317,Colector termoplástico 1 vía para ampliaciones,otros,ud,50.00,21,{}
+0020287280,Colectores termoplásticos 3 vías para ampliaciones,otros,ud,123.00,21,{}
+0010042353,Caja metálica L = 540 mm,otros,ud,205.00,21,{}
+0020254318,Caja metálica L = 700 mm,otros,ud,207.00,21,{}
+0020254319,Caja metálica L = 850 mm,otros,ud,228.00,21,{}
+0020254320,Caja metálica L = 1.000 mm,otros,ud,246.00,21,{}
+0020254324,Purgador manual (2 uds),accesorio,ud,7.00,21,{}
+0020254325,Purgador automático (2 uds),accesorio,ud,33.00,21,{}
+0020254326,Caudalímetro (5 uds),otros,ud,141.00,21,{}
+0020254327,Soporte colector (1 ud),accesorio,ud,3.00,21,{}
+0020314643,Termómetro (2 uds),otros,ud,25.00,21,{}
+0020254571,Actuador térmico 230V*,otros,ud,43.00,21,{}
+0020254616,"Actuador térmico 230V, con final de carrera*",otros,ud,50.00,21,{}
+0020254573,Adaptador colector termoplástico,otros,ud,2.00,21,{}
+8000013939,"EPS 1.400 x 800 10/32 0,034 0,25 50 1,12 16 17,92",otros,ud,22.32,21,{}
+0020235167,Nº de Captadores por fila 2* 0020235157 950 0020235162 800,otros,ud,410.00,21,{}
+0020126418,Nº de 1 0020072203 545 0020126406 410 0020072193 495,otros,ud,370.00,21,{}
+0020126419,por fila 2 0020072204 830 0020126407 650 0020072194 765,otros,ud,600.00,21,{}
+0020072213,Nº de 1 0020072223 175,otros,ud,190.00,21,{}
+0020072214,por fila 2 0020072224 290,otros,ud,320.00,21,{}
+0010006528,VIH 1000 2 1.000 - 950/2.250,otros,ud,4830.00,21,{}
+0010005628,VIH 1500 1.500 - 1.360/1.850,otros,ud,7070.00,21,{}
+0010005629,VIH 2000 4 2.000 - 1.360/2.300,otros,ud,7640.00,21,{}
+0010005630,VIH 2500 4 2.500 - 1.660/2.035,otros,ud,8880.00,21,{}
+0010005631,VIH 3000 4 3.000 - 1.660/2.325,otros,ud,10000.00,21,{}
+0010005633,VIH 4000 4 4.000 - 1.910/2.345,otros,ud,11410.00,21,{}
+0010008879,"VIH 740 S 1-2 740 2,7 950/1.840",otros,ud,4545.00,21,{}
+0010006530,"VIH 1000 S 2 1.000 3,3 950/2.250",otros,ud,5885.00,21,{}
+0010018623,"VIH 1500 SB1 3 1.500 3,4 1.160/2.320",otros,ud,8990.00,21,{}
+0010005659,"VIH 2000 S 3-4 2.000 3,4 1.360/2.300",otros,ud,11285.00,21,{}
+0010005660,"VIH 2500 S 3-4 2.500 4,8 1.660/2.035",otros,ud,14650.00,21,{}
+0010005661,"VIH 3000 S 3.000 5,0 1.660/2.325",otros,ud,15475.00,21,{}
+0010005649,VI 800 2 800 - 950/1.840,deposito_inercia,ud,3095.00,21,{}
+0010005650,VI 1000 2 1.000 - 950/2.250,deposito_inercia,ud,3630.00,21,{}
+0010005651,VI 1500 1.500 - 1.360/1.850,deposito_inercia,ud,4430.00,21,{}
+0010005652,VI 2000 2.000 - 1.360/2.300,deposito_inercia,ud,4990.00,21,{}
+0010005653,VI 2500 2.500 - 1.660/2.035,deposito_inercia,ud,6070.00,21,{}
+0010005654,VI 3000 3.000 - 1.660/2.325,deposito_inercia,ud,6645.00,21,{}
+0010005656,VI 4000 4.000 - 1.910/2.345,deposito_inercia,ud,8025.00,21,{}
+0010005657,VI 5000 5.000 - 1.910/2.750,deposito_inercia,ud,10225.00,21,{}
+0020210909,"Forro 1500 SB1** · Forro envolvente acolchado, color gris",otros,ud,680.00,21,{}
+0020072263,Forro 2000 · Semitapas superiores y tapa boca lateral,otros,ud,655.00,21,{}
+0020072264,Forro 2500,otros,ud,750.00,21,{}
+0020072265,Forro 3000,otros,ud,800.00,21,{}
+0020072267,Forro 4000 (*) Para VI/VIH 1500,otros,ud,975.00,21,{}
+0020072268,Forro 5000,otros,ud,1075.00,21,{}
+0010048535,Bracket Para montar VR 940f sobre receptor inalámbrico de sensoCOMFORT/HOME,regulacion,ud,5.00,21,"{""control"": ""inalambrico""}"
+0020266791,Sonda de temperatura Sonda de temperatura exterior cableada,accesorio,ud,25.00,21,{}
+8000014265,ecoTEC plus VMW 36CS/1-5 C (N-ES) sensoHOME,caldera,ud,4035.00,21,{}
+8000014266,ecoTEC plus VMW 36CS/1-5 Cf (N-ES) sensoHOME Radio,caldera,ud,4115.00,21,{}
+8000014267,ecoTEC plus VMW 32CS/1-5 C (N-ES) sensoHOME,caldera,ud,3650.00,21,{}
+8000014256,ecoTEC plus VMW 32CS/1-5 Cf (N-ES) sensoHOME Radio,caldera,ud,3720.00,21,{}
+8000014269,ecoTEC plus VMW 26CS/1-5 C (N-ES) sensoHOME,caldera,ud,3010.00,21,{}
+8000014271,ecoTEC plus VMW 26CS/1-5 Cf (N-ES) sensoHOME Radio,caldera,ud,3080.00,21,{}
+8000014257,ecoTEC plus VMW 23CS/1-5 C (N-ES) sensoHOME,caldera,ud,2860.00,21,{}
+8000014258,ecoTEC plus VMW 23CS/1-5 Cf (N-ES) sensoHOME Radio,caldera,ud,2925.00,21,{}
+8000014504,ecoTEC pro VMW 286/5-3 (H-ES) + sensoHOME cableado,caldera,ud,2985.00,21,"{""control"": ""cableado""}"
+8000014505,ecoTEC pro VMW 286/5-3 (H-ES) + sensoHOME radio,caldera,ud,3075.00,21,{}
+8000014506,ecoTEC pro VMW 286/5-3 (H-ES) + VRT 50/2 cableado,caldera,ud,2865.00,21,"{""control"": ""cableado""}"
+8000014502,ecoTEC pro VMW 236/5-3 (H-ES) + sensoHOME cableado,caldera,ud,2770.00,21,"{""control"": ""cableado""}"
+8000014503,ecoTEC pro VMW 236/5-3 (H-ES) + sensoHOME radio,caldera,ud,2860.00,21,{}
+8000014511,ecoTEC pro VMW 236/5-3 (H-ES) + VRT 50/2 cableado,caldera,ud,2650.00,21,"{""control"": ""cableado""}"
+8000014497,ecoTEC pure VMW 286/7-2 (H-ES) + sensoHOME cableado,caldera,ud,2795.00,21,"{""control"": ""cableado""}"
+8000014498,ecoTEC pure VMW 286/7-2 (H-ES) + sensoHOME radio,caldera,ud,2885.00,21,{}
+8000014500,ecoTEC pure VMW 286/7-2 (H-ES) + VRT 50/2 cableado,caldera,ud,2675.00,21,"{""control"": ""cableado""}"
+8000014494,ecoTEC pure VMW 236/7-2 (H-ES) + sensoHOME cableado,caldera,ud,2625.00,21,"{""control"": ""cableado""}"
+8000014495,ecoTEC pure VMW 236/7-2 (H-ES) + sensoHOME radio,caldera,ud,2715.00,21,{}
+8000014496,ecoTEC pure VMW 236/7-2 (H-ES) + VRT 50/2 cableado,caldera,ud,2505.00,21,"{""control"": ""cableado""}"
+0010016460,VKK 806/3-E HL R1 14-78/80,otros,ud,10295.00,21,{}
+0010016461,VKK 1206/3-E HL R1 21-113/120,otros,ud,12205.00,21,{}
+0010016462,VKK 1606/3-E HL R1 26-156/160,otros,ud,14895.00,21,{}
+0010016463,VKK 2006/3-E HL R1 43-197/160,otros,ud,16050.00,21,{}
+0010016464,VKK 2406/3-E HL R1 47-236/240,otros,ud,19915.00,21,{}
+0010016465,VKK 2806/3-E HL R1 51-276/280,otros,ud,22125.00,21,{}
+0010035754,Cable largo Cable largo para módulo myVAILLANT VR 940f (fuente + eBUS).,regulacion,ud,50.00,21,{}
+0020260951,sensoHOME Control cableado y conectable para caldera.,regulacion,ud,220.00,21,"{""control"": ""cableado""}"
+0020260961,sensoHOME Radio Control inalámbrico y conectable para caldera.,regulacion,ud,280.00,21,"{""control"": ""inalambrico""}"
+0010035734,sensoROOM VRT 51f Control WiFi inalámbrico y conectado para caldera.,regulacion,ud,280.00,21,"{""control"": ""inalambrico""}"
+0010038663,sensoROOM pure Control cableado y conectable para caldera.,regulacion,ud,85.00,21,"{""control"": ""cableado""}"
+8000029497,sensoROOM pure VRT 50/2 + VR 940f,regulacion,ud,230.00,21,{}
+0020017897,VR 34 Módulo electrónico para comunicación 0-10 V con eBUS,regulacion,ud,55.00,21,{}
+0020139835,VR 37 Módulo para conectar antiguos termostatos modulantes de 3 hilos Vaillant,regulacion,ud,40.00,21,{}
+0020139895,VR 32/3 VR 32/3 direccionador eBUS para caldera Cascada de calderas,regulacion,ud,125.00,21,{}
+0020235465,VR 32/3 (pared) Direccionador eBus para bomba de calor,regulacion,ud,120.00,21,{}
+0020017744,VR 40 Módulo 2 de 7 funciones (eBUS) La funcionalidad de cada relé se selecciona directamente,regulacion,ud,50.00,21,{}
+0010025486,Caja para módulos Caja para incluir VR 40 y/o VR 32/3,regulacion,ud,35.00,21,{}
+0010025314,"VIH QL 75/2 B B 72 720/440/440 0,82",otros,ud,1015.00,21,{}
+0010025313,"VIH Q 75/2 B B 68 0,85 720/440/440 0,83",otros,ud,1225.00,21,{}
+0020273004,turboMAG plus 155/1-5 + kit evacuación H 15,accesorio,ud,845.00,21,{}
+0010038935,eloSTOR exclusive VEH 80/1-7 Slim+ 74,termo,ud,730.00,21,{}
+0020273001,"turboMAG plus 125/1-5 A/M 12 21,4",otros,ud,775.00,21,{}
+0020273007,"turboMAG plus 175/1-5 A/XL 17 29,7",otros,ud,1010.00,21,{}
+0020273027,"turboMAG pro 125/1 12 19,8 BP",otros,ud,775.00,21,{}
+0020273030,"turboMAG pro 145/1 14 21,1 BP",otros,ud,845.00,21,{}
+0010038922,"VEN/H 15 /7-3 O B/XXS 15 Vertical 1,5 15-75 394/369/334",otros,ud,215.00,21,{}
+0010038923,VEH 30/5-3 Slim C/S 30 620/340/375,termo,ud,280.00,21,{}
+0010038924,VEH 50/5-3 Slim 50 756/385/420,termo,ud,320.00,21,{}
+0010038925,VEH 80/5-3 C/M 80 vertical 15-75 815/450/485,termo,ud,365.00,21,{}
+0010038926,VEH 100/5-3 100 970/450/485,termo,ud,390.00,21,{}
+0010038927,"VEH 30/5-5 A/S 30 1,5 620/340/360",termo,ud,325.00,21,{}
+0010038928,VEH 50/5-5 590/450/470,termo,ud,395.00,21,{}
+0010038929,VEH 50/5-5 Slim 756/385/405,termo,ud,430.00,21,{}
+0010038930,"VEH 80/5-5 B/M 80 2,0 815/450/470",termo,ud,470.00,21,{}
+0010038931,VEH 80/5-5 Slim 75 1.024/385/405,termo,ud,495.00,21,{}
+0010038932,VEH 100/5-5 100 970/450/470,termo,ud,505.00,21,{}
+0010038934,VEH 50/1-7 Slim+ 47 880/470/265,termo,ud,610.00,21,{}
+0010038936,VEH 100/1-7 Slim+ 93 1.090/570/315,termo,ud,805.00,21,{}
+8000025943,climaVAIR pro VAIB1-025WN,otros,ud,1036.00,21,{}
+8000025944,climaVAIR pro VAIB1-035WN,otros,ud,1074.00,21,{}
+8000025945,climaVAIR pro VAIB1-050WN,otros,ud,1633.00,21,{}
+8000025949,climaVAIR pro VAIB1-065WN,otros,ud,2001.00,21,{}
+0010045802,Filtro purificador de catequina para equipo murales (necesarios 2 uds por equipo),accesorio,ud,30.00,21,{}
+8000039366,climaVAIR pro multi VAIB1-050W205,otros,ud,2608.00,21,{}
+8000039367,climaVAIR pro multi VAIB1-055W205,otros,ud,2615.00,21,{}
+8000039368,climaVAIR pro multi VAIB1-060W205,otros,ud,2627.00,21,{}
+8000039369,climaVAIR pro multi VAIB1-070W205,otros,ud,2646.00,21,{}
+8000036631,climaVAIR plus VAIP1-025 WN,otros,ud,1626.00,21,{}
+8000036632,climaVAIR plus VAIP1-035 WN,otros,ud,1687.00,21,{}
+8000036633,climaVAIR plus VAIP1-050 WN,otros,ud,2317.00,21,{}
+8000036634,climaVAIR plus VAIP1-065 WN,otros,ud,2707.00,21,{}
+8000039393,climaVAIR plus multi VAIP1-050W205,otros,ud,3080.00,21,{}
+8000039394,climaVAIR plus multi VAIP1-055W205,otros,ud,3085.00,21,{}
+8000039395,climaVAIR plus multi VAIP1-060W205,otros,ud,3106.00,21,{}
+8000039396,climaVAIR plus multi VAIP1-070W205,otros,ud,3132.00,21,{}
+8000010702,climaVAIR pro VAIB1-020WNI,otros,ud,401.00,21,{}
+8000010695,climaVAIR pro VAIB1-025WNI,otros,ud,413.00,21,{}
+8000010690,climaVAIR pro VAIB1-035WNI,otros,ud,432.00,21,{}
+8000010703,climaVAIR pro VAIB1-050WNI,otros,ud,651.00,21,{}
+8000010708,climaVAIR pro VAIB1-065WNI,otros,ud,800.00,21,{}
+8000010678,climaVAIR plus VAIP1-020WNI,otros,ud,628.00,21,{}
+8000010685,climaVAIR plus VAIP1-025WNI,otros,ud,649.00,21,{}
+8000010686,climaVAIR plus VAIP1-035WNI,otros,ud,675.00,21,{}
+8000010687,climaVAIR plus VAIP1-050WNI,otros,ud,925.00,21,{}
+8000010679,climaVAIR plus VAIP1-065WNI,otros,ud,1081.00,21,{}
+8000010715,climaVAIR multi VAM1-035 DNI,otros,ud,878.00,21,{}
+8000010717,climaVAIR multi VAM1-050A2NO,otros,ud,1782.00,21,{}
+8000010719,climaVAIR multi VAM1-080A4NO,otros,ud,2440.00,21,{}
+8000010712,climaVAIR multi VAM1-120A5NO,otros,ud,4637.00,21,{}
+0010026769,VAI1-050 DN -,otros,ud,2105.00,21,{}
+0010026770,VAI1-070 DN -,otros,ud,2585.00,21,{}
+0010026771,VAI1-085 DN -,otros,ud,3275.00,21,{}
+0010026772,VAI1-100 DN -,otros,ud,3980.00,21,{}
+0010030969,Control individual cableado VAI1KD-CR -,otros,ud,70.00,21,"{""control"": ""cableado""}"
+0010030968,Contacto on-off VAI1KD-S4 -,otros,ud,35.00,21,{}
+0010032019,Caja de conexiones VAIKD-EB para montaje en superficie del control cableado VAI1KD-CR -,otros,ud,15.00,21,"{""control"": ""cableado""}"
+8000036452,climaVAIR pro VAIB1-050DNi,otros,ud,2388.00,21,{}
+8000036455,climaVAIR pro VAIB1-070DNi,otros,ud,2812.00,21,{}
+8000036459,climaVAIR pro VAIB1-085DNi,otros,ud,3387.00,21,{}
+8000036464,climaVAIR pro VAIB1-100DNi,otros,ud,4017.00,21,{}
+8000036468,climaVAIR pro VAIB1-140DNi,otros,ud,4744.00,21,{}
+8000029901,Contacto on-off VCA 100/1 S4,otros,ud,65.00,21,{}
+8000029890,MODBUS Control VCA 100/1 R,otros,ud,54.00,21,{}
+8000040540,Conducto climaVAIR pro 050 + aroSTOR 150,termo,ud,5148.00,21,{}
+8000040561,Conducto climaVAIR pro 050 + aroSTOR 200,termo,ud,5688.00,21,{}
+8000040562,Conducto climaVAIR pro 070 + aroSTOR 150,termo,ud,5572.00,21,{}
+8000040564,Conducto climaVAIR pro 070 + aroSTOR 200,termo,ud,6112.00,21,{}
+8000040565,Conducto climaVAIR pro 085 + aroSTOR 150,termo,ud,6147.00,21,{}
+8000040567,Conducto climaVAIR pro 085 + aroSTOR 200,termo,ud,6687.00,21,{}
+8000040568,Conducto climaVAIR pro 100 + aroSTOR 150,termo,ud,6777.00,21,{}
+8000040569,Conducto climaVAIR pro 100 + aroSTOR 200,termo,ud,7317.00,21,{}

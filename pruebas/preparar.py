@@ -43,7 +43,7 @@ piezas = [
 (FUERA / 'modulos.js').write_text(''.join(piezas))
 
 # Y las piezas sueltas, por si una prueba quiere mirarlas sin la app entera.
-for f in ('supabase-db.js', 'supabase-auth.js', 'visitas-db.js'):
-    (FUERA / f).write_text(sin_modulos(f))
+for f in ('supabase-db.js', 'supabase-auth.js', 'visitas-db.js', 'supabase/functions/presupuestar/cadena.js'):
+    (FUERA / pathlib.Path(f).name).write_text(sin_modulos(f))
 
 print('preparado en', FUERA)
