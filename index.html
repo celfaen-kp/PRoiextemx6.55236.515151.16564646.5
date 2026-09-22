@@ -365,7 +365,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '14.9'; // versión visible de la app (única fuente)
+const APP_VERSION = '15.0'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -5771,7 +5771,7 @@ A.enviarVisita = async () => {
   const id = vv.visita.id;
   try {
     const r = await visitasDB.enviarATeamleader(id, textoDeVisita(vv));
-    toast(r && r.deal_creado === false ? 'Actualizada en Teamleader.' : 'Enviada a Teamleader: oportunidad creada.');
+    toast(r && r.deal_creado === false ? 'Actualizada en Teamleader.' : 'Enviada a Teamleader: oportunidad creada' + (r && r.embudo ? ' en el embudo ' + r.embudo : '') + '.');
   } catch (e) {
     const msg = msgError(e);
     try { await visitasDB.guardarVisita(id, { sync_estado: 'error', sync_error: msg }); } catch (_) {}
@@ -6384,7 +6384,7 @@ Object.assign(V, {
 
 const AG_VISTAS = ['agenda', 'clientes', 'clienteNuevo', 'clienteVer', 'citaNueva', 'citaVer'];
 const AG_TIPOS = [['particular', 'Particular'], ['empresa', 'Empresa'], ['comunidad', 'Comunidad']];
-const AG_ORIGENES = [['recomendacion', 'Recomendación'], ['web', 'Web'], ['llamada', 'Llamada'], ['cliente_existente', 'Cliente de siempre'], ['constructora', 'Constructora']];
+const AG_ORIGENES = [['recomendacion', 'Recomendación'], ['web', 'Web'], ['llamada', 'Llamada'], ['cliente_existente', 'Cliente de siempre'], ['constructora', 'Constructora'], ['vaillant', 'Vaillant']];
 const AG_DURACIONES = [30, 45, 60, 90, 120];
 const AG_ESTADOS = { pendiente: 'Pendiente', visitada: 'Visitada', no_estaba: 'No estaba', anulada: 'Anulada' };
 const puedeCitar = () => esPresupuestos();

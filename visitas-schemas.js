@@ -72,7 +72,7 @@ export const COMUN = {
       titulo: 'Comercial',
       campos: [
         { key: 'origen', etiqueta: '¿De dónde viene?', tipo: 'opcion',
-          opciones: ['recomendacion', 'web', 'cliente_existente', 'llamada', 'constructora'] },
+          opciones: ['recomendacion', 'web', 'cliente_existente', 'llamada', 'constructora', 'vaillant'] },
         { key: 'plazo_deseado', etiqueta: 'Plazo que pide', tipo: 'opcion', motor: true,
           opciones: ['urgente', '1_mes', '3_meses', 'sin_prisa'] },
         { key: 'interesa_subvencion', etiqueta: 'Le interesa subvención', tipo: 'bool', motor: true,
@@ -124,7 +124,7 @@ const AEROTERMIA = {
           ayuda: 'Si se reaprovechan, comprobar que sirven a baja temperatura' },
         { key: 'emisores_previstos', etiqueta: 'Los que se ponen', tipo: 'multi',
           obligatorio: true, motor: true,
-          opciones: ['suelo_radiante', 'fancoils', 'radiadores_bt'] },
+          opciones: ['suelo_radiante', 'fancoils', 'radiadores_bt', 'se_mantiene'] },
         { key: 'suelo_radiante_m2', etiqueta: 'Suelo radiante por planta', tipo: 'lista', motor: true,
           subcampos: [
             { key: 'planta', etiqueta: 'Planta', tipo: 'texto' },
@@ -500,14 +500,14 @@ export const ETIQUETAS = {
   local: 'Local', nave: 'Nave', comunidad: 'Comunidad',
   // comercial
   recomendacion: 'Recomendación', web: 'Web', cliente_existente: 'Cliente de siempre',
-  llamada: 'Llamada', constructora: 'Constructora',
+  llamada: 'Llamada', constructora: 'Constructora', vaillant: 'Vaillant',
   urgente: 'Urgente', '1_mes': 'Un mes', '3_meses': 'Tres meses', sin_prisa: 'Sin prisa',
   // aerotermia
   calefaccion: 'Calefacción', acs: 'ACS', refrigeracion: 'Refrigeración', piscina: 'Piscina',
   caldera_gas: 'Caldera de gas', caldera_gasoleo: 'Caldera de gasóleo',
   caldera_pellets: 'Caldera de pellets', electrico: 'Eléctrico', bomba_calor: 'Bomba de calor',
   radiadores: 'Radiadores', suelo_radiante: 'Suelo radiante', fancoils: 'Fancoils',
-  radiadores_bt: 'Radiadores de baja temperatura',
+  radiadores_bt: 'Radiadores de baja temperatura', se_mantiene: 'Se mantiene',
   retirada_caldera: 'Retirar caldera', retirada_deposito_gasoleo: 'Retirar depósito de gasóleo',
   simple: 'Cristal simple', doble: 'Doble', climalit: 'Climalit',
   rotura_puente_termico: 'Con rotura de puente térmico',

@@ -43,6 +43,20 @@ const CATEGORIAS: Record<string, string> = {
   aire_acondicionado: 'Aire acondicionado',
 };
 
+// En qué embudo (pipeline) de Teamleader va cada tipo de visita. Se busca por
+// el nombre del embudo, para no depender de ids que cambian si alguien lo
+// rehace. Si una visita tiene varias categorías, manda la primera de esta
+// lista que tenga embudo; fotovoltaica va la última porque es el embudo por
+// defecto de Teamleader y ahí acaba igualmente todo lo que no encaje.
+// (Antes no se decía el embudo y una visita de solo aerotermia se fue al de
+// fotovoltaica, donde nadie la buscaba.)
+const EMBUDOS: [string, RegExp][] = [
+  ['aerotermia', /aerot/i],
+  ['aire_acondicionado', /aire|clima/i],
+  ['electricidad', /electri/i],
+  ['solar', /fotovolt|solar|placas|paneles/i],
+];
+
 const CORS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -90,6 +104,22 @@ async function tokenValido(sb: any) {
     actualizado_at: new Date().toISOString(),
   });
   return res.access_token as string;
+}
+
+// La primera fase del embudo que toca a esta visita. Si algo falla o no hay
+// embudo con ese nombre, null: la oportunidad se crea igual, en el de siempre.
+async function faseDeEmbudo(token: string, categorias: string[]) {
+  try {
+    const embudos = ((await crm(token, 'dealPipelines.list', {}))?.data || []) as { id: string; name: string }[];
+    for (const [cat, patron] of EMBUDOS) {
+      if (!categorias.includes(cat)) continue;
+      const e = embudos.find((x) => patron.test(String(x.name || '')));
+      if (!e) continue;
+      const fases = ((await crm(token, 'dealPhases.list', { filter: { pipeline_ids: [e.id] } }))?.data || []) as { id: string }[];
+      if (fases.length) return { fase: fases[0].id, embudo: e.name };
+    }
+  } catch (_) { /* sin embudo: se queda en el de por defecto */ }
+  return null;
 }
 
 async function crm(token: string, metodo: string, cuerpo: unknown) {
@@ -213,7 +243,8 @@ Deno.serve(async (req) => {
   if (!cli) return json({ error: 'No se encuentra el cliente de esa visita.' }, 404);
 
   const { data: fichas } = await sb.from('visita_fichas').select('categoria').eq('visita_id', v.id);
-  const cats = (fichas || []).map((f) => CATEGORIAS[String(f.categoria)] || String(f.categoria));
+  const catKeys = (fichas || []).map((f) => String(f.categoria));
+  const cats = catKeys.map((k) => CATEGORIAS[k] || k);
   const donde = [limpio(v.direccion), limpio(v.poblacion)].filter(Boolean).join(', ');
   const titulo = [cats.join(' + ') || 'Presupuesto', limpio(v.poblacion) || limpio(cli.nombre)]
     .filter(Boolean).join(' · ');
@@ -243,13 +274,19 @@ Deno.serve(async (req) => {
     // --- 2 · la oportunidad -----------------------------------------------------
     let dealId = limpio(v.tl_deal_id);
     let dealCreado = false;
+    let embudo: string | null = null;
     if (dealId) {
       await crm(token, 'deals.update', { id: dealId, title: titulo, summary: resumen });
     } else {
+      // Solo al crearla: si ya existe no se mueve, que alguien puede haberla
+      // cambiado de embudo a mano.
+      const f = await faseDeEmbudo(token, catKeys);
+      embudo = f ? f.embudo : null;
       const r = await crm(token, 'deals.create', {
         lead: { customer: { type: quien.tipo, id: quien.id } },
         title: titulo,
         summary: resumen,
+        ...(f ? { phase_id: f.fase } : {}),
       });
       dealId = r?.data?.id || '';
       if (!dealId) throw new Error('El CRM no devolvió el id de la oportunidad.');
@@ -284,7 +321,7 @@ Deno.serve(async (req) => {
     }).eq('id', v.id);
 
     return json({
-      ok: true, deal_id: dealId, deal_creado: dealCreado, titulo,
+      ok: true, deal_id: dealId, deal_creado: dealCreado, titulo, embudo,
       cliente_creado: quien.creado, observaciones_actualizadas: !yaEstaba,
     });
   } catch (e) {
