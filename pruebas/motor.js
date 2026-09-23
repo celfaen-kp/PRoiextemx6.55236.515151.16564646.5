@@ -13,9 +13,22 @@ var config = {
     { codigo: 'unidades_exteriores', formula: "si(tipo_sistema = 'split_1x1', unidades_interiores, 1)", orden: 2 },
     { codigo: 'metros_totales', formula: "suma(distancias_lineas, 'metros')", orden: 3 },
     { codigo: 'metros_exceso', formula: "max(0, metros_totales - lookup('metros_incluidos','defecto') * unidades_interiores)", orden: 4 },
+    { codigo: 'metros_gas_exceso', formula: "max(0, metros_totales - lookup('metros_gas_incluidos', tipo_sistema) * unidades_exteriores)", orden: 5 },
+    { codigo: 'kg_gas_extra', formula: "redondea(metros_gas_exceso * lookup('gramos_por_metro','defecto') / 1000, 2)", orden: 6 },
   ],
-  lookup: [{ clave: 'metros_incluidos', entrada: 'defecto', valor: 3 }],
+  lookup: [
+    { clave: 'metros_incluidos', entrada: 'defecto', valor: 3 },
+    // etapa 45: la carga de fábrica del equipo y los gramos por metro de más
+    { clave: 'metros_gas_incluidos', entrada: 'defecto', valor: 5 },
+    { clave: 'metros_gas_incluidos', entrada: 'multisplit', valor: 7.5 },
+    { clave: 'metros_gas_incluidos', entrada: 'split_1x1', valor: 5 },
+    { clave: 'gramos_por_metro', entrada: 'defecto', valor: 20 },
+  ],
   partidas: {
+    // El precio del kilo lo pone Sysefen; aquí se prueba con 60 € para ver que
+    // la cuenta de los kilos es la correcta.
+    'p-gas': { codigo: 'GAS_EXTRA', nombre: 'Carga adicional de refrigerante', items: [
+      { concepto_libre: 'Carga adicional de refrigerante R32 (kg)', precio_fijo: 60, formula_cantidad: 'kg_gas_extra', orden: 1 }] },
     'p-aire': {
       codigo: 'KIT_BASE', nombre: 'Instalación por unidad de aire',
       items: [
@@ -27,7 +40,10 @@ var config = {
       ],
     },
   },
-  reglas: [{ id: 'r1', tipo: 'condicional', partida_id: 'p-aire', formula_cantidad: '1', prioridad: 10, seccion: 'Instalación' }],
+  reglas: [
+    { id: 'r1', tipo: 'condicional', partida_id: 'p-aire', formula_cantidad: '1', prioridad: 10, seccion: 'Instalación' },
+    { id: 'r2', tipo: 'cantidad', partida_id: 'p-gas', formula_cantidad: '1', prioridad: 35, seccion: 'Instalación' },
+  ],
   productos: {},
   manoObra: [],
   dtoLinea: [],
@@ -78,4 +94,28 @@ var codigos = r3.incidencias.map(function (i) { return i.codigo; });
 comprueba('avisa del dato que falta (' + codigos.join(', ') + ')', codigos.indexOf('campo_faltante') >= 0);
 var vacio = calcular('aire_acondicionado', {}, Object.assign({}, config, { reglas: [] }));
 comprueba('sin reglas, lo dice en vez de callar', vacio.incidencias.some(function (i) { return i.codigo === 'sin_lineas'; }));
+/* --- etapa 45: el gas que hay que añadir por la tubería de más -------------
+ * La carga de fábrica cubre 7,5 m en multisplit y 5 m en los 1x1, por unidad
+ * EXTERIOR. Lo que pasa de ahí son 20 g por metro. */
+titulo('el gas adicional');
+var g = calcular('aire_acondicionado', {
+  tipo_sistema: 'multisplit',
+  estancias: [{ nombre: 'Salón' }, { nombre: 'Dormitorio' }],
+  distancias_lineas: [{ metros: 10 }, { metros: 7.5 }],
+}, config);
+igual('17,5 m con 7,5 incluidos → 10 m de gas', g.variables.metros_gas_exceso, 10);
+igual('y 0,2 kg de R32', g.variables.kg_gas_extra, 0.2);
+var lg = g.lineas.filter(function (l) { return l.descripcion.indexOf('refrigerante') > -1; })[0];
+comprueba('sale su línea', !!lg);
+igual('con los kilos como cantidad', lg.cantidad, 0.2);
+
+var h = calcular('aire_acondicionado', {
+  tipo_sistema: 'split_1x1',
+  estancias: [{ nombre: 'Salón' }, { nombre: 'Dormitorio' }],
+  distancias_lineas: [{ metros: 4 }, { metros: 4 }],
+}, config);
+igual('dos 1x1 de 4 m: la carga de fábrica llega (2 × 5 m)', h.variables.metros_gas_exceso, 0);
+comprueba('así que no hay línea de gas', !h.lineas.some(function (l) { return l.descripcion.indexOf('refrigerante') > -1; }));
+comprueba('pero el C103 tampoco se pierde', h.variables.metros_exceso === 2);
+
 resultado();
