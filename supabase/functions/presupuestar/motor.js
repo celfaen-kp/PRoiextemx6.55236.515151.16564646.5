@@ -160,8 +160,9 @@ export function calcular(categoria, datos, config) {
       if (r.activa === false) return;
       if (!cumple(r.condicion, ambito)) return;
 
-      // Las de selección solo entran si la variable cae en su tramo.
-      if (r.tipo === 'seleccion') {
+      // Las de selección solo entran si la variable cae en su tramo. Un aviso
+      // con variable, igual: «más de 10 kW de inversor» es un tramo.
+      if (r.tipo === 'seleccion' || (r.tipo === 'aviso' && r.variable)) {
         const v = numero(ambito[r.variable]);
         if (r.minimo != null && v < numero(r.minimo)) return;
         if (r.maximo != null && v > numero(r.maximo)) return;
@@ -169,6 +170,13 @@ export function calcular(categoria, datos, config) {
           avisar('aviso', 'variable_vacia',
             'La regla de ' + r.variable + ' se aplicó con el valor vacío.', r.variable);
         }
+      }
+
+      // Un aviso no pone línea: deja dicho en el presupuesto lo que no cuadra
+      // (una batería que no va con ese inversor, un backup sin batería…).
+      if (r.tipo === 'aviso') {
+        avisar('aviso', 'regla_aviso', r.notas || 'Una regla pide revisar este presupuesto.', r.variable || null);
+        return;
       }
 
       let cantidad;

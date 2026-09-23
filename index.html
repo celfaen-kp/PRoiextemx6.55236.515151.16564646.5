@@ -371,7 +371,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '16.0'; // versión visible de la app (única fuente)
+const APP_VERSION = '16.1'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -6706,7 +6706,15 @@ const presuNuevoVacio = () => ({
   kw: '', circuitos: 1, acs: 0, sustituye: false, apoyo: false, limpieza: false,
   // fotovoltaica: los kWp salen de los paneles, no se preguntan.
   paneles: '', wp: 510, bateria: '',
+  inversor: 'fronius', fases: 'monofasico', bateria_marca: '', backup: false,
 });
+
+// Con qué baterías va cada inversor (sql/etapa47). La primera es la que pone
+// el motor si no se elige ninguna.
+const BATERIAS_DE = {
+  fronius: [['byd', 'BYD'], ['fronius', 'Fronius Reserva'], ['tesla', 'Tesla']],
+  enphase: [['enphase', 'Enphase'], ['tesla', 'Tesla']],
+};
 
 /**
  * Lo que se le manda al motor desde la pantalla suelta, con los mismos nombres
@@ -6716,11 +6724,16 @@ const presuNuevoVacio = () => ({
 function datosDelSuelto(f) {
   const num = (v) => Number(String(v == null ? '' : v).replace(',', '.')) || 0;
   if (f.cat === 'solar') {
+    const conBateria = num(f.bateria) > 0;
     return {
       paneles_manual: Math.max(0, Math.min(400, Number(f.paneles) || 0)),
       wp_manual: num(f.wp),
-      baterias: num(f.bateria) > 0 ? 'si' : 'no',
+      inversor_marca: f.inversor === 'enphase' ? 'enphase' : 'fronius',
+      suministro: f.fases === 'trifasico' ? 'trifasico' : 'monofasico',
+      baterias: conBateria ? 'si' : 'no',
       baterias_kwh: num(f.bateria),
+      bateria_marca: conBateria ? (f.bateria_marca || '') : '',
+      backup: conBateria && !!f.backup,
     };
   }
   if (f.cat === 'aerotermia') {
@@ -6765,7 +6778,9 @@ A.presuSueltoChip = (k, v) => {
   if (!V.suelto) return;
   // Los chips de sí/no mandan '' para apagarse y '1' para encenderse.
   V.suelto[k] = v === '' ? false : (/^\d+$/.test(String(v)) && k !== 'cat' ? Number(v) : v);
-  if (['sustituye', 'apoyo', 'limpieza'].includes(k)) V.suelto[k] = v !== '';
+  if (['sustituye', 'apoyo', 'limpieza', 'backup'].includes(k)) V.suelto[k] = v !== '';
+  // Si se cambia de inversor, una batería que no va con él se quita.
+  if (k === 'inversor' && !(BATERIAS_DE[v] || []).some(([m]) => m === V.suelto.bateria_marca)) V.suelto.bateria_marca = '';
   render();
 };
 A.presuSueltoCliente = (id) => {
@@ -6874,9 +6889,11 @@ function camposAeroHTML(f) {
       <div class="tiny" style="margin-top:8px">La máquina sale de la tarifa Vaillant por potencia; si quieres otra marca, la añades del catálogo.</div>`;
 }
 
-/** Fotovoltaica: cuántos paneles y de cuántos vatios. Los kWp salen solos. */
+/** Fotovoltaica: paneles, inversor, fases y batería. Los kWp salen solos. */
 function camposSolarHTML(f) {
   const n = Number(f.paneles) || 0, wp = Number(f.wp) || 510;
+  const marcas = BATERIAS_DE[f.inversor === 'enphase' ? 'enphase' : 'fronius'];
+  const chip = (k, v, t, actual) => `<div class="chip ${String(actual != null ? actual : f[k]) === v ? 'sel' : ''}" data-a="presuSueltoChip" data-k="${k}" data-v="${v}">${t}</div>`;
   const kwp = Math.round(n * wp) / 1000;
   return `<div class="row g8" style="margin-top:16px">
         <div class="grow"><div class="lbl">Paneles</div>
@@ -6886,9 +6903,25 @@ function camposSolarHTML(f) {
       </div>
       <div class="tiny" style="margin-top:8px">${kwp ? 'Son ' + kwp.toLocaleString('es-ES') + ' kWp.' : 'Los kWp salen de los paneles.'}${kwp > 12 ? ' Por encima de 12 kWp el kit y el inversor van a mano: solo hay un presupuesto de esos y no da para una regla.' : ''}</div>
 
+      <div class="lbl" style="margin:16px 0 8px">Inversor</div>
+      <div class="wrap">${chip('inversor', 'fronius', 'Fronius')}${chip('inversor', 'enphase', 'Enphase (micros)')}</div>
+      <div class="tiny" style="margin-top:8px">${f.inversor === 'enphase'
+        ? 'Un microinversor por panel, con su Q Cable, tapones, conectores, IQ Gateway y toroidales.'
+        : 'El GEN24 que toca por potencia, con su Smart Meter.'}</div>
+
+      <div class="lbl" style="margin:16px 0 8px">Suministro</div>
+      <div class="wrap">${chip('fases', 'monofasico', 'Monofásico')}${chip('fases', 'trifasico', 'Trifásico')}</div>
+
       <div class="lbl" style="margin:16px 0 8px">Baterías</div>
       <input class="inp" data-f="presuCampo" data-k="bateria" value="${esc(String(f.bateria))}" inputmode="decimal" placeholder="kWh (vacío = sin baterías)">
-      <div class="tiny" style="margin-top:8px">La batería no tiene regla todavía: manda el precio ella sola y con los presupuestos que hay no sale un precio por kWh. Se añade del catálogo.</div>`;
+      <div class="lbl" style="margin:16px 0 8px">Si lleva batería: de qué marca</div>
+      <div class="wrap">${marcas.map(([m, t]) => chip('bateria_marca', m, t, f.bateria_marca || marcas[0][0])).join('')}</div>
+      <div class="tiny" style="margin-top:8px">${f.inversor === 'enphase' ? 'Enphase va con baterías Enphase o Tesla.' : 'Fronius va con baterías BYD, Fronius Reserva o Tesla.'}</div>
+      <div class="lbl" style="margin:16px 0 8px">Si lleva batería: ¿con backup?</div>
+      <div class="wrap">${chip('backup', '', 'Sin backup', f.backup ? '1' : '')}${chip('backup', '1', 'Con backup', f.backup ? '1' : '')}</div>
+      <div class="tiny" style="margin-top:8px">Con backup la casa sigue con luz si se va la red. ${
+        (f.bateria_marca || marcas[0][0]) === 'tesla' ? 'Con Tesla: Backup Gateway 2.'
+        : f.inversor === 'enphase' ? 'Con Enphase: IQ System Controller.' : 'Con Fronius: Backup Switch.'}</div>`;
 }
 
 

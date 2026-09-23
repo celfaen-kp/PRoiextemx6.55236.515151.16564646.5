@@ -277,6 +277,14 @@ const SOLAR = {
         { key: 'baterias', etiqueta: 'Baterías', tipo: 'opcion', motor: true,
           opciones: ['no', 'si', 'dejar_preparado'] },
         { key: 'baterias_kwh', etiqueta: 'Capacidad', tipo: 'numero', unidad: 'kWh', motor: true },
+        // sql/etapa47: con esto el motor elige inversor, batería y backup.
+        { key: 'inversor_marca', etiqueta: 'Inversor', tipo: 'opcion', motor: true,
+          opciones: ['fronius', 'enphase'], ayuda: 'Enphase son microinversores, uno por panel' },
+        { key: 'bateria_marca', etiqueta: 'Marca de la batería', tipo: 'opcion', motor: true,
+          opciones: ['byd', 'fronius', 'enphase', 'tesla'],
+          ayuda: 'Fronius: BYD, Fronius o Tesla · Enphase: Enphase o Tesla' },
+        { key: 'backup', etiqueta: 'Con backup', tipo: 'bool', motor: true,
+          ayuda: 'Solo si lleva batería: la casa sigue con luz si se va la red' },
       ],
     },
     {
@@ -489,6 +497,7 @@ export const ETIQUETAS = {
   bueno: 'Bueno', regular: 'Regular', malo: 'Malo', a_sustituir: 'A sustituir',
   facil: 'Fácil', medio: 'Medio', dificil: 'Difícil',
   monofasico: 'Monofásico', trifasico: 'Trifásico',
+  fronius: 'Fronius', enphase: 'Enphase', byd: 'BYD', tesla: 'Tesla',
   escalera: 'Escalera', andamio: 'Andamio', plataforma: 'Plataforma', grua: 'Grúa',
   fachada: 'Fachada', terraza: 'Terraza', cubierta: 'Cubierta', patio: 'Patio',
   jardin: 'Jardín', galeria: 'Galería', interior: 'Interior',
