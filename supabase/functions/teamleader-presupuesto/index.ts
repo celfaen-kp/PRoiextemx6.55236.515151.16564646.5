@@ -133,21 +133,63 @@ const EMBUDOS: [string, RegExp][] = [
 ];
 const EMBUDO_RESTO = /otros|varios|general/i;
 
-// La primera fase del embudo del oficio, solo si se puede saber sin riesgo de
-// equivocarse de embudo. Si no, null y la oportunidad cae en el de por defecto.
-async function faseDeEmbudo(token: string, categoria: string) {
+// La primera fase del embudo que toca (copiada de teamleader-visita: cada
+// función se pega en un solo archivo, así que se repite a propósito). Si algo falla o no hay
+// embudo con ese nombre, null: la oportunidad se crea igual, en el de siempre.
+async function faseDeEmbudo(token: string, categorias: string[]) {
   try {
     const embudos = ((await crm(token, 'dealPipelines.list', {}))?.data || []) as { id: string; name: string }[];
-    const patron = EMBUDOS.find(([c]) => c === categoria)?.[1];
-    const elegido = (patron && embudos.find((x) => patron.test(String(x.name || ''))))
-      || embudos.find((x) => EMBUDO_RESTO.test(String(x.name || '')));
+    // deno-lint-ignore no-explicit-any
+    let elegido: any = null;
+    for (const [cat, patron] of EMBUDOS) {
+      if (!categorias.includes(cat)) continue;
+      elegido = embudos.find((x) => patron.test(String(x.name || ''))) || null;
+      if (elegido) break;
+    }
+    // Ningún embudo para lo que se ha visitado: a OTROS, no al de por defecto.
+    if (!elegido && categorias.length) {
+      elegido = embudos.find((x) => EMBUDO_RESTO.test(String(x.name || ''))) || null;
+    }
     if (!elegido) return null;
-    // deno-lint-ignore no-explicit-any
+
+    // OJO: la primera versión pedía las fases con filter.pipeline_ids y se fiaba
+    // de lo que volviera. Teamleader ignora ese filtro y devuelve las fases de
+    // TODOS los embudos, así que la primera era la de otro embudo cualquiera y
+    // la oportunidad acababa en "Otros". Ahora:
+    //   1. se prueban los dos nombres de filtro que usa la API,
+    //   2. se compara con la lista sin filtrar para ver si el filtro ha servido,
+    //   3. y si cada fase dice a qué embudo pertenece, se comprueba una a una.
+    // Si después de todo eso no hay una fase SEGURA de ese embudo, no se manda
+    // ninguna: vale más que caiga en el embudo por defecto, donde ya se buscaba
+    // antes, que mandarla a uno equivocado.
     const todas = ((await crm(token, 'dealPhases.list', {}))?.data || []) as any[];
+    // Cada fase trae (o no) a qué embudo pertenece; los nombres del campo cambian
+    // según la versión de la API.
     // deno-lint-ignore no-explicit-any
-    const suya = todas.find((f: any) => (f.deal_pipeline || f.pipeline)?.id === elegido.id);
-    return suya ? String(suya.id) : null;
-  } catch (_) { return null; }
+    const deEste = (f: any) => {
+      const p = (f.deal_pipeline || f.pipeline) as { id?: string } | undefined;
+      return p && p.id ? p.id === elegido!.id : null;   // null = no lo dice
+    };
+
+    // deno-lint-ignore no-explicit-any
+    const marcadas = todas.filter((f: any) => deEste(f) === true);
+    if (marcadas.length) return { fase: marcadas[0].id, embudo: elegido.name };
+
+    for (const clave of ['deal_pipeline_id', 'pipeline_id', 'deal_pipeline_ids', 'pipeline_ids']) {
+      const valor = clave.endsWith('_ids') ? [elegido.id] : elegido.id;
+      // deno-lint-ignore no-explicit-any
+      let fases: any[] = [];
+      try {
+        fases = ((await crm(token, 'dealPhases.list', { filter: { [clave]: valor } }))?.data || []) as any[];
+      } catch (_) { continue; }                       // ese filtro no existe
+      if (!fases.length || fases.length === todas.length) continue;   // no ha filtrado
+      if (fases.some((f: any) => deEste(f) === false)) continue;           // filtró mal
+      return { fase: fases[0].id, embudo: elegido.name };
+    }
+    // Se sabe el embudo pero no se puede señalar su fase sin riesgo.
+    return { fase: null, embudo: elegido.name };
+  } catch (_) { /* sin embudo: se queda en el de por defecto */ }
+  return null;
 }
 
 Deno.serve(async (req) => {
@@ -240,8 +282,11 @@ Deno.serve(async (req) => {
 
     // Presupuesto suelto: se le crea su oportunidad.
     let dealCreado = false;
+    let embudo: string | null = null;
     if (!dealId) {
-      const fase = await faseDeEmbudo(token, limpio(p.categoria));
+      const f = await faseDeEmbudo(token, [limpio(p.categoria)]);
+      embudo = f ? f.embudo : null;
+      const fase = f ? f.fase : null;
       const r = await crm(token, 'deals.create', {
         lead: { customer: { type: cli.tl_tipo === 'company' ? 'company' : 'contact', id: cli.tl_id } },
         title: (limpio(p.titulo) || 'Presupuesto').slice(0, 255),
@@ -291,12 +336,18 @@ Deno.serve(async (req) => {
     if (!quotationId) throw new Error('El CRM no devolvió el id del presupuesto.');
 
     // Que la oportunidad lleve el importe (sin IVA). Si falla, la oferta ya
-    // está hecha: no se da por error.
+    // está hecha: no se da por error, pero se dice.
+    let avisoImporte: string | null = null;
     try {
       await crm(token, 'deals.update', {
         id: dealId, estimated_value: { amount: dosDec(Number(p.total_venta) || 0), currency: 'EUR' },
       });
-    } catch (_) { /* no es grave */ }
+    } catch (e) { avisoImporte = 'No se pudo poner el importe en la oportunidad: ' + (e as Error).message; }
+
+    // Dónde ha quedado, para que se pueda abrir desde la app y comprobarlo.
+    const dealUrl = limpio(deal?.data?.web_url) || null;
+    const dealTitulo = limpio(deal?.data?.title) || null;
+    const embudoReal = limpio(deal?.data?.current_phase?.deal_pipeline?.name || deal?.data?.deal_pipeline?.name) || embudo;
 
     await sb.from('presupuestos').update({
       tl_quotation_id: quotationId, sync_estado: 'sincronizado', sync_error: null,
@@ -304,6 +355,7 @@ Deno.serve(async (req) => {
     }).eq('id', id);
 
     return json({ ok: true, tl_quotation_id: quotationId, deal_id: dealId, deal_creado: dealCreado,
+      deal_url: dealUrl, deal_titulo: dealTitulo, embudo: embudoReal, aviso: avisoImporte,
       lineas: lineas.length, total: p.total_venta });
   } catch (e) {
     const msg = (e as Error).message;

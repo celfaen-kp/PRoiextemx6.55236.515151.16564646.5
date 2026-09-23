@@ -371,7 +371,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '16.1'; // versión visible de la app (única fuente)
+const APP_VERSION = '16.2'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -7147,8 +7147,11 @@ A.presuATeamleader = async () => {
   v.enviando = true; render();
   try {
     const r = await visitasDB.presupuestoATeamleader(v.datos.id);
-    toast('Presupuesto creado en Teamleader.');
     await A.presuAbrir(v.datos.id);
+    // Se dice dónde ha quedado: la oferta va dentro de una oportunidad, y si
+    // era un presupuesto suelto esa oportunidad es nueva.
+    V.sheet = { tipo: 'tlHecho', r: r || {} };
+    render();
     return r;
   } catch (e) {
     v.enviando = false; render();
@@ -8595,6 +8598,18 @@ function sheet() {
       <div class="row g8" style="margin-top:18px">
         <button class="btn btn-gris" data-a="cerrarSheet" style="border-radius:99px">Cancelar</button>
         <button class="btn btn-verde" data-a="guardarDocObra" style="font-size:14px" ${s.busy ? 'disabled' : ''}>${s.busy ? 'Guardando…' : 'Guardar'}</button>
+      </div>
+    </div></div>`;
+  }
+  if (s.tipo === 'tlHecho') {
+    const r = s.r;
+    return `<div class="sheet"><div>
+      <div style="font:600 25px/1.15 var(--cond)">En Teamleader</div>
+      <div class="sub" style="margin-top:8px">La oferta está dentro de ${r.deal_creado ? 'una oportunidad <b>nueva</b>' : 'la oportunidad de la visita'}${r.deal_titulo ? ': <b>' + esc(r.deal_titulo) + '</b>' : ''}${r.embudo ? ', en el embudo <b>' + esc(r.embudo) + '</b>' : ''}. Está en la pestaña de ofertas de esa oportunidad, sin mandar al cliente.</div>
+      ${r.aviso ? `<div class="tiny" style="margin-top:8px;color:var(--ambar-o)">${esc(r.aviso)}</div>` : ''}
+      <div class="row g8" style="margin-top:18px">
+        <button class="btn btn-gris" data-a="cerrarSheet" style="border-radius:99px">Cerrar</button>
+        ${r.deal_url ? `<a class="btn btn-verde" href="${esc(r.deal_url)}" target="_blank" rel="noopener" style="font-size:14px;text-decoration:none">Abrir la oportunidad</a>` : ''}
       </div>
     </div></div>`;
   }
