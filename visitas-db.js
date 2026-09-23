@@ -490,10 +490,13 @@ export async function recalcularPresupuesto(presupuestoId, dtoGlobalPct) {
 }
 
 /** Sube el presupuesto a Teamleader: crea la oferta, no la manda al cliente. */
-export async function presupuestoATeamleader(presupuestoId, soloVer) {
+export async function presupuestoATeamleader(presupuestoId, soloVer, pdf) {
   return invocar('teamleader-presupuesto', {
     presupuesto_id: presupuestoId,
     solo_ver: soloVer === true ? true : undefined,
+    // El PDF de la app, para dejarlo en los archivos de la oportunidad.
+    pdf_base64: pdf && pdf.base64 ? pdf.base64 : undefined,
+    pdf_nombre: pdf && pdf.nombre ? pdf.nombre : undefined,
   });
 }
 

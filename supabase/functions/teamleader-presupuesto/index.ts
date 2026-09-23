@@ -29,7 +29,12 @@
 // DESPLIEGUE: "Verify JWT" ACTIVADO.
 // QUIÉN PUEDE: presupuestos y Administración (sql/etapa40).
 //
+// EL PDF: la app manda también su PDF del presupuesto, y se sube a los
+// archivos de la oportunidad (carpeta «Presupuestos»). Si la oferta de
+// Teamleader no se puede crear, el PDF queda allí igual, que es lo que importa.
+//
 // USO (POST con JSON):
+//   { "presupuesto_id": "uuid", "pdf_base64": "…", "pdf_nombre": "x.pdf" }
 //   { "presupuesto_id": "uuid" }
 //   { "presupuesto_id": "uuid", "solo_ver": true }   dice qué mandaría
 // =============================================================================
@@ -192,6 +197,35 @@ async function faseDeEmbudo(token: string, categorias: string[]) {
   return null;
 }
 
+/**
+ * Sube un archivo a Teamleader, colgado de una oportunidad (u otra cosa).
+ * Son dos pasos: `files.upload` da una dirección temporal, y a esa dirección
+ * se manda el archivo. La documentación no dice en qué forma; se prueba
+ * primero como formulario (campo `file`) y, si no lo acepta, en crudo.
+ */
+async function subirArchivo(token: string, tipo: string, idCosa: string, nombre: string, b64: string) {
+  const r = await crm(token, 'files.upload', { name: nombre, subject: { type: tipo, id: idCosa }, folder: 'Presupuestos' });
+  const destino = r?.data?.location;
+  if (!destino) throw new Error('Teamleader no dio dónde subir el archivo.');
+  const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+  const archivo = new Blob([bytes], { type: 'application/pdf' });
+
+  const form = new FormData();
+  form.append('file', archivo, nombre);
+  let res = await fetch(destino, { method: 'POST', headers: { Authorization: 'Bearer ' + token }, body: form });
+  if (res.ok) return;
+  const primero = res.status + ' ' + (await res.text().catch(() => '')).slice(0, 200);
+
+  res = await fetch(destino, {
+    method: 'POST',
+    headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/pdf' },
+    body: archivo,
+  });
+  if (res.ok) return;
+  const segundo = res.status + ' ' + (await res.text().catch(() => '')).slice(0, 200);
+  throw new Error('Teamleader no aceptó el archivo (' + primero + ' / ' + segundo + ')');
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
   if (req.method !== 'POST') return json({ error: 'Método no permitido.' }, 405);
@@ -219,31 +253,26 @@ Deno.serve(async (req) => {
   const id = limpio(b.presupuesto_id);
   if (!/^[0-9a-f-]{36}$/i.test(id)) return json({ error: 'Falta el presupuesto.' }, 400);
   const soloVer = b.solo_ver === true;
+  // El PDF de la app, en base64. Se sube a los archivos de la oportunidad:
+  // así queda allí aunque la oferta de Teamleader no se pueda crear.
+  const pdfB64 = typeof b.pdf_base64 === 'string' ? b.pdf_base64.replace(/^data:[^,]*,/, '') : '';
+  const pdfNombre = (limpio(b.pdf_nombre) || 'presupuesto.pdf').replace(/[^\w.\- ]+/g, '_').slice(0, 120);
+  if (pdfB64.length > 14_000_000) return json({ error: 'El PDF es demasiado grande para subirlo.' }, 413);
 
   // --- el presupuesto ---------------------------------------------------------
   const { data: p } = await sb.from('presupuestos')
     .select('id, categoria, titulo, cliente_id, visita_id, total_venta, dto_global_pct, tl_quotation_id')
     .eq('id', id).maybeSingle();
   if (!p) return json({ error: 'Ese presupuesto no existe.' }, 404);
-  if (p.tl_quotation_id) {
-    return json({ error: 'Ese presupuesto ya está en Teamleader.', tl_quotation_id: p.tl_quotation_id }, 409);
+  const yaOferta = limpio(p.tl_quotation_id);
+  if (yaOferta && !pdfB64) {
+    return json({ error: 'Ese presupuesto ya está en Teamleader.', tl_quotation_id: yaOferta }, 409);
   }
 
   const { data: lineas } = await sb.from('presupuesto_lineas')
     .select('orden, seccion, descripcion, detalle_tecnico, cantidad, unidad, precio_tarifa, precio_venta, iva, producto_ref')
     .eq('presupuesto_id', id).order('orden');
   if (!lineas || !lineas.length) return json({ error: 'Ese presupuesto no tiene líneas.' }, 400);
-
-  // El cliente tiene que estar ya en el CRM: allí es donde vive de verdad.
-  // deno-lint-ignore no-explicit-any
-  let cli: any = null;
-  if (p.cliente_id) {
-    const { data } = await sb.from('clientes_cache').select('nombre, tl_id, tl_tipo').eq('id', p.cliente_id).maybeSingle();
-    cli = data;
-  }
-  if (!cli?.tl_id) {
-    return json({ error: 'El cliente de este presupuesto todavía no está en Teamleader. Ábrelo en la agenda y súbelo primero.' }, 409);
-  }
 
   // La oportunidad de su visita. Si la visita existe pero aún no está en el
   // CRM, se para: crear aquí otra oportunidad dejaría dos cuando se suba.
@@ -253,6 +282,21 @@ Deno.serve(async (req) => {
     dealId = limpio(v?.tl_deal_id);
     if (!dealId) {
       return json({ error: 'La visita de este presupuesto todavía no está en Teamleader. Súbela primero y vuelve a mandarlo.' }, 409);
+    }
+  }
+
+  // El cliente solo hace falta en un suelto, para crearle su oportunidad. En
+  // uno de visita el cliente va en la oportunidad (antes se exigía aquí también
+  // y los de visita, que no lo llevan en el presupuesto, no se subían nunca).
+  // deno-lint-ignore no-explicit-any
+  let cli: any = null;
+  if (!dealId && !yaOferta) {
+    if (p.cliente_id) {
+      const { data } = await sb.from('clientes_cache').select('nombre, tl_id, tl_tipo').eq('id', p.cliente_id).maybeSingle();
+      cli = data;
+    }
+    if (!cli?.tl_id) {
+      return json({ error: 'El cliente de este presupuesto todavía no está en Teamleader. Ábrelo en la agenda y súbelo primero.' }, 409);
     }
   }
 
@@ -271,18 +315,35 @@ Deno.serve(async (req) => {
   const iva = ivaDe(lineas[0]);
 
   if (soloVer) {
-    return json({ ok: true, cliente: cli.nombre, deal_id: dealId || null, iva,
+    return json({ ok: true, cliente: cli?.nombre || null, deal_id: dealId || null, iva,
       lineas: lineas.length, secciones: grupos.map((g) => g.titulo), total: p.total_venta });
   }
 
   await sb.from('presupuestos').update({ sync_estado: 'enviando', sync_error: null }).eq('id', id);
 
+  let token = '';
+  try { token = await tokenValido(sb); } catch (e) {
+    const msg = (e as Error).message;
+    await sb.from('presupuestos').update({ sync_estado: 'error', sync_error: msg }).eq('id', id);
+    return json({ error: msg, sin_permiso: e instanceof SinPermiso }, e instanceof SinPermiso ? 409 : 502);
+  }
+
+  const fallos: string[] = [];
+  let dealCreado = false;
+  let embudo: string | null = null;
+  let quotationId = yaOferta;
+  // deno-lint-ignore no-explicit-any
+  let deal: any = null;
+
   try {
-    const token = await tokenValido(sb);
+    // Ya tenía oferta y solo se sube el PDF: su oportunidad es la de la oferta.
+    if (!dealId && yaOferta) {
+      const q = await crm(token, 'quotations.info', { id: yaOferta });
+      dealId = limpio(q?.data?.deal?.id);
+      if (!dealId) throw new Error('No se encuentra la oportunidad de la oferta que ya estaba en Teamleader.');
+    }
 
     // Presupuesto suelto: se le crea su oportunidad.
-    let dealCreado = false;
-    let embudo: string | null = null;
     if (!dealId) {
       const f = await faseDeEmbudo(token, [limpio(p.categoria)]);
       embudo = f ? f.embudo : null;
@@ -296,71 +357,97 @@ Deno.serve(async (req) => {
       if (!dealId) throw new Error('El CRM no devolvió el id de la oportunidad.');
       dealCreado = true;
     }
+    deal = await crm(token, 'deals.info', { id: dealId });
+  } catch (e) {
+    const msg = (e as Error).message;
+    await sb.from('presupuestos').update({ sync_estado: 'error', sync_error: msg }).eq('id', id);
+    return json({ error: msg }, 502);
+  }
 
-    // El IVA, del departamento de la oportunidad.
-    const deal = await crm(token, 'deals.info', { id: dealId });
-    const departamentoId = limpio(deal?.data?.department?.id);
-    const ivas = await ivasDelDepartamento(token, departamentoId);
-    const faltan = [...new Set(lineas.map(ivaDe))].filter((x) => !ivas[x]);
-    if (faltan.length) {
-      const hay = Object.keys(ivas).map((x) => x + ' %').join(', ') || 'ninguno';
-      throw new Error(`En Teamleader no hay un IVA del ${faltan.join(' % ni del ')} % en el departamento de la oportunidad (hay: ${hay}).`);
+  // --- 1 · la oferta de Teamleader, con sus líneas ------------------------------
+  if (!quotationId) {
+    try {
+      // El IVA, del departamento de la oportunidad.
+      const departamentoId = limpio(deal?.data?.department?.id);
+      const ivas = await ivasDelDepartamento(token, departamentoId);
+      const faltan = [...new Set(lineas.map(ivaDe))].filter((x) => !ivas[x]);
+      if (faltan.length) {
+        const hay = Object.keys(ivas).map((x) => x + ' %').join(', ') || 'ninguno';
+        throw new Error(`En Teamleader no hay un IVA del ${faltan.join(' % ni del ')} % en el departamento de la oportunidad (hay: ${hay}).`);
+      }
+
+      // deno-lint-ignore no-explicit-any
+      const items = (g: any) => g.lineas.map((l: any) => {
+        const cantidad = Number(l.cantidad) || 1;
+        const venta = Number(l.precio_venta) || 0;
+        // El precio unitario tiene que cuadrar con el total de la línea al
+        // céntimo. Si al repartirlo entre las unidades no cuadra (3 uds de algo
+        // acabado en un tercio), se manda como una sola unidad con su importe.
+        const unitario = dosDec(venta / cantidad);
+        const cuadra = Math.round(unitario * cantidad * 100) === Math.round(venta * 100);
+        return {
+          quantity: cuadra ? cantidad : 1,
+          description: limpio(l.descripcion).slice(0, 255),
+          extended_description: limpio(l.detalle_tecnico) || undefined,
+          // `tax: excluding` es obligatorio: el precio va sin IVA y Teamleader
+          // lo suma con el tipo de tax_rate_id.
+          unit_price: { amount: cuadra ? unitario : dosDec(venta), tax: 'excluding' },
+          tax_rate_id: ivas[ivaDe(l)],
+        };
+      });
+
+      const r = await crm(token, 'quotations.create', {
+        deal_id: dealId,
+        // exchange_rate es obligatorio aunque sea euro («exchange_rate must be present»).
+        currency: { code: 'EUR', exchange_rate: 1 },
+        grouped_lines: grupos.map((g) => ({ section: { title: g.titulo }, line_items: items(g) })),
+      });
+      quotationId = r?.data?.id || '';
+      if (!quotationId) throw new Error('El CRM no devolvió el id de la oferta.');
+    } catch (e) {
+      fallos.push('Oferta: ' + (e as Error).message);
     }
+  }
 
-    // deno-lint-ignore no-explicit-any
-    const items = (g: any) => g.lineas.map((l: any) => {
-      const cantidad = Number(l.cantidad) || 1;
-      const venta = Number(l.precio_venta) || 0;
-      // El precio unitario tiene que cuadrar con el total de la línea al
-      // céntimo. Si al repartirlo entre las unidades no cuadra (3 uds de algo
-      // acabado en un tercio), se manda como una sola unidad con su importe.
-      const unitario = dosDec(venta / cantidad);
-      const cuadra = Math.round(unitario * cantidad * 100) === Math.round(venta * 100);
-      return {
-        quantity: cuadra ? cantidad : 1,
-        description: limpio(l.descripcion).slice(0, 255),
-        extended_description: limpio(l.detalle_tecnico) || undefined,
-        // `tax: excluding` es obligatorio: el precio va sin IVA y Teamleader
-        // lo suma con el tipo de tax_rate_id.
-        unit_price: { amount: cuadra ? unitario : dosDec(venta), tax: 'excluding' },
-        tax_rate_id: ivas[ivaDe(l)],
-      };
-    });
+  // --- 2 · el PDF de la app, a los archivos de la oportunidad -------------------
+  let pdfSubido = false;
+  if (pdfB64) {
+    try {
+      await subirArchivo(token, 'deal', dealId, pdfNombre, pdfB64);
+      pdfSubido = true;
+    } catch (e) {
+      fallos.push('PDF: ' + (e as Error).message);
+    }
+  }
 
-    const r = await crm(token, 'quotations.create', {
-      deal_id: dealId,
-      currency: { code: 'EUR' },
-      grouped_lines: grupos.map((g) => ({ section: { title: g.titulo }, line_items: items(g) })),
-    });
-    const quotationId = r?.data?.id || '';
-    if (!quotationId) throw new Error('El CRM no devolvió el id del presupuesto.');
-
-    // Que la oportunidad lleve el importe (sin IVA). Si falla, la oferta ya
-    // está hecha: no se da por error, pero se dice.
-    let avisoImporte: string | null = null;
+  // --- 3 · el importe en la oportunidad ----------------------------------------
+  if (quotationId || pdfSubido) {
     try {
       await crm(token, 'deals.update', {
         id: dealId, estimated_value: { amount: dosDec(Number(p.total_venta) || 0), currency: 'EUR' },
       });
-    } catch (e) { avisoImporte = 'No se pudo poner el importe en la oportunidad: ' + (e as Error).message; }
-
-    // Dónde ha quedado, para que se pueda abrir desde la app y comprobarlo.
-    const dealUrl = limpio(deal?.data?.web_url) || null;
-    const dealTitulo = limpio(deal?.data?.title) || null;
-    const embudoReal = limpio(deal?.data?.current_phase?.deal_pipeline?.name || deal?.data?.deal_pipeline?.name) || embudo;
-
-    await sb.from('presupuestos').update({
-      tl_quotation_id: quotationId, sync_estado: 'sincronizado', sync_error: null,
-      sync_at: new Date().toISOString(), estado: 'enviado',
-    }).eq('id', id);
-
-    return json({ ok: true, tl_quotation_id: quotationId, deal_id: dealId, deal_creado: dealCreado,
-      deal_url: dealUrl, deal_titulo: dealTitulo, embudo: embudoReal, aviso: avisoImporte,
-      lineas: lineas.length, total: p.total_venta });
-  } catch (e) {
-    const msg = (e as Error).message;
-    await sb.from('presupuestos').update({ sync_estado: 'error', sync_error: msg }).eq('id', id);
-    return json({ error: msg, sin_permiso: e instanceof SinPermiso },
-      e instanceof SinPermiso ? 409 : 502);
+    } catch (e) { fallos.push('Importe: ' + (e as Error).message); }
   }
+
+  const bien = !!(quotationId || pdfSubido);
+  await sb.from('presupuestos').update({
+    tl_quotation_id: quotationId || null,
+    sync_estado: bien ? 'sincronizado' : 'error',
+    sync_error: fallos.length ? fallos.join(' · ') : null,
+    sync_at: new Date().toISOString(),
+    ...(bien ? { estado: 'enviado' } : {}),
+  }).eq('id', id);
+
+  if (!bien) return json({ error: fallos.join(' · ') || 'No se pudo subir nada.' }, 502);
+
+  // Dónde ha quedado, para que se pueda abrir desde la app y comprobarlo.
+  return json({
+    ok: true, tl_quotation_id: quotationId || null, pdf_subido: pdfSubido,
+    deal_id: dealId, deal_creado: dealCreado,
+    deal_url: limpio(deal?.data?.web_url) || null,
+    deal_titulo: limpio(deal?.data?.title) || null,
+    embudo: limpio(deal?.data?.current_phase?.deal_pipeline?.name || deal?.data?.deal_pipeline?.name) || embudo,
+    aviso: fallos.length ? fallos.join(' · ') : null,
+    lineas: lineas.length, total: p.total_venta,
+  });
 });

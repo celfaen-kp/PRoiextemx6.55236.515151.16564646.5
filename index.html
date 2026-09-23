@@ -371,7 +371,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '16.3'; // versión visible de la app (única fuente)
+const APP_VERSION = '16.4'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -6566,10 +6566,11 @@ function presuPanelHTML() {
       </div>
 
       <button class="btn btn-verde" data-a="presuGuardar" style="margin-top:16px" ${p.guardando ? 'disabled' : ''}>${p.guardando ? 'Guardando…' : p.guardado ? 'Guardar otra versión' : 'Guardar este presupuesto'}</button>
-      ${p.guardado ? `<div class="tiny" style="margin-top:8px;text-align:center">✓ Guardado en la app. Todavía no está en Teamleader.</div>
-        ${p.enTL ? '<div class="tiny" style="margin-top:10px;text-align:center;color:var(--verde-o)">✓ Está en Teamleader</div>'
-          : `<button class="btn btn-verde" data-a="presuGuardadoATL" style="margin-top:10px" ${p.enviando ? 'disabled' : ''}>${p.enviando ? 'Subiendo…' : 'Mandar a Teamleader'}</button>
-        <div class="tiny" style="margin-top:6px;text-align:center">${enSuelto() ? 'Se crea su oportunidad y la oferta dentro.' : 'La oferta va dentro de la oportunidad de esta visita.'} Al cliente se la mandas tú desde allí.</div>`}` : ''}
+      ${p.guardado ? `<div class="tiny" style="margin-top:8px;text-align:center">✓ Guardado en la app.${p.enTL ? '' : p.enviando ? ' Subiéndolo a Teamleader…' : ' Todavía no está en Teamleader.'}</div>
+        ${p.enTL ? '<div class="tiny" style="margin-top:10px;text-align:center;color:var(--verde-o)">✓ Está en Teamleader, con su PDF</div>'
+          : p.enviando ? '' : `${p.errTL ? `<div class="aviso-rojo" style="margin-top:10px"><span class="ex">!</span><span style="font:400 13px/1.4 var(--sans)">${esc(p.errTL)}</span></div>` : ''}
+        <button class="btn btn-verde" data-a="presuGuardadoATL" style="margin-top:10px">${p.errTL ? 'Reintentar' : 'Mandar a Teamleader'}</button>
+        <div class="tiny" style="margin-top:6px;text-align:center">${enSuelto() ? 'Se crea su oportunidad y la oferta dentro.' : 'La oferta y el PDF van dentro de la oportunidad de esta visita.'} Al cliente se la mandas tú desde allí.</div>`}` : ''}
     ` : ''}`;
 }
 const eur = (n) => (Number(n) || 0).toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' €';
@@ -6630,11 +6631,13 @@ A.presuGuardar = async () => {
       : await visitasDB.presupuestarVisita(vv.visita.id, p.cat, {
           guardar: true, dtoGlobalPct: p.dto, lineasExtra: p.extra,
         });
-    p.datos = r; p.guardado = r.presupuesto_id || null; p.enTL = false;
-    toast('Presupuesto guardado' + (r.estado === 'revisar' ? ' · queda por revisar.' : '.'));
+    p.datos = r; p.guardado = r.presupuesto_id || null; p.enTL = false; p.errTL = null;
+    toast('Presupuesto guardado. Subiéndolo a Teamleader…');
     V.presuLista.cargado = false; A.cargarPresupuestos();
-  } catch (e) { avisar('No se pudo guardar: ' + msgError(e)); }
+  } catch (e) { avisar('No se pudo guardar: ' + msgError(e)); p.guardando = false; render(); return; }
   p.guardando = false; render();
+  // Guardado = a Teamleader, sin más botones.
+  if (p.guardado) A.presuGuardadoATL();
 };
 
 /* --- añadir la máquina, del catálogo o a mano --- */
@@ -7144,20 +7147,47 @@ function imprimirPresupuestoHTML(d) {
  * oportunidad de su visita si la tiene; NO se la manda al cliente: eso se hace
  * desde el CRM, que es donde se ve cómo queda.
  */
-// Desde la pantalla de calcular, recién guardado: sin tener que ir a la ficha.
+/** El nombre del PDF de un presupuesto: presupuesto-aerotermia-ana-ferrer.pdf */
+const nombrePdfPresu = (d) => ('presupuesto-' + [nombreCat(d.categoria) || 'sysefen', (d.cliente && d.cliente.nombre) || '']
+  .filter(Boolean).join('-')).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+  .replace(/[^a-z0-9]+/g, '-').replace(/-+$/, '') + '.pdf';
+
+/**
+ * Sube un presupuesto GUARDADO a Teamleader: la oferta con sus líneas y,
+ * además, el PDF de la app en los archivos de la oportunidad. Si el PDF no
+ * se puede hacer, se sube igual la oferta.
+ */
+async function subirPresuATL(id) {
+  const d = await visitasDB.verPresupuesto(id);
+  let pdf = null;
+  try {
+    imprimirPresupuestoHTML(d);
+    const blob = await pdfDeImpresion();
+    const base64 = await new Promise((ok, mal) => {
+      const fr = new FileReader();
+      fr.onload = () => ok(String(fr.result).replace(/^data:[^,]*,/, ''));
+      fr.onerror = () => mal(fr.error);
+      fr.readAsDataURL(blob);
+    });
+    pdf = { base64, nombre: nombrePdfPresu(d) };
+  } catch (_) { /* sin PDF: va la oferta sola */ }
+  return visitasDB.presupuestoATeamleader(id, false, pdf);
+}
+
+// Desde la pantalla de calcular: sale sola al guardar, y este botón queda para
+// reintentarlo si falló.
 A.presuGuardadoATL = async () => {
   const p = V.presu; if (!p || !p.guardado || p.enviando) return;
-  if (!navigator.onLine) { avisar('Sin conexión: el presupuesto se sube desde el servidor.'); return; }
-  p.enviando = true; render();
+  if (!navigator.onLine) { p.errTL = 'Sin conexión: no se ha subido a Teamleader.'; render(); return; }
+  p.enviando = true; p.errTL = null; render();
   try {
-    const r = await visitasDB.presupuestoATeamleader(p.guardado);
+    const r = await subirPresuATL(p.guardado);
     p.enTL = true; p.enviando = false;
     V.presuLista.cargado = false;
     V.sheet = { tipo: 'tlHecho', r: r || {} };
     render();
   } catch (e) {
-    p.enviando = false; render();
-    avisar('No se pudo subir: ' + msgError(e));
+    p.enviando = false; p.errTL = msgError(e); render();
   }
 };
 
@@ -7166,7 +7196,7 @@ A.presuATeamleader = async () => {
   if (!navigator.onLine) { avisar('Sin conexión: el presupuesto se sube desde el servidor.'); return; }
   v.enviando = true; render();
   try {
-    const r = await visitasDB.presupuestoATeamleader(v.datos.id);
+    const r = await subirPresuATL(v.datos.id);
     await A.presuAbrir(v.datos.id);
     // Se dice dónde ha quedado: la oferta va dentro de una oportunidad, y si
     // era un presupuesto suelto esa oportunidad es nueva.
@@ -8625,7 +8655,7 @@ function sheet() {
     const r = s.r;
     return `<div class="sheet"><div>
       <div style="font:600 25px/1.15 var(--cond)">En Teamleader</div>
-      <div class="sub" style="margin-top:8px">La oferta está dentro de ${r.deal_creado ? 'una oportunidad <b>nueva</b>' : 'la oportunidad de la visita'}${r.deal_titulo ? ': <b>' + esc(r.deal_titulo) + '</b>' : ''}${r.embudo ? ', en el embudo <b>' + esc(r.embudo) + '</b>' : ''}. Está en la pestaña de ofertas de esa oportunidad, sin mandar al cliente.</div>
+      <div class="sub" style="margin-top:8px">La oferta está dentro de ${r.deal_creado ? 'una oportunidad <b>nueva</b>' : 'la oportunidad de la visita'}${r.deal_titulo ? ': <b>' + esc(r.deal_titulo) + '</b>' : ''}${r.embudo ? ', en el embudo <b>' + esc(r.embudo) + '</b>' : ''}. ${r.tl_quotation_id ? ' La oferta está en su pestaña de ofertas, sin mandar al cliente.' : ''}${r.pdf_subido ? ' El PDF, en sus archivos (carpeta Presupuestos).' : ''}</div>
       ${r.aviso ? `<div class="tiny" style="margin-top:8px;color:var(--ambar-o)">${esc(r.aviso)}</div>` : ''}
       <div class="row g8" style="margin-top:18px">
         <button class="btn btn-gris" data-a="cerrarSheet" style="border-radius:99px">Cerrar</button>

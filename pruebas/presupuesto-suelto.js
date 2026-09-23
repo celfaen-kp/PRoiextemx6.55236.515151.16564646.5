@@ -228,12 +228,16 @@ setTimeout(function () {
   comprueba('el total sin IVA', pdf.indexOf('780,00') > -1);
   comprueba('y el total con IVA (943,80)', pdf.indexOf('943,80') > -1);
 
-  var pedido = null;
-  visitasDB = { presupuestoATeamleader: function (id) { pedido = id; return Promise.resolve({ ok: true, tl_quotation_id: 'q1' }); },
+  igual('el PDF se llama por oficio y cliente, sin tildes', nombrePdfPresu(guardado), 'presupuesto-aire-acondicionado-ana-ferrer.pdf');
+
+  var pedido = null, conPdf = 'sin llamar';
+  visitasDB = { presupuestoATeamleader: function (id, soloVer, pdf) { pedido = id; conPdf = pdf; return Promise.resolve({ ok: true, tl_quotation_id: 'q1' }); },
     verPresupuesto: function () { return Promise.resolve(Object.assign({}, guardado, { tl_quotation_id: 'q1' })); },
     listarPresupuestos: function () { return Promise.resolve([]); } };
   A.presuATeamleader().then(function () {
     igual('sube el presupuesto que toca', pedido, 'p9');
+    // Aquí no hay html2canvas: el PDF no se puede hacer y la oferta sube igual.
+    igual('sin PDF posible, sube la oferta sola', conPdf, null);
     comprueba('y luego dice que ya está en el CRM', vPresupuestoVer().indexOf('Está en Teamleader') > -1);
     resultado();
   }).catch(function (e) { print('ERROR: ' + e + '\n' + (e.stack || '')); });
