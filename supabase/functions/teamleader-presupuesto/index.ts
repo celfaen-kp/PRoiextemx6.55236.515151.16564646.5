@@ -9,9 +9,15 @@
 // llamadas distintas; aquí solo se crea, y quien la manda es una persona desde
 // el CRM, que es donde se ve cómo queda.
 //
-// A QUÉ OPORTUNIDAD SE CUELGA: a la de la visita, si el presupuesto salió de
-// una y esa visita ya está en el CRM. Un presupuesto suelto se sube sin
-// oportunidad; Teamleader la crea o se enlaza después a mano.
+// A QUÉ OPORTUNIDAD SE CUELGA: en Teamleader una oferta SIEMPRE va dentro de
+// una oportunidad (deal_id es obligatorio). Si el presupuesto salió de una
+// visita, a la de esa visita, que tiene que estar subida antes. Si es suelto,
+// se le crea una aquí, en el embudo de su oficio.
+//
+// EL IVA: cada línea lleva el id de un tipo de IVA, y esos tipos son de cada
+// departamento. Se usa el departamento de la oportunidad y, dentro de él, el
+// tipo cuyo porcentaje coincide con el de la línea. Si no hay ninguno que
+// coincida se para con un mensaje claro: mejor eso que un IVA equivocado.
 //
 // LOS PRECIOS NO SE RECALCULAN AQUÍ. Se manda el precio de venta de cada línea,
 // que es el que ya tiene el descuento al pie repartido. Así lo que se ve en la
@@ -98,16 +104,49 @@ async function crm(token: string, metodo: string, cuerpo: unknown) {
 }
 
 /**
- * El IVA que toca, buscado por su porcentaje. Los ids de los tipos de IVA son
- * de cada cuenta de Teamleader, así que no se pueden escribir aquí.
+ * Los tipos de IVA del departamento, por porcentaje: { 21: 'id', 10: 'id' }.
+ * Los ids son de cada cuenta de Teamleader, así que no se pueden escribir aquí.
+ * Teamleader da el tipo como fracción (0.21).
  */
-async function idDelIva(token: string, pct: number) {
+async function ivasDelDepartamento(token: string, departamentoId: string) {
+  const r = await crm(token, 'taxRates.list',
+    departamentoId ? { filter: { department_id: departamentoId }, page: { size: 100 } } : { page: { size: 100 } });
+  // deno-lint-ignore no-explicit-any
+  const lista = (r?.data || []) as any[];
+  const porPct: Record<number, string> = {};
+  lista.forEach((t) => {
+    if (departamentoId && t.department?.id && t.department.id !== departamentoId) return;
+    const pct = Math.round(Number(t.rate) * 10000) / 100;      // 0.21 -> 21
+    if (!(pct in porPct)) porPct[pct] = t.id;
+  });
+  return porPct;
+}
+
+// Embudo de cada oficio, por el NOMBRE (igual que en teamleader-visita; se
+// repite a propósito, cada función se pega en un solo archivo). Solo se usa
+// para los presupuestos sueltos, que no tienen oportunidad de visita.
+const EMBUDOS: [string, RegExp][] = [
+  ['aerotermia', /aerot/i],
+  ['aire_acondicionado', /aire|clima/i],
+  ['electricidad', /electri/i],
+  ['solar', /fotovolt|solar|placas|paneles/i],
+];
+const EMBUDO_RESTO = /otros|varios|general/i;
+
+// La primera fase del embudo del oficio, solo si se puede saber sin riesgo de
+// equivocarse de embudo. Si no, null y la oportunidad cae en el de por defecto.
+async function faseDeEmbudo(token: string, categoria: string) {
   try {
-    const r = await crm(token, 'taxRates.list', {});
-    const lista = (r?.data || []) as { id: string; rate: number; description?: string }[];
-    const exacto = lista.find((t) => Math.round(Number(t.rate) * 100) === Math.round(pct)
-      || Math.round(Number(t.rate)) === Math.round(pct));
-    return (exacto || lista[0])?.id || null;
+    const embudos = ((await crm(token, 'dealPipelines.list', {}))?.data || []) as { id: string; name: string }[];
+    const patron = EMBUDOS.find(([c]) => c === categoria)?.[1];
+    const elegido = (patron && embudos.find((x) => patron.test(String(x.name || ''))))
+      || embudos.find((x) => EMBUDO_RESTO.test(String(x.name || '')));
+    if (!elegido) return null;
+    // deno-lint-ignore no-explicit-any
+    const todas = ((await crm(token, 'dealPhases.list', {}))?.data || []) as any[];
+    // deno-lint-ignore no-explicit-any
+    const suya = todas.find((f: any) => (f.deal_pipeline || f.pipeline)?.id === elegido.id);
+    return suya ? String(suya.id) : null;
   } catch (_) { return null; }
 }
 
@@ -164,11 +203,15 @@ Deno.serve(async (req) => {
     return json({ error: 'El cliente de este presupuesto todavía no está en Teamleader. Ábrelo en la agenda y súbelo primero.' }, 409);
   }
 
-  // La oportunidad de su visita, si la tiene.
+  // La oportunidad de su visita. Si la visita existe pero aún no está en el
+  // CRM, se para: crear aquí otra oportunidad dejaría dos cuando se suba.
   let dealId = '';
   if (p.visita_id) {
     const { data: v } = await sb.from('visitas').select('tl_deal_id').eq('id', p.visita_id).maybeSingle();
     dealId = limpio(v?.tl_deal_id);
+    if (!dealId) {
+      return json({ error: 'La visita de este presupuesto todavía no está en Teamleader. Súbela primero y vuelve a mandarlo.' }, 409);
+    }
   }
 
   // --- las líneas, agrupadas por sección ---------------------------------------
@@ -181,7 +224,9 @@ Deno.serve(async (req) => {
     g.lineas.push(l);
   });
 
-  const iva = Number(lineas[0].iva == null ? 21 : lineas[0].iva);
+  // deno-lint-ignore no-explicit-any
+  const ivaDe = (l: any) => Math.round(Number(l.iva == null ? 21 : l.iva) * 100) / 100;
+  const iva = ivaDe(lineas[0]);
 
   if (soloVer) {
     return json({ ok: true, cliente: cli.nombre, deal_id: dealId || null, iva,
@@ -192,11 +237,30 @@ Deno.serve(async (req) => {
 
   try {
     const token = await tokenValido(sb);
-    const ivaId = await idDelIva(token, iva);
 
-    const departamentos = await crm(token, 'departments.list', {});
-    const departamentoId = departamentos?.data?.[0]?.id;
-    if (!departamentoId) throw new Error('Teamleader no devolvió ningún departamento.');
+    // Presupuesto suelto: se le crea su oportunidad.
+    let dealCreado = false;
+    if (!dealId) {
+      const fase = await faseDeEmbudo(token, limpio(p.categoria));
+      const r = await crm(token, 'deals.create', {
+        lead: { customer: { type: cli.tl_tipo === 'company' ? 'company' : 'contact', id: cli.tl_id } },
+        title: (limpio(p.titulo) || 'Presupuesto').slice(0, 255),
+        ...(fase ? { phase_id: fase } : {}),
+      });
+      dealId = r?.data?.id || '';
+      if (!dealId) throw new Error('El CRM no devolvió el id de la oportunidad.');
+      dealCreado = true;
+    }
+
+    // El IVA, del departamento de la oportunidad.
+    const deal = await crm(token, 'deals.info', { id: dealId });
+    const departamentoId = limpio(deal?.data?.department?.id);
+    const ivas = await ivasDelDepartamento(token, departamentoId);
+    const faltan = [...new Set(lineas.map(ivaDe))].filter((x) => !ivas[x]);
+    if (faltan.length) {
+      const hay = Object.keys(ivas).map((x) => x + ' %').join(', ') || 'ninguno';
+      throw new Error(`En Teamleader no hay un IVA del ${faltan.join(' % ni del ')} % en el departamento de la oportunidad (hay: ${hay}).`);
+    }
 
     // deno-lint-ignore no-explicit-any
     const items = (g: any) => g.lineas.map((l: any) => {
@@ -211,30 +275,35 @@ Deno.serve(async (req) => {
         quantity: cuadra ? cantidad : 1,
         description: limpio(l.descripcion).slice(0, 255),
         extended_description: limpio(l.detalle_tecnico) || undefined,
-        unit_price: { amount: cuadra ? unitario : dosDec(venta), currency: 'EUR' },
-        tax_rate_id: ivaId || undefined,
-        product_id: undefined,
+        // `tax: excluding` es obligatorio: el precio va sin IVA y Teamleader
+        // lo suma con el tipo de tax_rate_id.
+        unit_price: { amount: cuadra ? unitario : dosDec(venta), tax: 'excluding' },
+        tax_rate_id: ivas[ivaDe(l)],
       };
     });
 
-    const cuerpo: Record<string, unknown> = {
-      customer: { type: cli.tl_tipo === 'company' ? 'company' : 'contact', id: cli.tl_id },
-      department_id: departamentoId,
-      currency: 'EUR',
+    const r = await crm(token, 'quotations.create', {
+      deal_id: dealId,
+      currency: { code: 'EUR' },
       grouped_lines: grupos.map((g) => ({ section: { title: g.titulo }, line_items: items(g) })),
-    };
-    if (dealId) cuerpo.deal_id = dealId;
-
-    const r = await crm(token, 'quotations.create', cuerpo);
+    });
     const quotationId = r?.data?.id || '';
     if (!quotationId) throw new Error('El CRM no devolvió el id del presupuesto.');
+
+    // Que la oportunidad lleve el importe (sin IVA). Si falla, la oferta ya
+    // está hecha: no se da por error.
+    try {
+      await crm(token, 'deals.update', {
+        id: dealId, estimated_value: { amount: dosDec(Number(p.total_venta) || 0), currency: 'EUR' },
+      });
+    } catch (_) { /* no es grave */ }
 
     await sb.from('presupuestos').update({
       tl_quotation_id: quotationId, sync_estado: 'sincronizado', sync_error: null,
       sync_at: new Date().toISOString(), estado: 'enviado',
     }).eq('id', id);
 
-    return json({ ok: true, tl_quotation_id: quotationId, deal_id: dealId || null,
+    return json({ ok: true, tl_quotation_id: quotationId, deal_id: dealId, deal_creado: dealCreado,
       lineas: lineas.length, total: p.total_venta });
   } catch (e) {
     const msg = (e as Error).message;

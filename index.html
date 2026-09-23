@@ -127,6 +127,12 @@ a:hover{color:var(--tinta)}
 .pasos i.on{background:var(--verde-c)}
 
 .sheet{position:fixed;inset:0;background:rgba(20,23,15,.55);display:flex;align-items:flex-end;padding:20px;padding-bottom:calc(20px + var(--safe-b));z-index:50;animation:fade .15s}
+.vista-pdf{position:fixed;inset:0;z-index:50;background:#3a3d36;display:flex;flex-direction:column;animation:fade .15s}
+.vista-pdf-barra{display:flex;align-items:center;gap:10px;padding:10px 14px;padding-top:calc(10px + var(--safe-t));background:#14170f}
+.vista-pdf-barra .btn{width:auto;flex:none;padding:10px 18px}
+.vista-pdf-barra .btn-gris{background:rgba(255,255,255,.16);color:#fff}
+.vista-pdf-hojas{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:14px;padding-bottom:calc(14px + var(--safe-b))}
+.vista-pdf-hojas img{display:block;width:100%;max-width:820px;margin:0 auto 12px;background:#fff;box-shadow:0 2px 10px rgba(0,0,0,.35)}
 .sheet>div{width:100%;background:#fff;border-radius:26px;padding:24px 22px 22px;animation:up .22s cubic-bezier(.2,.9,.3,1)}
 @keyframes fade{from{opacity:0}}
 @keyframes up{from{transform:translateY(18px)}}
@@ -365,7 +371,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '15.9'; // versión visible de la app (única fuente)
+const APP_VERSION = '16.0'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -2722,34 +2728,32 @@ const enAppInstalada = () => {
   catch (e) { return false; }
 };
 
+// En la app instalada ya no salta directamente la hoja de compartir: primero
+// se enseña el PDF (las mismas páginas que lleva dentro) y desde ahí se
+// comparte con un toque. Antes no había forma de mirarlo sin mandarlo.
 async function salidaImpresion(nombre, title, text) {
   if (!enAppInstalada()) { setTimeout(() => window.print(), 60); return; }
   try {
     const blob = await pdfDeImpresion();
     const archivo = new File([blob], nombre, { type: 'application/pdf' });
     pdfParaCompartir = { archivo, title, text: text || title };
-    if (navigator.canShare && navigator.canShare({ files: [archivo] })) {
-      try {
-        await navigator.share({ files: [archivo], title: pdfParaCompartir.title, text: pdfParaCompartir.text });
-        return;
-      } catch (e) {
-        if (e && e.name === 'AbortError') return;
-        // El PDF tarda, y para entonces Safari ya no lo cuenta como respuesta
-        // al toque: se ofrece un segundo toque que abre la hoja al instante.
-        if (e && e.name === 'NotAllowedError') { V.sheet = { tipo: 'compartirListo', nombre }; render(); return; }
-        throw e;
-      }
-    }
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob); a.download = nombre; a.click();
-    toast('PDF descargado.');
+    V.sheet = { tipo: 'vistaPdf', nombre, paginas: paginasPdf.slice() };
+    render();
   } catch (e) {
     avisar('No se pudo preparar el PDF: ' + msgError(e));
   }
 }
 
+// Solo el archivo. Si se manda también un texto, WhatsApp en el iPhone se
+// queda con el texto y el PDF no llega (sale una vista previa que no es él).
+const compartirSoloArchivo = (archivo) => navigator.share({ files: [archivo] });
+
+// Las páginas del último PDF, en imagen: son las que enseña la vista previa.
+let paginasPdf = [];
+
 // PDF de lo que haya pintado en #print (un parte o una planilla).
 async function pdfDeImpresion() {
+  paginasPdf = [];
   await cargarLibsPdf();
   const el = $('#print');
   el.classList.add('capturando');
@@ -2781,7 +2785,9 @@ async function pdfDeImpresion() {
       cx.fillStyle = '#fff'; cx.fillRect(0, 0, trozo.width, trozo.height);
       cx.drawImage(lienzo, 0, y, lienzo.width, fin - y, 0, 0, lienzo.width, fin - y);
       if (y > 0) doc.addPage();
-      doc.addImage(trozo.toDataURL('image/jpeg', 0.92), 'JPEG', 0, 0, anchoMM, (fin - y) / pxPorMM);
+      const jpg = trozo.toDataURL('image/jpeg', 0.92);
+      paginasPdf.push(jpg);
+      doc.addImage(jpg, 'JPEG', 0, 0, anchoMM, (fin - y) / pxPorMM);
       y = fin;
     }
     return doc.output('blob');
@@ -2887,7 +2893,7 @@ A.compartirParte = async (id) => {
     const o = obraById(p.obraId) || {};
     pdfParaCompartir = { archivo, title: 'Parte ' + p.ref, text: S.empresa + ' · Parte de trabajo ' + p.ref + (o.titulo ? ' · ' + o.titulo : '') };
     if (navigator.canShare && navigator.canShare({ files: [archivo] })) {
-      await navigator.share({ files: [archivo], title: pdfParaCompartir.title, text: pdfParaCompartir.text });
+      await compartirSoloArchivo(archivo);
       return;
     }
     // En ordenador no hay hoja de compartir: se descarga y se abre el correo.
@@ -2906,7 +2912,7 @@ A.compartirListo = () => {
   const c = pdfParaCompartir; V.sheet = null; render();
   if (!c) return;
   // Sin await antes: tiene que salir en el mismo toque.
-  navigator.share({ files: [c.archivo], title: c.title, text: c.text })
+  compartirSoloArchivo(c.archivo)
     .catch((e) => { if (!e || e.name !== 'AbortError') avisar('No se pudo compartir: ' + ((e && e.message) || 'error')); });
 };
 
@@ -6001,7 +6007,7 @@ A.compartirVisita = async () => {
       text: S.empresa + ' · Toma de datos' + (cli ? ' · ' + cli.nombre : ''),
     };
     if (navigator.canShare && navigator.canShare({ files: [archivo] })) {
-      await navigator.share({ files: [archivo], title: pdfParaCompartir.title, text: pdfParaCompartir.text });
+      await compartirSoloArchivo(archivo);
       return;
     }
     const a = document.createElement('a');
@@ -6401,7 +6407,7 @@ function vVisita() {
       ${enAppInstalada()
         // En el móvil los dos botones acababan en la misma hoja de compartir:
         // window.print() no existe ahí. Se deja uno solo y se dice qué es.
-        ? `<button class="pill grow" data-a="compartirVisita" style="padding:12px;text-align:center">PDF de la visita</button>`
+        ? `<button class="pill grow" data-a="visitaPdf" style="padding:12px;text-align:center">PDF de la visita</button>`
         : `<button class="pill grow" data-a="visitaPdf" style="padding:12px;text-align:center">Ver PDF</button>
            <button class="pill grow" data-a="compartirVisita" style="padding:12px;text-align:center">Compartir</button>`}
     </div>
@@ -8551,6 +8557,16 @@ function sheet() {
         <button class="btn btn-verde" data-a="guardarDocObra" style="font-size:14px" ${s.busy ? 'disabled' : ''}>${s.busy ? 'Guardando…' : 'Guardar'}</button>
       </div>
     </div></div>`;
+  }
+  if (s.tipo === 'vistaPdf') {
+    return `<div class="vista-pdf">
+      <div class="vista-pdf-barra">
+        <button class="btn btn-gris" data-a="cerrarSheet" style="border-radius:99px">Cerrar</button>
+        <div class="grow" style="min-width:0;font:600 13px var(--sans);color:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:center">${esc(s.nombre)}</div>
+        <button class="btn btn-verde" data-a="compartirListo" style="font-size:14px;border-radius:99px">Compartir</button>
+      </div>
+      <div class="vista-pdf-hojas">${(s.paginas || []).map((src) => `<img src="${src}" alt="">`).join('')}</div>
+    </div>`;
   }
   if (s.tipo === 'compartirListo') {
     return `<div class="sheet"><div>
