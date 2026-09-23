@@ -46,6 +46,18 @@ setTimeout(function () {
   comprueba('el descuento al pie se puede tocar', h.indexOf('data-f="presuDto"') >= 0);
   comprueba('deja añadir del catálogo', h.indexOf('data-f="presuTexto"') >= 0);
   comprueba('y guardar', h.indexOf('data-a="presuGuardar"') >= 0);
+  comprueba('sin guardar, todavía no deja mandarlo a Teamleader', h.indexOf('presuGuardadoATL') < 0);
+
+  titulo('recién guardado, se manda a Teamleader desde aquí');
+  V.presu.guardado = 'p-123';
+  h = presupuestoHTML(visita, fichasAire);
+  comprueba('dice que aún no está en Teamleader', h.indexOf('Todavía no está en Teamleader') >= 0);
+  comprueba('botón para mandarlo', h.indexOf('data-a="presuGuardadoATL"') >= 0);
+  comprueba('a la oportunidad de la visita', h.indexOf('oportunidad de esta visita') >= 0);
+  V.presu.enTL = true;
+  h = presupuestoHTML(visita, fichasAire);
+  comprueba('ya mandado: lo dice y no se repite', h.indexOf('✓ Está en Teamleader') >= 0 && h.indexOf('data-a="presuGuardadoATL"') < 0);
+  V.presu.guardado = null; V.presu.enTL = false;
 
   titulo('el buscador del catálogo');
   V.presu.buscar = 'midea'; V.presu.resultados = [{ referencia: 'MSAGBU-12HRFN8', nombre: 'Midea mural 3,5 kW', familia: 'aire_interior', precio_tarifa: 612 }];

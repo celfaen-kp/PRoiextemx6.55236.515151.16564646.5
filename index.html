@@ -371,7 +371,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '16.2'; // versión visible de la app (única fuente)
+const APP_VERSION = '16.3'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -6566,7 +6566,10 @@ function presuPanelHTML() {
       </div>
 
       <button class="btn btn-verde" data-a="presuGuardar" style="margin-top:16px" ${p.guardando ? 'disabled' : ''}>${p.guardando ? 'Guardando…' : p.guardado ? 'Guardar otra versión' : 'Guardar este presupuesto'}</button>
-      ${p.guardado ? '<div class="tiny" style="margin-top:8px;text-align:center">✓ Guardado. Queda con la versión de reglas y la tarifa con las que se calculó.</div>' : ''}
+      ${p.guardado ? `<div class="tiny" style="margin-top:8px;text-align:center">✓ Guardado en la app. Todavía no está en Teamleader.</div>
+        ${p.enTL ? '<div class="tiny" style="margin-top:10px;text-align:center;color:var(--verde-o)">✓ Está en Teamleader</div>'
+          : `<button class="btn btn-verde" data-a="presuGuardadoATL" style="margin-top:10px" ${p.enviando ? 'disabled' : ''}>${p.enviando ? 'Subiendo…' : 'Mandar a Teamleader'}</button>
+        <div class="tiny" style="margin-top:6px;text-align:center">${enSuelto() ? 'Se crea su oportunidad y la oferta dentro.' : 'La oferta va dentro de la oportunidad de esta visita.'} Al cliente se la mandas tú desde allí.</div>`}` : ''}
     ` : ''}`;
 }
 const eur = (n) => (Number(n) || 0).toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' €';
@@ -6627,7 +6630,7 @@ A.presuGuardar = async () => {
       : await visitasDB.presupuestarVisita(vv.visita.id, p.cat, {
           guardar: true, dtoGlobalPct: p.dto, lineasExtra: p.extra,
         });
-    p.datos = r; p.guardado = r.presupuesto_id || null;
+    p.datos = r; p.guardado = r.presupuesto_id || null; p.enTL = false;
     toast('Presupuesto guardado' + (r.estado === 'revisar' ? ' · queda por revisar.' : '.'));
     V.presuLista.cargado = false; A.cargarPresupuestos();
   } catch (e) { avisar('No se pudo guardar: ' + msgError(e)); }
@@ -7141,6 +7144,23 @@ function imprimirPresupuestoHTML(d) {
  * oportunidad de su visita si la tiene; NO se la manda al cliente: eso se hace
  * desde el CRM, que es donde se ve cómo queda.
  */
+// Desde la pantalla de calcular, recién guardado: sin tener que ir a la ficha.
+A.presuGuardadoATL = async () => {
+  const p = V.presu; if (!p || !p.guardado || p.enviando) return;
+  if (!navigator.onLine) { avisar('Sin conexión: el presupuesto se sube desde el servidor.'); return; }
+  p.enviando = true; render();
+  try {
+    const r = await visitasDB.presupuestoATeamleader(p.guardado);
+    p.enTL = true; p.enviando = false;
+    V.presuLista.cargado = false;
+    V.sheet = { tipo: 'tlHecho', r: r || {} };
+    render();
+  } catch (e) {
+    p.enviando = false; render();
+    avisar('No se pudo subir: ' + msgError(e));
+  }
+};
+
 A.presuATeamleader = async () => {
   const v = V.presuVer; if (!v || !v.datos || v.enviando) return;
   if (!navigator.onLine) { avisar('Sin conexión: el presupuesto se sube desde el servidor.'); return; }
@@ -8966,6 +8986,7 @@ document.addEventListener('click', (e) => {
   if (a === 'presuEditar') return A.presuEditar();
   if (a === 'presuPdf') return A.presuPdf();
   if (a === 'presuATeamleader') return A.presuATeamleader();
+  if (a === 'presuGuardadoATL') return A.presuGuardadoATL();
   if (a === 'presuEditarCancelar') return A.presuEditarCancelar();
   if (a === 'presuQuitarLinea') return A.presuQuitarLinea(d.id);
   if (a === 'presuLineaNueva') return A.presuLineaNueva();
