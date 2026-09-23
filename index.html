@@ -365,7 +365,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '15.3'; // versión visible de la app (única fuente)
+const APP_VERSION = '15.4'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -6436,7 +6436,7 @@ Object.assign(V, {
            extra: [], guardando: false, buscar: '', buscando: false, resultados: [], guardado: null },
 });
 
-const CATS_CON_MOTOR = ['aire_acondicionado'];
+const CATS_CON_MOTOR = ['aire_acondicionado', 'aerotermia'];
 
 function presuResultadosHTML() {
   const p = V.presu;
@@ -6677,13 +6677,34 @@ const SISTEMAS_AIRE = [
 
 const presuNuevoVacio = () => ({
   cat: 'aire_acondicionado', clienteId: null, cliente: '', titulo: '',
+  // aire
   tipo_sistema: 'multisplit', equipos: 1, metros: '',
+  // aerotermia: la potencia se pone a mano, calcularla desde la casa no está
+  // calibrado (MOTOR-PRESUPUESTOS.md §7).
+  kw: '', circuitos: 1, acs: 0, sustituye: false, apoyo: false, limpieza: false,
 });
 
-/** Lo que se le manda al motor desde la pantalla suelta. */
+/**
+ * Lo que se le manda al motor desde la pantalla suelta, con los mismos nombres
+ * que usa la ficha de la visita: así las reglas son las mismas para los dos
+ * caminos y no hay que duplicarlas.
+ */
 function datosDelSuelto(f) {
+  const num = (v) => Number(String(v == null ? '' : v).replace(',', '.')) || 0;
+  if (f.cat === 'aerotermia') {
+    const c = Math.max(1, Math.min(6, Number(f.circuitos) || 1));
+    return {
+      potencia_kw: num(f.kw),
+      // Cada emisor previsto es un circuito: el motor los cuenta.
+      emisores_previstos: Array.from({ length: c }, (_, i) => 'circuito_' + (i + 1)),
+      sistema_actual: f.sustituye ? 'caldera_gas' : 'ninguno',
+      acs_litros_manual: num(f.acs),
+      apoyo_electrico: !!f.apoyo,
+      limpieza_circuito: !!f.limpieza,
+    };
+  }
   const n = Math.max(1, Math.min(30, Number(f.equipos) || 1));
-  const metros = Number(String(f.metros || '').replace(',', '.')) || 0;
+  const metros = num(f.metros);
   return {
     tipo_sistema: f.tipo_sistema,
     // El motor cuenta estancias y suma metros: se le dan tantas como equipos.
@@ -6708,7 +6729,13 @@ A.presuNuevo = () => {
   if (!V.agenda.cargado) A.cargarAgenda();
 };
 A.presuSueltoCampo = (k, v) => { if (V.suelto) V.suelto[k] = v; };
-A.presuSueltoChip = (k, v) => { if (V.suelto) { V.suelto[k] = v; render(); } };
+A.presuSueltoChip = (k, v) => {
+  if (!V.suelto) return;
+  // Los chips de sí/no mandan '' para apagarse y '1' para encenderse.
+  V.suelto[k] = v === '' ? false : (/^\d+$/.test(String(v)) && k !== 'cat' ? Number(v) : v);
+  if (['sustituye', 'apoyo', 'limpieza'].includes(k)) V.suelto[k] = v !== '';
+  render();
+};
 A.presuSueltoCliente = (id) => {
   const c = agCliente(id); if (!V.suelto || !c) return;
   V.suelto.clienteId = V.suelto.clienteId === id ? null : id;
@@ -6772,22 +6799,47 @@ function vPresuNuevo() {
       <div class="wrap">${vSchemas.CATEGORIAS.map((c) => `<div class="chip ${f.cat === c.key ? 'sel' : ''}" data-a="presuSueltoChip" data-k="cat" data-v="${c.key}">${esc(c.nombre)}</div>`).join('')}</div>
       ${CATS_CON_MOTOR.includes(f.cat) ? '' : `<div class="tiny" style="margin-top:8px;color:var(--ambar-o)">Todavía no hay reglas para ${esc(nombreCat(f.cat))}: de momento solo calcula aire acondicionado. Puedes montarlo a mano añadiendo líneas del catálogo.</div>`}
 
-      <div class="lbl" style="margin:16px 0 8px">Tipo de sistema</div>
-      <div class="wrap">${SISTEMAS_AIRE.map(([k, t]) => `<div class="chip ${f.tipo_sistema === k ? 'sel' : ''}" data-a="presuSueltoChip" data-k="tipo_sistema" data-v="${k}">${t}</div>`).join('')}</div>
-
-      <div class="row g8" style="margin-top:16px">
-        <div class="grow"><div class="lbl">Equipos interiores</div>
-          <input class="inp" data-f="presuEquipos" value="${esc(String(f.equipos))}" inputmode="numeric" style="margin-top:8px"></div>
-        <div class="grow"><div class="lbl">Metros de línea (total)</div>
-          <input class="inp" data-f="presuMetros" value="${esc(String(f.metros))}" inputmode="decimal" placeholder="0" style="margin-top:8px"></div>
-      </div>
-      <div class="tiny" style="margin-top:8px">Van 3 m incluidos por equipo; lo que pase de ahí se cobra aparte.</div>
+      ${f.cat === 'aerotermia' ? camposAeroHTML(f) : camposAireHTML(f)}
 
       <button class="btn btn-verde" data-a="presuCalcular" data-c="${esc(f.cat)}" style="margin-top:16px" ${p.cargando ? 'disabled' : ''}>${p.cargando ? 'Calculando…' : 'Calcular'}</button>
       ${p.error ? `<div class="aviso-rojo" style="margin-top:12px"><span class="ex">!</span><span style="font:400 13px/1.4 var(--sans)">${esc(p.error)}</span></div>` : ''}
     </div>
     ${p.datos ? `<div class="card" style="margin-top:12px">${presuPanelHTML()}</div>` : ''}
   </div>`;
+}
+
+/** Aire: tipo de sistema, cuántos equipos y cuántos metros de línea. */
+function camposAireHTML(f) {
+  return `<div class="lbl" style="margin:16px 0 8px">Tipo de sistema</div>
+      <div class="wrap">${SISTEMAS_AIRE.map(([k, t]) => `<div class="chip ${f.tipo_sistema === k ? 'sel' : ''}" data-a="presuSueltoChip" data-k="tipo_sistema" data-v="${k}">${t}</div>`).join('')}</div>
+
+      <div class="row g8" style="margin-top:16px">
+        <div class="grow"><div class="lbl">Equipos interiores</div>
+          <input class="inp" data-f="presuCampo" data-k="equipos" value="${esc(String(f.equipos))}" inputmode="numeric" style="margin-top:8px"></div>
+        <div class="grow"><div class="lbl">Metros de línea (total)</div>
+          <input class="inp" data-f="presuCampo" data-k="metros" value="${esc(String(f.metros))}" inputmode="decimal" placeholder="0" style="margin-top:8px"></div>
+      </div>
+      <div class="tiny" style="margin-top:8px">Van 3 m incluidos por equipo; lo que pase de ahí se cobra aparte.</div>`;
+}
+
+/** Aerotermia: la potencia la pones tú; el resto del presupuesto sale solo. */
+function camposAeroHTML(f) {
+  const si = (k, t) => `<div class="chip ${f[k] ? 'sel' : ''}" data-a="presuSueltoChip" data-k="${k}" data-v="${f[k] ? '' : '1'}">${t}</div>`;
+  return `<div class="row g8" style="margin-top:16px">
+        <div class="grow"><div class="lbl">Potencia</div>
+          <input class="inp" data-f="presuCampo" data-k="kw" value="${esc(String(f.kw))}" inputmode="decimal" placeholder="kW" style="margin-top:8px"></div>
+        <div class="grow"><div class="lbl">Circuitos</div>
+          <input class="inp" data-f="presuCampo" data-k="circuitos" value="${esc(String(f.circuitos))}" inputmode="numeric" style="margin-top:8px"></div>
+      </div>
+      <div class="tiny" style="margin-top:8px">Un circuito por cada temperatura distinta: suelo radiante y radiadores son dos.</div>
+
+      <div class="lbl" style="margin:16px 0 8px">Agua caliente</div>
+      <div class="wrap">${[[0, 'Sin acumulador'], [200, '200 l'], [250, '250 l']]
+        .map(([v, t]) => `<div class="chip ${Number(f.acs) === v ? 'sel' : ''}" data-a="presuSueltoChip" data-k="acs" data-v="${v}">${t}</div>`).join('')}</div>
+
+      <div class="lbl" style="margin:16px 0 8px">Y además</div>
+      <div class="wrap">${si('sustituye', 'Quitar la caldera')}${si('apoyo', 'Resistencia de apoyo')}${si('limpieza', 'Limpiar el circuito')}</div>
+      <div class="tiny" style="margin-top:8px">La máquina sale de la tarifa Vaillant por potencia; si quieres otra marca, la añades del catálogo.</div>`;
 }
 
 function vPresupuestoVer() {
@@ -8712,8 +8764,12 @@ document.addEventListener('input', (e) => {
   if (f === 'ag_citaFecha') { if (V.citaDraft) { sincronizarRuedas(); V.citaDraft.dia = t.value || null; render(); } return; }
   if (f === 'loginNombre') { V.loginNombre = t.value; return; }
   if (f === 'presuCliente') { if (V.suelto) { V.suelto.cliente = t.value; V.suelto.clienteId = null; render(); } return; }
-  if (f === 'presuEquipos') { t.value = t.value.replace(/\D/g, '').slice(0, 2); A.presuSueltoCampo('equipos', t.value); return; }
-  if (f === 'presuMetros') { A.presuSueltoCampo('metros', t.value); return; }
+  if (f === 'presuCampo') {
+    const k = t.dataset.k;
+    if (k === 'equipos' || k === 'circuitos') t.value = t.value.replace(/\D/g, '').slice(0, 2);
+    A.presuSueltoCampo(k, t.value);
+    return;
+  }
   if (f === 'matTexto') { V.matNuevo.texto = t.value; V.matNuevo.voz = false; return; }
   if (f === 'notaTexto') { V.notaNueva.texto = t.value; return; }
   if (f === 'matImporte') { if (V.sheet) V.sheet.importe = t.value; return; }

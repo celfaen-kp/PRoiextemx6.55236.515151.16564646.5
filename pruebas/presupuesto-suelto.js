@@ -45,7 +45,17 @@ setTimeout(function () {
   A.presuSueltoCliente('c1');
   igual('y se engancha', V.suelto.clienteId, 'c1');
   A.presuSueltoChip('cat', 'aerotermia');
-  comprueba('avisa de que aerotermia no tiene reglas', vPresuNuevo().indexOf('Todavía no hay reglas') > -1);
+  var ha = vPresuNuevo();
+  comprueba('aerotermia pregunta potencia y circuitos', ha.indexOf('Potencia') > -1 && ha.indexOf('Circuitos') > -1);
+  comprueba('y el agua caliente', ha.indexOf('200 l') > -1 && ha.indexOf('250 l') > -1);
+  V.suelto.kw = '8'; V.suelto.circuitos = 2; V.suelto.acs = 200; V.suelto.sustituye = true;
+  var da = datosDelSuelto(V.suelto);
+  igual('manda la potencia', da.potencia_kw, 8);
+  igual('un emisor por circuito', da.emisores_previstos.length, 2);
+  igual('los litros de ACS', da.acs_litros_manual, 200);
+  igual('y que había caldera', da.sistema_actual, 'caldera_gas');
+  A.presuSueltoChip('cat', 'electricidad');
+  comprueba('electricidad avisa de que no tiene reglas', vPresuNuevo().indexOf('Todavía no hay reglas') > -1);
   A.presuSueltoChip('cat', 'aire_acondicionado');
 
   titulo('qué se le manda al motor');

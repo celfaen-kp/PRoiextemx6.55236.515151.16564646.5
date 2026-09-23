@@ -22,7 +22,8 @@ setTimeout(function () {
 
   titulo('solo en los oficios con reglas');
   V.user = { id: 'u9' };
-  igual('aerotermia todavía no', presupuestoHTML(visita, fichasAero), '');
+  comprueba('aerotermia también, desde la etapa 43', presupuestoHTML(visita, fichasAero).indexOf('Calcular') >= 0);
+  igual('electricidad todavía no', presupuestoHTML(visita, [{ categoria: 'electricidad', datos: {} }]), '');
   comprueba('aire acondicionado sí', presupuestoHTML(visita, fichasAire).indexOf('Calcular') >= 0);
 
   titulo('con un presupuesto calculado');
