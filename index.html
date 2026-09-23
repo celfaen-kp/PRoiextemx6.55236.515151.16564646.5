@@ -365,7 +365,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '15.6'; // versión visible de la app (única fuente)
+const APP_VERSION = '15.7'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -6671,6 +6671,7 @@ A.presuCantidadExtra = (i, v) => {
 Object.assign(V, {
   presuLista: { cargado: false, cargando: false, error: null, filas: [] },
   presuVer: null,
+  presuEdit: null,
   suelto: null,
 });
 
@@ -6873,11 +6874,157 @@ function camposSolarHTML(f) {
       <div class="tiny" style="margin-top:8px">La batería no tiene regla todavía: manda el precio ella sola y con los presupuestos que hay no sale un precio por kWh. Se añade del catálogo.</div>`;
 }
 
+
+/* ---------- tocar un presupuesto guardado ----------------------------------
+ * El motor propone, la persona decide. Aquí se cambian cantidades, precios y
+ * conceptos, se quitan líneas y se añaden otras, también días después de
+ * guardarlo. Lo que se cambia de una línea que venía de una regla se apunta en
+ * `motor_correcciones`: así se sabe qué reglas hay que corregir.
+ *
+ * Los totales no se suman en el móvil: se le piden al servidor, que es donde
+ * está la aritmética de céntimos.
+ * ------------------------------------------------------------------------- */
+A.presuEditar = () => {
+  const v = V.presuVer; if (!v || !v.datos) return;
+  V.presuEdit = {
+    dto: Number(v.datos.dto_global_pct || 0),
+    cambios: {},          // id de línea -> { cantidad, precio_tarifa, descripcion }
+    quitadas: [],
+    nueva: null,
+    guardando: false,
+  };
+  render();
+};
+A.presuEditarCancelar = () => { V.presuEdit = null; render(); };
+
+A.presuLineaCampo = (id, campo, valor) => {
+  const e = V.presuEdit; if (!e) return;
+  (e.cambios[id] = e.cambios[id] || {})[campo] = valor;
+};
+A.presuQuitarLinea = (id) => {
+  const e = V.presuEdit; if (!e) return;
+  const i = e.quitadas.indexOf(id);
+  if (i >= 0) e.quitadas.splice(i, 1); else e.quitadas.push(id);
+  render();
+};
+A.presuLineaNueva = () => {
+  const e = V.presuEdit; if (!e) return;
+  e.nueva = e.nueva ? null : { descripcion: '', cantidad: '1', precio_tarifa: '', seccion: 'Otros' };
+  render();
+};
+A.presuNuevaCampo = (campo, valor) => { if (V.presuEdit && V.presuEdit.nueva) V.presuEdit.nueva[campo] = valor; };
+A.presuEditDto = (v) => { if (V.presuEdit) V.presuEdit.dto = Math.max(0, Math.min(100, Number(String(v).replace(',', '.')) || 0)); };
+
+A.presuGuardarCambios = async () => {
+  const v = V.presuVer, e = V.presuEdit;
+  if (!v || !e || e.guardando) return;
+  if (!navigator.onLine) { avisar('Sin conexión: los cambios no se han guardado.'); return; }
+  const num = (x) => Number(String(x == null ? '' : x).replace(',', '.'));
+  e.guardando = true; render();
+  try {
+    // 1 · las que se quitan
+    for (const id of e.quitadas) await visitasDB.borrarLineaPresupuesto(id);
+
+    // 2 · las que se cambian
+    for (const id of Object.keys(e.cambios)) {
+      if (e.quitadas.includes(id)) continue;
+      const l = (v.datos.lineas || []).find((x) => x.id === id); if (!l) continue;
+      const c = e.cambios[id], cambios = {};
+      if (c.cantidad != null && num(c.cantidad) !== Number(l.cantidad)) cambios.cantidad = num(c.cantidad);
+      if (c.precio_tarifa != null && num(c.precio_tarifa) !== Number(l.precio_tarifa)) cambios.precio_tarifa = num(c.precio_tarifa);
+      if (c.descripcion != null && String(c.descripcion).trim() && c.descripcion !== l.descripcion) cambios.descripcion = String(c.descripcion).trim();
+      if (!Object.keys(cambios).length) continue;
+      await visitasDB.guardarLineaPresupuesto(id, cambios);
+      // Si esa línea la había propuesto una regla, queda apuntado el cambio.
+      if (l.origen_regla_id) {
+        try {
+          await visitasDB.apuntarCorreccion({
+            presupuesto_id: v.datos.id, regla_id: l.origen_regla_id,
+            propuesto_ref: l.producto_ref || l.descripcion,
+            elegido_ref: cambios.descripcion || l.producto_ref || l.descripcion,
+            motivo: [cambios.cantidad != null ? 'cantidad ' + l.cantidad + ' → ' + cambios.cantidad : '',
+                     cambios.precio_tarifa != null ? 'precio ' + l.precio_tarifa + ' → ' + cambios.precio_tarifa : '']
+              .filter(Boolean).join(' · ') || 'texto corregido',
+          });
+        } catch (err) { registrarError('apuntarCorreccion', err); }
+      }
+    }
+
+    // 3 · la que se añade
+    const n = e.nueva;
+    if (n && String(n.descripcion || '').trim() && num(n.precio_tarifa) >= 0) {
+      await visitasDB.anadirLineaPresupuesto({
+        presupuesto_id: v.datos.id,
+        orden: ((v.datos.lineas || []).reduce((m, l) => Math.max(m, l.orden || 0), 0)) + 1,
+        seccion: n.seccion || 'Otros',
+        descripcion: String(n.descripcion).trim(),
+        cantidad: num(n.cantidad) || 1,
+        unidad: 'ud',
+        precio_tarifa: num(n.precio_tarifa) || 0,
+        precio_venta: 0,          // lo pone el recálculo
+        origen: 'manual',
+        confirmada: true,
+      });
+    }
+
+    // 4 · que el servidor vuelva a sumar
+    await visitasDB.recalcularPresupuesto(v.datos.id, e.dto);
+    V.presuEdit = null;
+    toast('Presupuesto actualizado.');
+    V.presuLista.cargado = false; A.cargarPresupuestos();
+    await A.presuAbrir(v.datos.id);
+  } catch (err) {
+    e.guardando = false; render();
+    avisar('No se pudieron guardar los cambios: ' + msgError(err));
+  }
+};
+
+/** Las líneas en modo edición. */
+function presuLineasEditHTML(d) {
+  const e = V.presuEdit;
+  const lineas = (d.lineas || []).slice().sort((a, b) => (a.orden || 0) - (b.orden || 0));
+  return `${lineas.map((l) => {
+    const c = e.cambios[l.id] || {}, fuera = e.quitadas.includes(l.id);
+    return `<div style="padding:11px 0;border-bottom:1px solid var(--l1);${fuera ? 'opacity:.45' : ''}">
+      <input class="inp" data-f="presuLinea" data-id="${l.id}" data-k="descripcion" value="${esc(c.descripcion != null ? c.descripcion : l.descripcion)}" style="padding:9px 11px;font-size:14px" ${fuera ? 'disabled' : ''}>
+      <div class="row g8" style="margin-top:7px;align-items:center">
+        <input class="inp" data-f="presuLinea" data-id="${l.id}" data-k="cantidad" value="${esc(String(c.cantidad != null ? c.cantidad : l.cantidad))}" inputmode="decimal" style="width:74px;padding:8px;text-align:center" ${fuera ? 'disabled' : ''}>
+        <span class="tiny">${esc(l.unidad || 'ud')} ×</span>
+        <input class="inp" data-f="presuLinea" data-id="${l.id}" data-k="precio_tarifa" value="${esc(String(c.precio_tarifa != null ? c.precio_tarifa : l.precio_tarifa))}" inputmode="decimal" style="width:96px;padding:8px;text-align:right" ${fuera ? 'disabled' : ''}>
+        <div class="grow"></div>
+        <span class="tiny" data-a="presuQuitarLinea" data-id="${l.id}" style="cursor:pointer;color:${fuera ? 'var(--verde-o)' : 'var(--rojo)'}">${fuera ? 'Recuperar' : 'Quitar'}</span>
+      </div>
+      ${l.origen_regla_id ? '<div class="tiny" style="margin-top:5px;opacity:.7">La propuso el motor: si la cambias, queda apuntado.</div>' : ''}
+    </div>`;
+  }).join('')}
+  ${e.nueva ? `<div class="card" style="margin-top:12px;background:rgba(20,23,15,.03)">
+    <div class="lbl">Línea nueva</div>
+    <input class="inp" data-f="presuNueva" data-k="descripcion" value="${esc(e.nueva.descripcion)}" placeholder="Concepto" style="margin-top:8px">
+    <div class="row g8" style="margin-top:8px">
+      <input class="inp" data-f="presuNueva" data-k="cantidad" value="${esc(e.nueva.cantidad)}" inputmode="decimal" style="width:80px;text-align:center">
+      <input class="inp grow" data-f="presuNueva" data-k="precio_tarifa" value="${esc(e.nueva.precio_tarifa)}" inputmode="decimal" placeholder="Precio por unidad">
+    </div>
+    <span class="tiny" data-a="presuLineaNueva" style="display:inline-block;margin-top:10px;cursor:pointer;text-decoration:underline">Quitar esta línea</span>
+  </div>` : `<div class="dash" data-a="presuLineaNueva" style="margin-top:12px;display:block">+ Añadir una línea</div>`}
+
+  <div class="row g8" style="align-items:center;margin-top:16px">
+    <span class="sub grow">Descuento al pie</span>
+    <input class="inp" data-f="presuEditDto" value="${esc(String(e.dto))}" inputmode="decimal" style="width:76px;padding:8px 10px;text-align:right">
+    <span class="sub">%</span>
+  </div>
+  <div class="row g8" style="margin-top:16px">
+    <button class="btn btn-gris" data-a="presuEditarCancelar" style="border-radius:99px">Cancelar</button>
+    <button class="btn btn-verde" data-a="presuGuardarCambios" style="flex:1" ${e.guardando ? 'disabled' : ''}>${e.guardando ? 'Guardando…' : 'Guardar cambios'}</button>
+  </div>
+  <div class="tiny" style="margin-top:8px">Al guardar, el servidor vuelve a sumarlo todo.</div>`;
+}
+
 function vPresupuestoVer() {
   const v = V.presuVer;
   if (!v) { V.view = 'presupuestos'; return vPresupuestos(); }
   const d = v.datos;
   const lineas = d ? (d.lineas || []).slice().sort((a, b) => (a.orden || 0) - (b.orden || 0)) : [];
+  const editando = !!V.presuEdit;
   return `<div class="hdr-dark">
     <div class="back" data-a="ir" data-v="presupuestos">‹ Presupuestos</div>
     <div style="font:600 27px/1.1 var(--cond)">${esc((d && (d.titulo || (d.cliente && d.cliente.nombre))) || 'Presupuesto')}</div>
@@ -6885,7 +7032,8 @@ function vPresupuestoVer() {
   </div>
   <div class="scroll pad pb-nav">
     ${v.error ? `<div class="card" style="background:var(--rojo-cl)"><div class="sub" style="color:var(--rojo)">${esc(v.error)}</div></div>` : ''}
-    ${d ? `<div class="card">
+    ${d && editando ? `<div class="card">${presuLineasEditHTML(d)}</div>` : ''}
+    ${d && !editando ? `<div class="card">
       ${(d.incidencias || []).map((i) => `<div class="tiny" style="margin-bottom:6px;color:${i.nivel === 'error' ? 'var(--rojo)' : 'var(--ambar-o)'}">${i.nivel === 'error' ? '⚠' : '·'} ${esc(i.mensaje)}</div>`).join('')}
       ${lineas.map((l) => `<div style="padding:9px 0;border-bottom:1px solid var(--l1)">
         <div class="row" style="align-items:baseline;justify-content:space-between;gap:12px">
@@ -6900,6 +7048,7 @@ function vPresupuestoVer() {
       </div>
       ${d.dto_global_pct ? `<div class="tiny" style="margin-top:6px;text-align:right">Incluye −${d.dto_global_pct} % al pie</div>` : ''}
       <div class="tiny" style="margin-top:12px">Calculado con las reglas ${esc(d.motor_version || '')}. Queda congelado con la tarifa de ese día.</div>
+      <button class="btn btn-gris" data-a="presuEditar" style="margin-top:14px;border-radius:99px">Modificar este presupuesto</button>
     </div>` : ''}
   </div>`;
 }
@@ -8634,6 +8783,11 @@ document.addEventListener('click', (e) => {
   if (a === 'ir') return A.ir(d.v);
   if (a === 'presuNuevo') return A.presuNuevo();
   if (a === 'presuAbrir') return A.presuAbrir(d.id);
+  if (a === 'presuEditar') return A.presuEditar();
+  if (a === 'presuEditarCancelar') return A.presuEditarCancelar();
+  if (a === 'presuQuitarLinea') return A.presuQuitarLinea(d.id);
+  if (a === 'presuLineaNueva') return A.presuLineaNueva();
+  if (a === 'presuGuardarCambios') return A.presuGuardarCambios();
   if (a === 'presuSueltoChip') { A.presuSueltoChip(d.k, d.v); return; }
   if (a === 'presuSueltoCliente') return A.presuSueltoCliente(d.id);
   if (a.startsWith('mat') || a.startsWith('nota') || a === 'dictar') {
@@ -8796,6 +8950,9 @@ document.addEventListener('input', (e) => {
   if (f === 'ag_citaFecha') { if (V.citaDraft) { sincronizarRuedas(); V.citaDraft.dia = t.value || null; render(); } return; }
   if (f === 'loginNombre') { V.loginNombre = t.value; return; }
   if (f === 'presuCliente') { if (V.suelto) { V.suelto.cliente = t.value; V.suelto.clienteId = null; render(); } return; }
+  if (f === 'presuLinea') { A.presuLineaCampo(t.dataset.id, t.dataset.k, t.value); return; }
+  if (f === 'presuNueva') { A.presuNuevaCampo(t.dataset.k, t.value); return; }
+  if (f === 'presuEditDto') { A.presuEditDto(t.value); return; }
   if (f === 'presuCampo') {
     const k = t.dataset.k;
     if (k === 'equipos' || k === 'circuitos') t.value = t.value.replace(/\D/g, '').slice(0, 2);

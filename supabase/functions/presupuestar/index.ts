@@ -28,6 +28,12 @@
 //   { ..., "lineas_extra": [ ... ] }   lo que pone la persona: la máquina, o
 //                                      cualquier línea suelta. Van al final,
 //                                      marcadas como 'manual'.
+//
+//   { "presupuesto_id": "uuid", "recalcular": true, "dto_global_pct": 10 }
+//     Vuelve a sumar un presupuesto YA GUARDADO a partir de sus líneas, después
+//     de que alguien las haya cambiado en la app. No vuelve a aplicar reglas:
+//     respeta lo que haya puesto la persona, que para eso lo ha puesto. Así los
+//     totales se calculan siempre en el mismo sitio y con la misma aritmética.
 // =============================================================================
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
@@ -66,6 +72,29 @@ Deno.serve(async (req) => {
   // deno-lint-ignore no-explicit-any
   let b: any;
   try { b = await req.json(); } catch { return json({ error: 'Petición mal formada.' }, 400); }
+
+  // --- volver a sumar uno ya guardado ------------------------------------------
+  if (b.recalcular === true) {
+    const id = String(b.presupuesto_id || '');
+    if (!/^[0-9a-f-]{36}$/i.test(id)) return json({ error: 'Falta el presupuesto.' }, 400);
+    const { data: pre } = await sb.from('presupuestos').select('id, dto_global_pct').eq('id', id).maybeSingle();
+    if (!pre) return json({ error: 'Ese presupuesto no existe.' }, 404);
+    const { data: ls } = await sb.from('presupuesto_lineas')
+      .select('id, cantidad, precio_tarifa, dto_linea_pct').eq('presupuesto_id', id).order('orden');
+    const dto = b.dto_global_pct != null ? Number(b.dto_global_pct) : Number(pre.dto_global_pct || 0);
+    const t = cadenaPrecios(ls || [], dto);
+    // El precio de venta de cada línea se guarda ya con el descuento al pie
+    // repartido, que es como se imprime y como lo hace Teamleader.
+    await Promise.all((ls || []).map((l, i) =>
+      sb.from('presupuesto_lineas').update({ precio_venta: t.lineas[i].total }).eq('id', l.id)));
+    await sb.from('presupuestos').update({
+      total_bruto: t.total_bruto, total_dto_linea: t.total_dto_linea,
+      dto_global_pct: dto, total_venta: t.total, updated_at: new Date().toISOString(),
+    }).eq('id', id);
+    return json({ ok: true, presupuesto_id: id, dto_global_pct: dto, totales: {
+      bruto: t.total_bruto, dto_linea: t.total_dto_linea, subtotal: t.subtotal,
+      dto_global: t.total_dto_global, total: t.total } });
+  }
   const uuid = (v: unknown) => (/^[0-9a-f-]{36}$/i.test(String(v || '')) ? String(v) : null);
   const visitaId = uuid(b.visita_id);
   const categoria = String(b.categoria || '');

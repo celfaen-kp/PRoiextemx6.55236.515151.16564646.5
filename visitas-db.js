@@ -463,6 +463,41 @@ export async function presupuestosDeVisita(visitaId) {
   ) || [];
 }
 
+/* --- tocar un presupuesto ya guardado --------------------------------------
+ * El motor propone y la persona decide, también después de guardarlo: se
+ * cambian cantidades, precios y conceptos, se quitan líneas y se añaden otras.
+ * Los totales NO se suman aquí: se le piden al servidor (`recalcular`), que es
+ * donde vive la aritmética de céntimos, para que no haya dos cuentas distintas.
+ * ------------------------------------------------------------------------- */
+
+export async function guardarLineaPresupuesto(id, cambios) {
+  return unwrap(await supabase.from('presupuesto_lineas').update(cambios).eq('id', id).select().single());
+}
+
+export async function anadirLineaPresupuesto(fila) {
+  return unwrap(await supabase.from('presupuesto_lineas').insert(fila).select().single());
+}
+
+export async function borrarLineaPresupuesto(id) {
+  return unwrap(await supabase.from('presupuesto_lineas').delete().eq('id', id));
+}
+
+export async function recalcularPresupuesto(presupuestoId, dtoGlobalPct) {
+  return invocar('presupuestar', {
+    presupuesto_id: presupuestoId, recalcular: true,
+    dto_global_pct: dtoGlobalPct == null ? undefined : dtoGlobalPct,
+  });
+}
+
+/**
+ * Cuando alguien cambia una línea que propuso una regla, se apunta qué se
+ * propuso y qué se eligió (sql/etapa38). Con cincuenta de estas se sabe qué
+ * reglas están mal calibradas; es lo único que hace que el motor mejore.
+ */
+export async function apuntarCorreccion(fila) {
+  return unwrap(await supabase.from('motor_correcciones').insert(fila).select().single());
+}
+
 /** Busca en el catálogo para añadir la máquina a mano. */
 export async function buscarProductos(texto, familia) {
   const q = String(texto || '').trim();

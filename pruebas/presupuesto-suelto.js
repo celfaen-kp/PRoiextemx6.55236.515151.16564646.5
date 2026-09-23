@@ -107,3 +107,62 @@ setTimeout(function () {
   comprueba('tarjeta de Presupuestos en Hoy', h.indexOf('data-v="presupuestos"') > -1);
   resultado();
 }, 400);
+
+/* Modificar un presupuesto ya guardado: cantidades, precios, quitar líneas,
+ * añadir otras y cambiar el descuento al pie. Y que lo que se cambia de una
+ * línea propuesta por el motor quede apuntado en motor_correcciones. */
+setTimeout(function () {
+  titulo('modificar uno guardado');
+  V.user = { id: 'u9' };
+  V.presuVer = { id: 'p9', cargando: false, error: null, datos: {
+    id: 'p9', categoria: 'aire_acondicionado', titulo: 'Aire · Casa de Ana',
+    created_at: new Date().toISOString(), total_venta: 1400, dto_global_pct: 0, incidencias: [],
+    lineas: [
+      { id: 'l1', orden: 1, descripcion: 'C100: Tubería frigorífica', cantidad: 3, unidad: 'ud',
+        precio_tarifa: 245, precio_venta: 735, dto_linea_pct: 0, origen: 'partida', origen_regla_id: 'r7' },
+      { id: 'l2', orden: 2, descripcion: 'C102: Soportes', cantidad: 1, unidad: 'ud',
+        precio_tarifa: 45, precio_venta: 45, dto_linea_pct: 0, origen: 'partida', origen_regla_id: 'r7' },
+    ] } };
+
+  A.presuEditar();
+  comprueba('se abre el modo edición', !!V.presuEdit);
+  var h = vPresupuestoVer();
+  comprueba('las líneas salen editables', h.indexOf('data-f="presuLinea"') > -1);
+  comprueba('avisa de las que propuso el motor', h.indexOf('queda apuntado') > -1);
+
+  var hechos = { cambios: [], borradas: [], nuevas: [], correcciones: [], recalculo: null };
+  visitasDB = {
+    guardarLineaPresupuesto: function (id, c) { hechos.cambios.push([id, c]); return Promise.resolve({}); },
+    borrarLineaPresupuesto: function (id) { hechos.borradas.push(id); return Promise.resolve({}); },
+    anadirLineaPresupuesto: function (f) { hechos.nuevas.push(f); return Promise.resolve({}); },
+    apuntarCorreccion: function (f) { hechos.correcciones.push(f); return Promise.resolve({}); },
+    recalcularPresupuesto: function (id, dto) { hechos.recalculo = [id, dto]; return Promise.resolve({ ok: true }); },
+    listarPresupuestos: function () { return Promise.resolve([]); },
+    verPresupuesto: function () { return Promise.resolve(V.presuVer.datos); },
+  };
+
+  A.presuLineaCampo('l1', 'cantidad', '4');
+  A.presuLineaCampo('l1', 'precio_tarifa', '250');
+  A.presuQuitarLinea('l2');
+  A.presuLineaNueva();
+  A.presuNuevaCampo('descripcion', 'Bomba de condensados');
+  A.presuNuevaCampo('cantidad', '2');
+  A.presuNuevaCampo('precio_tarifa', '95,50');
+  A.presuEditDto('10');
+
+  A.presuGuardarCambios().then(function () {
+    igual('cambia la línea tocada', hechos.cambios.length, 1);
+    igual('con la cantidad nueva', hechos.cambios[0][1].cantidad, 4);
+    igual('y el precio nuevo', hechos.cambios[0][1].precio_tarifa, 250);
+    igual('quita la que se marcó', hechos.borradas.join(), 'l2');
+    igual('añade la nueva', hechos.nuevas.length, 1);
+    igual('con su precio en coma', hechos.nuevas[0].precio_tarifa, 95.5);
+    igual('marcada como puesta a mano', hechos.nuevas[0].origen, 'manual');
+    igual('apunta la corrección del motor', hechos.correcciones.length, 1);
+    comprueba('diciendo qué cambió', /cantidad 3 → 4/.test(hechos.correcciones[0].motivo));
+    igual('y pide al servidor que vuelva a sumar', hechos.recalculo[0], 'p9');
+    igual('con el descuento al pie', hechos.recalculo[1], 10);
+    comprueba('al acabar se sale del modo edición', !V.presuEdit);
+    resultado();
+  }).catch(function (e) { print('ERROR: ' + e + '\n' + (e.stack || '')); });
+}, 900);
