@@ -230,6 +230,10 @@ setTimeout(function () {
 
   igual('el PDF se llama por oficio y cliente, sin tildes', nombrePdfPresu(guardado), 'presupuesto-aire-acondicionado-ana-ferrer.pdf');
 
+  // Aquí no se pueden bajar las librerías del PDF: que fallen en vez de
+  // quedarse esperando, como pasaría sin conexión.
+  libsPdf = Promise.reject(new Error('sin librerías en las pruebas'));
+  libsPdf.catch(function () {});
   var pedido = null, conPdf = 'sin llamar';
   visitasDB = { presupuestoATeamleader: function (id, soloVer, pdf) { pedido = id; conPdf = pdf; return Promise.resolve({ ok: true, tl_quotation_id: 'q1' }); },
     verPresupuesto: function () { return Promise.resolve(Object.assign({}, guardado, { tl_quotation_id: 'q1' })); },

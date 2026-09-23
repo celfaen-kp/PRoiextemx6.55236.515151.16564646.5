@@ -7162,7 +7162,12 @@ async function subirPresuATL(id) {
   let pdf = null;
   try {
     imprimirPresupuestoHTML(d);
-    const blob = await pdfDeImpresion();
+    // Si el PDF se atasca (sin cobertura para bajar las librerías), no se
+    // espera para siempre: a los 30 s sube la oferta sin él.
+    const blob = await Promise.race([
+      pdfDeImpresion(),
+      new Promise((_, mal) => setTimeout(() => mal(new Error('el PDF tarda demasiado')), 30000)),
+    ]);
     const base64 = await new Promise((ok, mal) => {
       const fr = new FileReader();
       fr.onload = () => ok(String(fr.result).replace(/^data:[^,]*,/, ''));
