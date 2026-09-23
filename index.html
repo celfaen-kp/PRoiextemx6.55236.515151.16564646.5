@@ -365,7 +365,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '15.1'; // versión visible de la app (única fuente)
+const APP_VERSION = '15.2'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -2705,6 +2705,47 @@ function cargarLibsPdf() {
   return libsPdf;
 }
 
+/* ---------- sacar el PDF de lo que hay en #print ----------------------------
+ * En la app INSTALADA del iPhone, window.print() no hace absolutamente nada:
+ * no hay diálogo de impresión. La app pintaba el parte, decía "Preparando el
+ * PDF…" y se quedaba ahí para siempre. En el navegador normal sí imprime, y
+ * por eso parecía que funcionaba.
+ *
+ * Así que en la app instalada se genera el PDF de verdad y se pasa a la hoja
+ * de compartir (Archivos, WhatsApp, correo). En ordenador se sigue imprimiendo
+ * como siempre, que es instantáneo y sale mejor.
+ * ------------------------------------------------------------------------- */
+const enAppInstalada = () => {
+  try { return window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true; }
+  catch (e) { return false; }
+};
+
+async function salidaImpresion(nombre, title, text) {
+  if (!enAppInstalada()) { setTimeout(() => window.print(), 60); return; }
+  try {
+    const blob = await pdfDeImpresion();
+    const archivo = new File([blob], nombre, { type: 'application/pdf' });
+    pdfParaCompartir = { archivo, title, text: text || title };
+    if (navigator.canShare && navigator.canShare({ files: [archivo] })) {
+      try {
+        await navigator.share({ files: [archivo], title: pdfParaCompartir.title, text: pdfParaCompartir.text });
+        return;
+      } catch (e) {
+        if (e && e.name === 'AbortError') return;
+        // El PDF tarda, y para entonces Safari ya no lo cuenta como respuesta
+        // al toque: se ofrece un segundo toque que abre la hoja al instante.
+        if (e && e.name === 'NotAllowedError') { V.sheet = { tipo: 'compartirListo', nombre }; render(); return; }
+        throw e;
+      }
+    }
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = nombre; a.click();
+    toast('PDF descargado.');
+  } catch (e) {
+    avisar('No se pudo preparar el PDF: ' + msgError(e));
+  }
+}
+
 // PDF de lo que haya pintado en #print (un parte o una planilla).
 async function pdfDeImpresion() {
   await cargarLibsPdf();
@@ -4850,7 +4891,10 @@ function resumenAusencias(a) {
 }
 function imprimirPlanilla(userId, mesBase) {
   pintarPlanilla(userId, mesBase);
-  setTimeout(() => window.print(), 60);
+  const u = userById(userId) || {};
+  const mes = mesBase || V.planMes || hoyISO().slice(0, 7);
+  salidaImpresion('horas-' + (u.nombre || 'empleado').toLowerCase() + '-' + mes + '.pdf',
+    'Horas de ' + (u.nombre || ''), S.empresa + ' · Registro de jornada ' + mes);
 }
 // Solo pinta la planilla en #print: sirve para imprimir y para sacar el PDF
 // que se archiva al firmarla.
@@ -4972,7 +5016,7 @@ function imprimirHorasObra(obraId, rango) {
     </table>
     <div style="font:400 10px var(--sans);color:#666;margin-top:14px">Horas imputadas a esta obra (categoría "Obra" en las imputaciones), no presencia fichada.</div>
   </div>`;
-  setTimeout(() => window.print(), 60);
+  salidaImpresion('horas-obra.pdf', 'Horas de obra', S.empresa + ' · Horas por empleado');
 }
 
 /* --- ajustes --- */
@@ -5928,7 +5972,10 @@ A.visitaPdf = async () => {
   const todas = await cargarFotosVisita(vv);
   if (!todas) avisar('Alguna foto no se pudo descargar: saldrá sin ella.');
   imprimirVisitaHTML(vv);
-  setTimeout(() => window.print(), 60);
+  const cli = vv.visita.cliente;
+  salidaImpresion('visita-' + (vv.visita.codigo || 'sysefen') + '.pdf',
+    'Toma de datos ' + (vv.visita.codigo || ''),
+    S.empresa + ' · Toma de datos' + (cli ? ' · ' + cli.nombre : ''));
 };
 
 A.compartirVisita = async () => {
@@ -8157,7 +8204,9 @@ function avisar(msg) { toast(msg, 'err'); }
 // necesita el generador de PDF) y `imprimirParte` además manda a imprimir.
 function imprimirParte(p) {
   imprimirParteHTML(p);
-  setTimeout(() => window.print(), 60);
+  const o = obraById(p.obraId) || {};
+  salidaImpresion('parte-' + p.ref + '.pdf', 'Parte ' + p.ref,
+    S.empresa + ' · Parte de trabajo ' + p.ref + (o.titulo ? ' · ' + o.titulo : ''));
 }
 function imprimirParteHTML(p) {
   const o = obraById(p.obraId) || { titulo: '—', cliente: '' };

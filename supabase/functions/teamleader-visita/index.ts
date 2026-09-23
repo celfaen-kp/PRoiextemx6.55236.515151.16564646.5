@@ -111,13 +111,51 @@ async function tokenValido(sb: any) {
 async function faseDeEmbudo(token: string, categorias: string[]) {
   try {
     const embudos = ((await crm(token, 'dealPipelines.list', {}))?.data || []) as { id: string; name: string }[];
+    // deno-lint-ignore no-explicit-any
+    let elegido: any = null;
     for (const [cat, patron] of EMBUDOS) {
       if (!categorias.includes(cat)) continue;
-      const e = embudos.find((x) => patron.test(String(x.name || '')));
-      if (!e) continue;
-      const fases = ((await crm(token, 'dealPhases.list', { filter: { pipeline_ids: [e.id] } }))?.data || []) as { id: string }[];
-      if (fases.length) return { fase: fases[0].id, embudo: e.name };
+      elegido = embudos.find((x) => patron.test(String(x.name || ''))) || null;
+      if (elegido) break;
     }
+    if (!elegido) return null;
+
+    // OJO: la primera versión pedía las fases con filter.pipeline_ids y se fiaba
+    // de lo que volviera. Teamleader ignora ese filtro y devuelve las fases de
+    // TODOS los embudos, así que la primera era la de otro embudo cualquiera y
+    // la oportunidad acababa en "Otros". Ahora:
+    //   1. se prueban los dos nombres de filtro que usa la API,
+    //   2. se compara con la lista sin filtrar para ver si el filtro ha servido,
+    //   3. y si cada fase dice a qué embudo pertenece, se comprueba una a una.
+    // Si después de todo eso no hay una fase SEGURA de ese embudo, no se manda
+    // ninguna: vale más que caiga en el embudo por defecto, donde ya se buscaba
+    // antes, que mandarla a uno equivocado.
+    const todas = ((await crm(token, 'dealPhases.list', {}))?.data || []) as any[];
+    // Cada fase trae (o no) a qué embudo pertenece; los nombres del campo cambian
+    // según la versión de la API.
+    // deno-lint-ignore no-explicit-any
+    const deEste = (f: any) => {
+      const p = (f.deal_pipeline || f.pipeline) as { id?: string } | undefined;
+      return p && p.id ? p.id === elegido!.id : null;   // null = no lo dice
+    };
+
+    // deno-lint-ignore no-explicit-any
+    const marcadas = todas.filter((f: any) => deEste(f) === true);
+    if (marcadas.length) return { fase: marcadas[0].id, embudo: elegido.name };
+
+    for (const clave of ['deal_pipeline_id', 'pipeline_id', 'deal_pipeline_ids', 'pipeline_ids']) {
+      const valor = clave.endsWith('_ids') ? [elegido.id] : elegido.id;
+      // deno-lint-ignore no-explicit-any
+      let fases: any[] = [];
+      try {
+        fases = ((await crm(token, 'dealPhases.list', { filter: { [clave]: valor } }))?.data || []) as any[];
+      } catch (_) { continue; }                       // ese filtro no existe
+      if (!fases.length || fases.length === todas.length) continue;   // no ha filtrado
+      if (fases.some((f: any) => deEste(f) === false)) continue;           // filtró mal
+      return { fase: fases[0].id, embudo: elegido.name };
+    }
+    // Se sabe el embudo pero no se puede señalar su fase sin riesgo.
+    return { fase: null, embudo: elegido.name };
   } catch (_) { /* sin embudo: se queda en el de por defecto */ }
   return null;
 }
@@ -286,7 +324,7 @@ Deno.serve(async (req) => {
         lead: { customer: { type: quien.tipo, id: quien.id } },
         title: titulo,
         summary: resumen,
-        ...(f ? { phase_id: f.fase } : {}),
+        ...(f && f.fase ? { phase_id: f.fase } : {}),
       });
       dealId = r?.data?.id || '';
       if (!dealId) throw new Error('El CRM no devolvió el id de la oportunidad.');
@@ -320,8 +358,20 @@ Deno.serve(async (req) => {
       sync_at: new Date().toISOString(),
     }).eq('id', v.id);
 
+    // Dónde ha caído DE VERDAD. Antes esto se daba por supuesto y por eso pasó
+    // desapercibido que las oportunidades iban a otro embudo.
+    let embudoReal: string | null = null;
+    if (dealCreado) {
+      try {
+        const info = await crm(token, 'deals.info', { id: dealId });
+        embudoReal = info?.data?.current_phase?.deal_pipeline?.name
+          || info?.data?.deal_pipeline?.name || info?.data?.current_phase?.name || null;
+      } catch (_) { /* si no se puede leer, se queda con lo que se pidió */ }
+    }
+
     return json({
-      ok: true, deal_id: dealId, deal_creado: dealCreado, titulo, embudo,
+      ok: true, deal_id: dealId, deal_creado: dealCreado, titulo,
+      embudo: embudoReal || embudo, embudo_pedido: embudo,
       cliente_creado: quien.creado, observaciones_actualizadas: !yaEstaba,
     });
   } catch (e) {

@@ -60,16 +60,16 @@ historico.forEach(function (r) {
   if (!presupuestos[k]) { presupuestos[k] = []; orden.push(k); }
   presupuestos[k].push(r);
 });
-var eur = function (n) { return n.toFixed(2); };
+var dosDec = function (n) { return n.toFixed(2); };
 
 /* ---------------------------------------------------------------- 1 */
 titulo('La cadena de precios');
 var c = cadenaPrecios([{ cantidad: 1, precio_tarifa: 10235, dto_linea_pct: 15 }], 10);
-igual('10.235 −15 % = 8.699,75', eur(c.subtotal), '8699.75');
+igual('10.235 −15 % = 8.699,75', dosDec(c.subtotal), '8699.75');
 // 8.699,75 × 0,9 = 7.829,775: en coma flotante se queda en ,77. Tiene que ser ,78.
-igual('el −10 % redondea la mitad hacia arriba (7.829,78)', eur(c.total), '7829.78');
-igual('cantidades con decimales (2,5 m × 52 €)', eur(cadenaPrecios([{ cantidad: 2.5, precio_tarifa: 52 }], 0).total), '130.00');
-igual('sin descuentos, tal cual', eur(cadenaPrecios([{ cantidad: 3, precio_tarifa: 245 }], 0).total), '735.00');
+igual('el −10 % redondea la mitad hacia arriba (7.829,78)', dosDec(c.total), '7829.78');
+igual('cantidades con decimales (2,5 m × 52 €)', dosDec(cadenaPrecios([{ cantidad: 2.5, precio_tarifa: 52 }], 0).total), '130.00');
+igual('sin descuentos, tal cual', dosDec(cadenaPrecios([{ cantidad: 3, precio_tarifa: 245 }], 0).total), '735.00');
 igual('importes con coma ("1.234,56")', aCentimos('1.234,56'), 123456);
 var raro = false; try { cadenaPrecios([{ cantidad: 1, precio_tarifa: 10, dto_linea_pct: 130 }], 0); } catch (e) { raro = true; }
 comprueba('un descuento de más del 100 % se rechaza', raro);
@@ -81,13 +81,13 @@ comprueba('está en el histórico', !!k596);
 var l596 = lineasDe(presupuestos[k596]);
 igual('12 líneas', l596.length, 12);
 var t = cadenaPrecios(l596, 10);
-igual('suma a PVP de tarifa', eur(t.total_bruto), '21560.00');
-igual('descuentos de línea (−15 %)', eur(t.total_dto_linea), '-2005.50');
-igual('subtotal', eur(t.subtotal), '19554.50');
-igual('descuento global −10 %', eur(t.total_dto_global), '-1955.44');
-igual('TOTAL sin IVA', eur(t.total), '17599.06');
+igual('suma a PVP de tarifa', dosDec(t.total_bruto), '21560.00');
+igual('descuentos de línea (−15 %)', dosDec(t.total_dto_linea), '-2005.50');
+igual('subtotal', dosDec(t.subtotal), '19554.50');
+igual('descuento global −10 %', dosDec(t.total_dto_global), '-1955.44');
+igual('TOTAL sin IVA', dosDec(t.total), '17599.06');
 // Y que de verdad hacía falta hacerlo línea a línea:
-comprueba('(aplicado al subtotal de una vez daría 17.599,05)', eur(Math.round(19554.50 * 90) / 100) === '17599.05');
+comprueba('(aplicado al subtotal de una vez daría 17.599,05)', dosDec(Math.round(19554.50 * 90) / 100) === '17599.05');
 
 /* ---------------------------------------------------------------- 3 */
 titulo('Todos los presupuestos del histórico');
@@ -96,11 +96,11 @@ orden.forEach(function (k) {
   var ls = lineasDe(presupuestos[k]);
   var r = cadenaPrecios(ls, 0);
   var okLineas = r.lineas.every(function (x, i) {
-    return eur(x.bruto) === eur(ls[i].csv_importe) && eur(x.dto_linea) === eur(ls[i].csv_dto);
+    return dosDec(x.bruto) === dosDec(ls[i].csv_importe) && dosDec(x.dto_linea) === dosDec(ls[i].csv_dto);
   });
   var sumaCSV = presupuestos[k].reduce(function (s, f) { return s + aCentimos(f.importe_linea); }, 0) / 100;
   ls.forEach(function (x) { if (x.dto_linea_pct) pcts[x.dto_linea_pct] = (pcts[x.dto_linea_pct] || 0) + 1; });
-  if (okLineas && eur(r.subtotal) === eur(sumaCSV)) bien++; else mal.push(k + ' (cadena ' + eur(r.subtotal) + ', PDF ' + eur(sumaCSV) + ')');
+  if (okLineas && dosDec(r.subtotal) === dosDec(sumaCSV)) bien++; else mal.push(k + ' (cadena ' + dosDec(r.subtotal) + ', PDF ' + dosDec(sumaCSV) + ')');
 });
 igual('presupuestos cuyo subtotal reproduce la cadena', bien + ' de ' + orden.length, orden.length + ' de ' + orden.length);
 mal.slice(0, 5).forEach(function (m) { print('        ' + m); });
@@ -129,8 +129,8 @@ orden.forEach(function (k) {
     if (!x.dto_linea_pct || x.dto_linea_pct >= 100) return;
     if (!m) { sinMarca++; return; }
     marca++;
-    if (precios[m][eur(x.precio_tarifa)]) conPrecio++;
-    else (sinPrecio[k.split(' · ')[0]] = sinPrecio[k.split(' · ')[0]] || []).push(x.descripcion.slice(0, 40) + ' ' + eur(x.precio_tarifa));
+    if (precios[m][dosDec(x.precio_tarifa)]) conPrecio++;
+    else (sinPrecio[k.split(' · ')[0]] = sinPrecio[k.split(' · ')[0]] || []).push(x.descripcion.slice(0, 40) + ' ' + dosDec(x.precio_tarifa));
   });
 });
 print('  info  material de marca con su precio en la tarifa de su marca: ' + conPrecio + ' de ' + marca
