@@ -365,7 +365,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '15.7'; // versión visible de la app (única fuente)
+const APP_VERSION = '15.9'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -6398,8 +6398,12 @@ function vVisita() {
     <div class="lbl">La ficha en papel</div>
     <div class="sub" style="margin-top:6px;font-size:13px">El PDF lleva el inmueble, cada categoría y las fotos. La copia va a Drive, a la carpeta del cliente.</div>
     <div class="row g8" style="margin-top:14px">
-      <button class="pill grow" data-a="visitaPdf" style="padding:12px;text-align:center">Ver PDF</button>
-      <button class="pill grow" data-a="compartirVisita" style="padding:12px;text-align:center">Compartir</button>
+      ${enAppInstalada()
+        // En el móvil los dos botones acababan en la misma hoja de compartir:
+        // window.print() no existe ahí. Se deja uno solo y se dice qué es.
+        ? `<button class="pill grow" data-a="compartirVisita" style="padding:12px;text-align:center">PDF de la visita</button>`
+        : `<button class="pill grow" data-a="visitaPdf" style="padding:12px;text-align:center">Ver PDF</button>
+           <button class="pill grow" data-a="compartirVisita" style="padding:12px;text-align:center">Compartir</button>`}
     </div>
     <button class="pill" data-a="visitaDrive" style="margin-top:8px;padding:12px;width:100%;text-align:center" ${dr && dr.estado === 'subiendo' ? 'disabled' : ''}>${
       dr && dr.estado === 'subiendo' ? 'Subiendo a Drive…' : v.drive_id || (dr && dr.estado === 'ok') ? 'Volver a subir a Drive' : 'Copiar a Drive'}</button>
@@ -7019,6 +7023,103 @@ function presuLineasEditHTML(d) {
   <div class="tiny" style="margin-top:8px">Al guardar, el servidor vuelve a sumarlo todo.</div>`;
 }
 
+
+/* ---------- el PDF del presupuesto ------------------------------------------
+ * Un presupuesto es un documento distinto de la ficha de la visita: lleva las
+ * líneas con su precio y el total, y debajo de cada artículo su detalle
+ * técnico, que se escribe una vez por producto y sale igual en todos.
+ * ------------------------------------------------------------------------- */
+function imprimirPresupuestoHTML(d) {
+  const lineas = (d.lineas || []).slice().sort((a, b) => (a.orden || 0) - (b.orden || 0));
+  const cli = d.cliente || null;
+  const secciones = [];
+  lineas.forEach((l) => {
+    const nombre = l.seccion || 'Otros';
+    let s = secciones.find((x) => x.nombre === nombre);
+    if (!s) { s = { nombre, lineas: [] }; secciones.push(s); }
+    s.lineas.push(l);
+  });
+  const iva = lineas.length ? Number(lineas[0].iva == null ? 21 : lineas[0].iva) : 21;
+  const total = Number(d.total_venta || 0);
+
+  const el = $('#print');
+  el.innerHTML = `<div style="font-family:var(--sans);color:#14170f;max-width:180mm;position:relative;z-index:0">
+    <img src="logo-trans.png" alt="" style="position:absolute;top:110mm;left:50%;transform:translate(-50%,-50%);width:120mm;opacity:.11;z-index:-1;pointer-events:none">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start">
+      <div><img src="logo-trans.png" alt="" style="height:17mm">
+      ${S.cif ? `<div style="font:400 10px var(--mono);color:#666;margin-top:2px">${esc(S.empresa)} · ${esc(S.cif)}</div>` : ''}</div>
+      <div style="text-align:right"><div style="font:600 11px var(--mono);letter-spacing:.1em">PRESUPUESTO</div>
+      <div style="font:700 16px var(--cond);margin-top:2px">${esc(nombreCat(d.categoria) || d.categoria)}</div>
+      <div style="font:400 10px var(--mono);color:#666;margin-top:2px">${d.created_at ? fechaCorta(d.created_at) : ''}</div></div>
+    </div>
+    <div style="height:2px;background:#14170f;margin:10px 0 14px"></div>
+    <table style="width:100%;font:400 12px var(--sans);border-collapse:collapse">
+      <tr><td style="padding:3px 0;color:#666;width:32%">Cliente</td><td style="font-weight:600">${esc((cli && cli.nombre) || d.titulo || '—')}</td></tr>
+      ${d.visita && d.visita.codigo ? `<tr><td style="padding:3px 0;color:#666">Visita</td><td>${esc(d.visita.codigo)}</td></tr>` : ''}
+    </table>
+
+    ${secciones.map((s) => `<div style="margin-top:18px">
+      <div style="font:600 10px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:#666;margin-bottom:5px">${esc(s.nombre)}</div>
+      <table style="width:100%;font:400 12px var(--sans);border-collapse:collapse">
+        ${s.lineas.map((l) => `<tr>
+          <td style="padding:6px 0;border-bottom:1px solid #eee;vertical-align:top">
+            <div style="font-weight:600">${esc(l.descripcion)}</div>
+            ${l.detalle_tecnico ? `<div style="font:400 10px/1.4 var(--sans);color:#666;margin-top:2px">${esc(l.detalle_tecnico)}</div>` : ''}
+            <div style="font:400 10px var(--mono);color:#666;margin-top:2px">${esc(String(l.cantidad))} ${esc(l.unidad || 'ud')} × ${eur(l.precio_tarifa)}${l.dto_linea_pct ? ' · −' + l.dto_linea_pct + '%' : ''}</div>
+          </td>
+          <td style="padding:6px 0;border-bottom:1px solid #eee;text-align:right;white-space:nowrap;vertical-align:top;font-family:var(--cond);font-weight:600">${eur(l.precio_venta)}</td>
+        </tr>`).join('')}
+      </table>
+    </div>`).join('')}
+
+    <div style="margin-top:16px;padding-top:8px;border-top:2px solid #14170f">
+      ${d.dto_global_pct ? `<div style="display:flex;justify-content:space-between;font:400 11px var(--sans);color:#666"><span>Incluye descuento de −${d.dto_global_pct} %</span></div>` : ''}
+      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-top:4px">
+        <span style="font:600 13px var(--sans)">Total sin IVA</span>
+        <span style="font:700 18px var(--cond)">${eur(total)}</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;font:400 11px var(--sans);color:#666;margin-top:3px">
+        <span>IVA ${iva} %</span><span>${eur(total * iva / 100)}</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-top:3px">
+        <span style="font:600 13px var(--sans)">Total con IVA</span>
+        <span style="font:700 18px var(--cond)">${eur(total * (1 + iva / 100))}</span>
+      </div>
+    </div>
+    <div style="font:400 10px/1.5 var(--sans);color:#666;margin-top:14px">Presupuesto orientativo, válido 30 días. No incluye obra civil ni permisos que no se nombren arriba.</div>
+  </div>`;
+}
+
+/**
+ * Sube el presupuesto a Teamleader. Crea la oferta en el CRM, colgada de la
+ * oportunidad de su visita si la tiene; NO se la manda al cliente: eso se hace
+ * desde el CRM, que es donde se ve cómo queda.
+ */
+A.presuATeamleader = async () => {
+  const v = V.presuVer; if (!v || !v.datos || v.enviando) return;
+  if (!navigator.onLine) { avisar('Sin conexión: el presupuesto se sube desde el servidor.'); return; }
+  v.enviando = true; render();
+  try {
+    const r = await visitasDB.presupuestoATeamleader(v.datos.id);
+    toast('Presupuesto creado en Teamleader.');
+    await A.presuAbrir(v.datos.id);
+    return r;
+  } catch (e) {
+    v.enviando = false; render();
+    avisar('No se pudo subir: ' + msgError(e));
+  }
+};
+
+A.presuPdf = async () => {
+  const v = V.presuVer; if (!v || !v.datos) return;
+  toast('Preparando el PDF…');
+  imprimirPresupuestoHTML(v.datos);
+  const cli = (v.datos.cliente && v.datos.cliente.nombre) || '';
+  await salidaImpresion('presupuesto-' + (nombreCat(v.datos.categoria) || 'sysefen').toLowerCase().replace(/\s+/g, '-') + '.pdf',
+    'Presupuesto ' + (nombreCat(v.datos.categoria) || ''),
+    S.empresa + ' · Presupuesto' + (cli ? ' · ' + cli : ''));
+};
+
 function vPresupuestoVer() {
   const v = V.presuVer;
   if (!v) { V.view = 'presupuestos'; return vPresupuestos(); }
@@ -7048,7 +7149,15 @@ function vPresupuestoVer() {
       </div>
       ${d.dto_global_pct ? `<div class="tiny" style="margin-top:6px;text-align:right">Incluye −${d.dto_global_pct} % al pie</div>` : ''}
       <div class="tiny" style="margin-top:12px">Calculado con las reglas ${esc(d.motor_version || '')}. Queda congelado con la tarifa de ese día.</div>
-      <button class="btn btn-gris" data-a="presuEditar" style="margin-top:14px;border-radius:99px">Modificar este presupuesto</button>
+      <div class="row g8" style="margin-top:14px">
+        <button class="btn btn-gris" data-a="presuPdf" style="border-radius:99px">PDF</button>
+        <button class="btn btn-gris" data-a="presuEditar" style="border-radius:99px">Modificar</button>
+      </div>
+      ${d.tl_quotation_id
+        ? '<div class="tiny" style="margin-top:10px;text-align:center;color:var(--verde-o)">✓ Está en Teamleader</div>'
+        : `<button class="btn btn-verde" data-a="presuATeamleader" style="margin-top:8px" ${v.enviando ? 'disabled' : ''}>${v.enviando ? 'Subiendo…' : 'Mandar a Teamleader'}</button>
+           <div class="tiny" style="margin-top:6px;text-align:center">Se crea la oferta en el CRM. Al cliente se la mandas tú desde allí.</div>`}
+      ${d.sync_estado === 'error' && d.sync_error ? `<div class="tiny" style="margin-top:8px;color:var(--rojo)">${esc(d.sync_error)}</div>` : ''}
     </div>` : ''}
   </div>`;
 }
@@ -8784,6 +8893,8 @@ document.addEventListener('click', (e) => {
   if (a === 'presuNuevo') return A.presuNuevo();
   if (a === 'presuAbrir') return A.presuAbrir(d.id);
   if (a === 'presuEditar') return A.presuEditar();
+  if (a === 'presuPdf') return A.presuPdf();
+  if (a === 'presuATeamleader') return A.presuATeamleader();
   if (a === 'presuEditarCancelar') return A.presuEditarCancelar();
   if (a === 'presuQuitarLinea') return A.presuQuitarLinea(d.id);
   if (a === 'presuLineaNueva') return A.presuLineaNueva();

@@ -489,6 +489,14 @@ export async function recalcularPresupuesto(presupuestoId, dtoGlobalPct) {
   });
 }
 
+/** Sube el presupuesto a Teamleader: crea la oferta, no la manda al cliente. */
+export async function presupuestoATeamleader(presupuestoId, soloVer) {
+  return invocar('teamleader-presupuesto', {
+    presupuesto_id: presupuestoId,
+    solo_ver: soloVer === true ? true : undefined,
+  });
+}
+
 /**
  * Cuando alguien cambia una línea que propuso una regla, se apunta qué se
  * propuso y qué se eligió (sql/etapa38). Con cincuenta de estas se sabe qué
