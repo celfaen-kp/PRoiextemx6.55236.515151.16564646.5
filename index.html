@@ -365,7 +365,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '15.2'; // versión visible de la app (única fuente)
+const APP_VERSION = '15.3'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -965,6 +965,8 @@ const esComercial = () => ['presupuestos', 'jefe', 'admin'].includes(rol());
 // La agenda de Ramón es cosa suya y de Administración: los jefes de obra tienen
 // lo suyo. Va también en las políticas de Supabase (sql/etapa33), no solo aquí.
 const verAgenda = () => ['presupuestos', 'admin'].includes(rol());
+// El motor de presupuestos es de presupuestos y Administración (sql/etapa40).
+const verMotor = () => ['presupuestos', 'admin'].includes(rol());
 function rolNombre(r) { return r === 'admin' ? 'Administración' : r === 'jefe' ? 'Jefe de obra' : r === 'presupuestos' ? 'Presupuestos' : 'Operario'; }
 // equipo() = empleados ACTIVOS no admin (para operaciones nuevas: fichaje, imputación, partes).
 const equipo = () => S.users.filter((u) => u.rol !== 'admin' && u.rol !== 'presupuestos' && u.activo !== false);
@@ -1207,7 +1209,7 @@ A.salir = () => {
   V.view = 'login'; render();
   sysAuth.logout().catch(() => {});
 };
-A.ir = (v) => { V.view = v; render(); if (['hoy', 'material', 'obra', 'agenda'].includes(v)) A.cargarMaterial(); if (v === 'visitas') A.cargarVisitas(); if (AG_VISTAS.includes(v)) A.cargarAgenda(); if (v === 'ajustes' && verCRM() && !V.crm.cargado) A.crmEstado(); if (['hoy', 'obras', 'obra', 'partes', 'horas'].includes(v)) refrescarDatos().then(render); };
+A.ir = (v) => { V.view = v; render(); if (v === 'presupuestos') A.cargarPresupuestos(); if (['hoy', 'material', 'obra', 'agenda'].includes(v)) A.cargarMaterial(); if (v === 'visitas') A.cargarVisitas(); if (AG_VISTAS.includes(v)) A.cargarAgenda(); if (v === 'ajustes' && verCRM() && !V.crm.cargado) A.crmEstado(); if (['hoy', 'obras', 'obra', 'partes', 'horas'].includes(v)) refrescarDatos().then(render); };
 A.verObra = (id) => {
   V.obraId = id; V.obraRango = 'total'; V.view = 'obra'; render();
   // El total de una obra se cuenta desde que se abrió, que puede ser de antes
@@ -3253,6 +3255,9 @@ function render() {
   else if (v === 'importar' && esAdmin()) html = vImportar();
   else if (v === 'ajustes') html = vAjustes();
   else if (v === 'material') html = vMaterial();
+  else if (v === 'presupuestos' && verMotor()) html = vPresupuestos();
+  else if (v === 'presuNuevo' && verMotor()) html = vPresuNuevo();
+  else if (v === 'presupuestoVer' && verMotor()) html = vPresupuestoVer();
   else if (v === 'p1') html = vP1();
   else if (v === 'p2') html = vP2();
   else if (v === 'p3') html = vP3();
@@ -3266,7 +3271,7 @@ function render() {
   else if (v === 'clienteVer' && verAgenda()) html = vClienteVer();
   else if (v === 'citaNueva' && puedeCitar()) html = vCitaNueva();
   else if (v === 'citaVer' && verAgenda()) html = vCitaVer();
-  if (V.user && ['hoy', 'obras', 'obra', 'partes', 'horas', 'imputar', 'empleados', 'ajustes', 'material', 'visitas', 'visita', 'agenda', 'clientes', 'clienteVer', 'revisarImp', 'errores'].includes(v)) html += nav(v);
+  if (V.user && ['hoy', 'obras', 'obra', 'partes', 'horas', 'imputar', 'empleados', 'ajustes', 'material', 'presupuestos', 'presupuestoVer', 'visitas', 'visita', 'agenda', 'clientes', 'clienteVer', 'revisarImp', 'errores'].includes(v)) html += nav(v);
   if (!navigator.onLine && V.user) html = '<div class="offline">Sin conexión — todo se guarda en el móvil</div>' + html;
   // Red de seguridad: si un sheet revienta al pintarse (p. ej. depende de
   // datos que cambiaron justo antes, como el usuario tras salir), que se
@@ -5414,7 +5419,7 @@ Object.assign(V, {
   visitaVer: null, confirmarDescartar: false,
 });
 
-const VISITA_VISTAS = ['visitas', 'visita', 'visitaNueva', 'ajustes', 'material', 'agenda', 'clientes', 'clienteNuevo', 'clienteVer', 'citaNueva', 'citaVer'];
+const VISITA_VISTAS = ['visitas', 'visita', 'visitaNueva', 'ajustes', 'material', 'presupuestos', 'presuNuevo', 'presupuestoVer', 'agenda', 'clientes', 'clienteNuevo', 'clienteVer', 'citaNueva', 'citaVer'];
 const PASOS_VISITA = ['Cliente', 'El inmueble', '¿Qué se presupuesta?', 'Fichas', 'Cierre'];
 const KEY_VISITA = 'sysefen.visita.borrador';
 const CAMPOS_COMUN = vSchemas.COMUN.secciones.flatMap((s) => s.campos);
@@ -6476,7 +6481,24 @@ function presupuestoHTML(v, fichas) {
     </div>` : ''}
     ${p.error ? `<div class="aviso-rojo" style="margin-top:12px"><span class="ex">!</span><span style="font:400 13px/1.4 var(--sans)">${esc(p.error)}</span></div>` : ''}
 
-    ${d ? `
+    ${presuPanelHTML()}
+  </div>`;
+}
+
+/** De "Calcular" para abajo: incidencias, líneas, totales, catálogo y guardar.
+ *  Lo comparten la tarjeta de la visita y la pantalla de presupuesto suelto. */
+function presuPanelHTML() {
+  const p = V.presu, d = p.datos;
+  if (!d) return '';
+  const secciones = [];
+  (d.lineas || []).forEach((l) => {
+    const nombre = l.seccion || 'Otros';
+    let s = secciones.find((x) => x.nombre === nombre);
+    if (!s) { s = { nombre, lineas: [] }; secciones.push(s); }
+    s.lineas.push(l);
+  });
+  const deOrigen = { regla: 'regla', partida: 'partida', mano_obra: 'mano de obra', manual: 'a mano', ia: 'sugerida' };
+  return `${d ? `
       ${(d.incidencias || []).length ? `<div style="margin-top:12px">${d.incidencias.map((i) => `<div class="tiny" style="margin-top:6px;color:${i.nivel === 'error' ? 'var(--rojo)' : 'var(--ambar-o)'}">${i.nivel === 'error' ? '⚠' : '·'} ${esc(i.mensaje)}</div>`).join('')}</div>` : ''}
 
       ${secciones.map((s) => `<div style="margin-top:16px">
@@ -6524,25 +6546,46 @@ function presupuestoHTML(v, fichas) {
 
       <button class="btn btn-verde" data-a="presuGuardar" style="margin-top:16px" ${p.guardando ? 'disabled' : ''}>${p.guardando ? 'Guardando…' : p.guardado ? 'Guardar otra versión' : 'Guardar este presupuesto'}</button>
       ${p.guardado ? '<div class="tiny" style="margin-top:8px;text-align:center">✓ Guardado. Queda con la versión de reglas y la tarifa con las que se calculó.</div>' : ''}
-    ` : ''}
-  </div>`;
+    ` : ''}`;
 }
 const eur = (n) => (Number(n) || 0).toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' €';
 
+/**
+ * Calcular y guardar valen igual para el presupuesto de una visita y para el
+ * suelto: lo único que cambia es de dónde salen los datos. `enSuelto()` dice
+ * en cuál de los dos estamos.
+ */
+const enSuelto = () => V.view === 'presuNuevo' && !!V.suelto;
+
 A.presuCalcular = async (categoria) => {
-  const vv = V.visitaVer; if (!vv || !esPresupuestos() && !esAdmin()) return;
+  if (!esPresupuestos() && !esAdmin()) return;
+  const suelto = enSuelto();
+  const vv = V.visitaVer;
+  if (!suelto && !vv) return;
   if (!navigator.onLine) { avisar('Sin conexión: el presupuesto se calcula en el servidor.'); return; }
   const p = V.presu;
   p.cat = categoria; p.cargando = true; p.error = null; render();
   try {
-    p.datos = await visitasDB.presupuestarVisita(vv.visita.id, categoria, {
-      guardar: false, dtoGlobalPct: p.dto, lineasExtra: p.extra,
-    });
+    p.datos = suelto
+      ? await visitasDB.presupuestarSuelto(categoria, datosDelSuelto(V.suelto), {
+          guardar: false, dtoGlobalPct: p.dto, lineasExtra: p.extra,
+          clienteId: V.suelto.clienteId, titulo: tituloDelSuelto(),
+        })
+      : await visitasDB.presupuestarVisita(vv.visita.id, categoria, {
+          guardar: false, dtoGlobalPct: p.dto, lineasExtra: p.extra,
+        });
   } catch (e) {
     p.datos = null; p.error = msgError(e);
   }
   p.cargando = false; render();
 };
+
+/** "Aire acondicionado · Casa de Ana", para reconocerlo en la lista. */
+function tituloDelSuelto() {
+  const f = V.suelto || {};
+  const quien = String(f.titulo || f.cliente || '').trim();
+  return nombreCat(f.cat) + (quien ? ' · ' + quien : '');
+}
 
 A.presuDto = (v) => {
   const n = Math.max(0, Math.min(100, Number(String(v).replace(',', '.')) || 0));
@@ -6551,15 +6594,21 @@ A.presuDto = (v) => {
 A.presuRecalcular = () => { if (V.presu.cat) A.presuCalcular(V.presu.cat); };
 
 A.presuGuardar = async () => {
-  const vv = V.visitaVer, p = V.presu;
-  if (!vv || !p.cat || p.guardando) return;
+  const vv = V.visitaVer, p = V.presu, suelto = enSuelto();
+  if ((!vv && !suelto) || !p.cat || p.guardando) return;
   p.guardando = true; render();
   try {
-    const r = await visitasDB.presupuestarVisita(vv.visita.id, p.cat, {
-      guardar: true, dtoGlobalPct: p.dto, lineasExtra: p.extra,
-    });
+    const r = suelto
+      ? await visitasDB.presupuestarSuelto(p.cat, datosDelSuelto(V.suelto), {
+          guardar: true, dtoGlobalPct: p.dto, lineasExtra: p.extra,
+          clienteId: V.suelto.clienteId, titulo: tituloDelSuelto(),
+        })
+      : await visitasDB.presupuestarVisita(vv.visita.id, p.cat, {
+          guardar: true, dtoGlobalPct: p.dto, lineasExtra: p.extra,
+        });
     p.datos = r; p.guardado = r.presupuesto_id || null;
     toast('Presupuesto guardado' + (r.estado === 'revisar' ? ' · queda por revisar.' : '.'));
+    V.presuLista.cargado = false; A.cargarPresupuestos();
   } catch (e) { avisar('No se pudo guardar: ' + msgError(e)); }
   p.guardando = false; render();
 };
@@ -6603,6 +6652,174 @@ A.presuCantidadExtra = (i, v) => {
   const l = V.presu.extra[Number(i)]; if (!l) return;
   l.cantidad = Math.max(0, Number(String(v).replace(',', '.')) || 0);
 };
+
+/* =============================================================================
+ * PRESUPUESTOS · la sección propia (sql/etapa42)
+ *
+ * Un presupuesto no siempre viene de una visita: muchas veces se hace por
+ * teléfono o para un cliente de siempre. Y cuando hay visita, la visita es
+ * antes y el presupuesto después. Así que aquí se ven todos y se crean sueltos,
+ * y desde la ficha de una visita se sigue pudiendo crear con sus datos.
+ *
+ * El cálculo lo hace el servidor, igual que en la visita: la app solo recoge
+ * los cuatro datos que mandan y enseña lo que vuelve.
+ * ========================================================================== */
+Object.assign(V, {
+  presuLista: { cargado: false, cargando: false, error: null, filas: [] },
+  presuVer: null,
+  suelto: null,
+});
+
+const SISTEMAS_AIRE = [
+  ['multisplit', 'Multisplit'], ['split_1x1', 'Splits 1×1'],
+  ['conductos', 'Conductos'], ['cassette', 'Cassette'], ['suelo_techo', 'Suelo/techo'],
+];
+
+const presuNuevoVacio = () => ({
+  cat: 'aire_acondicionado', clienteId: null, cliente: '', titulo: '',
+  tipo_sistema: 'multisplit', equipos: 1, metros: '',
+});
+
+/** Lo que se le manda al motor desde la pantalla suelta. */
+function datosDelSuelto(f) {
+  const n = Math.max(1, Math.min(30, Number(f.equipos) || 1));
+  const metros = Number(String(f.metros || '').replace(',', '.')) || 0;
+  return {
+    tipo_sistema: f.tipo_sistema,
+    // El motor cuenta estancias y suma metros: se le dan tantas como equipos.
+    estancias: Array.from({ length: n }, (_, i) => ({ nombre: 'Equipo ' + (i + 1) })),
+    distancias_lineas: metros ? [{ estancia: 'total', metros }] : [],
+  };
+}
+
+A.cargarPresupuestos = async () => {
+  const l = V.presuLista; if (l.cargando) return;
+  l.cargando = true; if (!l.cargado) render();
+  try { l.filas = await visitasDB.listarPresupuestos(); l.error = null; }
+  catch (e) { l.error = msgError(e); }
+  l.cargando = false; l.cargado = true;
+  if (['presupuestos', 'presuNuevo'].includes(V.view)) render();
+};
+
+A.presuNuevo = () => {
+  V.suelto = presuNuevoVacio();
+  V.presu = { cat: null, cargando: false, error: null, datos: null, dto: 0, extra: [], guardando: false, buscar: '', buscando: false, resultados: [], guardado: null };
+  V.view = 'presuNuevo'; scrollMemo.presuNuevo = 0; render();
+  if (!V.agenda.cargado) A.cargarAgenda();
+};
+A.presuSueltoCampo = (k, v) => { if (V.suelto) V.suelto[k] = v; };
+A.presuSueltoChip = (k, v) => { if (V.suelto) { V.suelto[k] = v; render(); } };
+A.presuSueltoCliente = (id) => {
+  const c = agCliente(id); if (!V.suelto || !c) return;
+  V.suelto.clienteId = V.suelto.clienteId === id ? null : id;
+  V.suelto.cliente = V.suelto.clienteId ? c.nombre : '';
+  render();
+};
+A.presuAbrir = async (id) => {
+  V.presuVer = { id, cargando: true, datos: null, error: null };
+  V.view = 'presupuestoVer'; scrollMemo.presupuestoVer = 0; render();
+  try { V.presuVer.datos = await visitasDB.verPresupuesto(id); }
+  catch (e) { V.presuVer.error = msgError(e); }
+  V.presuVer.cargando = false; render();
+};
+
+function vPresupuestos() {
+  const l = V.presuLista;
+  return `<div class="hdr">
+    ${marcaSysefen(false)}
+    <div class="row" style="justify-content:space-between">
+      <div class="h1">Presupuestos</div>
+      <button class="pill" data-a="presuNuevo" style="background:var(--tinta);color:#fff">+ Nuevo</button>
+    </div>
+    <div class="sub" style="margin-top:8px">Los de las visitas y los sueltos, juntos.</div>
+  </div>
+  <div class="scroll pad pb-nav">
+    ${l.error ? `<div class="card" style="background:var(--rojo-cl)"><div class="sub" style="color:var(--rojo)">${esc(l.error)}</div></div>` : ''}
+    ${!l.cargado && l.cargando ? '<div class="tiny">Cargando…</div>' : ''}
+    ${l.filas.map((x) => `<div class="card" data-a="presuAbrir" data-id="${x.id}" style="margin-bottom:10px;cursor:pointer">
+      <div class="row g8"><span class="badge" style="background:rgba(20,23,15,.06);color:var(--tinta)">${esc(nombreCat(x.categoria) || x.categoria)}</span>
+        ${x.estado === 'revisar' ? '<span class="badge" style="background:var(--rojo-cl);color:var(--rojo)">Por revisar</span>' : ''}
+        <div class="grow"></div><span class="tiny">${fechaCorta(x.created_at)}</span></div>
+      <div class="h2" style="margin-top:9px">${esc(x.titulo || (x.cliente && x.cliente.nombre) || 'Sin título')}</div>
+      <div class="row" style="align-items:baseline;justify-content:space-between;margin-top:8px">
+        <div class="tiny">${x.visita && x.visita.codigo ? 'Visita ' + esc(x.visita.codigo) : 'Sin visita'}</div>
+        <div class="num" style="font-size:19px">${eur(x.total_venta)}</div>
+      </div>
+    </div>`).join('') || (l.cargado && !l.error ? `<div class="card"><div class="h2">Todavía no hay presupuestos</div>
+      <div class="sub" style="margin-top:6px">Dale a «+ Nuevo», o entra en una visita y calcúlalo desde su ficha.</div></div>` : '')}
+  </div>`;
+}
+
+function vPresuNuevo() {
+  const f = V.suelto || presuNuevoVacio(), p = V.presu;
+  const q = String(f.cliente || '').trim().toLowerCase();
+  const clientes = q.length >= 2 && !f.clienteId
+    ? V.agenda.clientes.filter((c) => String(c.nombre || '').toLowerCase().includes(q)).slice(0, 6) : [];
+  return `<div class="hdr-dark">
+    <div class="back" data-a="ir" data-v="presupuestos">‹ Presupuestos</div>
+    <div style="font:600 27px/1.1 var(--cond)">Presupuesto nuevo</div>
+    <div class="sub" style="color:rgba(255,255,255,.5);margin-top:6px">Sin visita. Solo hacen falta cuatro datos.</div>
+  </div>
+  <div class="scroll pad pb-nav">
+    <div class="card">
+      <div class="lbl">Para quién (opcional)</div>
+      <input class="inp" data-f="presuCliente" value="${esc(f.cliente)}" placeholder="Nombre del cliente" autocomplete="off" style="margin-top:8px">
+      ${clientes.length ? `<div style="margin-top:8px">${clientes.map((c) => `<div class="row" data-a="presuSueltoCliente" data-id="${c.id}" style="padding:9px 0;border-bottom:1px solid var(--l1);cursor:pointer">
+        <div class="grow" style="font:500 14px var(--sans)">${esc(c.nombre)}</div><span class="tiny">del CRM</span></div>`).join('')}</div>` : ''}
+      ${f.clienteId ? '<div class="tiny" style="margin-top:7px;color:var(--verde-o)">✓ Enganchado a su ficha del CRM</div>' : ''}
+
+      <div class="lbl" style="margin:16px 0 8px">Qué se presupuesta</div>
+      <div class="wrap">${vSchemas.CATEGORIAS.map((c) => `<div class="chip ${f.cat === c.key ? 'sel' : ''}" data-a="presuSueltoChip" data-k="cat" data-v="${c.key}">${esc(c.nombre)}</div>`).join('')}</div>
+      ${CATS_CON_MOTOR.includes(f.cat) ? '' : `<div class="tiny" style="margin-top:8px;color:var(--ambar-o)">Todavía no hay reglas para ${esc(nombreCat(f.cat))}: de momento solo calcula aire acondicionado. Puedes montarlo a mano añadiendo líneas del catálogo.</div>`}
+
+      <div class="lbl" style="margin:16px 0 8px">Tipo de sistema</div>
+      <div class="wrap">${SISTEMAS_AIRE.map(([k, t]) => `<div class="chip ${f.tipo_sistema === k ? 'sel' : ''}" data-a="presuSueltoChip" data-k="tipo_sistema" data-v="${k}">${t}</div>`).join('')}</div>
+
+      <div class="row g8" style="margin-top:16px">
+        <div class="grow"><div class="lbl">Equipos interiores</div>
+          <input class="inp" data-f="presuEquipos" value="${esc(String(f.equipos))}" inputmode="numeric" style="margin-top:8px"></div>
+        <div class="grow"><div class="lbl">Metros de línea (total)</div>
+          <input class="inp" data-f="presuMetros" value="${esc(String(f.metros))}" inputmode="decimal" placeholder="0" style="margin-top:8px"></div>
+      </div>
+      <div class="tiny" style="margin-top:8px">Van 3 m incluidos por equipo; lo que pase de ahí se cobra aparte.</div>
+
+      <button class="btn btn-verde" data-a="presuCalcular" data-c="${esc(f.cat)}" style="margin-top:16px" ${p.cargando ? 'disabled' : ''}>${p.cargando ? 'Calculando…' : 'Calcular'}</button>
+      ${p.error ? `<div class="aviso-rojo" style="margin-top:12px"><span class="ex">!</span><span style="font:400 13px/1.4 var(--sans)">${esc(p.error)}</span></div>` : ''}
+    </div>
+    ${p.datos ? `<div class="card" style="margin-top:12px">${presuPanelHTML()}</div>` : ''}
+  </div>`;
+}
+
+function vPresupuestoVer() {
+  const v = V.presuVer;
+  if (!v) { V.view = 'presupuestos'; return vPresupuestos(); }
+  const d = v.datos;
+  const lineas = d ? (d.lineas || []).slice().sort((a, b) => (a.orden || 0) - (b.orden || 0)) : [];
+  return `<div class="hdr-dark">
+    <div class="back" data-a="ir" data-v="presupuestos">‹ Presupuestos</div>
+    <div style="font:600 27px/1.1 var(--cond)">${esc((d && (d.titulo || (d.cliente && d.cliente.nombre))) || 'Presupuesto')}</div>
+    <div class="sub" style="color:rgba(255,255,255,.5);margin-top:6px">${d ? esc(nombreCat(d.categoria) || d.categoria) + ' · ' + fechaCorta(d.created_at) : v.cargando ? 'Cargando…' : ''}</div>
+  </div>
+  <div class="scroll pad pb-nav">
+    ${v.error ? `<div class="card" style="background:var(--rojo-cl)"><div class="sub" style="color:var(--rojo)">${esc(v.error)}</div></div>` : ''}
+    ${d ? `<div class="card">
+      ${(d.incidencias || []).map((i) => `<div class="tiny" style="margin-bottom:6px;color:${i.nivel === 'error' ? 'var(--rojo)' : 'var(--ambar-o)'}">${i.nivel === 'error' ? '⚠' : '·'} ${esc(i.mensaje)}</div>`).join('')}
+      ${lineas.map((l) => `<div style="padding:9px 0;border-bottom:1px solid var(--l1)">
+        <div class="row" style="align-items:baseline;justify-content:space-between;gap:12px">
+          <div class="grow" style="font:500 14px/1.3 var(--sans)">${esc(l.descripcion)}</div>
+          <div class="num" style="font-size:14px;flex:none">${eur(l.precio_venta)}</div>
+        </div>
+        <div class="tiny" style="margin-top:3px;opacity:.75">${esc(String(l.cantidad))} ${esc(l.unidad || 'ud')} × ${eur(l.precio_tarifa)}${l.dto_linea_pct ? ' · −' + l.dto_linea_pct + '%' : ''}</div>
+      </div>`).join('')}
+      <div class="row" style="justify-content:space-between;margin-top:14px;padding-top:12px;border-top:2px solid var(--tinta)">
+        <span style="font:600 16px var(--sans)">Total sin IVA</span>
+        <span class="num" style="font-size:22px">${eur(d.total_venta)}</span>
+      </div>
+      ${d.dto_global_pct ? `<div class="tiny" style="margin-top:6px;text-align:right">Incluye −${d.dto_global_pct} % al pie</div>` : ''}
+      <div class="tiny" style="margin-top:12px">Calculado con las reglas ${esc(d.motor_version || '')}. Queda congelado con la tarifa de ese día.</div>
+    </div>` : ''}
+  </div>`;
+}
 
 /* =============================================================================
  * AGENDA DE PRESUPUESTOS · clientes y citas (fase A)
@@ -7683,7 +7900,7 @@ A.visitaSeguirMedias = () => { V.sheet = null; A.seguirBorrador(); };
 /* --- nav --- */
 function nav(v) {
   const items = esPresupuestos()
-    ? [['agenda', 'Agenda', '5px'], ['clientes', 'Clientes', '3px'], ['material', 'Material', '4px'], ['ajustes', 'Perfil', '99px']]
+    ? [['agenda', 'Agenda', '5px'], ['clientes', 'Clientes', '3px'], ['presupuestos', 'Presupuestos', '2px'], ['material', 'Material', '4px'], ['ajustes', 'Perfil', '99px']]
     : esAdmin()
     ? [['hoy', 'Hoy', '99px'], ['empleados', 'Empleados', '4px'], ['obras', 'Obras', '5px'], ['partes', 'Partes', '3px'], ['horas', 'Horas', '2px'], ['agenda', 'Citas', '6px'], ['ajustes', 'Ajustes', '99px']]
     : puedeCrear()
@@ -7695,6 +7912,7 @@ function nav(v) {
     || (id === 'ajustes' && v === 'errores')
     || (id === 'empleados' && (v === 'empleado' || v === 'planilla'))
     || (id === 'visitas' && v === 'visita')
+    || (id === 'presupuestos' && ['presuNuevo', 'presupuestoVer'].includes(v))
     || (id === 'agenda' && (v === 'citaVer' || (!esPresupuestos() && (v === 'clientes' || v === 'clienteVer'))))
     || (id === 'clientes' && ['clienteVer', 'visitas', 'visita'].includes(v));
   return `<div class="nav">${items.map(([id, l, r]) => `<div class="${act(id) ? 'on' : ''}" data-a="ir" data-v="${id}"><i style="border-radius:${r}"></i><span>${l}</span></div>`).join('')}</div>`;
@@ -8330,6 +8548,10 @@ document.addEventListener('click', (e) => {
   if (a === 'otroUsuario') return A.otroUsuario();
   if (a === 'otroUsuarioSeguir') return A.otroUsuarioSeguir();
   if (a === 'ir') return A.ir(d.v);
+  if (a === 'presuNuevo') return A.presuNuevo();
+  if (a === 'presuAbrir') return A.presuAbrir(d.id);
+  if (a === 'presuSueltoChip') { A.presuSueltoChip(d.k, d.v); return; }
+  if (a === 'presuSueltoCliente') return A.presuSueltoCliente(d.id);
   if (a.startsWith('mat') || a.startsWith('nota') || a === 'dictar') {
     if (a === 'matTab') { V.mat.tab = d.t; return render(); }
     if (a === 'matFiltro') { V.mat.filtro = d.k; return render(); }
@@ -8489,6 +8711,9 @@ document.addEventListener('input', (e) => {
   if (f === 'ag_cita') { if (V.citaDraft) V.citaDraft[t.dataset.k] = t.value; return; }
   if (f === 'ag_citaFecha') { if (V.citaDraft) { sincronizarRuedas(); V.citaDraft.dia = t.value || null; render(); } return; }
   if (f === 'loginNombre') { V.loginNombre = t.value; return; }
+  if (f === 'presuCliente') { if (V.suelto) { V.suelto.cliente = t.value; V.suelto.clienteId = null; render(); } return; }
+  if (f === 'presuEquipos') { t.value = t.value.replace(/\D/g, '').slice(0, 2); A.presuSueltoCampo('equipos', t.value); return; }
+  if (f === 'presuMetros') { A.presuSueltoCampo('metros', t.value); return; }
   if (f === 'matTexto') { V.matNuevo.texto = t.value; V.matNuevo.voz = false; return; }
   if (f === 'notaTexto') { V.notaNueva.texto = t.value; return; }
   if (f === 'matImporte') { if (V.sheet) V.sheet.importe = t.value; return; }

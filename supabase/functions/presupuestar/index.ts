@@ -19,6 +19,8 @@
 //
 // USO (POST con JSON):
 //   { "visita_id": "uuid", "categoria": "aire_acondicionado" }
+//   { "categoria": "...", "datos": {...} }   sin visita: se presupuesta a secas
+//   { ..., "cliente_id": "uuid", "titulo": "Aire · Casa de Ana" }
 //   { ..., "ficha_id": "uuid" }        de qué ficha salen los datos
 //   { ..., "datos": { ... } }          para probar sin tocar la visita
 //   { ..., "dto_global_pct": 10 }      descuento al pie, lo elige la persona
@@ -64,23 +66,31 @@ Deno.serve(async (req) => {
   // deno-lint-ignore no-explicit-any
   let b: any;
   try { b = await req.json(); } catch { return json({ error: 'Petición mal formada.' }, 400); }
-  const visitaId = String(b.visita_id || '');
+  const uuid = (v: unknown) => (/^[0-9a-f-]{36}$/i.test(String(v || '')) ? String(v) : null);
+  const visitaId = uuid(b.visita_id);
   const categoria = String(b.categoria || '');
-  if (!/^[0-9a-f-]{36}$/i.test(visitaId)) return json({ error: 'Falta la visita.' }, 400);
   if (!categoria) return json({ error: 'Falta la categoría.' }, 400);
   const guardar = b.guardar !== false;
 
-  // --- los datos de la ficha --------------------------------------------------
+  // --- los datos ---------------------------------------------------------------
+  // De la ficha de una visita, o a secas: se presupuesta muchas veces sin haber
+  // ido a ver nada, y la visita, cuando la hay, es antes y esto es después.
   let datos = b.datos && typeof b.datos === 'object' ? b.datos : null;
-  let fichaId: string | null = b.ficha_id || null;
-  const { data: visita } = await sb.from('visitas').select('id, cliente_id').eq('id', visitaId).maybeSingle();
-  if (!visita) return json({ error: 'Esa visita no existe.' }, 404);
-  if (!datos) {
-    const { data: ficha } = await sb.from('visita_fichas')
-      .select('id, datos').eq('visita_id', visitaId).eq('categoria', categoria).maybeSingle();
-    if (!ficha) return json({ error: 'Esa visita no tiene ficha de ' + categoria + '.' }, 400);
-    datos = ficha.datos || {};
-    fichaId = ficha.id;
+  let fichaId: string | null = uuid(b.ficha_id);
+  let clienteId = uuid(b.cliente_id);
+  if (visitaId) {
+    const { data: visita } = await sb.from('visitas').select('id, cliente_id').eq('id', visitaId).maybeSingle();
+    if (!visita) return json({ error: 'Esa visita no existe.' }, 404);
+    clienteId = clienteId || visita.cliente_id || null;
+    if (!datos) {
+      const { data: ficha } = await sb.from('visita_fichas')
+        .select('id, datos').eq('visita_id', visitaId).eq('categoria', categoria).maybeSingle();
+      if (!ficha) return json({ error: 'Esa visita no tiene ficha de ' + categoria + '.' }, 400);
+      datos = ficha.datos || {};
+      fichaId = ficha.id;
+    }
+  } else if (!datos) {
+    return json({ error: 'Sin visita hay que mandar los datos.' }, 400);
   }
 
   // --- la configuración vigente ------------------------------------------------
@@ -202,6 +212,8 @@ Deno.serve(async (req) => {
   const { data: creado, error: errP } = await sb.from('presupuestos').insert({
     visita_id: visitaId,
     ficha_id: fichaId,
+    cliente_id: clienteId,
+    titulo: String(b.titulo || '').trim().slice(0, 200) || null,
     categoria,
     conjunto_reglas_id: conjunto.id,
     tarifa_id: tarifaId,

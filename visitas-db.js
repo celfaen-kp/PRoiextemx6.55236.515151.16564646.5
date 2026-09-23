@@ -417,6 +417,42 @@ export async function presupuestarVisita(visitaId, categoria, opciones) {
   });
 }
 
+/**
+ * Calcula un presupuesto SIN visita: se le pasan los datos a mano. Es lo normal
+ * cuando se presupuesta por teléfono o para un cliente de siempre.
+ */
+export async function presupuestarSuelto(categoria, datos, opciones) {
+  const o = opciones || {};
+  return invocar('presupuestar', {
+    categoria,
+    datos,
+    cliente_id: o.clienteId || undefined,
+    titulo: o.titulo || undefined,
+    guardar: o.guardar === true,
+    dto_global_pct: o.dtoGlobalPct == null ? undefined : o.dtoGlobalPct,
+    lineas_extra: o.lineasExtra && o.lineasExtra.length ? o.lineasExtra : undefined,
+  });
+}
+
+/** Todos los presupuestos guardados, los de visita y los sueltos. */
+export async function listarPresupuestos(limite = 100) {
+  return unwrap(
+    await supabase.from('presupuestos')
+      .select('*, cliente:clientes_cache(id, nombre), visita:visitas(id, codigo)')
+      .order('created_at', { ascending: false })
+      .limit(limite)
+  ) || [];
+}
+
+/** Un presupuesto guardado, con sus líneas y sus incidencias. */
+export async function verPresupuesto(id) {
+  return unwrap(
+    await supabase.from('presupuestos')
+      .select('*, cliente:clientes_cache(id, nombre), visita:visitas(id, codigo), lineas:presupuesto_lineas(*), incidencias:presupuesto_incidencias(*)')
+      .eq('id', id).single()
+  );
+}
+
 /** Los presupuestos ya guardados de una visita, con sus líneas. */
 export async function presupuestosDeVisita(visitaId) {
   return unwrap(
