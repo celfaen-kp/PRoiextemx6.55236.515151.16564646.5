@@ -365,7 +365,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '15.4'; // versión visible de la app (única fuente)
+const APP_VERSION = '15.5'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -6436,7 +6436,7 @@ Object.assign(V, {
            extra: [], guardando: false, buscar: '', buscando: false, resultados: [], guardado: null },
 });
 
-const CATS_CON_MOTOR = ['aire_acondicionado', 'aerotermia'];
+const CATS_CON_MOTOR = ['aire_acondicionado', 'aerotermia', 'solar'];
 
 function presuResultadosHTML() {
   const p = V.presu;
@@ -6682,6 +6682,8 @@ const presuNuevoVacio = () => ({
   // aerotermia: la potencia se pone a mano, calcularla desde la casa no está
   // calibrado (MOTOR-PRESUPUESTOS.md §7).
   kw: '', circuitos: 1, acs: 0, sustituye: false, apoyo: false, limpieza: false,
+  // fotovoltaica: los kWp salen de los paneles, no se preguntan.
+  paneles: '', wp: 510, bateria: '',
 });
 
 /**
@@ -6691,6 +6693,14 @@ const presuNuevoVacio = () => ({
  */
 function datosDelSuelto(f) {
   const num = (v) => Number(String(v == null ? '' : v).replace(',', '.')) || 0;
+  if (f.cat === 'solar') {
+    return {
+      paneles_manual: Math.max(0, Math.min(400, Number(f.paneles) || 0)),
+      wp_manual: num(f.wp),
+      baterias: num(f.bateria) > 0 ? 'si' : 'no',
+      baterias_kwh: num(f.bateria),
+    };
+  }
   if (f.cat === 'aerotermia') {
     const c = Math.max(1, Math.min(6, Number(f.circuitos) || 1));
     return {
@@ -6799,7 +6809,7 @@ function vPresuNuevo() {
       <div class="wrap">${vSchemas.CATEGORIAS.map((c) => `<div class="chip ${f.cat === c.key ? 'sel' : ''}" data-a="presuSueltoChip" data-k="cat" data-v="${c.key}">${esc(c.nombre)}</div>`).join('')}</div>
       ${CATS_CON_MOTOR.includes(f.cat) ? '' : `<div class="tiny" style="margin-top:8px;color:var(--ambar-o)">Todavía no hay reglas para ${esc(nombreCat(f.cat))}: de momento solo calcula aire acondicionado. Puedes montarlo a mano añadiendo líneas del catálogo.</div>`}
 
-      ${f.cat === 'aerotermia' ? camposAeroHTML(f) : camposAireHTML(f)}
+      ${f.cat === 'aerotermia' ? camposAeroHTML(f) : f.cat === 'solar' ? camposSolarHTML(f) : camposAireHTML(f)}
 
       <button class="btn btn-verde" data-a="presuCalcular" data-c="${esc(f.cat)}" style="margin-top:16px" ${p.cargando ? 'disabled' : ''}>${p.cargando ? 'Calculando…' : 'Calcular'}</button>
       ${p.error ? `<div class="aviso-rojo" style="margin-top:12px"><span class="ex">!</span><span style="font:400 13px/1.4 var(--sans)">${esc(p.error)}</span></div>` : ''}
@@ -6840,6 +6850,23 @@ function camposAeroHTML(f) {
       <div class="lbl" style="margin:16px 0 8px">Y además</div>
       <div class="wrap">${si('sustituye', 'Quitar la caldera')}${si('apoyo', 'Resistencia de apoyo')}${si('limpieza', 'Limpiar el circuito')}</div>
       <div class="tiny" style="margin-top:8px">La máquina sale de la tarifa Vaillant por potencia; si quieres otra marca, la añades del catálogo.</div>`;
+}
+
+/** Fotovoltaica: cuántos paneles y de cuántos vatios. Los kWp salen solos. */
+function camposSolarHTML(f) {
+  const n = Number(f.paneles) || 0, wp = Number(f.wp) || 510;
+  const kwp = Math.round(n * wp) / 1000;
+  return `<div class="row g8" style="margin-top:16px">
+        <div class="grow"><div class="lbl">Paneles</div>
+          <input class="inp" data-f="presuCampo" data-k="paneles" value="${esc(String(f.paneles))}" inputmode="numeric" placeholder="10" style="margin-top:8px"></div>
+        <div class="grow"><div class="lbl">Vatios por panel</div>
+          <input class="inp" data-f="presuCampo" data-k="wp" value="${esc(String(f.wp))}" inputmode="numeric" style="margin-top:8px"></div>
+      </div>
+      <div class="tiny" style="margin-top:8px">${kwp ? 'Son ' + kwp.toLocaleString('es-ES') + ' kWp.' : 'Los kWp salen de los paneles.'}${kwp > 12 ? ' Por encima de 12 kWp el kit y el inversor van a mano: solo hay un presupuesto de esos y no da para una regla.' : ''}</div>
+
+      <div class="lbl" style="margin:16px 0 8px">Baterías</div>
+      <input class="inp" data-f="presuCampo" data-k="bateria" value="${esc(String(f.bateria))}" inputmode="decimal" placeholder="kWh (vacío = sin baterías)">
+      <div class="tiny" style="margin-top:8px">La batería no tiene regla todavía: manda el precio ella sola y con los presupuestos que hay no sale un precio por kWh. Se añade del catálogo.</div>`;
 }
 
 function vPresupuestoVer() {
@@ -8767,6 +8794,7 @@ document.addEventListener('input', (e) => {
   if (f === 'presuCampo') {
     const k = t.dataset.k;
     if (k === 'equipos' || k === 'circuitos') t.value = t.value.replace(/\D/g, '').slice(0, 2);
+    if (k === 'paneles' || k === 'wp') t.value = t.value.replace(/\D/g, '').slice(0, k === 'wp' ? 4 : 3);
     A.presuSueltoCampo(k, t.value);
     return;
   }
