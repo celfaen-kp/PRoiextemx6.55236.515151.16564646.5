@@ -96,3 +96,14 @@ setTimeout(function () {
     resultado();
   }).catch(function (e) { print('ERROR: ' + e + '\n' + (e.stack || '')); });
 }, 10);
+
+/* Administración no tiene pestaña de Presupuestos (ya lleva siete): entra por
+ * una tarjeta de su pantalla de Hoy. Que esa puerta exista. */
+setTimeout(function () {
+  V.user = { id: 'u0' };   // Administración
+  S.fichajes = []; S.obras = []; S.partes = []; S.imputaciones = [];
+  var h = vHoyAdmin(yo());
+  titulo('la puerta de Administración');
+  comprueba('tarjeta de Presupuestos en Hoy', h.indexOf('data-v="presupuestos"') > -1);
+  resultado();
+}, 400);

@@ -365,7 +365,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '15.5'; // versión visible de la app (única fuente)
+const APP_VERSION = '15.6'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -3481,6 +3481,10 @@ function vHoyAdmin(u) {
     <div class="row g10" style="margin-top:10px">
       <div class="card grow" data-a="ir" data-v="obras" style="cursor:pointer;text-align:center"><div class="lbl">Obras</div><div style="font:600 15px var(--sans);margin-top:6px">Abrir</div></div>
       <div class="card grow" data-a="ir" data-v="partes" style="cursor:pointer;text-align:center"><div class="lbl">Partes</div><div style="font:600 15px var(--sans);margin-top:6px">Abrir</div></div>
+    </div>
+    <div class="row g10" style="margin-top:10px">
+      <div class="card grow" data-a="ir" data-v="presupuestos" style="cursor:pointer;text-align:center"><div class="lbl">Presupuestos</div><div style="font:600 15px var(--sans);margin-top:6px">Abrir</div></div>
+      <div class="card grow" data-a="ir" data-v="agenda" style="cursor:pointer;text-align:center"><div class="lbl">Citas</div><div style="font:600 15px var(--sans);margin-top:6px">Abrir</div></div>
     </div>
   </div></div>`;
 }
@@ -7992,6 +7996,7 @@ function nav(v) {
     || (id === 'empleados' && (v === 'empleado' || v === 'planilla'))
     || (id === 'visitas' && v === 'visita')
     || (id === 'presupuestos' && ['presuNuevo', 'presupuestoVer'].includes(v))
+    || (id === 'hoy' && esAdmin() && ['presupuestos', 'presuNuevo', 'presupuestoVer'].includes(v))
     || (id === 'agenda' && (v === 'citaVer' || (!esPresupuestos() && (v === 'clientes' || v === 'clienteVer'))))
     || (id === 'clientes' && ['clienteVer', 'visitas', 'visita'].includes(v));
   return `<div class="nav">${items.map(([id, l, r]) => `<div class="${act(id) ? 'on' : ''}" data-a="ir" data-v="${id}"><i style="border-radius:${r}"></i><span>${l}</span></div>`).join('')}</div>`;
