@@ -2731,8 +2731,15 @@ const enAppInstalada = () => {
 // En la app instalada ya no salta directamente la hoja de compartir: primero
 // se enseña el PDF (las mismas páginas que lleva dentro) y desde ahí se
 // comparte con un toque. Antes no había forma de mirarlo sin mandarlo.
+// En cualquier móvil, instalada o en Safari: imprimir desde Safari tampoco
+// sirve, porque al compartir desde ahí se manda la página de la app, no el PDF.
+const enMovil = () => {
+  try { return enAppInstalada() || window.matchMedia('(pointer: coarse)').matches; }
+  catch (e) { return false; }
+};
+
 async function salidaImpresion(nombre, title, text) {
-  if (!enAppInstalada()) { setTimeout(() => window.print(), 60); return; }
+  if (!enMovil()) { setTimeout(() => window.print(), 60); return; }
   try {
     const blob = await pdfDeImpresion();
     const archivo = new File([blob], nombre, { type: 'application/pdf' });
@@ -6404,7 +6411,7 @@ function vVisita() {
     <div class="lbl">La ficha en papel</div>
     <div class="sub" style="margin-top:6px;font-size:13px">El PDF lleva el inmueble, cada categoría y las fotos. La copia va a Drive, a la carpeta del cliente.</div>
     <div class="row g8" style="margin-top:14px">
-      ${enAppInstalada()
+      ${enMovil()
         // En el móvil los dos botones acababan en la misma hoja de compartir:
         // window.print() no existe ahí. Se deja uno solo y se dice qué es.
         ? `<button class="pill grow" data-a="visitaPdf" style="padding:12px;text-align:center">PDF de la visita</button>`
