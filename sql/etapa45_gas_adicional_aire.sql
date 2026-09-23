@@ -32,15 +32,11 @@ begin;
 -- ---------------------------------------------------------------------------
 -- EL PRECIO DEL KILO DE R32, PUESTO. ← CAMBIA ESTE NÚMERO Y EJECUTA
 --
---   El gas cuesta 49,64 €/kg. Aquí va con un 20 % encima (59,57 €/kg) porque
---   la recarga lleva material que no está en ninguna otra línea: nitrógeno
---   para presurizar, el consumo de la botella, latiguillos y el rato de carga
---   por cada metro de más. La mano de obra del equipo sí está cubierta: es el
---   C104, 450 € por unidad interior.
---
---   Con un 8 % en vez de un 20 % serían 53,61.
+--   El kilo va a 49 €. El gas se compra a 49,64 con descuento ya aplicado, así
+--   que ese precio se deja tal cual, sin recargo: el material de la recarga y
+--   el trabajo van en el C104 (450 € por unidad interior).
 -- ---------------------------------------------------------------------------
-create temporary table precio_gas on commit drop as select 59.57::numeric as eur_kg;
+create temporary table precio_gas on commit drop as select 49.00::numeric as eur_kg;
 
 
 -- 1 · Cuántos metros van incluidos de gas, según el sistema -------------------

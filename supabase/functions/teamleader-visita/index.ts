@@ -44,18 +44,23 @@ const CATEGORIAS: Record<string, string> = {
 };
 
 // En qué embudo (pipeline) de Teamleader va cada tipo de visita. Se busca por
-// el nombre del embudo, para no depender de ids que cambian si alguien lo
-// rehace. Si una visita tiene varias categorías, manda la primera de esta
-// lista que tenga embudo; fotovoltaica va la última porque es el embudo por
-// defecto de Teamleader y ahí acaba igualmente todo lo que no encaje.
-// (Antes no se decía el embudo y una visita de solo aerotermia se fue al de
-// fotovoltaica, donde nadie la buscaba.)
+// el NOMBRE del embudo, para no depender de ids que cambian si alguien lo
+// rehace. Si una visita tiene varias categorías, manda la primera de esta lista
+// que tenga embudo.
+//
+// Hoy los embudos de Sysefen son tres: OTROS, FOTOVOLTAICA y AEROTERMIA. Aire
+// acondicionado y electricidad no tienen el suyo, así que van a OTROS: si no se
+// dice nada, Teamleader los deja en su embudo por defecto, que es FOTOVOLTAICA,
+// y allí no los busca nadie. El día que se cree el embudo de aire, esto lo
+// encuentra solo por el nombre y deja de usar OTROS.
 const EMBUDOS: [string, RegExp][] = [
   ['aerotermia', /aerot/i],
   ['aire_acondicionado', /aire|clima/i],
   ['electricidad', /electri/i],
   ['solar', /fotovolt|solar|placas|paneles/i],
 ];
+// El cajón de sastre, cuando el oficio no tiene embudo propio.
+const EMBUDO_RESTO = /otros|varios|general/i;
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -117,6 +122,10 @@ async function faseDeEmbudo(token: string, categorias: string[]) {
       if (!categorias.includes(cat)) continue;
       elegido = embudos.find((x) => patron.test(String(x.name || ''))) || null;
       if (elegido) break;
+    }
+    // Ningún embudo para lo que se ha visitado: a OTROS, no al de por defecto.
+    if (!elegido && categorias.length) {
+      elegido = embudos.find((x) => EMBUDO_RESTO.test(String(x.name || ''))) || null;
     }
     if (!elegido) return null;
 
