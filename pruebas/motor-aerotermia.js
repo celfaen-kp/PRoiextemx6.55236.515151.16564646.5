@@ -121,6 +121,21 @@ r = calcular('aerotermia', { carga_termica_kw: 6.4, potencia_kw: 0,
 igual('manda la carga térmica de la ficha', r.variables.potencia_diseno_kw, 6.4);
 igual('y elige la de 6 kW', r.lineas.filter(function (l) { return l.producto_ref; })[0].producto_ref, '0020306793');
 
+titulo('una visita no echa de menos los datos del presupuesto suelto');
+// Como llega de verdad: la ficha trae carga térmica y acumulador, y nada de
+// potencia_kw ni acs_litros_manual, que solo existen en la pantalla suelta.
+r = calcular('aerotermia', { carga_termica_kw: 6.4, acs_acumulador_litros: 200,
+  emisores_previstos: ['suelo_radiante'], sistema_actual: 'caldera_gas' }, config);
+var faltan = r.incidencias.filter(function (i) { return i.codigo === 'campo_faltante'; }).map(function (i) { return i.campo; });
+comprueba('no avisa de potencia_kw', faltan.indexOf('potencia_kw') < 0);
+comprueba('ni de acs_litros_manual', faltan.indexOf('acs_litros_manual') < 0);
+igual('y usa los litros de la ficha', r.variables.acs_litros, 200);
+
+titulo('pero si no hay potencia por ningún lado, sí avisa');
+r = calcular('aerotermia', { emisores_previstos: ['suelo_radiante'], sistema_actual: 'ninguno' }, config);
+faltan = r.incidencias.filter(function (i) { return i.codigo === 'campo_faltante'; }).map(function (i) { return i.campo; });
+comprueba('avisa de los dos', faltan.indexOf('carga_termica_kw') > -1 && faltan.indexOf('potencia_kw') > -1);
+
 titulo('sin potencia no se inventa la máquina');
 r = calcular('aerotermia', { emisores_previstos: ['suelo_radiante'], sistema_actual: 'ninguno' }, config);
 comprueba('no sale ninguna máquina', !r.lineas.some(function (l) { return l.producto_ref; }));

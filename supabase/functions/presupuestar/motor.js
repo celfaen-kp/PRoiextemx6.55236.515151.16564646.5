@@ -78,10 +78,17 @@ export function calcular(categoria, datos, config) {
   };
 
   /* --- 1 · variables derivadas, en su orden ------------------------------- */
+  // Una variable suele mirar dos sitios: el dato de la visita o el que se
+  // escribe a mano en el presupuesto suelto (carga_termica_kw o potencia_kw).
+  // Solo falta un dato si la variable se queda en cero; si uno de los dos
+  // caminos dio valor, el otro no se echa de menos. Antes avisaba de
+  // «potencia_kw» en todos los presupuestos de visita.
   const variables = {};
   (cfg.variables || []).slice().sort((a, b) => (a.orden || 0) - (b.orden || 0)).forEach((v) => {
     try {
-      const valor = evaluar(v.formula, ambito, ayudas);
+      const suyos = new Set();
+      const valor = evaluar(v.formula, ambito, Object.assign({}, ayudas, { faltante: (n) => suyos.add(n) }));
+      if (!verdad(valor)) suyos.forEach((n) => faltantes.add(n));
       ambito[v.codigo] = valor;
       variables[v.codigo] = valor;
     } catch (e) {
