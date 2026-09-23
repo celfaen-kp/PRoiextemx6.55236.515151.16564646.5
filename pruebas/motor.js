@@ -25,10 +25,9 @@ var config = {
     { clave: 'gramos_por_metro', entrada: 'defecto', valor: 20 },
   ],
   partidas: {
-    // El precio del kilo lo pone Sysefen; aquí se prueba con 60 € para ver que
-    // la cuenta de los kilos es la correcta.
+    // 59,57 €/kg: el gas a 49,64 más un 20 % por el material de la recarga.
     'p-gas': { codigo: 'GAS_EXTRA', nombre: 'Carga adicional de refrigerante', items: [
-      { concepto_libre: 'Carga adicional de refrigerante R32 (kg)', precio_fijo: 60, formula_cantidad: 'kg_gas_extra', orden: 1 }] },
+      { concepto_libre: 'Carga adicional de refrigerante R32 (kg)', precio_fijo: 59.57, formula_cantidad: 'kg_gas_extra', orden: 1 }] },
     'p-aire': {
       codigo: 'KIT_BASE', nombre: 'Instalación por unidad de aire',
       items: [
@@ -108,6 +107,7 @@ igual('y 0,2 kg de R32', g.variables.kg_gas_extra, 0.2);
 var lg = g.lineas.filter(function (l) { return l.descripcion.indexOf('refrigerante') > -1; })[0];
 comprueba('sale su línea', !!lg);
 igual('con los kilos como cantidad', lg.cantidad, 0.2);
+igual('y su importe', cadenaPrecios([lg], 0).total.toFixed(2), '11.91');
 
 var h = calcular('aire_acondicionado', {
   tipo_sistema: 'split_1x1',
