@@ -8,3 +8,6 @@ herramientas/google-refresh-token.txt
 # Las tarifas y el histórico de presupuestos viven fuera del repo (es público),
 # en el Drive: SYSEFEN DATA/07-Tarifas para app. Por si alguien los copia aquí:
 herramientas/tarifas/
+
+# Lo que queda por pegar en el panel de Supabase (lleva precios: el repo es público)
+subir-a-supabase/

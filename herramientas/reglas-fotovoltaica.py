@@ -5,7 +5,7 @@ Sysefen · Las reglas de fotovoltaica (sql/etapa47) a partir de la tarifa
 QUÉ HACE:
   Lee la tarifa de fotovoltaica (fotovoltaica-2026.csv, en la carpeta de
   tarifas del Drive) y escribe:
-    · etapa47_tarifa_fotovoltaica.sql   en la carpeta APPS del Drive: los
+    · etapa47_tarifa_fotovoltaica.sql   en la carpeta subir-a-supabase/ del repo: los
                                         productos y las reglas, para pegar en
                                         el SQL Editor de Supabase
     · fotovoltaica-reglas.json          en la carpeta de tarifas: lo mismo,
@@ -23,7 +23,7 @@ POR QUÉ UN SQL Y NO cargar-tarifa.py:
 
 CÓMO SE USA:
   python3 herramientas/reglas-fotovoltaica.py
-  (y después pegar APPS/etapa47_tarifa_fotovoltaica.sql en el SQL Editor)
+  (y después pegar subir-a-supabase/etapa47_tarifa_fotovoltaica.sql en el SQL Editor)
 
 PARA CAMBIAR UN PRECIO: se cambia en el CSV y se vuelve a ejecutar esto.
 """
@@ -33,7 +33,6 @@ RAIZ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CARPETA = os.environ.get('SYSEFEN_TARIFAS') or os.path.expanduser(
     '~/Library/CloudStorage/GoogleDrive-celfaen@gmail.com/Mi unidad/SYSEFEN DATA/07-Tarifas para app')
 
-APPS = os.path.dirname(RAIZ)
 
 filas = list(csv.DictReader(open(os.path.join(CARPETA, 'fotovoltaica-2026.csv'), encoding='utf-8')))
 
@@ -301,7 +300,7 @@ for (tipo,var,mn,mx,cond,prod,formula,seccion,prio,notas) in reglas:
     vals.append(f"    ({q(tipo)}, {lit(var,'text')}, {lit(mn,'numeric')}, {lit(mx,'numeric')}, {q(json.dumps(cond,ensure_ascii=False))}, {lit(prod,'text')}, {q(formula)}, {lit(seccion,'text') if tipo!='aviso' else 'null::text'}, {prio}, {lit(notas,'text')})")
 w(",\n".join(vals)+"\n  ) as v(tipo, variable, minimo, maximo, condicion, producto_ref, formula, seccion, prioridad, notas) on true\n where c.categoria = 'solar' and c.vigente_hasta is null;\n\ncommit;\n")
 w(PIE)
-open(os.path.join(APPS, 'etapa47_tarifa_fotovoltaica.sql'), 'w', encoding='utf-8').write(''.join(out))
+open(os.path.join(RAIZ, 'subir-a-supabase', 'etapa47_tarifa_fotovoltaica.sql'), 'w', encoding='utf-8').write(''.join(out))
 # config para las pruebas
 json.dump({'productos':{x['referencia']:dict(referencia=x['referencia'],nombre=x['nombre'],familia=x['familia'],unidad='ud',precio_tarifa=float(x['precio_tarifa']),iva=21) for x in filas},
            'reglas':[dict(id='fv%d'%i,tipo=t,variable=v,minimo=a,maximo=b,condicion=c,producto_ref=p,formula_cantidad=f,seccion=s,prioridad=pr,notas=n)

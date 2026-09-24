@@ -15,7 +15,7 @@ CÓMO SE USA:
   python3 herramientas/empaquetar-presupuestar.py
   python3 herramientas/empaquetar-presupuestar.py ~/Desktop
 
-  Sin argumento lo deja en la carpeta APPS del Drive, al lado de los SQL.
+  Sin argumento lo deja en la carpeta subir-a-supabase/ del repo, al lado de los SQL.
 
 NO SE EDITA EL RESULTADO: se editan las piezas y se vuelve a ejecutar esto.
 """
@@ -25,8 +25,7 @@ import os, re, sys
 RAIZ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FUNCION = os.path.join(RAIZ, 'supabase', 'functions', 'presupuestar')
 PIEZAS = ['formulas.js', 'cadena.js', 'motor.js']      # en orden de dependencia
-DESTINO = os.path.expanduser(
-    '~/Library/CloudStorage/GoogleDrive-celfaen@gmail.com/Mi unidad/APPS')
+DESTINO = os.path.join(RAIZ, 'subir-a-supabase')   # fuera de git (.gitignore)
 
 CABECERA = """// =============================================================================
 // Sysefen · Edge Function `presupuestar` · TODO EN UNO

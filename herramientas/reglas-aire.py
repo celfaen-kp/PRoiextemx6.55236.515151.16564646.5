@@ -6,7 +6,7 @@ QUÉ HACE:
   Lee la tarifa de aire de Midea (midea-aire-2026.csv, en la carpeta de
   tarifas del Drive: unidades interiores, exteriores 1x1 y exteriores multi,
   con su tamaño y sus kW) y escribe:
-    · etapa48_aire_midea.sql       en la carpeta APPS del Drive: los productos
+    · etapa48_aire_midea.sql       en la carpeta subir-a-supabase/ del repo: los productos
                                    con su nombre de verdad y las reglas que
                                    eligen la máquina de cada estancia, para
                                    pegar en el SQL Editor de Supabase
@@ -31,12 +31,11 @@ CÓMO ELIGE:
 
 CÓMO SE USA:
   python3 herramientas/reglas-aire.py
-  (y después pegar APPS/etapa48_aire_midea.sql en el SQL Editor)
+  (y después pegar subir-a-supabase/etapa48_aire_midea.sql en el SQL Editor)
 """
 import csv, json, os
 
 RAIZ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-APPS = os.path.dirname(RAIZ)
 CARPETA = os.environ.get('SYSEFEN_TARIFAS') or os.path.expanduser(
     '~/Library/CloudStorage/GoogleDrive-celfaen@gmail.com/Mi unidad/SYSEFEN DATA/07-Tarifas para app')
 
@@ -287,7 +286,7 @@ for (tipo, por_cada, var, mn, mx, cond, prod, formula, seccion, prio, notas) in 
 w(",\n".join(vals) + "\n  ) as v(tipo, por_cada, variable, minimo, maximo, condicion, producto_ref, formula, seccion, prioridad, notas) on true\n"
   " where c.categoria = 'aire_acondicionado' and c.vigente_hasta is null;\n\ncommit;\n")
 w(PIE)
-open(os.path.join(APPS, 'etapa48_aire_midea.sql'), 'w', encoding='utf-8').write(''.join(out))
+open(os.path.join(RAIZ, 'subir-a-supabase', 'etapa48_aire_midea.sql'), 'w', encoding='utf-8').write(''.join(out))
 
 json.dump({
     'productos': {f['referencia']: dict(referencia=f['referencia'], nombre=f['nombre'], familia=f['familia'], unidad='ud',
