@@ -64,7 +64,11 @@ KW = {7: 2.05, 9: 2.6, 12: 3.5, 18: 5.3, 24: 7.0}
 reglas = []   # (tipo, por_cada, variable, min, max, condicion, producto, formula, seccion, prioridad, notas)
 def regla(prod, cond, tipo='cantidad', por_cada=None, var=None, mn=None, mx=None, formula='1',
           seccion='Equipos', prio=60, notas=None):
-    if prod: assert prod in {f['referencia'] for f in filas}, prod
+    if prod:
+        assert prod in {f['referencia'] for f in filas}, prod
+        # Todas las máquinas de aquí son Midea: solo entran si la marca es Midea
+        # (o no se dijo ninguna, que el motor cuenta como Midea).
+        cond = dict(cond, marca_aire='midea')
     reglas.append((tipo, por_cada, var, mn, mx, cond, prod, formula, seccion, prio, notas))
 
 MURAL = ['split_1x1', 'multisplit']
@@ -128,6 +132,8 @@ regla(None, {}, tipo='aviso', por_cada='estancias', var='tamano', mn=99, prio=90
       notas='Una estancia pide más de 7 kW: no hay máquina doméstica para ella, va a mano.')
 regla(None, {'tipo_sistema': MURAL + ['conductos', 'cassette']}, tipo='aviso', por_cada='estancias', var='tamano', mn=0, mx=0, prio=90,
       notas='Una estancia no tiene m²: sin los m² no se puede elegir su máquina. Ponlos en la ficha (Estancias → m²) y vuelve a calcular.')
+regla(None, {'marca_aire': 'vaillant'}, tipo='aviso', prio=95,
+      notas='Vaillant: la tarifa de aire acondicionado (climaVAIR) todavía no está cargada. La interior y la exterior van a mano desde el catálogo o a precio cerrado; el resto del presupuesto sí sale.')
 regla(None, {'tipo_sistema': 'suelo_techo'}, tipo='aviso', prio=90,
       notas='Suelo-techo no está en la tarifa doméstica de Midea: la máquina va a mano.')
 regla(None, {'tipo_sistema': MULTI}, tipo='aviso', var='unidades_interiores', mn=6, prio=90,
@@ -160,6 +166,8 @@ CABECERA = r'''-- ==============================================================
 --   · Los tramos de la exterior multi resumen la tabla de combinaciones de
 --     Midea. Antes de dar por bueno un multi de 3 o más, mirar la tabla.
 --   · Suelo-techo y estancias de más de 7 kW no tienen máquina: sale aviso.
+--   · La ficha pide la MARCA (Midea o Vaillant). Las máquinas de aquí son
+--     Midea; con Vaillant sale aviso hasta que se cargue su tarifa de aire.
 --
 -- REQUIERE: la función `presupuestar` nueva (motor 1.1: por_cada).
 -- Idempotente: las reglas de aire con producto y los avisos se rehacen.
@@ -249,6 +257,10 @@ values
   ('aire_acondicionado', 'metros_totales', 'Metros de línea', 'm',
    'si(suma(estancias, ''metros'') > 0, suma(estancias, ''metros''), suma(distancias_lineas, ''metros''))', 3,
    'Los metros de cada estancia hasta la exterior; si no los hay, los de la lista antigua.', null),
+
+  ('aire_acondicionado', 'marca_aire', 'Marca de las máquinas', '',
+   'si(marca_preferida = ''vaillant'', ''vaillant'', ''midea'')', 9,
+   'La de la ficha (Marca). Midea salvo que se diga Vaillant.', null),
 
   ('aire_acondicionado', 'kw_estancia', 'kW que pide la estancia', 'kW',
    'redondea(m2 * lookup(''w_m2'', ''defecto'') / 1000, 2)', 10,

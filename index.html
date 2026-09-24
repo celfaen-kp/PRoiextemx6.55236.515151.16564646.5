@@ -395,7 +395,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '17.0'; // versión visible de la app (única fuente)
+const APP_VERSION = '17.1'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -6738,7 +6738,7 @@ const presuNuevoVacio = () => ({
   // aire: una fila por equipo interior, con sus m² y sus metros de línea
   // hasta la exterior. Con los m² el motor elige la máquina; con los metros,
   // el tubo de más y el gas.
-  tipo_sistema: 'multisplit', equipos: 1, metros: '', estancias: [{ m2: '', metros: '' }],
+  tipo_sistema: 'multisplit', marca: 'midea', equipos: 1, metros: '', estancias: [{ m2: '', metros: '' }],
   // lo viejo: interiores y exteriores a retirar, y si se aprovecha su tubería
   retirar: '', retirar_ext: '', recuperar: false,
   // aerotermia: la potencia se pone a mano, calcularla desde la casa no está
@@ -6797,6 +6797,7 @@ function datosDelSuelto(f) {
   const retirar = Math.max(0, Math.min(30, Number(f.retirar) || 0));
   return {
     tipo_sistema: f.tipo_sistema,
+    marca_preferida: f.marca === 'vaillant' ? 'vaillant' : 'midea',
     equipos_a_retirar_n: retirar,
     exteriores_a_retirar_n: Math.max(0, Math.min(30, Number(f.retirar_ext) || 0)),
     preinstalacion_existente: retirar && f.recuperar ? 'si_aprovechable' : 'no',
@@ -6919,6 +6920,10 @@ function camposAireHTML(f) {
   const filas = estanciasSuelto(f);
   return `<div class="lbl" style="margin:16px 0 8px">Tipo de sistema</div>
       <div class="wrap">${SISTEMAS_AIRE.map(([k, t]) => `<div class="chip ${f.tipo_sistema === k ? 'sel' : ''}" data-a="presuSueltoChip" data-k="tipo_sistema" data-v="${k}">${t}</div>`).join('')}</div>
+
+      <div class="lbl" style="margin:16px 0 8px">Marca</div>
+      <div class="wrap">${[['midea', 'Midea'], ['vaillant', 'Vaillant']].map(([k, t]) => `<div class="chip ${(f.marca || 'midea') === k ? 'sel' : ''}" data-a="presuSueltoChip" data-k="marca" data-v="${k}">${t}</div>`).join('')}</div>
+      ${(f.marca || 'midea') === 'vaillant' ? '<div class="tiny" style="margin-top:8px;color:var(--ambar-o)">La tarifa de aire de Vaillant aún no está cargada: las máquinas se añaden a mano del catálogo.</div>' : ''}
 
       <div class="lbl" style="margin:16px 0 8px">Equipos interiores</div>
       <input class="inp" data-f="presuCampo" data-k="equipos" value="${esc(String(f.equipos))}" inputmode="numeric" style="width:90px">

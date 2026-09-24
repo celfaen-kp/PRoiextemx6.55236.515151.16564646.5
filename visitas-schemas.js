@@ -447,7 +447,7 @@ const AIRE = {
       titulo: 'Unidad exterior',
       campos: [
         { key: 'ubicacion_ue', etiqueta: 'Dónde va', tipo: 'opcion', obligatorio: true, motor: true,
-          opciones: ['fachada', 'terraza', 'cubierta', 'patio', 'galeria'] },
+          opciones: ['fachada', 'balcon', 'terraza', 'cubierta', 'patio', 'galeria'] },
         { key: 'altura_ue_m', etiqueta: 'Altura', tipo: 'numero', unidad: 'm', motor: true },
         { key: 'medio_elevacion', etiqueta: 'Cómo se llega', tipo: 'opcion', motor: true,
           opciones: ['ninguno', 'escalera', 'andamio', 'plataforma', 'grua'] },
@@ -481,7 +481,10 @@ const AIRE = {
           motor: true },
         { key: 'obra_necesaria', etiqueta: 'Obra', tipo: 'multi', motor: true,
           opciones: ['rozas', 'perforacion_muro', 'falso_techo', 'registro', 'pintura'] },
-        { key: 'marca_preferida', etiqueta: 'Marca preferida', tipo: 'texto', motor: true },
+        // sql/etapa48: el motor coge las máquinas del catálogo de esta marca.
+        // Vaillant (climaVAIR) aún no tiene tarifa cargada: avisa y la máquina va a mano.
+        { key: 'marca_preferida', etiqueta: 'Marca', tipo: 'opcion', obligatorio: true, motor: true,
+          opciones: ['midea', 'vaillant'], ayuda: 'Las máquinas salen de la tarifa de esa marca' },
       ],
     },
   ],
@@ -504,9 +507,9 @@ export const ETIQUETAS = {
   bueno: 'Bueno', regular: 'Regular', malo: 'Malo', a_sustituir: 'A sustituir',
   facil: 'Fácil', medio: 'Medio', dificil: 'Difícil',
   monofasico: 'Monofásico', trifasico: 'Trifásico',
-  fronius: 'Fronius', enphase: 'Enphase', byd: 'BYD', tesla: 'Tesla',
+  fronius: 'Fronius', enphase: 'Enphase', byd: 'BYD', tesla: 'Tesla', midea: 'Midea',
   escalera: 'Escalera', andamio: 'Andamio', plataforma: 'Plataforma', grua: 'Grúa',
-  fachada: 'Fachada', terraza: 'Terraza', cubierta: 'Cubierta', patio: 'Patio',
+  fachada: 'Fachada', balcon: 'Balcón', terraza: 'Terraza', cubierta: 'Cubierta', patio: 'Patio',
   jardin: 'Jardín', galeria: 'Galería', interior: 'Interior',
   norte: 'Norte', sur: 'Sur', este: 'Este', oeste: 'Oeste',
   rozas: 'Rozas', zanja: 'Zanja', perforacion_muro: 'Perforar muro',

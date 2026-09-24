@@ -18,6 +18,7 @@ var config = {
     { codigo: 'metros_gas_exceso', formula: "max(0, metros_totales - lookup('metros_gas_incluidos', tipo_sistema) * unidades_exteriores)", orden: 5 },
     { codigo: 'kg_gas_extra', formula: "redondea(metros_gas_exceso * lookup('gramos_por_metro','defecto') / 1000, 2)", orden: 6 },
     // etapa 48: por cada estancia
+    { codigo: 'marca_aire', formula: "si(marca_preferida = 'vaillant', 'vaillant', 'midea')", orden: 9 },
     { codigo: 'kw_estancia', por_cada: 'estancias', formula: "redondea(m2 * lookup('w_m2', 'defecto') / 1000, 2)", orden: 10 },
     { codigo: 'tamano', por_cada: 'estancias', formula: 'si(kw_estancia <= 0, 0, si(kw_estancia <= 2.05, 7, si(kw_estancia <= 2.6, 9, si(kw_estancia <= 3.5, 12, si(kw_estancia <= 5.3, 18, si(kw_estancia <= 7.1, 24, 99))))))', orden: 11 },
     { codigo: 'kw_nominal', por_cada: 'estancias', formula: "lookup('kw_tamano', tamano)", orden: 12 },
@@ -128,6 +129,14 @@ r = calcular('aire_acondicionado', {
   estancias: [{ m2: 40 }, { m2: 40 }, { m2: 40 }, { m2: 40 }, { m2: 40 }],
 }, config);
 comprueba('cinco de 18 (26,5 kW): ninguna exterior las lleva', !linea(r, 'M5O-42N8') && aviso(r, 'no hay exterior multi'));
+
+titulo('la marca: Midea por defecto, Vaillant avisa');
+r = calcular('aire_acondicionado', { tipo_sistema: 'split_1x1', marca_preferida: 'midea', estancias: [{ nombre: 'Salón', m2: 30 }] }, config);
+comprueba('Midea: máquinas Midea', maquinas(r).length === 2 && /EZ-12RD6/.test(maquinas(r)[0].descripcion));
+r = calcular('aire_acondicionado', { tipo_sistema: 'split_1x1', marca_preferida: 'vaillant', estancias: [{ nombre: 'Salón', m2: 30 }] }, config);
+comprueba('Vaillant: ninguna máquina Midea', maquinas(r).length === 0);
+comprueba('y avisa de que su tarifa no está', aviso(r, 'Vaillant'));
+comprueba('pero el kit de instalación sí', !!linea(r, 'C104'));
 
 titulo('una ficha vieja, con los metros aparte');
 r = calcular('aire_acondicionado', {
