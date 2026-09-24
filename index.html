@@ -315,6 +315,24 @@ body.con-captcha #captcha{display:block}
 .ag-dia.on{background:var(--tinta);border-color:var(--tinta);color:#fff}
 .ag-dia.on span{color:rgba(255,255,255,.6)}
 .ag-acciones{display:flex;justify-content:space-around;margin-top:18px}
+/* La agenda «hoy primero»: la tira de la semana, la cita grande y las tareas */
+.ag-semana{display:flex;gap:2px;background:rgba(20,23,15,.06);border-radius:16px;padding:4px;margin-top:14px}
+.ag-semana .ag-cal-d{flex:1;height:auto;display:flex;flex-direction:column;align-items:center;gap:3px;padding:8px 0 7px;border-radius:13px;font:600 17px/1 var(--cond)}
+.ag-semana .ag-cal-d i{font:500 10px/1 var(--mono);letter-spacing:.1em;color:var(--t3);font-style:normal}
+.ag-semana .ag-cal-d em{position:static;height:5px;margin-top:2px}
+.ag-semana .ag-cal-d.hoy{box-shadow:none;background:var(--tinta);color:#fff}
+.ag-semana .ag-cal-d.hoy i{color:rgba(255,255,255,.6)}
+.ag-semana .ag-cal-d.sel:not(.hoy){background:#fff;box-shadow:inset 0 0 0 1.5px var(--tinta)}
+.ag-prox{background:#fff;border-radius:22px;padding:18px 18px 16px;box-shadow:0 0 0 1.5px var(--ambar),var(--sh)}
+.ag-prox.lejos{box-shadow:var(--sh)}
+.ag-prox .ag-acciones{margin-top:14px;gap:8px}
+.ag-prox .ag-accion{flex:1;flex-direction:row;justify-content:center;gap:8px;padding:12px;border-radius:14px;background:rgba(20,23,15,.06);color:var(--tinta);font:600 14px/1 var(--sans)}
+.ag-prox .ag-accion i{width:auto;height:auto;background:none;color:var(--tinta)}
+.ag-tarea{display:flex;align-items:center;gap:12px;padding:13px 14px;background:#fff;border-radius:16px;box-shadow:var(--sh);margin-bottom:8px;cursor:pointer}
+.ag-tarea .dot{width:10px;height:10px;flex:none}
+.ag-tarea b{display:block;font:600 15px/1.25 var(--sans)}
+.ag-tarea small{display:block;font:400 12.5px/1.3 var(--sans);color:var(--t2);margin-top:2px}
+.ag-tarea .pill{flex:none;padding:8px 12px;font-size:12px}
 .ag-accion{display:flex;flex-direction:column;align-items:center;gap:6px;font:500 11px/1 var(--sans);color:rgba(255,255,255,.72);text-decoration:none;cursor:pointer;min-width:64px}
 .ag-accion i{width:44px;height:44px;border-radius:99px;background:rgba(255,255,255,.12);display:flex;align-items:center;justify-content:center;color:#fff}
 .ag-linea{position:relative;padding-left:22px}
@@ -374,7 +392,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '16.6'; // versión visible de la app (única fuente)
+const APP_VERSION = '16.7'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -7388,6 +7406,7 @@ A.ag = (a, d, e) => {
   const cd = V.citaDraft;
   switch (a) {
     case 'ag_filtro': V.agenda.filtro = d.f; return render();
+    case 'ag_mesToggle': V.agenda.verMes = !V.agenda.verMes; return render();
     case 'ag_dia': V.agenda.dia = V.agenda.dia === d.dia ? null : d.dia; return render();
     case 'ag_mes': {
       const [y, m] = (V.agenda.mes || agHoy().slice(0, 7)).split('-').map(Number);
@@ -7929,10 +7948,72 @@ function vAgenda() {
   let citas = ag.citas.filter((x) => x.estado === 'pendiente' && x.inicio && agDiaDe(x.inicio) >= hoy);
   if (ag.filtro === 'mias' && puedeCitar()) citas = citas.filter((x) => x.empleado_id === yoEmp);
   citas.sort((p, q) => p.inicio.localeCompare(q.inicio));
-  const calendario = agCalendarioHTML(citas);
+  const todas = citas;
   if (ag.dia) citas = citas.filter((x) => agDiaDe(x.inicio) === ag.dia);
-  const dias = [...new Set(citas.map((x) => agDiaDe(x.inicio)))];
   const sinCita = ag.clientes.filter((c) => agEstadoCliente(c).k === 'sin_cita').length;
+
+  // --- la semana que viene, de un vistazo: hoy y seis días más --------------
+  const porDia = {};
+  todas.forEach((x) => { const d = agDiaDe(x.inicio); porDia[d] = (porDia[d] || 0) + 1; });
+  const semana = [];
+  for (let i = 0; i < 7; i++) {
+    const t = new Date(hoy + 'T12:00:00'); t.setDate(t.getDate() + i);
+    const dia = fechaLocal(t.toISOString());
+    const n = porDia[dia] || 0;
+    const cls = ['ag-cal-d', dia === hoy ? 'hoy' : '', ag.dia === dia ? 'sel' : ''].filter(Boolean).join(' ');
+    semana.push(`<div class="${cls}" data-a="ag_dia" data-dia="${dia}"><i>${'LMXJVSD'[(t.getDay() + 6) % 7]}</i>${t.getDate()}<em>${'<u></u>'.repeat(Math.min(n, 4))}</em></div>`);
+  }
+
+  // --- la próxima cita, grande: es lo que se necesita con el móvil en la mano
+  const prox = todas[0] || null;
+  const proxHTML = (x) => {
+    const c = x.cliente || agCliente(x.cliente_id) || {};
+    const dir = [x.direccion || c.direccion, x.poblacion || c.poblacion].filter(Boolean).join(' · ');
+    const esHoy = agDiaDe(x.inicio) === hoy;
+    const falta = new Date(x.inicio).getTime() - Date.now();
+    const enTxt = !esHoy ? agEtiquetaDia(agDiaDe(x.inicio)) : falta <= 0 ? 'Ahora' : falta < 3600e3 ? 'En ' + Math.round(falta / 60e3) + ' min' : 'En ' + Math.floor(falta / 3600e3) + ' h ' + String(Math.round((falta % 3600e3) / 60e3)).padStart(2, '0') + ' min';
+    return `<div class="row" style="justify-content:space-between;margin-bottom:8px"><div class="lbl">Próxima cita</div><span class="tiny" style="color:${esHoy ? 'var(--ambar-o)' : 'var(--t3)'}">${esc(enTxt)}</span></div>
+    <div class="ag-prox ${esHoy ? '' : 'lejos'}">
+      <div class="ag-cita" data-a="ag_abrirCita" data-id="${x.id}" style="cursor:pointer">
+        <div class="ag-hora" style="font-size:30px">${agHora(x.inicio)}<small>${agDur(x.duracion_min || 60)}</small></div>
+        <div style="min-width:0">
+          <div class="h2" style="font-size:19px">${esc(c.nombre || 'Cliente')}</div>
+          <div class="sub" style="margin-top:3px">${esc(dir || 'Sin dirección')}</div>
+          <div class="row" style="gap:6px;margin-top:8px;flex-wrap:wrap">${(x.categorias || []).map((k) => agBadge(nombreCat(k))).join('')}<div class="grow"></div><span class="tiny">${esc(agNombreEmp(x.empleado_id))}</span></div>
+        </div>
+      </div>
+      ${accionLlamar(c.telefono) || accionComoLlegar(dir) ? `<div class="ag-acciones">${accionLlamar(c.telefono)}${accionComoLlegar(dir)}</div>` : ''}
+      ${puedeCitar() ? (esHoy
+        ? `<button class="btn btn-verde" data-a="ag_empezar" data-id="${x.id}" style="margin-top:12px;padding:15px;font-size:15px">Empezar visita</button>`
+        : `<button class="pill" data-a="ag_abrirCita" data-id="${x.id}" style="margin-top:12px;padding:12px;width:100%;text-align:center">Ver la cita</button>`) : ''}
+    </div>`;
+  };
+
+  // --- lo que está a medias, como tareas: cada una abre justo eso -----------
+  const tareas = [];
+  const tarea = (color, titulo, sub, accion, attrs) => tareas.push(`<div class="ag-tarea" ${attrs}>
+      <span class="dot" style="background:${color}"></span>
+      <div class="grow" style="min-width:0"><b>${titulo}</b>${sub ? `<small>${sub}</small>` : ''}</div>
+      <span class="pill">${accion}</span></div>`);
+  if (b && b.draft && puedeCitar()) {
+    tarea('var(--ambar)', 'Visita a medias · paso ' + (b.paso || 1) + ' de 5', esc((b.draft._cliente || {}).nombre || b.draft.direccion || ''), 'Seguir', 'data-a="seguirBorrador"');
+  }
+  if (puedeCitar()) {
+    ag.clientes.forEach((c) => (c.visitas || []).forEach((v) => {
+      if (v.sync_estado === 'sincronizada') return;
+      const cerrada = v.estado === 'completada';
+      tarea('var(--ambar)', 'Visita de ' + esc(c.nombre || 'cliente') + (cerrada ? ' por enviar' : ' sin cerrar'),
+        esc(v.codigo || '') + (v.sync_estado === 'error' ? ' · falló la subida' : ''), cerrada ? 'Subir' : 'Cerrar', `data-a="abrirVisita" data-id="${v.id}"`);
+    }));
+    const pl = V.presuLista;
+    if (pl.cargado) {
+      pl.filas.filter((p) => !p.tl_quotation_id && p.sync_estado !== 'sincronizado').slice(0, 3).forEach((p) => {
+        tarea('var(--ambar)', 'Presupuesto de ' + esc(nombreCat(p.categoria) || p.categoria).toLowerCase() + (p.cliente && p.cliente.nombre ? ' · ' + esc(p.cliente.nombre) : ''),
+          p.sync_estado === 'error' ? 'No se pudo subir a Teamleader' : 'Guardado, sin subir a Teamleader', 'Subir', `data-a="presuAbrir" data-id="${p.id}"`);
+      });
+    } else if (!pl.cargando) { A.cargarPresupuestos(); }
+  }
+  if (sinCita) tarea('var(--rojo)', sinCita === 1 ? '1 cliente sin cita' : sinCita + ' clientes sin cita', 'Falta ponerles día', 'Ver', 'data-a="ag_sinCita"');
 
   const tarjeta = (x) => {
     const c = x.cliente || agCliente(x.cliente_id) || {};
@@ -7950,43 +8031,42 @@ function vAgenda() {
     </div>`;
   };
 
-  const medias = b && b.draft && puedeCitar() ? `<div class="card" style="margin-bottom:14px;box-shadow:0 0 0 1.5px var(--ambar),var(--sh)">
-      <div class="row g8"><span class="dot" style="width:8px;height:8px;background:var(--ambar)"></span><span class="lbl">Visita a medias · paso ${b.paso || 1} de 5</span></div>
-      <div class="h2" style="font-size:17px;margin-top:8px">${esc((b.draft._cliente || {}).nombre || b.draft.direccion || 'Visita')}</div>
-      <button class="pill pill-verde" data-a="seguirBorrador" style="margin-top:12px;padding:12px;width:100%">Seguir con la visita</button>
-    </div>` : '';
+  // Las demás citas: sin repetir la que ya va arriba en grande.
+  const resto = citas.filter((x) => !prox || x.id !== prox.id || ag.dia);
+  const dias = [...new Set(resto.map((x) => agDiaDe(x.inicio)))];
+  const yo = userById(V.user.id) || {};
+  const fechaHoy = new Date().toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' });
 
   return `<div class="hdr">
     <div class="row" style="justify-content:space-between;align-items:center;margin-bottom:14px">
       ${marcaSysefen(false)}
       ${avatarHTML(V.user.id, 'width:32px;height:32px;font-size:13px;background:rgba(20,23,15,.08);color:var(--tinta);cursor:pointer', 'data-a="menuUsuario"')}
     </div>
-    <div class="row" style="justify-content:space-between">
-      <div class="h1">${puedeCitar() ? 'Agenda' : 'Citas'}</div>
-      ${puedeCitar() ? '<button class="pill" data-a="ag_nuevoCliente" style="background:var(--tinta);color:#fff">+ Cliente</button>' : '<button class="pill" data-a="ag_volver" data-v="clientes">Clientes</button>'}
+    <div class="lbl">${esc(agMayus(fechaHoy))}</div>
+    <div class="row" style="justify-content:space-between;align-items:baseline;margin-top:4px">
+      <div class="h1">${puedeCitar() ? 'Hola, ' + esc((yo.nombre || '').split(' ')[0] || '') : 'Citas'}</div>
+      <div class="tiny" style="flex:none">${todas.filter((x) => agDiaDe(x.inicio) === hoy).length === 1 ? '1 cita hoy' : todas.filter((x) => agDiaDe(x.inicio) === hoy).length + ' citas hoy'}${tareas.length ? ' · ' + tareas.length + (tareas.length === 1 ? ' pendiente' : ' pendientes') : ''}</div>
     </div>
-    ${puedeCitar()
-      ? `<div class="ag-seg" style="margin-top:14px">${[['todas', 'Todas'], ['mias', 'Mías']].map(([k, l]) => `<span class="${ag.filtro === k ? 'on' : ''}" data-a="ag_filtro" data-f="${k}">${l}</span>`).join('')}</div>`
-      : '<div class="sub" style="margin-top:8px">Citas del equipo de presupuestos</div>'}
+    <div class="ag-semana">${semana.join('')}</div>
+    <div class="row" style="justify-content:space-between;margin-top:10px">
+      <span class="tiny" data-a="ag_mesToggle" style="cursor:pointer;text-decoration:underline">${ag.verMes ? 'Ocultar el mes' : 'Ver el mes entero'}</span>
+      ${puedeCitar() ? `<span class="tiny">${[['todas', 'Todas'], ['mias', 'Mías']].map(([k, l]) => `<span data-a="ag_filtro" data-f="${k}" style="cursor:pointer;padding:4px 6px;${ag.filtro === k ? 'color:var(--tinta);font-weight:600;text-decoration:underline' : ''}">${l}</span>`).join('')}</span>` : ''}
+    </div>
   </div>
-  <div class="scroll pad pb-nav">
+  <div class="scroll pad pb-nav sin-marca">
     ${agAvisoHTML()}
-    ${medias}
-    ${calendario}
-    ${ag.dia ? `<div class="row" style="justify-content:space-between;margin:-4px 0 12px"><div class="sub">Solo el ${esc(agEtiquetaDia(ag.dia).toLowerCase())}</div><span class="tiny" data-a="ag_dia" data-dia="${ag.dia}" style="cursor:pointer;text-decoration:underline">Ver todas</span></div>` : ''}
-    ${ag.dia && !dias.length ? `<div class="card"><div class="sub">Ese día no hay citas.${puedeCitar() ? ' Para poner una, abre el cliente y dale a «Poner cita».' : ''}</div></div>` : ''}
+    ${ag.verMes ? agCalendarioHTML(todas) : ''}
+    ${ag.dia ? `<div class="row" style="justify-content:space-between;margin:0 0 12px"><div class="sub">Solo el ${esc(agEtiquetaDia(ag.dia).toLowerCase())}</div><span class="tiny" data-a="ag_dia" data-dia="${ag.dia}" style="cursor:pointer;text-decoration:underline">Ver todas</span></div>` : ''}
+    ${ag.dia && !citas.length ? `<div class="card" style="margin-bottom:14px"><div class="sub">Ese día no hay citas.${puedeCitar() ? ' Para poner una, abre el cliente y dale a «Poner cita».' : ''}</div></div>` : ''}
+    ${prox && !ag.dia ? proxHTML(prox) : ''}
+    ${!prox && !ag.dia && ag.cargado && !ag.error ? `<div class="card"><div class="h2">Sin citas próximas</div><div class="sub" style="margin-top:6px">${puedeCitar() ? 'Da de alta un cliente en Clientes y ponle día.' : 'El equipo de presupuestos no tiene citas por delante.'}</div></div>` : ''}
+    ${tareas.length && !ag.dia ? `<div class="lbl" style="margin:18px 0 8px">Pendiente</div>${tareas.join('')}` : ''}
     ${dias.map((dia, i) => {
-      const delDia = citas.filter((x) => agDiaDe(x.inicio) === dia);
-      return `<div class="row" style="justify-content:space-between;margin:${i ? 20 : 0}px 0 10px"><div class="lbl">${esc(agEtiquetaDia(dia))}</div><span class="tiny">${delDia.length === 1 ? '1 cita' : delDia.length + ' citas'}</span></div>${delDia.map(tarjeta).join('')}`;
+      const delDia = resto.filter((x) => agDiaDe(x.inicio) === dia);
+      return `<div class="row" style="justify-content:space-between;margin:${i || !ag.dia ? 18 : 0}px 0 10px"><div class="lbl">${esc(agEtiquetaDia(dia))}</div><span class="tiny">${delDia.length === 1 ? '1 cita' : delDia.length + ' citas'}</span></div>${delDia.map(tarjeta).join('')}`;
     }).join('')}
-    ${!dias.length && !ag.dia && ag.cargado && !ag.error ? `<div class="card"><div class="h2">Sin citas próximas</div><div class="sub" style="margin-top:6px">${puedeCitar() ? 'Da de alta un cliente con «+ Cliente» y ponle día.' : 'El equipo de presupuestos no tiene citas por delante.'}</div></div>` : ''}
-    ${sinCita ? `<div class="card row" data-a="ag_sinCita" style="margin-top:14px;cursor:pointer">
-      <span class="dot" style="width:8px;height:8px;background:var(--rojo)"></span>
-      <div class="grow" style="font:600 15px var(--sans)">${sinCita === 1 ? '1 cliente sin cita' : sinCita + ' clientes sin cita'}</div>
-      <div style="font:400 20px/1 var(--sans);color:var(--t3)">›</div>
-    </div>` : ''}
-    ${puedeCitar() ? `<div class="card row" data-a="ag_visitas" style="margin-top:10px;cursor:pointer">
-      <div class="grow"><div style="font:600 15px var(--sans)">Visitas</div>
+    ${puedeCitar() ? `<div class="card row" data-a="ag_visitas" style="margin-top:18px;cursor:pointer">
+      <div class="grow"><div style="font:600 15px var(--sans)">Todas las visitas</div>
       <div class="sub" style="font-size:12px;margin-top:4px">Las fichas tomadas: sin cerrar, por enviar y en Teamleader.</div></div>
       <div style="font:400 20px/1 var(--sans);color:var(--t3)">›</div>
     </div>` : ''}
