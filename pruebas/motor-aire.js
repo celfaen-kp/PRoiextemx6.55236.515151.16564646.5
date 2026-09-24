@@ -16,7 +16,9 @@ var config = {
     { codigo: 'metros_totales', formula: "si(suma(estancias, 'metros') > 0, suma(estancias, 'metros'), suma(distancias_lineas, 'metros'))", orden: 3 },
     { codigo: 'metros_exceso', formula: "max(0, metros_totales - lookup('metros_incluidos','defecto') * unidades_interiores)", orden: 4 },
     { codigo: 'metros_gas_exceso', formula: "max(0, metros_totales - lookup('metros_gas_incluidos', tipo_sistema) * unidades_exteriores)", orden: 5 },
-    { codigo: 'kg_gas_extra', formula: "redondea(metros_gas_exceso * lookup('gramos_por_metro','defecto') / 1000, 2)", orden: 6 },
+    // etapa 51: el gas por estancia, según su máquina
+    { codigo: 'gas_g_estancia', por_cada: 'estancias', formula: "redondea(max(0, metros - lookup('metros_gas_incluidos', tipo_sistema)) * lookup('gramos_por_metro_tamano', tamano), 0)", orden: 19 },
+    { codigo: 'kg_gas_extra', formula: "redondea(si(suma(estancias, 'metros') > 0, suma(estancias, 'gas_g_estancia'), metros_gas_exceso * lookup('gramos_por_metro', 'defecto')) / 1000, 3)", orden: 20 },
     // etapa 48: por cada estancia
     { codigo: 'marca_aire', formula: "si(marca_preferida = 'vaillant', 'vaillant', 'midea')", orden: 9 },
     { codigo: 'kw_estancia', por_cada: 'estancias', formula: "redondea(m2 * lookup('w_m2', 'defecto') / 1000, 2)", orden: 10 },
@@ -32,6 +34,10 @@ var config = {
     { clave: 'metros_gas_incluidos', entrada: 'cassette', valor: 7.5 },
     { clave: 'metros_gas_incluidos', entrada: 'conductos', valor: 7.5 },
     { clave: 'gramos_por_metro', entrada: 'defecto', valor: 20 },
+    { clave: 'gramos_por_metro_tamano', entrada: 'defecto', valor: 12 }, { clave: 'gramos_por_metro_tamano', entrada: '7', valor: 12 },
+    { clave: 'gramos_por_metro_tamano', entrada: '9', valor: 12 }, { clave: 'gramos_por_metro_tamano', entrada: '12', valor: 12 },
+    { clave: 'gramos_por_metro_tamano', entrada: '18', valor: 12 }, { clave: 'gramos_por_metro_tamano', entrada: '24', valor: 24 },
+    { clave: 'gramos_por_metro_tamano', entrada: '0', valor: 0 }, { clave: 'gramos_por_metro_tamano', entrada: '99', valor: 0 },
     { clave: 'w_m2', entrada: 'defecto', valor: 100 },
     { clave: 'kw_tamano', entrada: '7', valor: 2.05 }, { clave: 'kw_tamano', entrada: '9', valor: 2.6 },
     { clave: 'kw_tamano', entrada: '12', valor: 3.5 }, { clave: 'kw_tamano', entrada: '18', valor: 5.3 },
@@ -40,14 +46,18 @@ var config = {
   ],
   partidas: {
     'p-aire': { codigo: 'KIT_BASE', nombre: 'Instalación por unidad de aire', items: [
-      { concepto_libre: 'C100: Tubería frigorífica y aislamiento', precio_fijo: 245, formula_cantidad: 'unidades_interiores', orden: 1 },
+      // etapa 51: conexión por equipo y tubería por metro
+      { concepto_libre: 'C100: Conexión frigorífica por equipo', precio_fijo: 89, formula_cantidad: 'unidades_interiores', unidad: 'ud', orden: 1 },
       { concepto_libre: 'C102: Soportes unidad exterior', precio_fijo: 45, formula_cantidad: 'unidades_exteriores', orden: 3 },
-      { concepto_libre: 'C103: Exceso metro', precio_fijo: 52, formula_cantidad: 'metros_exceso', orden: 4 },
+      { concepto_libre: 'C103: Tubería frigorífica y aislamiento', precio_fijo: 52, formula_cantidad: 'metros_totales', unidad: 'm', orden: 4 },
       { concepto_libre: 'C104: Mano de obra', precio_fijo: 450, formula_cantidad: 'unidades_interiores', orden: 5 },
     ] },
+    'p-gas': { codigo: 'GAS_EXTRA', nombre: 'Carga adicional de refrigerante', items: [
+      { concepto_libre: 'Carga adicional de refrigerante R32', precio_fijo: 49, formula_cantidad: 'kg_gas_extra', unidad: 'kg', orden: 1 }] },
   },
   reglas: [
     { id: 'kit', tipo: 'condicional', partida_id: 'p-aire', formula_cantidad: '1', seccion: 'Instalación', prioridad: 100 },
+    { id: 'gas', tipo: 'cantidad', partida_id: 'p-gas', formula_cantidad: '1', seccion: 'Instalación', prioridad: 35 },
   ].concat(ai.reglas),
   productos: ai.productos, manoObra: [], dtoLinea: [],
 };
@@ -74,10 +84,15 @@ igual('cuatro máquinas: dos interiores y dos exteriores', maquinas(r).length, 4
 igual('las del salón van juntas', nombres(r).slice(0, 2).join(' | '), 'EZ-12RD6-I — Salón | EZ-12RD6-O — Salón');
 igual('y luego las del dormitorio', nombres(r).slice(2).join(' | '), 'EZ-09RD6-I — Dormitorio | EZ-09RD6-O — Dormitorio');
 igual('los metros salen de las estancias (4 + 6)', r.variables.metros_totales, 10);
-igual('con 3 m por equipo incluidos, 4 m de exceso', r.variables.metros_exceso, 4);
+igual('la tubería va por metro: 10 m', linea(r, 'C103').cantidad, 10);
+igual('en metros', linea(r, 'C103').unidad, 'm');
+igual('y la conexión, una por equipo', linea(r, 'C100').cantidad, 2);
+igual('gas por estancia: 4 m no pasa de 5, 6 m sí → 1 m × 12 g', r.variables.gas_g_estancia.join(','), '0,12');
+igual('12 g = 0,012 kg', r.variables.kg_gas_extra, 0.012);
+igual('la línea de gas va en kg', linea(r, 'refrigerante').unidad, 'kg');
 igual('dos exteriores → dos soportes', linea(r, 'C102').cantidad, 2);
 comprueba('sin avisos de máquina', !r.incidencias.some(function (i) { return i.codigo === 'regla_aviso'; }));
-var esperado = P('EZ-12RD6-I') + P('EZ-12RD6-O') + P('EZ-09RD6-I') + P('EZ-09RD6-O') + 2 * 245 + 2 * 45 + 4 * 52 + 2 * 450;
+var esperado = P('EZ-12RD6-I') + P('EZ-12RD6-O') + P('EZ-09RD6-I') + P('EZ-09RD6-O') + 2 * 89 + 2 * 45 + 10 * 52 + 2 * 450 + 0.012 * 49;
 igual('el total cuadra', cadenaPrecios(r.lineas, 0).total.toFixed(2), esperado.toFixed(2));
 
 titulo('multisplit 3×1: tres interiores y una exterior');
@@ -91,8 +106,9 @@ igual('tres interiores', maquinas(r).filter(function (l) { return /RD6-I/.test(l
 comprueba('y la exterior M3O-18N8, que lleva hasta 12+12+12', !!linea(r, 'M3O-18N8'));
 igual('una sola exterior', maquinas(r).filter(function (l) { return /^M\dO/.test(l.descripcion); }).length, 1);
 igual('un soporte', linea(r, 'C102').cantidad, 1);
-igual('22 m de línea: 13 de exceso sobre 9 incluidos', r.variables.metros_exceso, 13);
-igual('y gas: 22 − 7,5 = 14,5 m → 0,29 kg', r.variables.kg_gas_extra, 0.29);
+igual('22 m de tubería', linea(r, 'C103').cantidad, 22);
+igual('gas por estancia con 7,5 m de fábrica en multi: 0, 0,5×12, 1,5×12', r.variables.gas_g_estancia.join(','), '0,6,18');
+igual('24 g → 0,024 kg', r.variables.kg_gas_extra, 0.024);
 
 titulo('multisplit 2×1 grande: sube de exterior');
 r = calcular('aire_acondicionado', {
@@ -145,6 +161,7 @@ r = calcular('aire_acondicionado', {
   distancias_lineas: [{ metros: 10 }, { metros: 7.5 }],
 }, config);
 igual('coge los metros de la lista antigua', r.variables.metros_totales, 17.5);
+igual('y el gas con el cálculo antiguo (17,5 − 7,5 = 10 m × 20 g)', r.variables.kg_gas_extra, 0.2);
 comprueba('y elige máquinas igual', maquinas(r).length === 3);
 
 titulo('sin m² no se inventa la máquina');

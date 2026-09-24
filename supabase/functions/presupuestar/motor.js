@@ -179,7 +179,8 @@ export function calcular(categoria, datos, config) {
         detalle_tecnico: item.detalle_tecnico || null,
         especificaciones: [],
         cantidad,
-        unidad: 'ud',
+        // La unidad de la partida (etapa 51): m para la tubería, kg para el gas.
+        unidad: item.unidad || 'ud',
         precio_tarifa: numero(item.precio_fijo),
         dto_linea_pct: 0,
         iva: 21,

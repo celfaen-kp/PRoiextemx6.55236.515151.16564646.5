@@ -1,4 +1,8 @@
 /* El motor, contra el caso de aire acondicionado que sí está verificado.
+ * OJO: la configuración de aquí es la HISTÓRICA (C100 con 3 m incluidos,
+ * C103 «exceso metro», gas a 20 g/m): sirve para comprobar el motor contra
+ * los presupuestos antiguos. Las partidas vigentes (tubería por metro, gas
+ * por máquina) están en motor-aire.js, que sigue a sql/etapa51.
  *
  * De MOTOR-PRESUPUESTOS.md §3: en los tres presupuestos que usan los códigos
  * C100–C104, las cantidades siguen EXACTAMENTE el número de unidades. El caso
