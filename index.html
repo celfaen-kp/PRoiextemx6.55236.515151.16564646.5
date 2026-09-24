@@ -395,7 +395,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '17.1'; // versión visible de la app (única fuente)
+const APP_VERSION = '17.2'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -6153,8 +6153,8 @@ function vVisitas() {
     const cats = (v.fichas || []).map((f) => f.categoria);
     return `<div class="card" data-a="abrirVisita" data-id="${v.id}" style="margin-bottom:11px;cursor:pointer">
       <div class="row g8"><span class="dot" style="width:8px;height:8px;background:${color}"></span><span class="lbl"${color === 'var(--rojo)' ? ' style="color:var(--rojo)"' : ''}>${esc(texto)}</span><div class="grow"></div><span class="tiny">${esc(v.codigo || '')}</span></div>
-      <div class="h2" style="margin-top:9px">${esc(v.direccion || 'Sin dirección')}</div>
-      <div class="sub" style="margin-top:4px">${esc([v.cliente && v.cliente.nombre, v.poblacion].filter(Boolean).join(' · ') || 'Sin cliente')}</div>
+      <div class="h2" style="margin-top:9px">${esc((v.cliente && v.cliente.nombre) || 'Sin cliente')}</div>
+      <div class="sub" style="margin-top:4px">${esc([v.direccion, v.poblacion].filter(Boolean).join(' · ') || 'Sin dirección')}</div>
       <div class="row" style="gap:6px;flex-wrap:wrap;margin-top:13px;padding-top:12px;border-top:1px solid var(--l1)">
         ${cats.map((c) => `<span class="badge" style="background:rgba(20,23,15,.06);color:var(--tinta)">${esc(nombreCat(c))}</span>`).join('')}
         <div class="grow"></div><span class="tiny">${v.fecha_visita ? fechaCorta(v.fecha_visita + 'T12:00') : ''}</span>
@@ -6164,8 +6164,8 @@ function vVisitas() {
 
   const medias = b && b.draft ? `<div class="card" style="margin-bottom:11px;box-shadow:0 0 0 1.5px var(--ambar),var(--sh)">
       <div class="row g8"><span class="dot" style="width:8px;height:8px;background:var(--ambar)"></span><span class="lbl">A medias en este móvil · paso ${b.paso || 1} de 5</span></div>
-      <div class="h2" style="margin-top:9px">${esc(b.draft.direccion || 'Visita sin dirección')}</div>
-      <div class="sub" style="margin-top:4px">${esc([(b.draft._cliente || {}).nombre, b.draft.poblacion].filter(Boolean).join(' · ') || 'Sin cliente todavía')}</div>
+      <div class="h2" style="margin-top:9px">${esc((b.draft._cliente || {}).nombre || 'Sin cliente todavía')}</div>
+      <div class="sub" style="margin-top:4px">${esc([b.draft.direccion, b.draft.poblacion].filter(Boolean).join(' · ') || 'Visita sin dirección')}</div>
       <div class="row g8" style="margin-top:13px">
         <button class="pill pill-verde grow" data-a="seguirBorrador" style="padding:13px">Seguir</button>
         <button class="pill ${V.confirmarDescartar ? 'pill-rojo' : ''}" data-a="descartarBorrador" style="padding:13px">${V.confirmarDescartar ? '¿Seguro? Otra vez' : 'Descartar'}</button>
@@ -6457,7 +6457,7 @@ function vVisita() {
     ${graciasHTML(v)}
   </div>`;
 
-  return cab(v.direccion || 'Visita', [cli && cli.nombre, v.poblacion, v.codigo].filter(Boolean).join(' · '),
+  return cab((cli && cli.nombre) || v.direccion || 'Visita', [v.direccion, v.poblacion, v.codigo].filter(Boolean).join(' · '),
     [v.direccion, v.poblacion].filter(Boolean).join(', '))
     + `<div class="scroll pad pb-nav sin-marca">
       ${bloque}
@@ -7385,6 +7385,15 @@ function agEstadoCliente(c) {
 }
 
 /* ---------- carga ---------- */
+async function cargarVisitasCliente(id) {
+  if (!id || !navigator.onLine) return;
+  try {
+    const vis = await visitasDB.visitasDeCliente(id);
+    V.agenda.visitasCliente = Object.assign({}, V.agenda.visitasCliente || {}, { [id]: vis });
+    if (V.view === 'clienteVer' && V.clienteVerId === id) render();
+  } catch (e) { /* se quedan las de la agenda */ }
+}
+
 A.cargarAgenda = async () => {
   const ag = V.agenda; if (ag.cargando) return;
   ag.cargando = true;
@@ -7437,7 +7446,7 @@ A.ag = (a, d, e) => {
     case 'ag_cliTipo': if (V.clienteDraft) V.clienteDraft.tipo = d.t; return render();
     case 'ag_cliOrigen': if (V.clienteDraft) V.clienteDraft.origen = V.clienteDraft.origen === d.o ? null : d.o; return render();
     case 'ag_guardarCliente': return agGuardarCliente(d.cita === '1');
-    case 'ag_abrirCliente': V.clienteVerId = d.id; V.view = 'clienteVer'; scrollMemo.clienteVer = 0; render(); return A.cargarAgenda();
+    case 'ag_abrirCliente': V.clienteVerId = d.id; V.view = 'clienteVer'; scrollMemo.clienteVer = 0; render(); cargarVisitasCliente(d.id); return A.cargarAgenda();
     case 'ag_abrirCita': V.citaVerId = d.id; V.agConfirmar = null; V.view = 'citaVer'; scrollMemo.citaVer = 0; return render();
     case 'ag_nuevaCita': if (e) e.stopPropagation(); return agNuevaCita(d.id, false);
     case 'ag_editarCita': return agEditarCita(d.id);
@@ -8426,9 +8435,12 @@ function vClienteVer() {
   }
   const hoy = agHoy();
   const citas = V.agenda.citas.filter((x) => x.cliente_id === c.id);
+  // Las visitas: las pedidas aparte al abrir la ficha mandan; si aún no han
+  // llegado, las que vienen pegadas al cliente en la agenda.
+  const visitasCli = (V.agenda.visitasCliente || {})[c.id] || c.visitas || [];
   const items = [
     ...citas.map((x) => ({ t: x.inicio || x.created_at || '', tipo: 'cita', x })),
-    ...(c.visitas || []).map((v) => ({ t: v.fecha_visita ? v.fecha_visita + 'T12:00' : '', tipo: 'visita', v })),
+    ...visitasCli.map((v) => ({ t: v.fecha_visita ? v.fecha_visita + 'T12:00' : '', tipo: 'visita', v })),
   ].sort((p, q) => String(q.t).localeCompare(String(p.t)));
 
   const hito = (it) => {
@@ -8449,6 +8461,7 @@ function vClienteVer() {
     return `<div class="ag-hito hecho"><div class="card" data-a="abrirVisita" data-id="${v.id}" style="cursor:pointer">
       <div class="row g8"><span class="dot" style="width:8px;height:8px;background:${est[0]}"></span><span class="lbl">${est[1]}${v.codigo ? ' · ' + esc(v.codigo) : ''}</span></div>
       <div style="font:600 15px/1.25 var(--sans);margin-top:7px">Visita${v.fecha_visita ? ' del ' + fechaCorta(v.fecha_visita + 'T12:00') : ''}</div>
+      ${v.direccion ? `<div class="sub" style="font-size:12.5px;margin-top:3px">${esc([v.direccion, v.poblacion].filter(Boolean).join(' · '))}</div>` : ''}
     </div></div>`;
   };
 

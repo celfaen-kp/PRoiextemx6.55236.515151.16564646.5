@@ -364,6 +364,16 @@ export async function listarClientesAgenda() {
   ) || [];
 }
 
+/** Las visitas de un cliente, pedidas aparte: no dependen del «embed» de la agenda. */
+export async function visitasDeCliente(clienteId) {
+  return unwrap(
+    await supabase.from('visitas')
+      .select('id, codigo, estado, sync_estado, fecha_visita, direccion, poblacion, sync_at')
+      .eq('cliente_id', clienteId)
+      .order('fecha_visita', { ascending: false })
+  ) || [];
+}
+
 export async function guardarCliente(cliente) {
   const { id, ...campos } = cliente;
   if (id) {
