@@ -131,7 +131,9 @@ Deno.serve(async (req) => {
   }
 
   const [variables, lookup, reglasR, manoObra, dtos] = await Promise.all([
-    sb.from('variables_derivadas').select('codigo, formula, orden').eq('categoria', categoria).order('orden'),
+    // por_cada (etapa 48): la variable se calcula por estancia. Sin pedirla
+    // aquí, el motor la calculaba fuera y no encontraba los m².
+    sb.from('variables_derivadas').select('codigo, formula, orden, por_cada').eq('categoria', categoria).order('orden'),
     sb.from('tablas_lookup').select('clave, entrada, valor').eq('categoria', categoria),
     sb.from('reglas').select('*').eq('conjunto_id', conjunto.id).eq('activa', true),
     sb.from('mano_obra').select('*').eq('conjunto_id', conjunto.id),
