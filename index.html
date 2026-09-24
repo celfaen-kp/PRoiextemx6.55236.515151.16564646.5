@@ -395,7 +395,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '16.9'; // versión visible de la app (única fuente)
+const APP_VERSION = '17.0'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -5111,9 +5111,9 @@ function vAjustes() {
       </div>`).join('')}
     </div>` : ''}
 
-    <a class="card row" href="manual/index.html" target="_blank" rel="noopener" style="margin-top:14px;text-decoration:none;color:inherit">
+    <a class="card row" href="manual/index.html" style="margin-top:14px;text-decoration:none;color:inherit">
       <div class="grow"><div style="font:600 15px var(--sans)">Manual de la app</div>
-      <div class="sub" style="font-size:12px;margin-top:4px">Cómo se usa, paso a paso y con pantallas, para ${esAdmin() ? 'cada tipo de usuario' : 'lo tuyo'}. Se abre en el navegador.</div></div>
+      <div class="sub" style="font-size:12px;margin-top:4px">Cómo se usa, paso a paso y con pantallas, para ${esAdmin() ? 'cada tipo de usuario' : 'lo tuyo'}. Arriba tiene un botón para volver aquí.</div></div>
       <div style="font:400 20px/1 var(--sans);color:var(--t3)">›</div>
     </a>
 

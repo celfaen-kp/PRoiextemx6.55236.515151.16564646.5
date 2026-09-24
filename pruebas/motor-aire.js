@@ -142,6 +142,7 @@ titulo('sin m² no se inventa la máquina');
 r = calcular('aire_acondicionado', { tipo_sistema: 'multisplit', estancias: [{ nombre: 'Salón' }, { nombre: 'Cuarto' }] }, config);
 igual('tamaño 0 en las dos', r.variables.tamano.join(','), '0,0');
 comprueba('sin interiores ni exterior', maquinas(r).length === 0);
+comprueba('y avisa de que faltan los m²', aviso(r, 'no tiene m²'));
 comprueba('pero el kit de instalación sí', !!linea(r, 'C104'));
 
 resultado();

@@ -280,24 +280,17 @@ Deno.serve(async (req) => {
   if (p.visita_id) {
     const { data: v } = await sb.from('visitas').select('tl_deal_id').eq('id', p.visita_id).maybeSingle();
     dealId = limpio(v?.tl_deal_id);
-    if (!dealId) {
-      return json({ error: 'La visita de este presupuesto todavía no está en Teamleader. Súbela primero y vuelve a mandarlo.' }, 409);
-    }
+    // Sin oportunidad en la visita: se le crea una más abajo, con el cliente
+    // de la visita. Antes se paraba y pedía subir la visita primero.
   }
 
-  // El cliente solo hace falta en un suelto, para crearle su oportunidad. En
-  // uno de visita el cliente va en la oportunidad (antes se exigía aquí también
-  // y los de visita, que no lo llevan en el presupuesto, no se subían nunca).
+  // El cliente solo hace falta si hay que crear la oportunidad (suelto, o
+  // visita cuya oportunidad se borró en Teamleader). Se resuelve más abajo.
   // deno-lint-ignore no-explicit-any
   let cli: any = null;
-  if (!dealId && !yaOferta) {
-    if (p.cliente_id) {
-      const { data } = await sb.from('clientes_cache').select('nombre, tl_id, tl_tipo').eq('id', p.cliente_id).maybeSingle();
-      cli = data;
-    }
-    if (!cli?.tl_id) {
-      return json({ error: 'El cliente de este presupuesto todavía no está en Teamleader. Ábrelo en la agenda y súbelo primero.' }, 409);
-    }
+  if (p.cliente_id) {
+    const { data } = await sb.from('clientes_cache').select('nombre, tl_id, tl_tipo').eq('id', p.cliente_id).maybeSingle();
+    cli = data;
   }
 
   // --- las líneas, agrupadas por sección ---------------------------------------
@@ -343,21 +336,54 @@ Deno.serve(async (req) => {
       if (!dealId) throw new Error('No se encuentra la oportunidad de la oferta que ya estaba en Teamleader.');
     }
 
-    // Presupuesto suelto: se le crea su oportunidad.
+    // ¿Sigue existiendo la oportunidad de la visita? Si alguien la borró en
+    // Teamleader, antes esto fallaba y el presupuesto se quedaba sin subir.
+    // Ahora se crea otra y se apunta en la visita, para que las siguientes
+    // ofertas vayan a la misma.
+    let dealBorrada = false;
+    if (dealId) {
+      try { deal = await crm(token, 'deals.info', { id: dealId }); }
+      catch (e) {
+        // deno-lint-ignore no-explicit-any
+        if ((e as any).status !== 404) throw e;
+        dealBorrada = true; dealId = '';
+      }
+    }
+
+    // Presupuesto suelto (o visita cuya oportunidad ya no existe): se crea una.
     if (!dealId) {
+      if (!cli?.tl_id && p.cliente_id) {
+        const { data } = await sb.from('clientes_cache').select('nombre, tl_id, tl_tipo').eq('id', p.cliente_id).maybeSingle();
+        cli = data;
+      }
+      if (!cli?.tl_id && p.visita_id) {
+        // El cliente de la visita, que es quien de verdad la tiene.
+        const { data: v } = await sb.from('visitas').select('cliente_id').eq('id', p.visita_id).maybeSingle();
+        if (v?.cliente_id) {
+          const { data } = await sb.from('clientes_cache').select('nombre, tl_id, tl_tipo').eq('id', v.cliente_id).maybeSingle();
+          cli = data;
+        }
+      }
+      if (!cli?.tl_id) {
+        throw new Error(dealBorrada
+          ? 'La oportunidad de esta visita ya no existe en Teamleader y el cliente tampoco está allí: súbelo primero desde su ficha.'
+          : 'El cliente de este presupuesto todavía no está en Teamleader. Ábrelo en la agenda y súbelo primero.');
+      }
       const f = await faseDeEmbudo(token, [limpio(p.categoria)]);
       embudo = f ? f.embudo : null;
       const fase = f ? f.fase : null;
       const r = await crm(token, 'deals.create', {
         lead: { customer: { type: cli.tl_tipo === 'company' ? 'company' : 'contact', id: cli.tl_id } },
-        title: (limpio(p.titulo) || 'Presupuesto').slice(0, 255),
+        title: (limpio(p.titulo) || (cli.nombre ? 'Presupuesto · ' + cli.nombre : 'Presupuesto')).slice(0, 255),
         ...(fase ? { phase_id: fase } : {}),
       });
       dealId = r?.data?.id || '';
       if (!dealId) throw new Error('El CRM no devolvió el id de la oportunidad.');
       dealCreado = true;
+      // La visita apunta ahora a la oportunidad nueva.
+      if (p.visita_id) await sb.from('visitas').update({ tl_deal_id: dealId }).eq('id', p.visita_id);
+      deal = await crm(token, 'deals.info', { id: dealId });
     }
-    deal = await crm(token, 'deals.info', { id: dealId });
   } catch (e) {
     const msg = (e as Error).message;
     await sb.from('presupuestos').update({ sync_estado: 'error', sync_error: msg }).eq('id', id);

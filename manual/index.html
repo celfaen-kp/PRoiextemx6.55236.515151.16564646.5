@@ -66,6 +66,8 @@ th{font:600 11px var(--mono);letter-spacing:.12em;text-transform:uppercase;color
 .roles a b{display:block;font:700 20px var(--cond)}
 .roles a span{display:block;color:var(--t2);font-size:14px;margin-top:4px}
 footer{margin-top:60px;padding-top:20px;border-top:1px solid var(--l1);color:var(--t3);font-size:13px}
+.volver-app{position:sticky;top:0;z-index:10;display:block;background:var(--tinta);color:#fff;font:600 14px var(--sans);padding:calc(12px + env(safe-area-inset-top,0px)) 20px 12px;text-decoration:none}
+.volver-app:hover{text-decoration:none;background:#2a2e24}
 @media (max-width:900px){
   .marco{grid-template-columns:1fr}
   nav.indice{position:static;height:auto;border-right:0;border-bottom:1px solid var(--l1)}
@@ -76,7 +78,7 @@ footer{margin-top:60px;padding-top:20px;border-top:1px solid var(--l1);color:var
   h1{font-size:32px}h2{font-size:26px}
 }
 @media print{
-  nav.indice{display:none}.marco{display:block}main{padding:0;max-width:none}
+  nav.indice,.volver-app{display:none}.marco{display:block}main{padding:0;max-width:none}
   .pantalla,.dos figure,.roles a{box-shadow:none;border:1px solid var(--l1);break-inside:avoid}
   h2{break-before:page}
   a{color:inherit}
@@ -84,6 +86,7 @@ footer{margin-top:60px;padding-top:20px;border-top:1px solid var(--l1);color:var
 </style>
 </head>
 <body>
+<a class="volver-app" href="../index.html">‹ Volver a la app</a>
 <div class="marco">
 <nav class="indice">
   <div class="logo"><img src="../logo-trans.png" alt=""><b>MANUAL</b></div>

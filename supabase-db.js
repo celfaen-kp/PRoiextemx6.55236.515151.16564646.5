@@ -84,19 +84,32 @@ export async function fichajeAbierto(empleadoId) {
     .maybeSingle());
 }
 
-export async function ficharEntrada(empleadoId, obraId) {
+// `donde` (sql/etapa50): { lat, lng, precision_m, distancia_m, lugar } o, si lo
+// ficha Administración por él, { lugar: 'administracion', fichado_por }.
+export async function ficharEntrada(empleadoId, obraId, donde) {
   return unwrap(await supabase
     .from('fichajes')
-    .insert({ empleado_id: empleadoId, obra_id: obraId })
+    .insert(Object.assign({ empleado_id: empleadoId, obra_id: obraId }, donde || {}))
     .select().single());
 }
 
-export async function ficharSalida(fichajeId) {
+export async function ficharSalida(fichajeId, donde) {
+  const d = donde || {};
   return unwrap(await supabase
     .from('fichajes')
-    .update({ salida: new Date().toISOString() }) // el trigger reescribe con now() del servidor
+    .update(Object.assign({ salida: new Date().toISOString() }, // el trigger reescribe con now() del servidor
+      d.lat != null ? { salida_lat: d.lat, salida_lng: d.lng, salida_distancia_m: d.distancia_m, salida_lugar: d.lugar } : {},
+      d.lugar === 'administracion' ? { salida_lugar: 'administracion' } : {}))
     .eq('id', fichajeId)
     .select().single());
+}
+
+/* --- los datos de la empresa (sql/etapa50): una fila, todos leen, admin escribe --- */
+export async function obtenerEmpresa() {
+  return unwrap(await supabase.from('empresa').select('*').eq('id', 1).maybeSingle());
+}
+export async function guardarEmpresa(cambios) {
+  return unwrap(await supabase.from('empresa').update(cambios).eq('id', 1).select().single());
 }
 
 // Corrección administrativa (solo jefe/admin, aplicado por RLS + trigger del

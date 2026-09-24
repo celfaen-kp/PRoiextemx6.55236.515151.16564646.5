@@ -126,6 +126,8 @@ for sistemas, tramos, nombre in [(['multisplit'], tramos_mural, 'murales'), (['c
 # --- avisos ---------------------------------------------------------------------------
 regla(None, {}, tipo='aviso', por_cada='estancias', var='tamano', mn=99, prio=90,
       notas='Una estancia pide más de 7 kW: no hay máquina doméstica para ella, va a mano.')
+regla(None, {'tipo_sistema': MURAL + ['conductos', 'cassette']}, tipo='aviso', por_cada='estancias', var='tamano', mn=0, mx=0, prio=90,
+      notas='Una estancia no tiene m²: sin los m² no se puede elegir su máquina. Ponlos en la ficha (Estancias → m²) y vuelve a calcular.')
 regla(None, {'tipo_sistema': 'suelo_techo'}, tipo='aviso', prio=90,
       notas='Suelo-techo no está en la tarifa doméstica de Midea: la máquina va a mano.')
 regla(None, {'tipo_sistema': MULTI}, tipo='aviso', var='unidades_interiores', mn=6, prio=90,
