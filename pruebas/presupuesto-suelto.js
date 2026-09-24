@@ -105,7 +105,15 @@ setTimeout(function () {
   igual('con coma también', d.estancias[1].m2, 12.5);
   igual('y sus metros de línea', d.estancias[1].metros, 8);
   igual('con metros por equipo, el total antiguo ya no se manda', d.distancias_lineas.length, 0);
-  V.suelto.estancias = null;
+  igual('sin equipos viejos, nada que retirar', d.equipos_a_retirar_n, 0);
+  V.suelto.retirar = '2'; V.suelto.retirar_ext = ''; A.presuSueltoChip('recuperar', '1');
+  d = datosDelSuelto(V.suelto);
+  igual('dos interiores viejas', d.equipos_a_retirar_n, 2);
+  igual('exteriores sin poner: 0 (el motor cuenta una)', d.exteriores_a_retirar_n, 0);
+  igual('recuperando la tubería', d.preinstalacion_existente, 'si_aprovechable');
+  A.presuSueltoChip('recuperar', '');
+  igual('sin recuperar', datosDelSuelto(V.suelto).preinstalacion_existente, 'no');
+  V.suelto.retirar = ''; V.suelto.estancias = null;
   igual('el título, para reconocerlo', tituloDelSuelto(), 'Aire acondicionado · Ana Ferrer');
 
   var pedido = null;

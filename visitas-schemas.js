@@ -436,8 +436,10 @@ const AIRE = {
           ] },
         { key: 'preinstalacion_existente', etiqueta: 'Preinstalación', tipo: 'opcion', motor: true,
           opciones: ['no', 'si_aprovechable', 'si_a_sustituir'] },
-        { key: 'equipos_a_retirar_n', etiqueta: 'Equipos a retirar', tipo: 'entero', motor: true,
-          ayuda: 'Con recuperación de gas si los hay' },
+        { key: 'equipos_a_retirar_n', etiqueta: 'Interiores viejas a retirar', tipo: 'entero', motor: true,
+          ayuda: '80 € por máquina; 150 € si se recupera su tubería (preinstalación aprovechable)' },
+        { key: 'exteriores_a_retirar_n', etiqueta: 'Exteriores viejas a retirar', tipo: 'entero', motor: true,
+          ayuda: '80 € por máquina. Si no se pone y hay interiores viejas, se cuenta una' },
       ],
     },
     {

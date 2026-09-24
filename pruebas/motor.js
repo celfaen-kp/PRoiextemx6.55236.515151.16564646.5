@@ -118,6 +118,42 @@ igual('dos 1x1 de 4 m: la carga de fábrica llega (2 × 5 m)', h.variables.metro
 comprueba('así que no hay línea de gas', !h.lineas.some(function (l) { return l.descripcion.indexOf('refrigerante') > -1; }));
 comprueba('pero el C103 tampoco se pierde', h.variables.metros_exceso === 2);
 
+titulo('retirar los equipos viejos (etapa 49)');
+var cfgRet = {
+  variables: config.variables.concat([
+    { codigo: 'n_retirar', formula: 'max(0, equipos_a_retirar_n)', orden: 20 },
+    { codigo: 'recupera_tuberia', formula: "si(preinstalacion_existente = 'si_aprovechable', 1, 0)", orden: 21 },
+    { codigo: 'n_retirar_ext', formula: 'si(exteriores_a_retirar_n > 0, exteriores_a_retirar_n, si(n_retirar > 0, 1, 0))', orden: 22 },
+  ]),
+  lookup: config.lookup,
+  partidas: {
+    'r-int': { codigo: 'RETIRAR_INT', nombre: 'Retirada interior', items: [{ concepto_libre: 'Retirada de unidad interior antigua', precio_fijo: 80, formula_cantidad: 'n_retirar', orden: 1 }] },
+    'r-tub': { codigo: 'RETIRAR_INT_TUB', nombre: 'Retirada interior con tubería', items: [{ concepto_libre: 'Retirada de unidad interior antigua con recuperación de la tubería', precio_fijo: 150, formula_cantidad: 'n_retirar', orden: 1 }] },
+    'r-ext': { codigo: 'RETIRAR_EXT', nombre: 'Retirada exterior', items: [{ concepto_libre: 'Retirada de unidad exterior antigua', precio_fijo: 80, formula_cantidad: 'n_retirar_ext', orden: 1 }] },
+  },
+  reglas: [
+    { id: 'ri', tipo: 'cantidad', condicion: { recupera_tuberia: 0 }, partida_id: 'r-int', formula_cantidad: '1', seccion: 'Retirada', prioridad: 30 },
+    { id: 'rt', tipo: 'cantidad', condicion: { recupera_tuberia: 1 }, partida_id: 'r-tub', formula_cantidad: '1', seccion: 'Retirada', prioridad: 30 },
+    { id: 're', tipo: 'cantidad', condicion: {}, partida_id: 'r-ext', formula_cantidad: '1', seccion: 'Retirada', prioridad: 30 },
+  ],
+  productos: {}, manoObra: [], dtoLinea: [],
+};
+var ret = function (d) { return calcular('aire_acondicionado', Object.assign({ tipo_sistema: 'multisplit', estancias: [{ nombre: 'Salón' }, { nombre: 'Cuarto' }] }, d), cfgRet); };
+var sinViejos = ret({ equipos_a_retirar_n: 0 });
+comprueba('sin equipos viejos no sale nada de retirada', !sinViejos.lineas.some(function (l) { return l.seccion === 'Retirada'; }));
+var dosViejos = ret({ equipos_a_retirar_n: 2 });
+var li = dosViejos.lineas.filter(function (l) { return l.seccion === 'Retirada'; });
+igual('dos interiores viejas sin recuperar tubería: 80 × 2', li.filter(function (l) { return /interior antigua$/.test(l.descripcion); })[0].cantidad, 2);
+comprueba('y no la de 150', !li.some(function (l) { return /tubería/.test(l.descripcion); }));
+igual('una exterior por defecto, a 80', li.filter(function (l) { return /exterior/.test(l.descripcion); })[0].cantidad, 1);
+igual('total de retirada: 240', cadenaPrecios(li, 0).total, 240);
+var conTub = ret({ equipos_a_retirar_n: 2, exteriores_a_retirar_n: 2, preinstalacion_existente: 'si_aprovechable' });
+li = conTub.lineas.filter(function (l) { return l.seccion === 'Retirada'; });
+igual('recuperando la tubería: 150 × 2', li.filter(function (l) { return /tubería/.test(l.descripcion); })[0].cantidad, 2);
+comprueba('y no la de 80 por interior', !li.some(function (l) { return /interior antigua$/.test(l.descripcion); }));
+igual('dos exteriores dichas: 80 × 2', li.filter(function (l) { return /exterior/.test(l.descripcion); })[0].cantidad, 2);
+igual('total: 300 + 160', cadenaPrecios(li, 0).total, 460);
+
 titulo('una regla por cada estancia (por_cada)');
 // Máquinas de mentira: el catálogo de verdad lo siembra la etapa 48.
 var cfgCada = {

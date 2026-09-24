@@ -6712,6 +6712,8 @@ const presuNuevoVacio = () => ({
   // hasta la exterior. Con los m² el motor elige la máquina; con los metros,
   // el tubo de más y el gas.
   tipo_sistema: 'multisplit', equipos: 1, metros: '', estancias: [{ m2: '', metros: '' }],
+  // lo viejo: interiores y exteriores a retirar, y si se aprovecha su tubería
+  retirar: '', retirar_ext: '', recuperar: false,
   // aerotermia: la potencia se pone a mano, calcularla desde la casa no está
   // calibrado (MOTOR-PRESUPUESTOS.md §7).
   kw: '', circuitos: 1, acs: 0, sustituye: false, apoyo: false, limpieza: false,
@@ -6765,8 +6767,12 @@ function datosDelSuelto(f) {
   // han puesto metros por equipo pero sí el total antiguo, va el total.
   const metrosTotal = num(f.metros);
   const conMetros = filas.some((x) => num(x.metros) > 0);
+  const retirar = Math.max(0, Math.min(30, Number(f.retirar) || 0));
   return {
     tipo_sistema: f.tipo_sistema,
+    equipos_a_retirar_n: retirar,
+    exteriores_a_retirar_n: Math.max(0, Math.min(30, Number(f.retirar_ext) || 0)),
+    preinstalacion_existente: retirar && f.recuperar ? 'si_aprovechable' : 'no',
     estancias: Array.from({ length: n }, (_, i) => ({
       nombre: 'Equipo ' + (i + 1),
       m2: num((filas[i] || {}).m2),
@@ -6796,7 +6802,7 @@ A.presuSueltoChip = (k, v) => {
   if (!V.suelto) return;
   // Los chips de sí/no mandan '' para apagarse y '1' para encenderse.
   V.suelto[k] = v === '' ? false : (/^\d+$/.test(String(v)) && k !== 'cat' ? Number(v) : v);
-  if (['sustituye', 'apoyo', 'limpieza', 'backup'].includes(k)) V.suelto[k] = v !== '';
+  if (['sustituye', 'apoyo', 'limpieza', 'backup', 'recuperar'].includes(k)) V.suelto[k] = v !== '';
   // Si se cambia de inversor, una batería que no va con él se quita.
   if (k === 'inversor' && !(BATERIAS_DE[v] || []).some(([m]) => m === V.suelto.bateria_marca)) V.suelto.bateria_marca = '';
   render();
@@ -6895,7 +6901,15 @@ function camposAireHTML(f) {
         <div class="grow"><input class="inp" data-f="presuEstancia" data-i="${i}" data-s="m2" value="${esc(String(x.m2 ?? ''))}" inputmode="decimal" placeholder="m²"></div>
         <div class="grow"><input class="inp" data-f="presuEstancia" data-i="${i}" data-s="metros" value="${esc(String(x.metros ?? ''))}" inputmode="decimal" placeholder="m de línea"></div>
       </div>`).join('')}
-      <div class="tiny" style="margin-top:8px">Van 3 m de línea incluidos por equipo; lo que pase de ahí se cobra aparte, y el gas de más a partir de la carga de fábrica.</div>`;
+      <div class="tiny" style="margin-top:8px">Van 3 m de línea incluidos por equipo; lo que pase de ahí se cobra aparte, y el gas de más a partir de la carga de fábrica.</div>
+
+      <div class="lbl" style="margin:16px 0 8px">Equipos viejos a retirar</div>
+      <div class="row g8">
+        <div class="grow"><input class="inp" data-f="presuCampo" data-k="retirar" value="${esc(String(f.retirar ?? ''))}" inputmode="numeric" placeholder="Interiores"></div>
+        <div class="grow"><input class="inp" data-f="presuCampo" data-k="retirar_ext" value="${esc(String(f.retirar_ext ?? ''))}" inputmode="numeric" placeholder="Exteriores"></div>
+      </div>
+      <div class="wrap" style="margin-top:10px"><div class="chip ${f.recuperar ? 'sel' : ''}" data-a="presuSueltoChip" data-k="recuperar" data-v="${f.recuperar ? '' : '1'}">Se recupera la tubería</div></div>
+      <div class="tiny" style="margin-top:8px">Retirar una interior: 80 €. Si se recupera su tubería (limpieza y prueba con nitrógeno): 150 €. Cada exterior vieja: 80 €. Sin exteriores puestas, se cuenta una si hay interiores.</div>`;
 }
 
 /** Aerotermia: la potencia la pones tú; el resto del presupuesto sale solo. */
@@ -9257,7 +9271,7 @@ document.addEventListener('input', (e) => {
   if (f === 'presuEditDto') { A.presuEditDto(t.value); return; }
   if (f === 'presuCampo') {
     const k = t.dataset.k;
-    if (k === 'equipos' || k === 'circuitos') t.value = t.value.replace(/\D/g, '').slice(0, 2);
+    if (['equipos', 'circuitos', 'retirar', 'retirar_ext'].includes(k)) t.value = t.value.replace(/\D/g, '').slice(0, 2);
     if (k === 'paneles' || k === 'wp') t.value = t.value.replace(/\D/g, '').slice(0, k === 'wp' ? 4 : 3);
     A.presuSueltoCampo(k, t.value);
     // Más o menos equipos de aire: aparecen o desaparecen sus filas.
