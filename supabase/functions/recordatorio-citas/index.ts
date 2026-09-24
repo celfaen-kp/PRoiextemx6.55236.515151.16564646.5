@@ -44,8 +44,17 @@ const CATEGORIAS: Record<string, string> = {
   aire_acondicionado: 'aire acondicionado',
 };
 
+// CORS: la llama también la app desde el navegador (avisar de UNA cita al
+// crearla, cambiarla o anularla). Sin esto el navegador cortaba la llamada
+// en el preflight y la app creía que la función no estaba subida; el aviso
+// acababa saliendo, pero minutos después, por la tarea programada.
+const CORS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-clave',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+};
 const json = (cuerpo: unknown, status = 200) =>
-  new Response(JSON.stringify(cuerpo), { status, headers: { 'Content-Type': 'application/json' } });
+  new Response(JSON.stringify(cuerpo), { status, headers: { ...CORS, 'Content-Type': 'application/json' } });
 
 const esEmail = (s: unknown) => typeof s === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s.trim());
 
@@ -286,6 +295,7 @@ const diaCorto = (iso: string) =>
 const duracionTxt = (m: number) => (m >= 60 ? (m % 60 ? `${Math.floor(m / 60)} h ${m % 60} min` : (m === 60 ? '1 hora' : `${m / 60} horas`)) : `${m} minutos`);
 
 Deno.serve(async (req) => {
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
   if (req.method !== 'POST') return json({ error: 'Método no permitido.' }, 405);
 
   const CLAVE = Deno.env.get('AVISOS_CLAVE') || '';

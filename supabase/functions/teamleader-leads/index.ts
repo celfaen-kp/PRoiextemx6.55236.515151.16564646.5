@@ -40,8 +40,16 @@ const ETIQUETA_APP = 'sysefen-app';
 const DIAS_PRIMERA_VEZ = 7;
 const MAX_PAGINAS = 10;
 
+// CORS: la llama también la app desde el navegador («Mirar ahora» los clientes
+// de la web), no solo la tarea programada. Sin esto el navegador cortaba la
+// llamada en el preflight.
+const CORS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-clave',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+};
 const json = (cuerpo: unknown, status = 200) =>
-  new Response(JSON.stringify(cuerpo), { status, headers: { 'Content-Type': 'application/json' } });
+  new Response(JSON.stringify(cuerpo), { status, headers: { ...CORS, 'Content-Type': 'application/json' } });
 
 const limpio = (s: unknown) => String(s ?? '').trim();
 
@@ -136,6 +144,7 @@ function señas(x: any) {
 }
 
 Deno.serve(async (req) => {
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
   if (req.method !== 'POST') return json({ error: 'Método no permitido.' }, 405);
 
   const CLAVE = Deno.env.get('AVISOS_CLAVE') || '';
