@@ -22,6 +22,8 @@
 //   { "solo_ver": true }          dice a quién escribiría, sin enviar nada
 //   { "fecha": "2026-09-20" }     en vez de las próximas 24 h, ese día entero (pruebas)
 //   { "resumen_dia": true }       resumen de MAÑANA a cada persona de presupuestos
+//   { "cita_id": "uuid" }         avisa de ESA cita (nueva, cambiada o anulada)
+//   { "cita_id": "uuid", "otra_vez": true }   la vuelve a avisar aunque ya se hiciera
 // Además, en cada pasada normal confirma por correo las citas nuevas (las que
 // empiezan dentro de más de 24 h y aún no tienen confirmacion_enviada_at).
 //   { "resumen_dia": true, "fecha": "2026-09-20" }   resumen de ese día (pruebas)
@@ -296,6 +298,8 @@ Deno.serve(async (req) => {
   let b: Record<string, unknown> = {};
   try { b = await req.json(); } catch { /* cuerpo vacío: valores por defecto */ }
   const soloVer = b.solo_ver === true;
+  // Reenviar a mano desde la app: se manda aunque ya estuviera marcado.
+  const otraVez = b.otra_vez === true;
   const citaSuelta = typeof b.cita_id === 'string' ? b.cita_id : '';
 
   // Dos maneras de entrar: la tarea programada, con su clave, que puede hacerlo
@@ -352,9 +356,9 @@ Deno.serve(async (req) => {
     // Qué toca contar.
     let tipo = '';
     if (c.estado === 'anulada') {
-      if (c.anulacion_enviada_at) return { ok: true, tipo: 'anulada', nada: 'ya avisada' };
+      if (c.anulacion_enviada_at && !otraVez) return { ok: true, tipo: 'anulada', nada: 'ya avisada' };
       // Si nunca se le dijo nada al cliente, tampoco hay que anunciarle una anulación.
-      if (!c.confirmacion_enviada_at && !c.aviso_enviado_at) {
+      if (!c.confirmacion_enviada_at && !c.aviso_enviado_at && !otraVez) {
         if (!soloVer) await sb.from('citas').update({ anulacion_enviada_at: new Date().toISOString() }).eq('id', c.id);
         return { ok: true, tipo: 'anulada', nada: 'nunca se avisó de esta cita' };
       }
@@ -363,7 +367,7 @@ Deno.serve(async (req) => {
       return { ok: true, nada: 'la cita ya no está pendiente' };
     } else if (c.cambio_desde) {
       tipo = 'cambio';
-    } else if (!c.confirmacion_enviada_at) {
+    } else if (!c.confirmacion_enviada_at || otraVez) {
       tipo = 'nueva';
     } else {
       return { ok: true, nada: 'ya avisada' };
@@ -445,6 +449,9 @@ Deno.serve(async (req) => {
     }
 
     if (soloVer) return { modo: 'cita', tipo, correos: correos.map((m) => ({ a: m.quien, para: m.para, asunto: m.asunto })) };
+    // Que la app pueda decir POR QUÉ no ha salido nada: sin correo del cliente
+    // ni correo de avisos de quien va, no hay a quién escribir.
+    const sinCorreo = !correos.length;
 
     const falloU: string[] = [];
     let okU = 0;
@@ -465,7 +472,8 @@ Deno.serve(async (req) => {
     const { error: errM } = await sb.from('citas').update(marca).eq('id', c.id);
 
     return {
-      modo: 'cita', tipo, enviados: okU,
+      modo: 'cita', tipo, enviados: okU, sin_correo: sinCorreo,
+      cliente_sin_email: !esEmail(c.cliente?.email),
       a: correos.map((m) => m.quien),
       errores: falloU.concat(errM ? ['marcar: ' + errM.message] : []),
     };

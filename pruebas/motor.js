@@ -118,4 +118,48 @@ igual('dos 1x1 de 4 m: la carga de fábrica llega (2 × 5 m)', h.variables.metro
 comprueba('así que no hay línea de gas', !h.lineas.some(function (l) { return l.descripcion.indexOf('refrigerante') > -1; }));
 comprueba('pero el C103 tampoco se pierde', h.variables.metros_exceso === 2);
 
+titulo('una regla por cada estancia (por_cada)');
+// Máquinas de mentira: el catálogo de verdad lo siembra la etapa 48.
+var cfgCada = {
+  variables: config.variables,
+  lookup: config.lookup.concat([{ clave: 'w_m2', entrada: 'defecto', valor: 100 }]),
+  partidas: {},
+  productos: {
+    'IN-09': { referencia: 'IN-09', nombre: 'Mural 2,6 kW', familia: 'aire_interior', unidad: 'ud', precio_tarifa: 300, iva: 21 },
+    'IN-12': { referencia: 'IN-12', nombre: 'Mural 3,5 kW', familia: 'aire_interior', unidad: 'ud', precio_tarifa: 350, iva: 21 },
+  },
+  reglas: [
+    // La potencia de cada estancia sale de sus m²: 100 W/m². Hasta 2,6 kW la
+    // pequeña, hasta 3,5 la mediana.
+    { id: 'e9', tipo: 'seleccion', por_cada: 'estancias', variable: "m2 * lookup('w_m2', 'defecto') / 1000",
+      minimo: 0.001, maximo: 2.6, producto_ref: 'IN-09', formula_cantidad: '1', seccion: 'Equipos', prioridad: 60 },
+    { id: 'e12', tipo: 'seleccion', por_cada: 'estancias', variable: "m2 * lookup('w_m2', 'defecto') / 1000",
+      minimo: 2.601, maximo: 3.5, producto_ref: 'IN-12', formula_cantidad: '1', seccion: 'Equipos', prioridad: 60 },
+    { id: 'grande', tipo: 'aviso', por_cada: 'estancias', variable: "m2 * lookup('w_m2', 'defecto') / 1000",
+      minimo: 3.501, notas: 'Una estancia pide más de 3,5 kW: la máquina va a mano.', prioridad: 60 },
+  ],
+  manoObra: [], dtoLinea: [],
+};
+var pc = calcular('aire_acondicionado', {
+  tipo_sistema: 'multisplit',
+  estancias: [{ nombre: 'Salón', m2: 30 }, { nombre: 'Dormitorio', m2: 12 }, { nombre: 'Estudio', m2: 20 }],
+  distancias_lineas: [],
+}, cfgCada);
+var maq = pc.lineas.filter(function (l) { return l.producto_ref; });
+igual('una máquina por estancia', maq.length, 3);
+igual('el salón (30 m² = 3 kW) lleva la mediana', maq[0].producto_ref, 'IN-12');
+comprueba('y lo dice en el concepto', maq[0].descripcion === 'Mural 3,5 kW — Salón');
+igual('el dormitorio (1,2 kW), la pequeña', maq[1].producto_ref, 'IN-09');
+igual('el estudio (2 kW), la pequeña', maq[2].producto_ref, 'IN-09');
+comprueba('cada línea recuerda su estancia', maq[1].origen_inputs.elemento === 'Dormitorio');
+comprueba('sin aviso: ninguna pasa de 3,5', !pc.incidencias.some(function (i) { return i.codigo === 'regla_aviso'; }));
+
+var pg = calcular('aire_acondicionado', {
+  tipo_sistema: 'split_1x1',
+  estancias: [{ nombre: 'Nave', m2: 80 }],
+  distancias_lineas: [],
+}, cfgCada);
+comprueba('80 m² (8 kW): ninguna máquina del catálogo', !pg.lineas.some(function (l) { return l.producto_ref; }));
+comprueba('y el aviso lo dice', pg.incidencias.some(function (i) { return i.codigo === 'regla_aviso' && /a mano/.test(i.mensaje); }));
+
 resultado();

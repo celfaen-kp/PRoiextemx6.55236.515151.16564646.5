@@ -371,7 +371,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '16.4'; // versión visible de la app (única fuente)
+const APP_VERSION = '16.5'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -6550,7 +6550,7 @@ function presuPanelHTML() {
 
       <div style="margin-top:18px;padding-top:12px;border-top:1px solid var(--l1)">
         <div class="lbl" style="font-size:11px">Añadir del catálogo</div>
-        <div class="sub" style="font-size:12px;margin-top:6px">La máquina la eliges tú: el motor no la adivina mientras no haya tarifas de aire cargadas.</div>
+        <div class="sub" style="font-size:12px;margin-top:6px">Para cambiar una máquina que propuso el motor o sumar algo que no está en las reglas.</div>
         <div class="row g8" style="margin-top:10px">
           <input class="inp grow" id="presu-buscar" data-f="presuTexto" value="${esc(p.buscar || '')}" placeholder="Nombre o referencia" autocomplete="off">
           <button class="pill" data-a="presuBuscar" style="padding:13px 16px">Buscar</button>
@@ -6705,8 +6705,10 @@ const SISTEMAS_AIRE = [
 
 const presuNuevoVacio = () => ({
   cat: 'aire_acondicionado', clienteId: null, cliente: '', titulo: '',
-  // aire
-  tipo_sistema: 'multisplit', equipos: 1, metros: '',
+  // aire: una fila por equipo interior, con sus m² y sus metros de línea
+  // hasta la exterior. Con los m² el motor elige la máquina; con los metros,
+  // el tubo de más y el gas.
+  tipo_sistema: 'multisplit', equipos: 1, metros: '', estancias: [{ m2: '', metros: '' }],
   // aerotermia: la potencia se pone a mano, calcularla desde la casa no está
   // calibrado (MOTOR-PRESUPUESTOS.md §7).
   kw: '', circuitos: 1, acs: 0, sustituye: false, apoyo: false, limpieza: false,
@@ -6755,12 +6757,19 @@ function datosDelSuelto(f) {
     };
   }
   const n = Math.max(1, Math.min(30, Number(f.equipos) || 1));
-  const metros = num(f.metros);
+  const filas = estanciasSuelto(f);
+  // El motor cuenta estancias, elige máquina por m² y suma metros. Si no se
+  // han puesto metros por equipo pero sí el total antiguo, va el total.
+  const metrosTotal = num(f.metros);
+  const conMetros = filas.some((x) => num(x.metros) > 0);
   return {
     tipo_sistema: f.tipo_sistema,
-    // El motor cuenta estancias y suma metros: se le dan tantas como equipos.
-    estancias: Array.from({ length: n }, (_, i) => ({ nombre: 'Equipo ' + (i + 1) })),
-    distancias_lineas: metros ? [{ estancia: 'total', metros }] : [],
+    estancias: Array.from({ length: n }, (_, i) => ({
+      nombre: 'Equipo ' + (i + 1),
+      m2: num((filas[i] || {}).m2),
+      metros: conMetros ? num((filas[i] || {}).metros) : 0,
+    })),
+    distancias_lineas: !conMetros && metrosTotal ? [{ estancia: 'total', metros: metrosTotal }] : [],
   };
 }
 
@@ -6861,18 +6870,29 @@ function vPresuNuevo() {
   </div>`;
 }
 
-/** Aire: tipo de sistema, cuántos equipos y cuántos metros de línea. */
+/** Las filas de equipos del suelto de aire: tantas como diga «equipos». */
+function estanciasSuelto(f) {
+  const n = Math.max(1, Math.min(30, Number(f.equipos) || 1));
+  const filas = Array.isArray(f.estancias) ? f.estancias.slice(0, n) : [];
+  while (filas.length < n) filas.push({ m2: '', metros: '' });
+  return filas;
+}
+
+/** Aire: tipo de sistema y, por cada equipo interior, sus m² y sus metros de línea. */
 function camposAireHTML(f) {
+  const filas = estanciasSuelto(f);
   return `<div class="lbl" style="margin:16px 0 8px">Tipo de sistema</div>
       <div class="wrap">${SISTEMAS_AIRE.map(([k, t]) => `<div class="chip ${f.tipo_sistema === k ? 'sel' : ''}" data-a="presuSueltoChip" data-k="tipo_sistema" data-v="${k}">${t}</div>`).join('')}</div>
 
-      <div class="row g8" style="margin-top:16px">
-        <div class="grow"><div class="lbl">Equipos interiores</div>
-          <input class="inp" data-f="presuCampo" data-k="equipos" value="${esc(String(f.equipos))}" inputmode="numeric" style="margin-top:8px"></div>
-        <div class="grow"><div class="lbl">Metros de línea (total)</div>
-          <input class="inp" data-f="presuCampo" data-k="metros" value="${esc(String(f.metros))}" inputmode="decimal" placeholder="0" style="margin-top:8px"></div>
-      </div>
-      <div class="tiny" style="margin-top:8px">Van 3 m incluidos por equipo; lo que pase de ahí se cobra aparte.</div>`;
+      <div class="lbl" style="margin:16px 0 8px">Equipos interiores</div>
+      <input class="inp" data-f="presuCampo" data-k="equipos" value="${esc(String(f.equipos))}" inputmode="numeric" style="width:90px">
+      <div class="tiny" style="margin-top:8px">Por cada equipo: los m² de la estancia (para elegir la máquina) y los metros de línea hasta la unidad exterior (para el tubo de más y el gas).</div>
+      ${filas.map((x, i) => `<div class="row g8" style="margin-top:10px;align-items:center">
+        <div class="tiny mono" style="width:22px;opacity:.5">${i + 1}</div>
+        <div class="grow"><input class="inp" data-f="presuEstancia" data-i="${i}" data-s="m2" value="${esc(String(x.m2 ?? ''))}" inputmode="decimal" placeholder="m²"></div>
+        <div class="grow"><input class="inp" data-f="presuEstancia" data-i="${i}" data-s="metros" value="${esc(String(x.metros ?? ''))}" inputmode="decimal" placeholder="m de línea"></div>
+      </div>`).join('')}
+      <div class="tiny" style="margin-top:8px">Van 3 m de línea incluidos por equipo; lo que pase de ahí se cobra aparte, y el gas de más a partir de la carga de fábrica.</div>`;
 }
 
 /** Aerotermia: la potencia la pones tú; el resto del presupuesto sale solo. */
@@ -7378,6 +7398,7 @@ A.ag = (a, d, e) => {
     case 'ag_citaQuien': if (cd) { sincronizarRuedas(); cd.empleadoId = cd.empleadoId === d.id ? null : d.id; } return render();
     case 'ag_guardarCita': return agGuardarCita();
     case 'ag_estado': return agCambiarEstado(d.id, d.e);
+    case 'ag_reenviar': return agReenviarAviso(d.id);
     case 'ag_borrarCita': if (e) e.stopPropagation(); return agBorrarCita(d.id);
     case 'ag_confirmarBorrarCita': return agConfirmarBorrarCita();
     case 'ag_borrarCliente': if (e) e.stopPropagation(); return agBorrarCliente(d.id);
@@ -7655,16 +7676,38 @@ async function agGuardarCita() {
  * Si esto falla (sin cobertura, por ejemplo) no se para nada: la tarea
  * programada lo recoge en la siguiente pasada.
  */
-async function avisarDeCita(id) {
-  if (!id || !navigator.onLine) return;
+async function avisarDeCita(id, otraVez) {
+  if (!id) return;
+  if (!navigator.onLine) { avisar('Sin conexión: el correo de la cita saldrá en la siguiente pasada de la tarea programada.'); return; }
   try {
-    const r = await visitasDB.avisarCita(id);
+    const r = await visitasDB.avisarCita(id, otraVez);
     if (r && r.enviados) {
       toast(r.tipo === 'anulada' ? 'Anulación avisada por correo.'
         : r.tipo === 'cambio' ? 'Cambio avisado por correo.'
         : 'Cita avisada por correo.');
+    } else if (r && r.sin_correo) {
+      // Antes esto se callaba y parecía que el correo no salía porque sí.
+      avisar(r.cliente_sin_email
+        ? 'La cita está guardada, pero el cliente no tiene email: no se le ha avisado. Pónselo en su ficha y pulsa «Reenviar aviso».'
+        : 'La cita está guardada, pero no hay a quién avisar por correo.');
+    } else if (r && r.nada) {
+      if (otraVez) toast('No hay nada que avisar: ' + r.nada + '.');
+    } else if (r && r.errores && r.errores.length) {
+      avisar('El correo de la cita no ha salido: ' + r.errores.join(' · '));
     }
-  } catch (e) { /* lo reintenta la tarea programada */ }
+    if (V.view === 'citaVer' || V.view === 'agenda') await A.cargarAgenda();
+  } catch (e) {
+    // Se dice, en vez de callarlo: si la función no está subida o la sesión no
+    // puede, hay que verlo. La tarea programada lo reintenta igual.
+    avisar('El correo de la cita no ha salido (' + agErrorTxt(e) + '). La tarea programada lo reintentará.');
+  }
+}
+
+async function agReenviarAviso(id) {
+  if (!puedeCitar() || V.agReenviando) return;
+  V.agReenviando = id; render();
+  try { await avisarDeCita(id, true); }
+  finally { V.agReenviando = null; render(); }
 }
 
 let agConfirmarT;
@@ -7704,6 +7747,13 @@ async function agConfirmarBorrarCita() {
   if (!navigator.onLine) { avisar('Sin conexión: no se ha borrado.'); return; }
   s.busy = true; render();
   try {
+    // Borrar una cita de la que ya se avisó al cliente es anularla: se le dice
+    // antes de que desaparezca, que si no se presenta nadie y él esperando.
+    const x = agCita(s.id);
+    if (x && x.estado === 'pendiente' && (x.confirmacion_enviada_at || x.aviso_enviado_at)) {
+      await visitasDB.guardarCita({ id: s.id, estado: 'anulada' });
+      await avisarDeCita(s.id);
+    }
     await visitasDB.borrarCita(s.id);
     if (V.citaVerId === s.id) { V.citaVerId = null; V.view = V.clienteVerId ? 'clienteVer' : 'agenda'; }
     V.sheet = null;
@@ -8198,7 +8248,10 @@ function vCitaVer() {
       ${fila('Nota', esc(x.nota || ''))}
       ${fila('Confirmación', agConfirmTxt(x, c))}
       ${fila('Aviso 24 h antes', agAvisoTxt(x, c))}
+      ${x.estado === 'anulada' ? fila('Anulación', x.anulacion_enviada_at ? 'Avisada ' + fechaCorta(x.anulacion_enviada_at) + ' ' + hhmm(x.anulacion_enviada_at) : (c.email ? 'Sin avisar' : 'Sin envío: el cliente no tiene email')) : ''}
     </div>
+    ${puedeCitar() && x.inicio && (pendiente || x.estado === 'anulada') ? `<button class="pill" data-a="ag_reenviar" data-id="${x.id}" style="margin-top:10px;padding:12px;width:100%;text-align:center" ${V.agReenviando === x.id ? 'disabled' : ''}>${V.agReenviando === x.id ? 'Enviando…' : (x.estado === 'anulada' ? 'Reenviar aviso de anulación' : 'Reenviar aviso por correo')}</button>
+    <div class="tiny" style="margin-top:6px;text-align:center">Al cliente${c.email ? ' (' + esc(c.email) + ')' : ' — sin email, no le llegará'} y a quien va. Si algo falla, aquí sale el motivo.</div>` : ''}
     <div class="card row" data-a="ag_abrirCliente" data-id="${x.cliente_id}" style="margin-top:12px;cursor:pointer">
       <div class="grow"><div style="font:600 15px var(--sans)">Ficha del cliente</div>
       <div class="sub" style="font-size:12px;margin-top:4px">Historial de citas y visitas.</div></div>
@@ -9196,6 +9249,8 @@ document.addEventListener('input', (e) => {
     if (k === 'equipos' || k === 'circuitos') t.value = t.value.replace(/\D/g, '').slice(0, 2);
     if (k === 'paneles' || k === 'wp') t.value = t.value.replace(/\D/g, '').slice(0, k === 'wp' ? 4 : 3);
     A.presuSueltoCampo(k, t.value);
+    // Más o menos equipos de aire: aparecen o desaparecen sus filas.
+    if (k === 'equipos' && V.suelto && V.suelto.cat === 'aire_acondicionado' && t.value !== '') render();
     return;
   }
   if (f === 'matTexto') { V.matNuevo.texto = t.value; V.matNuevo.voz = false; return; }
@@ -9226,6 +9281,13 @@ document.addEventListener('input', (e) => {
   if (f === 'presuTexto') { A.presuTexto(t.value); return; }
   if (f === 'presuDto') { A.presuDto(t.value); return; }
   if (f === 'presuCantidad') { A.presuCantidadExtra(t.dataset.i, t.value); return; }
+  if (f === 'presuEstancia') {
+    if (!V.suelto) return;
+    const filas = estanciasSuelto(V.suelto);
+    filas[Number(t.dataset.i)][t.dataset.s] = t.value;
+    V.suelto.estancias = filas;
+    return;
+  }
   if (f === 'empNombreCompleto') { A.empCampo('nombreCompleto', t.value); return; }
   if (f === 'empFechaAlta') { A.empCampo('fechaAlta', t.value); return; }
   if (f === 'empVacaciones') { t.value = t.value.replace(/\D/g, '').slice(0, 3); A.empCampo('vacacionesAnuales', t.value); return; }

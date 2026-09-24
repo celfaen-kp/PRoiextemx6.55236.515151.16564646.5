@@ -337,7 +337,7 @@ export async function pendientesDeEnviar() {
  * ------------------------------------------------------------------------- */
 const CAMPOS_CITA = `
   id, cliente_id, inicio, duracion_min, empleado_id, categorias, direccion,
-  poblacion, nota, estado, visita_id, aviso_enviado_at, cambio_desde, confirmacion_enviada_at, created_at, updated_at
+  poblacion, nota, estado, visita_id, aviso_enviado_at, cambio_desde, confirmacion_enviada_at, anulacion_enviada_at, created_at, updated_at
 `;
 
 /** Citas sin fecha y las de los últimos `diasAtras` días en adelante. */
@@ -559,8 +559,8 @@ export async function teamleaderDesconectar() {
  * repetirlo. Va con la sesión de quien usa la app; la clave del cron no sale
  * nunca del servidor.
  */
-export async function avisarCita(citaId) {
-  return invocar('recordatorio-citas', { cita_id: citaId });
+export async function avisarCita(citaId, otraVez) {
+  return invocar('recordatorio-citas', { cita_id: citaId, otra_vez: otraVez === true ? true : undefined });
 }
 
 /** Borra una cita. Si tenía visita hecha, la visita se queda (sin cita). */

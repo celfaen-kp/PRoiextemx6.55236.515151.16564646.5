@@ -38,7 +38,7 @@ setTimeout(function () {
   A.presuNuevo();
   igual('empieza en aire acondicionado', V.suelto.cat, 'aire_acondicionado');
   h = vPresuNuevo();
-  comprueba('pregunta equipos y metros', h.indexOf('Equipos interiores') > -1 && h.indexOf('Metros de línea') > -1);
+  comprueba('pregunta equipos, y m² y metros por equipo', h.indexOf('Equipos interiores') > -1 && h.indexOf('data-f="presuEstancia"') > -1);
   comprueba('los tipos de sistema', h.indexOf('Multisplit') > -1 && h.indexOf('Splits 1×1') > -1);
   V.suelto.cliente = 'ana';
   comprueba('busca el cliente en el CRM', vPresuNuevo().indexOf('Ana Ferrer') > -1);
@@ -95,9 +95,17 @@ setTimeout(function () {
   V.suelto.equipos = 3; V.suelto.metros = '12,5'; V.suelto.tipo_sistema = 'multisplit';
   var d = datosDelSuelto(V.suelto);
   igual('una estancia por equipo', d.estancias.length, 3);
-  igual('los metros, con coma', d.distancias_lineas[0].metros, 12.5);
+  igual('sin metros por equipo, va el total antiguo', d.distancias_lineas[0].metros, 12.5);
   igual('el tipo de sistema', d.tipo_sistema, 'multisplit');
   igual('sin metros, lista vacía', datosDelSuelto({ equipos: 1, metros: '' }).distancias_lineas.length, 0);
+  comprueba('la pantalla pide m² y metros por equipo', vPresuNuevo().split('data-f="presuEstancia"').length - 1 === 6);
+  V.suelto.estancias = [{ m2: '25', metros: '4' }, { m2: '12,5', metros: '8' }, { m2: '', metros: '' }];
+  d = datosDelSuelto(V.suelto);
+  igual('los m² de cada estancia', d.estancias[0].m2, 25);
+  igual('con coma también', d.estancias[1].m2, 12.5);
+  igual('y sus metros de línea', d.estancias[1].metros, 8);
+  igual('con metros por equipo, el total antiguo ya no se manda', d.distancias_lineas.length, 0);
+  V.suelto.estancias = null;
   igual('el título, para reconocerlo', tituloDelSuelto(), 'Aire acondicionado · Ana Ferrer');
 
   var pedido = null;

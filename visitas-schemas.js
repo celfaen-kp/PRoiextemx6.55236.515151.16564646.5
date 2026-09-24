@@ -430,6 +430,9 @@ const AIRE = {
             { key: 'orientacion', etiqueta: 'Orientación', tipo: 'opcion',
               opciones: ['norte', 'sur', 'este', 'oeste'] },
             { key: 'ventanas', etiqueta: 'Ventanas', tipo: 'entero' },
+            // sql/etapa48: con los m² el motor elige la máquina de cada
+            // estancia, y con los metros hasta la exterior saca tubo y gas.
+            { key: 'metros', etiqueta: 'Metros de línea hasta la exterior', tipo: 'numero' },
           ] },
         { key: 'preinstalacion_existente', etiqueta: 'Preinstalación', tipo: 'opcion', motor: true,
           opciones: ['no', 'si_aprovechable', 'si_a_sustituir'] },
@@ -454,7 +457,9 @@ const AIRE = {
       id: 'instalacion',
       titulo: 'Instalación',
       campos: [
-        { key: 'distancias_lineas', etiqueta: 'Metros de línea por equipo', tipo: 'lista', motor: true,
+        // Desde la etapa 48 los metros van en cada estancia (arriba). Esto se
+        // queda para las fichas viejas; el motor usa lo uno o lo otro.
+        { key: 'distancias_lineas', etiqueta: 'Metros de línea por equipo (fichas antiguas)', tipo: 'lista', motor: true,
           subcampos: [
             { key: 'estancia', etiqueta: 'Estancia', tipo: 'texto' },
             { key: 'metros', etiqueta: 'm', tipo: 'numero' },
