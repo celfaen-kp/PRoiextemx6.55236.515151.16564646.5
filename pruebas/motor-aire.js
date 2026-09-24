@@ -46,8 +46,7 @@ var config = {
   ],
   partidas: {
     'p-aire': { codigo: 'KIT_BASE', nombre: 'Instalación por unidad de aire', items: [
-      // etapa 51: conexión por equipo y tubería por metro
-      { concepto_libre: 'C100: Conexión frigorífica por equipo', precio_fijo: 89, formula_cantidad: 'unidades_interiores', unidad: 'ud', orden: 1 },
+      // etapa 51: sin C100 (la conexión va en la mano de obra); tubería por metro
       { concepto_libre: 'C102: Soportes unidad exterior', precio_fijo: 45, formula_cantidad: 'unidades_exteriores', orden: 3 },
       { concepto_libre: 'C103: Tubería frigorífica y aislamiento', precio_fijo: 52, formula_cantidad: 'metros_totales', unidad: 'm', orden: 4 },
       { concepto_libre: 'C104: Mano de obra', precio_fijo: 450, formula_cantidad: 'unidades_interiores', orden: 5 },
@@ -86,13 +85,13 @@ igual('y luego las del dormitorio', nombres(r).slice(2).join(' | '), 'EZ-09RD6-I
 igual('los metros salen de las estancias (4 + 6)', r.variables.metros_totales, 10);
 igual('la tubería va por metro: 10 m', linea(r, 'C103').cantidad, 10);
 igual('en metros', linea(r, 'C103').unidad, 'm');
-igual('y la conexión, una por equipo', linea(r, 'C100').cantidad, 2);
+comprueba('sin línea de conexión por equipo: va en la mano de obra', !linea(r, 'C100'));
 igual('gas por estancia: 4 m no pasa de 5, 6 m sí → 1 m × 12 g', r.variables.gas_g_estancia.join(','), '0,12');
 igual('12 g = 0,012 kg', r.variables.kg_gas_extra, 0.012);
 igual('la línea de gas va en kg', linea(r, 'refrigerante').unidad, 'kg');
 igual('dos exteriores → dos soportes', linea(r, 'C102').cantidad, 2);
 comprueba('sin avisos de máquina', !r.incidencias.some(function (i) { return i.codigo === 'regla_aviso'; }));
-var esperado = P('EZ-12RD6-I') + P('EZ-12RD6-O') + P('EZ-09RD6-I') + P('EZ-09RD6-O') + 2 * 89 + 2 * 45 + 10 * 52 + 2 * 450 + 0.012 * 49;
+var esperado = P('EZ-12RD6-I') + P('EZ-12RD6-O') + P('EZ-09RD6-I') + P('EZ-09RD6-O') + 2 * 45 + 10 * 52 + 2 * 450 + 0.012 * 49;
 igual('el total cuadra', cadenaPrecios(r.lineas, 0).total.toFixed(2), esperado.toFixed(2));
 
 titulo('multisplit 3×1: tres interiores y una exterior');

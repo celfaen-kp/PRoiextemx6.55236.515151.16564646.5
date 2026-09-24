@@ -8,11 +8,13 @@
 --   pasaba de esos 3 m. Dos líneas para una misma cosa, y con unidades que no
 --   son las del oficio. Y el gas iba a 20 g/m fijos, sin mirar la máquina.
 --
--- QUÉ CAMBIA (mismo total que antes cuando cada línea pasa de 3 m):
---   · C100 pasa a ser «Conexión frigorífica por equipo», 89 €/ud
---     (245 − 3 × 52): vacío, pruebas y puesta en marcha de cada interior.
+-- QUÉ CAMBIA:
+--   · C100 DESAPARECE. La conexión de cada interior (vacío, pruebas, puesta en
+--     marcha) va dentro de la mano de obra (C104, por unidad interior) y de la
+--     propia tubería. Una línea menos que explicar al cliente.
 --   · C103 pasa a ser «Tubería frigorífica y aislamiento», 52 €/m, por los
---     metros de cada interior hasta la exterior. Una sola línea, en metros.
+--     metros de cada interior hasta la exterior. Una sola línea, en metros,
+--     desde el primer metro.
 --   · El gas se calcula POR ESTANCIA con los datos de su máquina: los metros
 --     que pasan de la carga de fábrica × los g/m de esa máquina (Midea:
 --     12 g/m hasta el tamaño 18, 24 g/m en el 24). Sale en kilos con tres
@@ -26,23 +28,23 @@
 begin;
 
 create temporary table precios_aire on commit drop as
-select 89.00::numeric as conexion_ud,      -- C100 por unidad interior
-       52.00::numeric as tuberia_m,        -- C103 por metro lineal (tubo + aislamiento)
+select 52.00::numeric as tuberia_m,        -- C103 por metro lineal (tubo + aislamiento)
        49.00::numeric as gas_kg;           -- R32, por kilo (se compra a 49,64 con descuento)
 
 -- 1 · Las partidas dicen en qué unidad van ----------------------------------------
 alter table public.partidas_items add column if not exists unidad text not null default 'ud';
 
--- 2 · C100 y C103, rehechas -----------------------------------------------------------
-update public.partidas_items pi
-   set concepto_libre  = 'C100: Conexión frigorífica por equipo',
-       precio_fijo     = (select conexion_ud from precios_aire),
-       detalle_tecnico = 'Conexión de la línea frigorífica a cada unidad interior: vacío, comprobación de estanqueidad y puesta en marcha',
-       formula_cantidad = 'unidades_interiores',
-       unidad          = 'ud'
-  from public.partidas p
+-- 2 · Fuera el C100; el C103 pasa a ser la tubería por metro ----------------------------
+delete from public.partidas_items pi
+ using public.partidas p
  where pi.partida_id = p.id and p.categoria = 'aire_acondicionado' and p.codigo = 'KIT_BASE'
    and pi.concepto_libre like 'C100:%';
+
+update public.partidas_items pi
+   set detalle_tecnico = 'Incluye la conexión frigorífica de cada unidad interior: vacío, comprobación de estanqueidad y puesta en marcha'
+  from public.partidas p
+ where pi.partida_id = p.id and p.categoria = 'aire_acondicionado' and p.codigo = 'KIT_BASE'
+   and pi.concepto_libre like 'C104:%';
 
 update public.partidas_items pi
    set concepto_libre  = 'C103: Tubería frigorífica y aislamiento',
@@ -96,6 +98,6 @@ commit;
 --     from public.partidas p join public.partidas_items pi on pi.partida_id = p.id
 --    where p.categoria = 'aire_acondicionado' order by p.codigo, pi.orden;
 --
---   Dos interiores a 4 y 6 m (1x1, tamaños 12 y 9): C100 2 ud, C103 10 m,
---   gas (4−5→0) + (6−5)×12 = 12 g = 0,012 kg.
+--   Dos interiores a 4 y 6 m (1x1, tamaños 12 y 9): C103 10 m,
+--   gas (4−5→0) + (6−5)×12 = 12 g = 0,012 kg. Sin C100.
 -- =============================================================================
