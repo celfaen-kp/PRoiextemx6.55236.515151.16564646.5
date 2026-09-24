@@ -127,6 +127,9 @@ a:hover{color:var(--tinta)}
 .pasos i.on{background:var(--verde-c)}
 
 .sheet{position:fixed;inset:0;background:rgba(20,23,15,.55);display:flex;align-items:flex-end;padding:20px;padding-bottom:calc(20px + var(--safe-b));z-index:50;animation:fade .15s}
+#actualizar{position:fixed;inset:0;z-index:200;background:rgba(20,23,15,.96);display:flex;align-items:center;justify-content:center;padding:32px;text-align:center;animation:fade .2s}
+#actualizar>div{max-width:340px}
+#actualizar .btn{width:100%}
 .vista-pdf{position:fixed;inset:0;z-index:50;background:#3a3d36;display:flex;flex-direction:column;animation:fade .15s}
 .vista-pdf-barra{display:flex;align-items:center;gap:10px;padding:10px 14px;padding-top:calc(10px + var(--safe-t));background:#14170f}
 .vista-pdf-barra .btn{width:auto;flex:none;padding:10px 18px}
@@ -392,7 +395,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '16.7'; // versión visible de la app (única fuente)
+const APP_VERSION = '16.8'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -9427,24 +9430,64 @@ setInterval(() => {
 }, 30000);
 
 if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
-  // Si esta página ya estaba controlada por un service worker antiguo y entra
-  // uno nuevo, se recarga UNA vez para enseñar la versión nueva sin tener que
-  // cerrar y abrir la app. En la primera instalación no hay anterior y no se
-  // recarga.
-  const habiaAnterior = !!navigator.serviceWorker.controller;
+  /* ---------- la actualización, con cartel ----------------------------------
+   * La gente no cierra nunca la app, así que cada móvil se quedaba con una
+   * versión distinta. Ahora, cuando hay una versión nueva descargada, sale un
+   * cartel que tapa la pantalla con un solo botón, «Actualizar», y no se puede
+   * seguir hasta pulsarlo. Se busca versión nueva al abrir, cada vez que la app
+   * vuelve al frente y cada media hora.
+   * ------------------------------------------------------------------------ */
+  let regSW = null;
+  let esperando = null;      // el service worker nuevo, listo para mandar
   let recargada = false;
+  const cartelActualizar = () => {
+    if (document.getElementById('actualizar')) return;
+    const div = document.createElement('div');
+    div.id = 'actualizar';
+    div.innerHTML = `<div>
+      <img src="logo-blanco.png" alt="" style="height:40px;margin-bottom:22px;opacity:.9">
+      <div style="font:700 28px/1.1 var(--cond);color:#fff">Hay una versión nueva</div>
+      <div style="font:400 14px/1.5 var(--sans);color:rgba(255,255,255,.7);margin-top:10px">La app se ha actualizado. Para seguir hace falta cargarla; tarda un segundo y no se pierde nada.</div>
+      <button class="btn btn-verde" id="actualizar-btn" style="margin-top:26px">Actualizar</button>
+      <div class="tiny" style="color:rgba(255,255,255,.4);margin-top:16px">Tienes la versión ${APP_VERSION}</div>
+    </div>`;
+    document.body.appendChild(div);
+    document.getElementById('actualizar-btn').addEventListener('click', () => {
+      const b = document.getElementById('actualizar-btn');
+      b.disabled = true; b.textContent = 'Actualizando…';
+      if (esperando) esperando.postMessage({ tipo: 'activar' });
+      // Si por lo que sea no llega el controllerchange, se recarga igual.
+      setTimeout(() => { if (!recargada) { recargada = true; location.reload(); } }, 4000);
+    });
+  };
+  const vigilar = (sw) => {
+    if (!sw) return;
+    if (sw.state === 'installed') { esperando = sw; cartelActualizar(); return; }
+    sw.addEventListener('statechange', () => {
+      if (sw.state === 'installed') { esperando = sw; cartelActualizar(); }
+    });
+  };
   navigator.serviceWorker.addEventListener('controllerchange', () => {
-    if (!habiaAnterior || recargada) return;
+    if (recargada) return;
     recargada = true;
     location.reload();
   });
+  const buscar = () => { if (regSW && navigator.onLine) regSW.update().catch(() => {}); };
   // updateViaCache: 'none' → al buscar si hay sw.js nuevo no se usa la caché
   // del navegador. GitHub Pages lo sirve con max-age=600 y, sin esto, la
   // comprobación podía tardar hasta 10 minutos en enterarse.
   window.addEventListener('load', () => navigator.serviceWorker
     .register('sw.js', { updateViaCache: 'none' })
-    .then((reg) => reg.update())
+    .then((reg) => {
+      regSW = reg;
+      // Ya había una esperando de otra apertura: cartel al momento.
+      if (reg.waiting && navigator.serviceWorker.controller) vigilar(reg.waiting);
+      reg.addEventListener('updatefound', () => { if (navigator.serviceWorker.controller) vigilar(reg.installing); });
+      buscar();
+    })
     .catch(() => {}));
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') buscar(); });
+  setInterval(buscar, 30 * 60 * 1000);
 }
 render();
 restaurarSesion();

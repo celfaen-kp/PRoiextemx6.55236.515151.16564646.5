@@ -1,8 +1,22 @@
-const CACHE = 'ch-v16-7';
+const CACHE = 'ch-v16-8';
 const ASSETS = ['./', './index.html', './manifest.webmanifest', './supabase-client.js', './supabase-auth.js', './supabase-db.js', './visitas-schemas.js', './visitas-form.js', './visitas-db.js', './icon-192.png', './icon-512.png', './icon-maskable.png', './logo-trans.png', './logo-blanco.png', './logo-s-blanco.png', './fondo-login.jpg'];
 
+// Al instalarse una versión nueva NO se activa sola: se queda esperando y la
+// app enseña el cartel de «Actualizar». Antes se activaba y recargaba por su
+// cuenta; ahora es la persona quien pulsa, y hasta que pulsa no puede seguir.
+// (Si no hay ninguna versión controlando la página, sí se activa al momento:
+// es la primera instalación y no hay nada que actualizar.)
 self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS)).then(() => self.skipWaiting()));
+  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS)).then(async () => {
+    const abiertas = await self.clients.matchAll({ includeUncontrolled: true });
+    if (!abiertas.some((c) => c.frameType === 'top-level' && self.registration.active)) return self.skipWaiting();
+  }));
+});
+
+// El botón «Actualizar» de la app manda esto: la versión que esperaba pasa a
+// mandar y la página se recarga (controllerchange).
+self.addEventListener('message', (e) => {
+  if (e.data && e.data.tipo === 'activar') self.skipWaiting();
 });
 
 self.addEventListener('activate', (e) => {
