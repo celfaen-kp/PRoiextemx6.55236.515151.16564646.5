@@ -19,6 +19,8 @@ var config = {
     // etapa 51: el gas por estancia, según su máquina
     { codigo: 'gas_g_estancia', por_cada: 'estancias', formula: "redondea(max(0, metros - lookup('metros_gas_incluidos', tipo_sistema)) * lookup('gramos_por_metro_tamano', tamano), 0)", orden: 19 },
     { codigo: 'kg_gas_extra', formula: "redondea(si(suma(estancias, 'metros') > 0, suma(estancias, 'gas_g_estancia'), metros_gas_exceso * lookup('gramos_por_metro', 'defecto')) / 1000, 3)", orden: 20 },
+    // etapa 52: el cable al cuadro
+    { codigo: 'metros_cuadro', formula: 'max(0, distancia_cuadro_m) * unidades_exteriores', orden: 7 },
     // etapa 48: por cada estancia
     { codigo: 'marca_aire', formula: "si(marca_preferida = 'vaillant', 'vaillant', 'midea')", orden: 9 },
     { codigo: 'kw_estancia', por_cada: 'estancias', formula: "redondea(m2 * lookup('w_m2', 'defecto') / 1000, 2)", orden: 10 },
@@ -47,6 +49,9 @@ var config = {
   partidas: {
     'p-aire': { codigo: 'KIT_BASE', nombre: 'Instalación por unidad de aire', items: [
       // etapa 51: sin C100 (la conexión va en la mano de obra); tubería por metro
+      // etapa 52: la electricidad por metro, según el cable (+10 % de material)
+      { concepto_libre: 'E101: Cable de interior a exterior 5G 1,5 mm²', precio_fijo: 3.81, formula_cantidad: 'metros_totales', unidad: 'm', orden: 2 },
+      { concepto_libre: 'E102: Cable de exterior a cuadro 3G 2,5 mm²', precio_fijo: 4.03, formula_cantidad: 'metros_cuadro', unidad: 'm', orden: 3 },
       { concepto_libre: 'C102: Soportes unidad exterior', precio_fijo: 45, formula_cantidad: 'unidades_exteriores', orden: 3 },
       { concepto_libre: 'C103: Tubería frigorífica y aislamiento', precio_fijo: 52, formula_cantidad: 'metros_totales', unidad: 'm', orden: 4 },
       { concepto_libre: 'C104: Mano de obra', precio_fijo: 450, formula_cantidad: 'unidades_interiores', orden: 5 },
@@ -74,6 +79,7 @@ titulo('1x1: dos estancias, cada una con su interior y su exterior');
 var r = calcular('aire_acondicionado', {
   tipo_sistema: 'split_1x1',
   estancias: [{ nombre: 'Salón', m2: 30, metros: 4 }, { nombre: 'Dormitorio', m2: 12, metros: 6 }],
+  distancia_cuadro_m: 8,
 }, config);
 igual('el salón pide 3 kW', r.variables.kw_estancia[0], 3);
 igual('y le toca el tamaño 12', r.variables.tamano[0], 12);
@@ -90,8 +96,11 @@ igual('gas por estancia: 4 m no pasa de 5, 6 m sí → 1 m × 12 g', r.variables
 igual('12 g = 0,012 kg', r.variables.kg_gas_extra, 0.012);
 igual('la línea de gas va en kg', linea(r, 'refrigerante').unidad, 'kg');
 igual('dos exteriores → dos soportes', linea(r, 'C102').cantidad, 2);
+igual('cable 5G 1,5 por los metros de línea: 10 m', linea(r, 'E101').cantidad, 10);
+igual('cable 3G 2,5 al cuadro: 8 m por cada exterior (1x1) = 16 m', linea(r, 'E102').cantidad, 16);
+igual('en metros', linea(r, 'E102').unidad, 'm');
 comprueba('sin avisos de máquina', !r.incidencias.some(function (i) { return i.codigo === 'regla_aviso'; }));
-var esperado = P('EZ-12RD6-I') + P('EZ-12RD6-O') + P('EZ-09RD6-I') + P('EZ-09RD6-O') + 2 * 45 + 10 * 52 + 2 * 450 + 0.012 * 49;
+var esperado = P('EZ-12RD6-I') + P('EZ-12RD6-O') + P('EZ-09RD6-I') + P('EZ-09RD6-O') + 2 * 45 + 10 * 52 + 2 * 450 + 0.012 * 49 + 10 * 3.81 + 16 * 4.03;
 igual('el total cuadra', cadenaPrecios(r.lineas, 0).total.toFixed(2), esperado.toFixed(2));
 
 titulo('multisplit 3×1: tres interiores y una exterior');

@@ -395,7 +395,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '17.2'; // versión visible de la app (única fuente)
+const APP_VERSION = '17.3'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -6520,7 +6520,6 @@ function presupuestoHTML(v, fichas) {
       s.lineas.push(l);
     });
   }
-  const deOrigen = { regla: 'regla', partida: 'partida', mano_obra: 'mano de obra', manual: 'a mano', ia: 'sugerida' };
 
   return `<div class="card" style="margin-top:12px">
     <div class="row g8"><span class="lbl">Presupuesto</span><div class="grow"></div>
@@ -6548,7 +6547,6 @@ function presuPanelHTML() {
     if (!s) { s = { nombre, lineas: [] }; secciones.push(s); }
     s.lineas.push(l);
   });
-  const deOrigen = { regla: 'regla', partida: 'partida', mano_obra: 'mano de obra', manual: 'a mano', ia: 'sugerida' };
   return `${d ? `
       ${(d.incidencias || []).length ? `<div style="margin-top:12px">${d.incidencias.map((i) => `<div class="tiny" style="margin-top:6px;color:${i.nivel === 'error' ? 'var(--rojo)' : 'var(--ambar-o)'}">${i.nivel === 'error' ? '⚠' : '·'} ${esc(i.mensaje)}</div>`).join('')}</div>` : ''}
 
@@ -6559,7 +6557,8 @@ function presuPanelHTML() {
             <div class="grow" style="font:500 14px/1.3 var(--sans)">${esc(l.descripcion)}</div>
             <div class="num" style="font-size:14px;flex:none">${eur(l.importe)}</div>
           </div>
-          <div class="tiny" style="margin-top:3px;opacity:.75">${esc(String(l.cantidad))} ${esc(l.unidad || 'ud')} × ${eur(l.precio_tarifa)}${l.dto_linea_pct ? ' · −' + l.dto_linea_pct + '%' : ''} · ${esc(deOrigen[l.origen] || l.origen)}</div>
+          ${l.detalle_tecnico ? `<div class="tiny" style="margin-top:3px;font-size:12px;line-height:1.35;color:var(--t2)">${esc(l.detalle_tecnico)}</div>` : ''}
+          <div class="tiny" style="margin-top:3px;opacity:.75">${esc(String(l.cantidad))} ${esc(l.unidad || 'ud')} × ${eur(l.precio_tarifa)}${l.dto_linea_pct ? ' · −' + l.dto_linea_pct + '%' : ''}${l.origen === 'manual' ? ' · añadida a mano' : ''}</div>
         </div>`).join('')}
       </div>`).join('')}
 
@@ -6740,7 +6739,7 @@ const presuNuevoVacio = () => ({
   // el tubo de más y el gas.
   tipo_sistema: 'multisplit', marca: 'midea', equipos: 1, metros: '', estancias: [{ m2: '', metros: '' }],
   // lo viejo: interiores y exteriores a retirar, y si se aprovecha su tubería
-  retirar: '', retirar_ext: '', recuperar: false,
+  retirar: '', retirar_ext: '', recuperar: false, cuadro: '',
   // aerotermia: la potencia se pone a mano, calcularla desde la casa no está
   // calibrado (MOTOR-PRESUPUESTOS.md §7).
   kw: '', circuitos: 1, acs: 0, sustituye: false, apoyo: false, limpieza: false,
@@ -6800,6 +6799,7 @@ function datosDelSuelto(f) {
     marca_preferida: f.marca === 'vaillant' ? 'vaillant' : 'midea',
     equipos_a_retirar_n: retirar,
     exteriores_a_retirar_n: Math.max(0, Math.min(30, Number(f.retirar_ext) || 0)),
+    distancia_cuadro_m: num(f.cuadro),
     preinstalacion_existente: retirar && f.recuperar ? 'si_aprovechable' : 'no',
     estancias: Array.from({ length: n }, (_, i) => ({
       nombre: 'Equipo ' + (i + 1),
@@ -6934,6 +6934,10 @@ function camposAireHTML(f) {
         <div class="grow"><input class="inp" data-f="presuEstancia" data-i="${i}" data-s="metros" value="${esc(String(x.metros ?? ''))}" inputmode="decimal" placeholder="m de línea"></div>
       </div>`).join('')}
       <div class="tiny" style="margin-top:8px">Van 3 m de línea incluidos por equipo; lo que pase de ahí se cobra aparte, y el gas de más a partir de la carga de fábrica.</div>
+
+      <div class="lbl" style="margin:16px 0 8px">De la exterior al cuadro eléctrico</div>
+      <input class="inp" data-f="presuCampo" data-k="cuadro" value="${esc(String(f.cuadro ?? ''))}" inputmode="decimal" placeholder="m de cable 3G 2,5" style="width:180px">
+      <div class="tiny" style="margin-top:8px">El cable de interior a exterior (5G 1,5) va por los metros de línea de cada equipo; este, por la distancia al cuadro.</div>
 
       <div class="lbl" style="margin:16px 0 8px">Equipos viejos a retirar</div>
       <div class="row g8">
@@ -7314,6 +7318,7 @@ function vPresupuestoVer() {
           <div class="grow" style="font:500 14px/1.3 var(--sans)">${esc(l.descripcion)}</div>
           <div class="num" style="font-size:14px;flex:none">${eur(l.precio_venta)}</div>
         </div>
+        ${l.detalle_tecnico ? `<div class="tiny" style="margin-top:3px;font-size:12px;line-height:1.35;color:var(--t2)">${esc(l.detalle_tecnico)}</div>` : ''}
         <div class="tiny" style="margin-top:3px;opacity:.75">${esc(String(l.cantidad))} ${esc(l.unidad || 'ud')} × ${eur(l.precio_tarifa)}${l.dto_linea_pct ? ' · −' + l.dto_linea_pct + '%' : ''}</div>
       </div>`).join('')}
       <div class="row" style="justify-content:space-between;margin-top:14px;padding-top:12px;border-top:2px solid var(--tinta)">

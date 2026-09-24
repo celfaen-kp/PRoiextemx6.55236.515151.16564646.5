@@ -477,8 +477,8 @@ const AIRE = {
         { key: 'difusores_n', etiqueta: 'Difusores', tipo: 'entero', motor: true },
         { key: 'circuito_electrico_disponible', etiqueta: 'Hay circuito libre', tipo: 'bool', motor: true,
           ayuda: 'Si no, entra trabajo de electricidad' },
-        { key: 'distancia_cuadro_m', etiqueta: 'Distancia al cuadro', tipo: 'numero', unidad: 'm',
-          motor: true },
+        { key: 'distancia_cuadro_m', etiqueta: 'De la exterior al cuadro eléctrico', tipo: 'numero', unidad: 'm',
+          motor: true, ayuda: 'Metros de cable 3G 2,5 hasta el cuadro; en 1x1, de cada exterior' },
         { key: 'obra_necesaria', etiqueta: 'Obra', tipo: 'multi', motor: true,
           opciones: ['rozas', 'perforacion_muro', 'falso_techo', 'registro', 'pintura'] },
         // sql/etapa48: el motor coge las máquinas del catálogo de esta marca.

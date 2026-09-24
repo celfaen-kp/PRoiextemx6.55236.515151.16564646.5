@@ -34,13 +34,16 @@ setTimeout(function () {
     totales: { bruto: 1579, dto_linea: 0, subtotal: 1579, dto_global: -157.9, total: 1421.1 },
     incidencias: [{ nivel: 'aviso', codigo: 'campo_faltante', mensaje: 'La visita no trae «distancias_lineas».' }],
     lineas: [
-      { descripcion: 'C100: Tubería frigorífica', cantidad: 2, unidad: 'ud', precio_tarifa: 245, importe: 441, seccion: 'Instalación', origen: 'partida', dto_linea_pct: 0 },
+      { descripcion: 'C103: Tubería frigorífica y aislamiento', detalle_tecnico: 'Línea frigorífica de cobre con aislamiento, por metro lineal', cantidad: 10, unidad: 'm', precio_tarifa: 52, importe: 520, seccion: 'Instalación', origen: 'partida', dto_linea_pct: 0 },
       { descripcion: 'Midea multisplit 2x1', cantidad: 1, unidad: 'ud', precio_tarifa: 1890, importe: 1701, seccion: 'Equipos', origen: 'manual', dto_linea_pct: 0 },
     ],
   };
   var h = presupuestoHTML(visita, fichasAire);
   comprueba('agrupa por secciones', h.indexOf('Instalación') >= 0 && h.indexOf('Equipos') >= 0);
-  comprueba('dice de dónde sale cada línea', h.indexOf('partida') >= 0 && h.indexOf('a mano') >= 0);
+  comprueba('cada línea lleva su leyenda debajo', h.indexOf('cobre con aislamiento') >= 0);
+  comprueba('con su unidad de verdad (m)', h.indexOf('10 m ×') >= 0);
+  comprueba('sin la jerga del motor («partida», «regla»)', h.indexOf('· partida') < 0 && h.indexOf('· regla') < 0);
+  comprueba('lo añadido a mano sí se marca', h.indexOf('añadida a mano') >= 0);
   comprueba('enseña el aviso de lo que falta', h.indexOf('no trae') >= 0);
   comprueba('el total, en euros', /1\.?421,10 €/.test(h));
   comprueba('el descuento al pie se puede tocar', h.indexOf('data-f="presuDto"') >= 0);
