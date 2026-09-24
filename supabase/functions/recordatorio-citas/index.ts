@@ -190,10 +190,7 @@ function correoClienteHTML(d: any) {
       <tr><td style="border:1.5px solid ${COLOR.verde};border-radius:99px;">
         <a href="${escHtml(d.calendario)}" style="display:inline-block;padding:12px 24px;font-family:${FUENTE};font-size:13px;font-weight:700;letter-spacing:.5px;color:${COLOR.verde};text-decoration:none;">${d.calendarioQuitar ? 'Quitarla de mi calendario' : 'Añadir a mi calendario'}</a>
       </td></tr>
-    </table>
-    <p style="margin:10px 0 0;font-size:12px;line-height:18px;color:${COLOR.suave};">${d.calendarioQuitar
-      ? 'Se quita del calendario de su propio móvil.'
-      : 'Se guarda en el calendario de su propio móvil.'}</p>` : ''}
+    </table>` : ''}
     <p style="margin:22px 0 0;font-size:14px;line-height:22px;color:${COLOR.suave};">${d.anulada
       ? 'Si desea concertar una nueva cita, puede llamarnos al'
       : 'Si usted lo desea, puede cambiar su cita contactando con nosotros en el'} <a href="${TEL_LINK}" style="color:${COLOR.verde};text-decoration:none;font-weight:700;">${escHtml(TEL)}</a>.</p>`;

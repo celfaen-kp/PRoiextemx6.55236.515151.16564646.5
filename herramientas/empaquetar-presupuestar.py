@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Sysefen · Juntar la función `presupuestar` en un solo archivo
+Sysefen · Juntar la función `presupuestar` en un solo archivo (presupuestar.ts)
 
 POR QUÉ EXISTE:
   La función está partida en cuatro (index.ts, motor.js, cadena.js,
@@ -78,7 +78,7 @@ def main():
     if re.search(r"^import .*'\./", salida, flags=re.M):
         sys.exit('Ha quedado algún import de una pieza hermana.')
 
-    ruta = os.path.join(destino, 'presupuestar-una-pieza.ts')
+    ruta = os.path.join(destino, 'presupuestar.ts')
     open(ruta, 'w', encoding='utf-8').write(salida)
     print(f'Hecho: {ruta}')
     print(f'{len(salida.splitlines())} líneas. Pégalo tal cual en el panel, como index.ts.')
