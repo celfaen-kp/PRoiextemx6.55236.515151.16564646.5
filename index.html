@@ -400,7 +400,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '17.6'; // versión visible de la app (única fuente)
+const APP_VERSION = '17.7'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -1249,7 +1249,7 @@ A.salir = () => {
   V.view = 'login'; render();
   sysAuth.logout().catch(() => {});
 };
-A.ir = (v) => { V.view = v; render(); if (v === 'presupuestos') A.cargarPresupuestos(); if (['hoy', 'material', 'obra', 'agenda'].includes(v)) A.cargarMaterial(); if (v === 'visitas') A.cargarVisitas(); if (AG_VISTAS.includes(v)) A.cargarAgenda(); if (v === 'ajustes' && verCRM() && !V.crm.cargado) A.crmEstado(); if (['hoy', 'obras', 'obra', 'partes', 'horas'].includes(v)) refrescarDatos().then(render); };
+A.ir = (v) => { V.view = v; render(); if (v === 'legalizaciones') A.cargarLegalizaciones(); if (v === 'presupuestos') A.cargarPresupuestos(); if (['hoy', 'material', 'obra', 'agenda'].includes(v)) A.cargarMaterial(); if (v === 'visitas') A.cargarVisitas(); if (AG_VISTAS.includes(v)) A.cargarAgenda(); if (v === 'ajustes' && verCRM() && !V.crm.cargado) A.crmEstado(); if (['hoy', 'obras', 'obra', 'partes', 'horas'].includes(v)) refrescarDatos().then(render); };
 A.verObra = (id) => {
   V.obraId = id; V.obraRango = 'total'; V.view = 'obra'; render();
   // El total de una obra se cuenta desde que se abrió, que puede ser de antes
@@ -3287,7 +3287,7 @@ A.instalar = async () => {
 /* ---------- render ---------- */
 function render() {
   // Ramón entra directo a sus visitas: ninguna pantalla de fichar, obras ni partes.
-  if (V.user && esPresupuestos() && !VISITA_VISTAS.includes(V.view)) {
+  if (V.user && esPresupuestos() && !VISITA_VISTAS.includes(V.view) && !['legalizaciones', 'legalizacion'].includes(V.view)) {
     V.view = 'agenda';
     if (!V.agenda.cargado) A.cargarAgenda();
   }
@@ -7254,7 +7254,7 @@ function vLegalizaciones() {
   const l = V.legLista;
   const estado = (x) => x.estado === 'enviada' ? ['var(--verde)', 'Enviada' + (x.enviada_at ? ' · ' + fechaCorta(x.enviada_at) : '')] : ['var(--ambar)', 'Borrador'];
   return `<div class="hdr">
-    <div class="volver" data-a="ir" data-v="ajustes">‹ ${esAdmin() ? 'Ajustes' : 'Perfil'}</div>
+    ${esPresupuestos() ? marcaSysefen(false) : `<div class="volver" data-a="ir" data-v="ajustes">‹ ${esAdmin() ? 'Ajustes' : 'Perfil'}</div>`}
     <div class="row" style="justify-content:space-between;margin-top:6px">
       <div class="h1">Legalizaciones</div>
       <button class="pill" data-a="legNueva" style="background:var(--tinta);color:#fff">+ Nueva</button>
@@ -7874,6 +7874,33 @@ const agNombreEmp = (empId) => { const u = S.users.find((x) => x.empId === empId
 const agTipoNombre = (c) => (AG_TIPOS.find((x) => x[0] === c.tipo) || [null, c.tl_tipo === 'company' ? 'Empresa' : 'Particular'])[1];
 const agBadge = (txt) => `<span class="badge" style="background:rgba(20,23,15,.06);color:var(--tinta)">${esc(txt)}</span>`;
 
+// «Contactado · 1 oct · Ramón» / «No cogió el teléfono · 1 oct · Ramón · 2 intentos», o vacío si nadie lo ha llamado.
+const agContactadoTxt = (c) => {
+  if (!c.contacto_estado) return '';
+  const partes = [c.contacto_estado === 'contactado' ? 'Contactado' : 'No cogió el teléfono'];
+  if (c.contacto_at) partes.push(fechaCorta(c.contacto_at));
+  if (c.contacto_por) partes.push(agNombreEmp(c.contacto_por));
+  if (c.contacto_estado !== 'contactado' && (c.contacto_intentos || 0) > 1) partes.push(c.contacto_intentos + ' intentos');
+  return partes.join(' · ');
+};
+// Los dos botones de la llamada. Cuando ya consta como contactado no salen.
+const agContactoBotones = (c) => (c.contacto_estado === 'contactado' || !puedeCitar() ? '' : `
+  <button class="pill" data-a="ag_contactado" data-id="${c.id}" data-e="no_contesta" style="padding:8px 10px;background:var(--l1);color:var(--tinta)">No cogió</button>
+  <button class="pill" data-a="ag_contactado" data-id="${c.id}" data-e="contactado" style="padding:8px 10px;background:var(--ambar);color:#fff">Contactado</button>`);
+A.agContactado = async (id, estado) => {
+  const c = agCliente(id); if (!c || !puedeCitar()) return;
+  if (!navigator.onLine) { avisar('Sin conexión: no se ha guardado.'); return; }
+  const cambios = estado === 'quitar'
+    ? { contacto_estado: null, contacto_at: null, contacto_por: null }   // por si fue un error
+    : { contacto_estado: estado, contacto_at: new Date().toISOString(), contacto_por: miEmpId() || null, contacto_intentos: (c.contacto_intentos || 0) + 1 };
+  try {
+    await visitasDB.guardarCliente(Object.assign({ id }, cambios));
+    Object.assign(c, cambios);
+    toast(estado === 'contactado' ? 'Apuntado: contactado por ti.' : estado === 'no_contesta' ? 'Apuntado: no cogió el teléfono.' : 'Quitado.');
+    render();
+  } catch (e) { avisar(/contacto_|schema cache/i.test(msgError(e)) ? 'Falta ejecutar sql/etapa56 en Supabase.' : 'No se pudo guardar: ' + msgError(e)); }
+};
+
 function agEstadoCliente(c) {
   const vis = c.visitas || [];
   const pend = (c.citas || []).filter((x) => x.estado === 'pendiente');
@@ -7881,7 +7908,11 @@ function agEstadoCliente(c) {
   const prox = pend.filter((x) => x.inicio).sort((a, b) => a.inicio.localeCompare(b.inicio))[0];
   if (prox) return { k: 'citado', color: 'var(--ambar)', txt: 'Citado · ' + (agDiaDe(prox.inicio) === agHoy() ? 'hoy' : fechaCorta(prox.inicio)) + ' ' + agHora(prox.inicio) };
   if (vis.length) return { k: 'visitado', color: 'var(--tinta)', txt: vis.some((v) => v.estado === 'completada') ? 'Visitado · por enviar' : 'Visitado · sin cerrar' };
-  return { k: 'sin_cita', color: 'var(--rojo)', txt: pend.length ? 'Pendiente de fecha' : 'Sin cita' };
+  // Sin cita: rojo si nadie le ha llamado; ámbar si ya se habló con él.
+  const base = pend.length ? 'Pendiente de fecha' : 'Sin cita';
+  if (c.contacto_estado === 'contactado') return { k: 'sin_cita', color: 'var(--ambar)', txt: base + ' · contactado' };
+  if (c.contacto_estado === 'no_contesta') return { k: 'sin_cita', color: 'var(--rojo)', txt: base + ' · no cogió el teléfono' };
+  return { k: 'sin_cita', color: 'var(--rojo)', txt: base + ' · sin contactar' };
 }
 
 /* ---------- carga ---------- */
@@ -7957,6 +7988,7 @@ A.ag = (a, d, e) => {
     case 'ag_citaQuien': if (cd) { sincronizarRuedas(); cd.empleadoId = cd.empleadoId === d.id ? null : d.id; } return render();
     case 'ag_guardarCita': return agGuardarCita();
     case 'ag_estado': return agCambiarEstado(d.id, d.e);
+    case 'ag_contactado': if (e) e.stopPropagation(); return A.agContactado(d.id, d.e);
     case 'ag_reenviar': return agReenviarAviso(d.id);
     case 'ag_borrarCita': if (e) e.stopPropagation(); return agBorrarCita(d.id);
     case 'ag_confirmarBorrarCita': return agConfirmarBorrarCita();
@@ -8599,24 +8631,26 @@ function vAgenda() {
 function clientesListaHTML() {
   const ag = V.agenda, q = String(ag.buscar || '').trim().toLowerCase();
   let lista = ag.clientes.map((c) => ({ c, e: agEstadoCliente(c) }));
-  if (ag.filtroCli !== 'todos') lista = lista.filter((x) => x.e.k === ag.filtroCli);
+  if (ag.filtroCli === 'sin_contactar') lista = lista.filter((x) => x.e.k === 'sin_cita' && x.c.contacto_estado !== 'contactado');
+  else if (ag.filtroCli !== 'todos') lista = lista.filter((x) => x.e.k === ag.filtroCli);
   if (q) lista = lista.filter(({ c }) => [c.nombre, c.telefono, c.poblacion, c.email].some((v) => String(v || '').toLowerCase().includes(q)));
   if (!lista.length) return `<div class="card"><div class="sub">${ag.clientes.length ? 'Ningún cliente con ese filtro.' : (ag.cargado ? 'Todavía no hay clientes.' : 'Cargando…')}</div></div>`;
   return lista.map(({ c, e }) => `<div class="card" data-a="ag_abrirCliente" data-id="${c.id}" style="margin-bottom:10px;cursor:pointer">
     <div class="row g8"><span class="dot" style="width:8px;height:8px;background:${e.color}"></span><span class="lbl"${e.k === 'sin_cita' ? ' style="color:var(--rojo)"' : ''}>${esc(e.txt)}</span></div>
     <div class="h2" style="font-size:17px;margin-top:8px">${esc(c.nombre)}</div>
     <div class="sub" style="margin-top:3px">${esc([agTipoNombre(c), c.poblacion, c.telefono].filter(Boolean).join(' · '))}</div>
-    ${e.k === 'sin_cita' && puedeCitar() ? `<div class="row" style="margin-top:12px;padding-top:11px;border-top:1px solid var(--l1)">
-      ${c.nota ? `<span class="tiny grow ell">${esc(c.nota)}</span>` : '<div class="grow"></div>'}
-      <button class="pill" data-a="ag_nuevaCita" data-id="${c.id}" style="padding:8px 12px">Citar</button>
+    ${e.k === 'sin_cita' && puedeCitar() ? `<div style="margin-top:12px;padding-top:11px;border-top:1px solid var(--l1)">
+      <div class="tiny" style="color:${c.contacto_estado === 'contactado' ? 'var(--ambar-o)' : c.contacto_estado ? 'var(--rojo)' : 'inherit'}">${esc(agContactadoTxt(c) || c.nota || 'Nadie le ha llamado todavía')}</div>
+      <div class="row g8" style="margin-top:9px">${agContactoBotones(c)}
+        <button class="pill grow" data-a="ag_nuevaCita" data-id="${c.id}" style="padding:8px 10px;text-align:center">Citar</button></div>
     </div>` : ''}
   </div>`).join('');
 }
 
 function vClientes() {
   const ag = V.agenda;
-  const cuenta = (k) => ag.clientes.filter((c) => agEstadoCliente(c).k === k).length;
-  const filtros = [['todos', 'Todos'], ['sin_cita', 'Sin cita'], ['citado', 'Citados'], ['visitado', 'Visitados'], ['teamleader', 'En Teamleader']];
+  const cuenta = (k) => ag.clientes.filter((c) => k === 'sin_contactar' ? (agEstadoCliente(c).k === 'sin_cita' && c.contacto_estado !== 'contactado') : agEstadoCliente(c).k === k).length;
+  const filtros = [['todos', 'Todos'], ['sin_contactar', 'Sin contactar'], ['sin_cita', 'Sin cita'], ['citado', 'Citados'], ['visitado', 'Visitados'], ['teamleader', 'En Teamleader']];
   return `<div class="hdr">
     <div class="row" style="justify-content:space-between">
       <div class="h1">Clientes</div>
@@ -8661,7 +8695,9 @@ function webListaHTML() {
       <span class="tiny">Llegó ${cuando(c.lead_at)}</span></div>
     <div class="h2" style="margin-top:9px">${esc(c.nombre)}</div>
     <div class="sub" style="margin-top:4px">${esc([agTipoNombre(c), c.telefono, c.poblacion].filter(Boolean).join(' · ') || 'Sin más datos')}</div>
-    ${puedeCitar() ? `<button class="pill pill-verde" data-a="ag_nuevaCita" data-id="${c.id}" style="margin-top:12px;padding:11px;width:100%;text-align:center">Ponerle cita</button>` : ''}
+    ${agContactadoTxt(c) ? `<div class="tiny" style="margin-top:8px;color:${c.contacto_estado === 'contactado' ? 'var(--ambar-o)' : 'var(--rojo)'}">${esc(agContactadoTxt(c))}</div>` : ''}
+    ${puedeCitar() ? `<div class="row g8" style="margin-top:12px">${agContactoBotones(c)}
+      <button class="pill pill-verde grow" data-a="ag_nuevaCita" data-id="${c.id}" style="padding:11px;text-align:center">Ponerle cita</button></div>` : ''}
   </div>`).join('')}
   <div style="height:12px"></div>`;
 }
@@ -8986,6 +9022,14 @@ function vClienteVer() {
       ${c.direccion ? `<div class="fila"><span class="k">Dirección</span><span class="v">${esc([c.direccion, c.poblacion].filter(Boolean).join(', '))}</span></div>` : ''}
       ${c.nota ? `<div class="fila"><span class="k">Nota</span><span class="v">${esc(c.nota)}</span></div>` : ''}
     </div>` : ''}
+    ${puedeCitar() ? `<div class="card" style="padding:12px 15px;margin-bottom:18px">
+      <div class="lbl" style="margin:0 0 4px">Llamada</div>
+      <div class="tiny" style="color:${c.contacto_estado === 'contactado' ? 'var(--ambar-o)' : 'var(--rojo)'}">${esc(agContactadoTxt(c) || 'Nadie le ha llamado todavía')}</div>
+      <div class="row g8" style="margin-top:10px">
+        ${agContactoBotones(c)}
+        ${c.contacto_estado ? `<button class="pill" data-a="ag_contactado" data-id="${c.id}" data-e="quitar" style="padding:8px 10px;background:var(--l1);color:var(--tinta)">Quitar</button>` : ''}
+      </div>
+    </div>` : ''}
     ${agCarpetaHTML(c)}
     ${agCRMHTML(c)}
     <div class="lbl" style="margin-bottom:12px">Historial</div>
@@ -9022,7 +9066,7 @@ A.visitaSeguirMedias = () => { V.sheet = null; A.seguirBorrador(); };
 /* --- nav --- */
 function nav(v) {
   const items = esPresupuestos()
-    ? [['agenda', 'Agenda', '5px'], ['clientes', 'Clientes', '3px'], ['presupuestos', 'Presupuestos', '2px'], ['material', 'Material', '4px'], ['ajustes', 'Perfil', '99px']]
+    ? [['agenda', 'Agenda', '5px'], ['clientes', 'Clientes', '3px'], ['presupuestos', 'Presupuestos', '2px'], ['legalizaciones', 'Legalizac.', '6px'], ['material', 'Material', '4px'], ['ajustes', 'Perfil', '99px']]
     : esAdmin()
     ? [['hoy', 'Hoy', '99px'], ['empleados', 'Empleados', '4px'], ['obras', 'Obras', '5px'], ['partes', 'Partes', '3px'], ['horas', 'Horas', '2px'], ['agenda', 'Citas', '6px'], ['ajustes', 'Ajustes', '99px']]
     : puedeCrear()
@@ -9031,7 +9075,8 @@ function nav(v) {
   const act = (id) => v === id
     || (id === 'obras' && v === 'obra')
     || (id === 'horas' && ['imputar', 'revisarImp', 'resumenImp'].includes(v))
-    || (id === 'ajustes' && ['errores', 'legalizaciones', 'legalizacion'].includes(v))
+    || (id === 'ajustes' && !esPresupuestos() && ['errores', 'legalizaciones', 'legalizacion'].includes(v))
+    || (id === 'legalizaciones' && v === 'legalizacion')
     || (id === 'empleados' && (v === 'empleado' || v === 'planilla'))
     || (id === 'visitas' && v === 'visita')
     || (id === 'presupuestos' && ['presuNuevo', 'presupuestoVer'].includes(v))
