@@ -400,7 +400,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '17.7'; // versión visible de la app (única fuente)
+const APP_VERSION = '17.8'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -8456,6 +8456,22 @@ function agSolapeHTML(d) {
   return `<div class="tiny" style="color:var(--verde-o)">${tuya} No choca con ninguna cita.${delDia.length ? ' Ese día ocupado: ' + delDia.join(', ') + '.' : ''}</div>`;
 }
 
+// Las citas que ya hay el día elegido, a la vista antes de escoger la hora:
+// «10:00–11:00 · Juan Romero · Ramón». Para no poner dos a la misma hora.
+function agCitasDelDiaHTML(d) {
+  if (!d || !d.dia) return '';
+  const delDia = V.agenda.citas
+    .filter((x) => x.estado === 'pendiente' && x.inicio && x.id !== d.id && agDiaDe(x.inicio) === d.dia)
+    .sort((a, b) => String(a.inicio).localeCompare(String(b.inicio)));
+  if (!delDia.length) return `<div class="tiny" style="color:var(--verde-o);margin:10px 0 14px">Ese día no hay ninguna cita todavía.</div>`;
+  return `<div class="card" style="padding:10px 15px;margin:14px 0 18px">
+    <div class="lbl" style="margin:0 0 4px">Ese día ya hay ${delDia.length === 1 ? 'una cita' : delDia.length + ' citas'}</div>
+    ${delDia.map((x) => { const s0 = agMinDelDia(x.inicio); const mia = d.empleadoId && x.empleado_id === d.empleadoId; return `<div class="fila" style="padding:7px 0">
+      <span class="k" style="color:${mia ? 'var(--rojo)' : 'inherit'};white-space:nowrap">${agRango(s0, s0 + (x.duracion_min || 60))}</span>
+      <span class="v ell" style="text-align:right">${esc(((x.cliente || {}).nombre) || 'Cliente')}${x.empleado_id ? ' · ' + esc(agNombreEmp(x.empleado_id)) : ''}</span></div>`; }).join('')}
+  </div>`;
+}
+
 /* ---------- vistas ---------- */
 function agAvisoHTML() {
   const ag = V.agenda;
@@ -8798,7 +8814,7 @@ function vCitaNueva() {
       </div>
       <div class="tiny">Un punto verde: ese día ya hay citas del equipo.</div>
     </div>
-    ${d.dia ? `<div class="campo">
+    ${d.dia ? `${agCitasDelDiaHTML(d)}<div class="campo">
       <div class="lbl">Hora · ${esc(agMayus(fechaLarga(d.dia)))}</div>
       ${relojHTML('cita', 'hora', d.horaMin, 23 * 60 + 45, true, 15)}
       <div data-num="citaSolape">${agSolapeHTML(d)}</div>
