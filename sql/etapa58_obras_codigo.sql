@@ -86,11 +86,14 @@ alter table public.obras add constraint obras_categorias_validas check (public.c
 
 -- 3 · Estado -----------------------------------------------------------------------
 alter table public.obras add column if not exists estado text;
+-- La base traía un check con los textos antiguos ('En curso', 'Cerrada'): fuera
+-- antes de cambiar los valores, o la actualización no pasa.
+alter table public.obras drop constraint if exists obras_estado_check;
+alter table public.obras drop constraint if exists obras_estado_valido;
 update public.obras set estado = 'cerrada'  where estado = 'Cerrada';
 update public.obras set estado = 'en_curso' where estado is null or estado not in ('planificada', 'en_curso', 'finalizada', 'cerrada');
 alter table public.obras alter column estado set default 'planificada';
 alter table public.obras alter column estado set not null;
-alter table public.obras drop constraint if exists obras_estado_valido;
 alter table public.obras add constraint obras_estado_valido check (estado in ('planificada', 'en_curso', 'finalizada', 'cerrada'));
 
 -- 4 · Población y enlace con el cliente -------------------------------------------
