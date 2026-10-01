@@ -351,7 +351,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '18.0'; // versión visible de la app (única fuente)
+const APP_VERSION = '18.1'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -714,7 +714,7 @@ async function sincronizarObras() {
   try {
     const filas = await Sysefen.db.listarObras();
     if (filas && filas.length) obraColumnas = filas[0];
-    S.obras = (filas || []).map(mapObraDeDB);
+    S.obras = (filas || []).map(mapObraDeDB).sort(porTitulo); // alfabético en todas partes
   } catch (e) { registrarError('sincronizarObras', e); /* se mantiene lo que haya */ }
   finally { sincObras = false; }
 }
@@ -774,6 +774,9 @@ async function sincronizarImputaciones() {
   } catch (e) { registrarError('sincronizarImputaciones', e); /* se mantiene lo que haya */ }
   finally { sincImp = false; }
 }
+
+// Orden de las obras: alfabético, como en el despacho («Casa 2» antes que «Casa 10»).
+const porTitulo = (a, b) => String(a.titulo || '').localeCompare(String(b.titulo || ''), 'es', { sensitivity: 'base', numeric: true });
 
 /* ---------- partes: espejo en memoria de public.partes/parte_horas/parte_materiales ---------- */
 // Esquema REAL (confirmado, sin columna `ref`, sin adjuntos, sin importe en partes):
@@ -2362,7 +2365,7 @@ A.guardarObraRapida = async () => {
     });
     await sincronizarObras();
     // Si había otra sincronización en marcha, puede que aún no esté en la lista.
-    if (!obraById(nueva.id)) S.obras.push(mapObraDeDB(nueva));
+    if (!obraById(nueva.id)) { S.obras.push(mapObraDeDB(nueva)); S.obras.sort(porTitulo); }
     const { origen, i } = s;
     V.sheet = null;
     toast('Obra creada: ' + nueva.nombre);
@@ -3498,7 +3501,8 @@ function vHoyAdmin(u) {
 
 /* --- obras --- */
 function vObras() {
-  const lista = S.obras; // todo el equipo ve todas las obras
+  // Todo el equipo ve todas las obras: por orden alfabético, las cerradas al final.
+  const lista = [...S.obras].sort((a, b) => (a.estado === 'Cerrada') - (b.estado === 'Cerrada') || porTitulo(a, b));
   return `<div class="hdr">
     ${marcaSysefen(false)}
     <div class="row" style="justify-content:space-between">
@@ -8296,7 +8300,14 @@ function clientesListaHTML() {
   if (ag.filtroCli === 'sin_contactar') lista = lista.filter((x) => x.e.k === 'sin_cita' && x.c.contacto_estado !== 'contactado');
   else if (ag.filtroCli !== 'todos') lista = lista.filter((x) => x.e.k === ag.filtroCli);
   if (q) lista = lista.filter(({ c }) => [c.nombre, c.telefono, c.poblacion, c.email].some((v) => String(v || '').toLowerCase().includes(q)));
-  if (!lista.length) return `<div class="card"><div class="sub">${ag.clientes.length ? 'Ningún cliente con ese filtro.' : (ag.cargado ? 'Todavía no hay clientes.' : 'Cargando…')}</div></div>`;
+  // Los avisos de la web ya están arriba con sus botones: aquí no se repiten.
+  if (!q && ['todos', 'sin_contactar'].includes(ag.filtroCli) && puedeCitar()) {
+    const esWeb = (c) => c.lead_at && !(c.citas || []).length && !(c.visitas || []).length;
+    const habiaWeb = lista.some(({ c }) => esWeb(c));
+    lista = lista.filter(({ c }) => !esWeb(c));
+    if (!lista.length && habiaWeb) return ''; // ya están todos arriba, en el bloque de la web
+  }
+  if (!lista.length) return `<div class="card"><div class="sub">${ag.clientes.length ? (ag.filtroCli === 'todos' && !q ? 'Los demás clientes ya tienen cita o visita.' : 'Ningún cliente con ese filtro.') : (ag.cargado ? 'Todavía no hay clientes.' : 'Cargando…')}</div></div>`;
   return lista.map(({ c, e }) => `<div class="card" data-a="ag_abrirCliente" data-id="${c.id}" style="margin-bottom:10px;cursor:pointer">
     <div class="row g8"><span class="dot" style="width:8px;height:8px;background:${e.color}"></span><span class="lbl"${e.k === 'sin_cita' ? ' style="color:var(--rojo)"' : ''}>${esc(e.txt)}</span></div>
     <div class="h2" style="font-size:17px;margin-top:8px">${esc(c.nombre)}</div>
@@ -8337,10 +8348,15 @@ function vClientes() {
  */
 function webListaHTML() {
   if (!puedeCitar()) return '';
+  // Con un filtro o una búsqueda puestos, el bloque de la web se aparta: si
+  // no, con muchos avisos de la web parecía que el filtro no hacía nada.
+  const ag = V.agenda;
+  if (String(ag.buscar || '').trim() || !['todos', 'sin_contactar'].includes(ag.filtroCli)) return '';
   // Ya visitado o ya citado deja de estar pendiente, aunque la visita se hiciera
   // sin pasar por una cita.
-  const web = (V.agenda.clientes || []).filter((c) => c.lead_at
-    && !(c.citas || []).length && !(c.visitas || []).length);
+  const web = (ag.clientes || []).filter((c) => c.lead_at
+    && !(c.citas || []).length && !(c.visitas || []).length
+    && (ag.filtroCli !== 'sin_contactar' || c.contacto_estado !== 'contactado'));
   const boton = `<button class="pill" data-a="leadsBuscar" style="padding:8px 14px;font-size:12px" ${V.leadsBusy ? 'disabled' : ''}>${V.leadsBusy ? 'Mirando…' : 'Mirar ahora'}</button>`;
   if (!web.length) {
     return `<div class="row" style="justify-content:space-between;align-items:center;margin-bottom:16px">
@@ -8358,8 +8374,8 @@ function webListaHTML() {
     <div class="h2" style="margin-top:9px">${esc(c.nombre)}</div>
     <div class="sub" style="margin-top:4px">${esc([agTipoNombre(c), c.telefono, c.poblacion].filter(Boolean).join(' · ') || 'Sin más datos')}</div>
     ${agContactadoTxt(c) ? `<div class="tiny" style="margin-top:8px;color:${c.contacto_estado === 'contactado' ? 'var(--ambar-o)' : 'var(--rojo)'}">${esc(agContactadoTxt(c))}</div>` : ''}
-    ${puedeCitar() ? `<div class="row g8" style="margin-top:12px">${agContactoBotones(c)}
-      <button class="pill pill-verde grow" data-a="ag_nuevaCita" data-id="${c.id}" style="padding:11px;text-align:center">Ponerle cita</button></div>` : ''}
+    ${puedeCitar() ? `<div class="row g8" style="margin-top:12px;flex-wrap:wrap">${agContactoBotones(c)}
+      <button class="pill pill-verde grow" data-a="ag_nuevaCita" data-id="${c.id}" style="padding:8px 14px;text-align:center">Citar</button></div>` : ''}
   </div>`).join('')}
   <div style="height:12px"></div>`;
 }
