@@ -106,6 +106,18 @@
     ],
   };
 
+  const EMPRESA_LEG = { email_legalizaciones: 'xavi@sysefen.app', instalador_razon_social: 'Sysefen Eficiencia Energética SL', instalador_numero: 'IB-01234', instalador_nombre: 'Xavier Pons Mas', instalador_nif: '43111222K', instalador_direccion: 'Gremi Fusters 8', instalador_cp_localidad: '07009 Palma', instalador_telefono: '696 284 058', aparato_verificador: 'Fluke 1736 · nº 4521008' };
+  const LEGS = [
+    { id: 'L1', obra_id: 'o1', cliente_id: 'c2', estado: 'borrador', created_at: iso(1, 10), updated_at: iso(0, 9), obra: { id: 'o1', nombre: 'Casa Can Roca', cliente: 'Familia Roca' },
+      datos: { cliente_nombre: 'Miquel Roca Vidal', cliente_dni: '43222333L', cliente_direccion: 'Camí de Son Vich 12', cliente_cp_localidad: '07190 Esporles', cliente_telefono: '600 123 456', cliente_email: 'miquel@correo.es',
+        inst_direccion: 'Camí de Son Vich 12', inst_cp_localidad: '07190 Esporles', inst_poblacion: 'Esporles', inst_ref_catastral: '07020A00500123', inst_cups: 'ES0031408123456789JK', inst_cau: 'ES0031408123456789JKA000',
+        inst_tipo_terreno: 'rustico', inst_uso: 'domestico', inst_modalidad: 'con_exc_con_comp', inst_potencia_kw: 5.1, inst_tension: '230', inst_edm_alquiler: 'si', inst_serv_aux: 'no', inst_colectivo: 'no', inst_proxima_red: 'no', inst_acumulacion: 'no', inst_no_vertido: 'no', inst_limitacion_parcial: 'no', inst_venta_100: 'no', inst_edm_gen_neta: 'no',
+        rec_potencia_contratada: 5.75, rec_distribuidora: 'e-distribución', fv_inv_cantidad: 1, fv_inv_modelo: 'Fronius Primo GEN24 4.6', fv_inv_potencia_kw: 4.6, fv_pan_cantidad: 10, fv_pan_modelo: 'Trina Vertex S 510', fv_pan_potencia_w: 510, fv_ubicacion: 'cubierta', fv_orientacion: 'Sur', fv_inclinacion: 30, fv_frecuencia: 50,
+        prev_generada: 7800, prev_autoconsumida: 4200, prev_vertida: 3600, verif_fecha: hoy } },
+    { id: 'L2', obra_id: 'o2', estado: 'enviada', enviada_a: 'xavi@sysefen.app', enviada_at: iso(6, 12), created_at: iso(8, 10), updated_at: iso(6, 12), obra: { id: 'o2', nombre: 'Nave Polígono Son Castelló', cliente: 'Talleres Pons' },
+      datos: { cliente_nombre: 'Talleres Pons SL', cliente_dni: 'B07123456', inst_direccion: 'Gremi Fusters 8', inst_potencia_kw: 20, verif_hecha: true } },
+  ];
+
   // --- lo común a todas las escenas ------------------------------------------
   function base(userId) {
     S.users = USERS.map((u) => Object.assign({}, u));
@@ -184,6 +196,10 @@
     'pres-visita-nueva-3': () => { base('u5'); A.nuevaVisita(); V.visitaDraft._cliente = { id: 'c4', nombre: 'Pep Vidal', telefono: '600 777 888', nuevo: false }; V.visitaDraft.direccion = 'Major 3'; V.visitaDraft.poblacion = 'Inca'; V.visitaDraft.categorias = ['aire_acondicionado']; V.visitaPaso = 3; },
     'pres-visita-nueva-4': () => { base('u5'); A.nuevaVisita(); V.visitaDraft._cliente = { id: 'c4', nombre: 'Pep Vidal', telefono: '600 777 888', nuevo: false }; V.visitaDraft.direccion = 'Major 3'; V.visitaDraft.poblacion = 'Inca'; V.visitaDraft.categorias = ['aire_acondicionado']; V.visitaPaso = 4; V.visitaCat = 'aire_acondicionado'; V.visitaFichas = { aire_acondicionado: { tipo_sistema: 'multisplit', uso: 'frio_calor', estancias: [{ nombre: 'Salón', m2: 30, metros: 4 }, { nombre: 'Dormitorio', m2: 12, metros: 6 }] } }; },
     'pres-visita-ver': () => { base('u5'); V.view = 'visita'; V.visitaVer = { visita: Object.assign({}, VISITAS[1], { observaciones: 'Cuadro eléctrico en el garaje. Cubierta de teja en buen estado.' }), fichas: [{ id: 'fi1', categoria: 'aerotermia', datos: { sistema_actual: 'caldera_gasoleo', potencia_kw: 8 } }], adjuntos: [] }; },
+    'jefe-legalizaciones': () => { base('u1'); V.view = 'legalizaciones'; V.legLista = { cargado: true, cargando: false, error: null, filas: LEGS }; S.leg = EMPRESA_LEG; },
+    'jefe-legalizacion': () => { base('u1'); S.leg = EMPRESA_LEG; V.legLista = { cargado: true, cargando: false, error: null, filas: LEGS }; V.legVer = Object.assign({}, LEGS[0], { datos: Object.assign({}, LEGS[0].datos) }); V.legPaso = 'produccion'; V.legErr = null; V.legOk = null; V.view = 'legalizacion'; },
+    'jefe-legalizacion-verif': () => { base('u1'); S.leg = EMPRESA_LEG; V.legVer = Object.assign({}, LEGS[0], { datos: Object.assign({}, LEGS[0].datos, { verif_hecha: true, verif_retorno: 'si', verif_ucon: 231, verif_udes: 236, verif_dv: 1.2, verif_cosp: 0.99, verif_thd_l1: 2.1, verif_h3_l1: 1.4 }) }); V.legPaso = 'verificacion'; V.view = 'legalizacion'; },
+    'admin-ajustes-legalizacion': () => { base('u0'); S.leg = EMPRESA_LEG; V.view = 'ajustes'; },
     'pres-material': () => { base('u5'); V.view = 'material'; },
     'pres-perfil': () => { base('u5'); V.view = 'ajustes'; },
   };

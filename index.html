@@ -400,7 +400,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '17.5'; // versión visible de la app (única fuente)
+const APP_VERSION = '17.6'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -3314,6 +3314,8 @@ function render() {
   else if (v === 'ajustes') html = vAjustes();
   else if (v === 'material') html = vMaterial();
   else if (v === 'presupuestos' && verMotor()) html = vPresupuestos();
+  else if (v === 'legalizaciones' && esComercial()) html = vLegalizaciones();
+  else if (v === 'legalizacion' && esComercial()) html = vLegalizacion();
   else if (v === 'presuNuevo' && verMotor()) html = vPresuNuevo();
   else if (v === 'presupuestoVer' && verMotor()) html = vPresupuestoVer();
   else if (v === 'p1') html = vP1();
@@ -3329,7 +3331,7 @@ function render() {
   else if (v === 'clienteVer' && verAgenda()) html = vClienteVer();
   else if (v === 'citaNueva' && puedeCitar()) html = vCitaNueva();
   else if (v === 'citaVer' && verAgenda()) html = vCitaVer();
-  if (V.user && ['hoy', 'obras', 'obra', 'partes', 'horas', 'imputar', 'empleados', 'ajustes', 'material', 'presupuestos', 'presupuestoVer', 'visitas', 'visita', 'agenda', 'clientes', 'clienteVer', 'revisarImp', 'errores'].includes(v)) html += nav(v);
+  if (V.user && ['hoy', 'obras', 'obra', 'partes', 'horas', 'imputar', 'empleados', 'ajustes', 'material', 'presupuestos', 'presupuestoVer', 'visitas', 'visita', 'agenda', 'clientes', 'clienteVer', 'revisarImp', 'errores', 'legalizaciones', 'legalizacion'].includes(v)) html += nav(v);
   if (!navigator.onLine && V.user) html = '<div class="offline">Sin conexión — todo se guarda en el móvil</div>' + html;
   // Red de seguridad: si un sheet revienta al pintarse (p. ej. depende de
   // datos que cambiaron justo antes, como el usuario tras salir), que se
@@ -3599,6 +3601,9 @@ function vObra() {
     ${puedeCrear() ? `<div class="row g8" style="margin-top:16px">
       <button class="pill pill-verde grow" data-a="nuevoParte" data-id="${o.id}" style="padding:14px">Nuevo parte</button>
       <button class="pill grow" data-a="editarObra" data-id="${o.id}" style="padding:14px;background:rgba(255,255,255,.12);color:#fff">Editar</button>
+    </div>
+    <div class="row g8" style="margin-top:8px">
+      <button class="pill grow" data-a="legNueva" data-id="${o.id}" style="padding:12px;background:rgba(255,255,255,.12);color:#fff">Legalización fotovoltaica</button>
     </div>` : ''}
   </div>
   <div class="scroll pad pb-nav">
@@ -5130,6 +5135,19 @@ function vAjustes() {
         <div class="grow"><div style="font:500 15px/1.2 var(--sans)">${n}</div><div class="sub" style="font-size:12px;margin-top:4px">${d}</div></div>
         <div class="sw" style="background:${S.opts[k] ? 'var(--verde)' : 'rgba(20,23,15,.16)'};justify-content:${S.opts[k] ? 'flex-end' : 'flex-start'}"><i></i></div>
       </div>`).join('')}
+    </div>` : ''}
+
+    ${esComercial() ? `<div class="card row" data-a="abrirLegalizaciones" style="margin-top:14px;cursor:pointer">
+      <div class="grow"><div style="font:600 15px var(--sans)">Legalizaciones fotovoltaicas</div>
+      <div class="sub" style="font-size:12px;margin-top:4px">Modelo 034 y certificado de verificación por obra. A Drive y al correo de quien legaliza.</div></div>
+      <div style="font:400 20px/1 var(--sans);color:var(--t3)">›</div>
+    </div>` : ''}
+    ${esAdmin() ? `<div class="card" style="margin-top:14px">
+      <div class="lbl">Legalizaciones · datos fijos</div>
+      <div class="sub" style="font-size:12px;margin-top:4px">Salen en cada certificado. El correo es a donde llegan los PDF (Xavi).</div>
+      ${[['email_legalizaciones', 'Correo de legalizaciones', 'email'], ['instalador_razon_social', 'Razón social de la empresa instaladora', 'text'], ['instalador_numero', 'Nº de instalador autorizado', 'text'], ['instalador_nombre', 'Nombre del instalador', 'text'], ['instalador_nif', 'DNI / NIF del instalador', 'text'], ['instalador_direccion', 'Dirección', 'text'], ['instalador_cp_localidad', 'CP y localidad', 'text'], ['instalador_telefono', 'Teléfono', 'text'], ['aparato_verificador', 'Aparato verificador (marca, modelo y nº de serie)', 'text']]
+        .map(([k, et, tipo]) => `<input class="inp" data-f="legEmpresa" data-k="${k}" type="${tipo}" value="${esc((S.leg || {})[k] || '')}" placeholder="${esc(et)}" style="margin-top:8px" autocapitalize="off">`).join('')}
+      <button class="pill" data-a="legGuardarEmpresa" style="margin-top:12px;padding:11px;width:100%;text-align:center;background:var(--tinta);color:#fff">Guardar</button>
     </div>` : ''}
 
     <a class="card row" href="manual/index.html" style="margin-top:14px;text-decoration:none;color:inherit">
@@ -6882,6 +6900,450 @@ A.presuAbrir = async (id) => {
   V.presuVer.cargando = false; render();
 };
 
+/* =============================================================================
+ * LEGALIZACIÓN FOTOVOLTAICA (sql/etapa55)
+ *
+ * Al acabar una instalación hay que legalizarla en Industria (Modelo 034 de la
+ * CAIB) con el «Annex de proves de verificació» (RD 1699/2011 · UNE 50160).
+ * Aquí se recogen todos los datos del 034 por obra y, si el técnico las tiene,
+ * las medidas de la verificación; al enviar se generan dos PDF en el móvil (el
+ * certificado oficial rellenado y una hoja ordenada con los datos del 034),
+ * se suben a Drive (08-Legalizaciones / <obra>) y van por correo a quien lleva
+ * las legalizaciones (Ajustes → Administración). Jefes, presupuestos y Admin.
+ * ========================================================================== */
+Object.assign(V, {
+  legLista: { cargado: false, cargando: false, error: null, filas: [] },
+  legVer: null,          // { id, datos, estado, obra_id, cliente_id, ... }
+  legPaso: 'cliente',    // la sección abierta
+  legBusy: false, legErr: null, legOk: null,
+});
+// Los datos fijos del instalador y el correo de legalizaciones (tabla empresa).
+S.leg = S.leg || {};
+
+const SI_NO = [['si', 'Sí'], ['no', 'No']];
+const CU_AL = [['Cu', 'Cu'], ['Al', 'Al']];
+// Cada sección del Modelo 034, con sus campos. `tipo`: texto | numero | opcion.
+const LEGAL_SECCIONES = [
+  { id: 'cliente', titulo: 'Cliente (titular)', campos: [
+    ['cliente_nombre', 'Nombre completo', 'texto'], ['cliente_dni', 'DNI / NIF', 'texto'],
+    ['cliente_direccion', 'Dirección', 'texto'], ['cliente_cp_localidad', 'CP y localidad', 'texto'],
+    ['cliente_telefono', 'Teléfono', 'texto'], ['cliente_email', 'Email', 'texto'],
+  ] },
+  { id: 'produccion', titulo: 'Instalación de producción', campos: [
+    ['inst_direccion', 'Dirección del emplazamiento', 'texto'], ['inst_cp_localidad', 'CP y localidad', 'texto'],
+    ['inst_poblacion', 'Población (municipio)', 'texto'],
+    ['inst_ref_catastral', 'Referencia catastral', 'texto'], ['inst_cups', 'CUPS', 'texto'], ['inst_cau', 'CAU', 'texto'],
+    ['inst_tipo_terreno', 'Tipo de terreno', 'opcion', [['rustico', 'Rústico'], ['urbano', 'Urbano'], ['industrial', 'Industrial']]],
+    ['inst_uso', 'Uso', 'opcion', [['domestico', 'Doméstico'], ['no_domestico', 'No doméstico']]],
+    ['inst_actividad', 'Actividad (si no es doméstico)', 'texto'],
+    ['inst_modalidad', 'Modalidad de autoconsumo', 'opcion', [['sin_excedentes', 'Sin excedentes'], ['con_exc_con_comp', 'Con excedentes con compensación'], ['con_exc_sin_comp', 'Con excedentes sin compensación'], ['no_autoconsumo', 'No autoconsumo']]],
+    ['inst_potencia_kw', 'Potencia de producción instalada (kW)', 'numero'],
+    ['inst_tension', 'Tensión', 'opcion', [['230', '230 V'], ['230/400', '230/400 V']]],
+    ['inst_resistencia_tierra', 'Resistencia a tierra (Ω)', 'numero'],
+    ['inst_edm_alquiler', 'EDM de alquiler', 'opcion', SI_NO], ['inst_edm_gen_neta', 'EDM generación neta', 'opcion', SI_NO],
+    ['inst_venta_100', '100 % venta', 'opcion', SI_NO],
+    ['inst_colectivo', 'Autoconsumo colectivo', 'opcion', SI_NO], ['inst_proxima_red', 'Instalación próxima a través de red', 'opcion', SI_NO],
+    ['inst_serv_aux', 'Contrato de servicios auxiliares', 'opcion', SI_NO],
+    ['inst_serv_aux_kwh', 'Consumo anual serv. auxiliares (kWh)', 'numero'], ['inst_serv_aux_pct', 'Consumo serv. aux. / generada (%)', 'numero'],
+    ['inst_acumulacion', 'Elementos de acumulación', 'opcion', SI_NO],
+    ['inst_acum_kwh', 'Energía acumulada (kWh)', 'numero'], ['inst_acum_kw', 'Potencia de salida acumulación (kW)', 'numero'],
+    ['inst_no_vertido', 'Dispositivo de no vertido instantáneo', 'opcion', SI_NO], ['inst_no_vertido_modelo', 'Marca / modelo del dispositivo', 'texto'],
+    ['inst_limitacion_parcial', 'Sistema de limitación parcial', 'opcion', SI_NO], ['inst_pot_max_vertido', 'Potencia máx. de vertido (kW)', 'numero'],
+    ['inst_utm_x', 'Coordenadas UTM · X', 'texto'], ['inst_utm_y', 'Coordenadas UTM · Y', 'texto'],
+  ] },
+  { id: 'receptora', titulo: 'Instalación receptora', campos: [
+    ['rec_potencia_contratada', 'Potencia contratada (kW)', 'numero'], ['rec_potencia_max_admisible', 'Potencia máx. admisible (kW)', 'numero'],
+    ['rec_distribuidora', 'Compañía distribuidora', 'texto'],
+    ['rec_lga_material', 'Línea general de alimentación · material', 'opcion', CU_AL], ['rec_lga_longitud', 'LGA · longitud (m)', 'numero'], ['rec_lga_seccion', 'LGA · sección (mm²)', 'numero'],
+    ['rec_di_material', 'Derivación individual · material', 'opcion', CU_AL], ['rec_di_longitud', 'Derivación · longitud (m)', 'numero'], ['rec_di_seccion', 'Derivación · sección (mm²)', 'numero'],
+    ['rec_dif_polos', 'Protección diferencial · nº de polos', 'numero'], ['rec_dif_is', 'Diferencial · Is (mA)', 'numero'], ['rec_dif_in', 'Diferencial · In (A)', 'numero'],
+    ['rec_mag_polos', 'Magnetotérmico · nº de polos', 'numero'], ['rec_mag_in', 'Magnetotérmico · In (A)', 'numero'],
+  ] },
+  { id: 'fv', titulo: 'Instalación fotovoltaica', campos: [
+    ['fv_inv_cantidad', 'Inversores · cantidad', 'numero'], ['fv_inv_modelo', 'Inversores · marca y modelo', 'texto'],
+    ['fv_inv_potencia_kw', 'Inversores · potencia total (kW)', 'numero'], ['fv_inv_serie', 'Inversores · números de serie', 'texto'],
+    ['fv_pan_cantidad', 'Paneles · cantidad', 'numero'], ['fv_pan_modelo', 'Paneles · marca y modelo', 'texto'], ['fv_pan_potencia_w', 'Paneles · potencia unitaria (W)', 'numero'],
+    ['fv_ubicacion', 'Ubicación', 'opcion', [['cubierta', 'Cubierta'], ['suelo', 'Suelo']]],
+    ['fv_orientacion', 'Orientación', 'texto'], ['fv_inclinacion', 'Inclinación (º)', 'numero'],
+    ['fv_cc_material', 'Cableado CC · material', 'opcion', CU_AL], ['fv_cc_longitud', 'Cableado CC · longitud (m)', 'numero'], ['fv_cc_seccion', 'Cableado CC · sección (mm²)', 'numero'],
+    ['fv_ic_material', 'Línea inversor-cuadro general · material', 'opcion', CU_AL], ['fv_ic_longitud', 'Inversor-cuadro · longitud (m)', 'numero'], ['fv_ic_seccion', 'Inversor-cuadro · sección (mm²)', 'numero'],
+    ['fv_frecuencia', 'Frecuencia de funcionamiento (Hz)', 'numero'], ['fv_tension_max', 'Tensión máxima (V)', 'numero'], ['fv_tension_min', 'Tensión mínima (V)', 'numero'],
+  ] },
+  { id: 'prevision', titulo: 'Previsión anual de energía', campos: [
+    ['prev_generada', 'Energía generada (kWh)', 'numero'], ['prev_autoconsumida', 'Energía autoconsumida (kWh)', 'numero'],
+    ['prev_vertida', 'Vertida a la red (kWh)', 'numero'], ['prev_demandada', 'Demandada de la red (kWh)', 'numero'],
+    ['prev_serv_aux', 'Consumida por servicios auxiliares (kWh)', 'numero'], ['prev_serv_aux_pct', 'Serv. aux. / energía neta generada (%)', 'numero'],
+  ] },
+  { id: 'verificacion', titulo: 'Verificación en obra (certificado)', campos: [
+    ['verif_retorno', 'Ausencia de retorno de tensión', 'opcion', SI_NO], ['verif_tiempo_min', 'Tiempo de rearme (min)', 'numero'],
+    ['verif_ucon', 'Tensión en conexión (V)', 'numero'], ['verif_udes', 'Tensión en desconexión (V)', 'numero'], ['verif_dv', 'ΔV (%) · máx. 2,5', 'numero'],
+    ['verif_cosp', 'Cos φ · mín. 0,98', 'numero'],
+    ['verif_thd_l1', 'THD L1 (%)', 'numero'], ['verif_thd_l2', 'THD L2 (%)', 'numero'], ['verif_thd_l3', 'THD L3 (%)', 'numero'],
+    ['verif_pst', 'Flicker · Pst 10 min', 'numero'], ['verif_plt', 'Flicker · Plt', 'numero'],
+    ['verif_desequilibrio', 'Desequilibrio entre fases inferior a 5 kW', 'opcion', SI_NO],
+    ['verif_obs', 'Observaciones', 'texto'],
+    ['verif_lugar', 'Firmado en (localidad)', 'texto'], ['verif_fecha', 'Fecha del certificado', 'fecha'],
+  ] },
+];
+// Los armónicos del certificado: orden 2 a 25, L1 L2 L3, con su máximo.
+const LEGAL_ARMONICOS_MAX = { 2: '2,0', 3: '5,0', 4: '1,0', 5: '6,0', 6: '0,5', 7: '5,0', 8: '0,5', 9: '1,5', 10: '0,5', 11: '3,5', 12: '0,5', 13: '3,0', 14: '0,5', 15: '0,5', 16: '0,5', 17: '2,0', 18: '0,5', 19: '1,5', 20: '0,5', 21: '0,5', 22: '0,5', 23: '1,5', 24: '0,5', 25: '1,5' };
+const legEtiqueta = (clave) => { for (const s of LEGAL_SECCIONES) { const c = s.campos.find((x) => x[0] === clave); if (c) return c[1]; } return clave; };
+const legValorTxt = (c, v) => {
+  if (v == null || v === '') return '';
+  if (c[2] === 'opcion') { const o = (c[3] || []).find((x) => x[0] === v); return o ? o[1] : String(v); }
+  if (c[2] === 'fecha') return fechaCorta(String(v) + 'T12:00');
+  return String(v);
+};
+
+async function cargarEmpresaLeg() {
+  if (!navigator.onLine) return;
+  try {
+    const e = await visitasDB.obtenerEmpresa();
+    if (e) S.leg = e; save();
+  } catch (_) { /* sin etapa 55: se avisa al enviar */ }
+}
+
+A.legGuardarEmpresa = async () => {
+  if (!esAdmin()) return;
+  if (!navigator.onLine) { avisar('Sin conexión.'); return; }
+  const campos = ['email_legalizaciones', 'instalador_razon_social', 'instalador_numero', 'instalador_nombre', 'instalador_nif', 'instalador_direccion', 'instalador_cp_localidad', 'instalador_telefono', 'aparato_verificador'];
+  const cambios = {}; campos.forEach((k) => { cambios[k] = String((S.leg || {})[k] || '').trim(); });
+  try { S.leg = await visitasDB.guardarEmpresa(cambios); save(); toast('Guardado'); render(); }
+  catch (e) { avisar(/does not exist|schema cache/i.test(msgError(e)) ? 'Falta ejecutar sql/etapa50 y etapa55 en Supabase.' : 'No se pudo guardar: ' + msgError(e)); }
+};
+
+A.cargarLegalizaciones = async () => {
+  const l = V.legLista; if (l.cargando) return;
+  l.cargando = true; if (!l.cargado) render();
+  try {
+    const [filas] = await Promise.all([visitasDB.listarLegalizaciones(), cargarEmpresaLeg(), S.obras.length ? null : sincronizarObras()]);
+    l.filas = filas; l.error = null;
+  } catch (e) { l.error = msgError(e); }
+  l.cargando = false; l.cargado = true;
+  if (['legalizaciones', 'legalizacion', 'ajustes'].includes(V.view)) render();
+};
+
+A.abrirLegalizaciones = () => { V.view = 'legalizaciones'; scrollMemo.legalizaciones = 0; render(); A.cargarLegalizaciones(); };
+
+/** Nueva legalización para una obra: se precarga lo que la obra ya sabe. */
+A.legNueva = async (obraId) => {
+  if (!obraId) { V.sheet = { tipo: 'legObra', buscar: '' }; render(); return; }
+  const o = obraById(obraId) || {};
+  const datos = {
+    cliente_nombre: o.cliente || '', inst_direccion: o.dir || '', cliente_direccion: o.dir || '',
+    inst_tension: '230', inst_modalidad: 'con_exc_con_comp', inst_uso: 'domestico', inst_tipo_terreno: 'urbano',
+    fv_frecuencia: 50, fv_ubicacion: 'cubierta', inst_serv_aux: 'no', inst_colectivo: 'no', inst_proxima_red: 'no',
+    inst_edm_alquiler: 'si', inst_venta_100: 'no', inst_edm_gen_neta: 'no', inst_acumulacion: 'no', inst_no_vertido: 'no', inst_limitacion_parcial: 'no',
+    verif_fecha: hoyISO(),
+  };
+  V.sheet = null;
+  if (!navigator.onLine) { avisar('Sin conexión: la legalización se guarda en el servidor.'); return; }
+  try {
+    const fila = await visitasDB.guardarLegalizacion({ obra_id: obraId, cliente_id: null, autor_id: empIdDeUser(V.user.id) || null, datos });
+    V.legLista.cargado = false;
+    A.legAbrir(fila);
+  } catch (e) { avisar('No se pudo crear: ' + msgError(e)); }
+};
+A.legAbrir = (fila) => {
+  const f = typeof fila === 'string' ? V.legLista.filas.find((x) => x.id === fila) : fila;
+  if (!f) return;
+  V.legVer = Object.assign({}, f, { datos: Object.assign({}, f.datos || {}) });
+  V.legPaso = 'cliente'; V.legErr = null; V.legOk = null;
+  V.view = 'legalizacion'; scrollMemo.legalizacion = 0; render();
+  if (!S.leg || !S.leg.instalador_razon_social) cargarEmpresaLeg();
+};
+A.legPaso = (id) => { V.legPaso = V.legPaso === id ? null : id; render(); };
+A.legCampo = (k, v) => { if (V.legVer) { V.legVer.datos[k] = v; legGuardarLuego(); } };
+A.legOpcion = (k, v) => { if (!V.legVer) return; V.legVer.datos[k] = V.legVer.datos[k] === v ? '' : v; legGuardarLuego(); render(); };
+A.legVerif = () => { if (!V.legVer) return; V.legVer.datos.verif_hecha = !V.legVer.datos.verif_hecha; legGuardarLuego(); render(); };
+
+// Se guarda solo, un segundo después de dejar de escribir: una legalización
+// se rellena a ratos y no puede perderse por cerrar la app.
+let legGuardarT = null;
+function legGuardarLuego() {
+  clearTimeout(legGuardarT);
+  legGuardarT = setTimeout(legGuardarAhora, 1000);
+}
+async function legGuardarAhora() {
+  const l = V.legVer; if (!l || !l.id || !navigator.onLine) return;
+  try {
+    const g = await visitasDB.guardarLegalizacion({ id: l.id, datos: l.datos, cliente_id: l.cliente_id || null });
+    l.updated_at = g.updated_at;
+    const i = V.legLista.filas.findIndex((x) => x.id === l.id);
+    if (i >= 0) V.legLista.filas[i] = Object.assign({}, V.legLista.filas[i], g);
+  } catch (e) { V.legErr = 'No se pudo guardar: ' + msgError(e); render(); }
+}
+
+// El cliente: de la lista de la app (clientes de presupuestos) o del CRM.
+A.legElegirCliente = async () => {
+  if (!V.agenda.cargado) await A.cargarAgenda();
+  V.sheet = { tipo: 'legCliente', buscar: '', crm: [], crmBusy: false }; render();
+};
+A.legClienteDe = (id) => {
+  const c = agCliente(id); const l = V.legVer; if (!c || !l) return;
+  Object.assign(l.datos, {
+    cliente_nombre: c.nombre || '', cliente_dni: c.nif || l.datos.cliente_dni || '', cliente_telefono: c.telefono || '',
+    cliente_email: c.email || '', cliente_direccion: c.direccion || l.datos.cliente_direccion || '',
+    cliente_cp_localidad: c.poblacion || l.datos.cliente_cp_localidad || '',
+  });
+  l.cliente_id = c.id;
+  V.sheet = null; legGuardarLuego(); render();
+};
+A.legBuscarCRM = async () => {
+  const s = V.sheet; if (!s || s.crmBusy || String(s.buscar || '').trim().length < 2) return;
+  s.crmBusy = true; render();
+  try { s.crm = await visitasDB.buscarEnCRM(s.buscar); } catch (e) { avisar(msgError(e)); }
+  s.crmBusy = false; render();
+};
+A.legClienteCRM = async (tlId, tipo) => {
+  const s = V.sheet; if (!s) return;
+  s.crmBusy = true; render();
+  try {
+    const c = await visitasDB.importarDelCRM(tlId, tipo);
+    V.agenda.cargado = false; await A.cargarAgenda();
+    A.legClienteDe(c.id || (c.cliente && c.cliente.id));
+  } catch (e) { s.crmBusy = false; avisar('No se pudo traer del CRM: ' + msgError(e)); render(); }
+};
+
+A.legBorrar = async () => {
+  const l = V.legVer; if (!l || l.estado !== 'borrador') return;
+  if (!V.legConfirmaBorrar) { V.legConfirmaBorrar = true; render(); setTimeout(() => { V.legConfirmaBorrar = false; if (V.view === 'legalizacion') render(); }, 3500); return; }
+  try { await visitasDB.borrarLegalizacion(l.id); V.legLista.cargado = false; A.abrirLegalizaciones(); }
+  catch (e) { avisar('No se pudo borrar: ' + msgError(e)); }
+};
+
+/* --- los dos PDF ------------------------------------------------------------ */
+let libPdfLib = null;
+function cargarPdfLib() {
+  if (libPdfLib) return libPdfLib;
+  libPdfLib = new Promise((ok, mal) => {
+    const t = document.createElement('script');
+    t.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js';
+    t.onload = ok; t.onerror = () => mal(new Error('No se pudo cargar pdf-lib'));
+    document.head.appendChild(t);
+  }).catch((e) => { libPdfLib = null; throw e; });
+  return libPdfLib;
+}
+const legNum = (v) => (v == null || v === '' ? '' : String(v).replace('.', ','));
+
+/**
+ * El certificado oficial (legalizacion/annex-verificacio-caib.pdf) con sus
+ * casillas rellenadas. Es un formulario PDF: se escribe en cada campo por su
+ * nombre. Lo que no se sabe se deja en blanco para que lo rellene la oficina.
+ */
+async function legCertificadoPDF(l) {
+  await cargarPdfLib();
+  const { PDFDocument } = window.PDFLib;
+  const bytes = await (await fetch('legalizacion/annex-verificacio-caib.pdf', { cache: 'force-cache' })).arrayBuffer();
+  const doc = await PDFDocument.load(bytes);
+  const form = doc.getForm();
+  const d = l.datos || {}, e = S.leg || {};
+  const pon = (nombre, valor) => { try { const f = form.getTextField(nombre); f.setText(valor == null ? '' : String(valor)); } catch (_) { /* casilla que no está */ } };
+  // Botones Sí/No: el formulario los tiene como un grupo con dos opciones.
+  const marca = (nombre, si) => {
+    try {
+      const f = form.getRadioGroup(nombre);
+      const ops = f.getOptions();
+      if (si === 'si' && ops[0] != null) f.select(ops[0]);
+      else if (si === 'no' && ops[1] != null) f.select(ops[1]);
+    } catch (_) {
+      try { const c = form.getCheckBox(nombre); if (si === 'si') c.check(); else c.uncheck(); } catch (__) { /* nada */ }
+    }
+  };
+  pon('Titular', d.cliente_nombre); pon('NIF', d.cliente_dni);
+  pon('Empresa instaladora', e.instalador_razon_social); pon('Número empresa', e.instalador_numero);
+  pon('Instalador', e.instalador_nombre); pon('NIF instalador', e.instalador_nif);
+  const cpLoc = String(d.inst_cp_localidad || '');
+  const cp = (cpLoc.match(/\d{5}/) || [''])[0];
+  pon('emplazamiento', d.inst_direccion); pon('CP', cp);
+  pon('Localidad', cpLoc.replace(cp, '').replace(/^[\s,·-]+|[\s,·-]+$/g, '')); pon('Población', d.inst_poblacion || '');
+  pon('Referencia catastral', d.inst_ref_catastral); pon('CUPS', d.inst_cups);
+  pon('Marca model i núm Sèrie aparell verificador', e.aparato_verificador);
+  if (d.verif_hecha) {
+    marca('Si', d.verif_retorno);
+    pon('tiempo', legNum(d.verif_tiempo_min)); pon('Ucon', legNum(d.verif_ucon)); pon('Udes', legNum(d.verif_udes)); pon('AV', legNum(d.verif_dv)); pon('Cosp', legNum(d.verif_cosp));
+    pon('L1', legNum(d.verif_thd_l1)); pon('L2', legNum(d.verif_thd_l2)); pon('L3', legNum(d.verif_thd_l3));
+    for (let h = 2; h <= 25; h++) for (let f = 1; f <= 3; f++) pon(`${h}L${f}`, legNum(d[`verif_h${h}_l${f}`]));
+    pon('Pst 10 min', legNum(d.verif_pst)); pon('Plt', legNum(d.verif_plt));
+    marca('Desaquilibri', d.verif_desequilibrio);
+  }
+  pon('Observacions', d.verif_obs);
+  const fecha = d.verif_fecha ? new Date(d.verif_fecha + 'T12:00') : new Date();
+  pon('En', d.verif_lugar || (S.leg && S.leg.instalador_cp_localidad ? String(S.leg.instalador_cp_localidad).replace(/^\d{5}\s*/, '') : ''));
+  pon('día', String(fecha.getDate())); pon('mes', fecha.toLocaleDateString('es-ES', { month: 'long' })); pon('año', String(fecha.getFullYear()).slice(2));
+  try { form.updateFieldAppearances(); } catch (_) { /* fuentes del propio PDF */ }
+  return doc.save();
+}
+
+/** La hoja de datos del Modelo 034: todo lo del formulario, ordenado, en #print. */
+function legDatosHTML(l) {
+  const d = l.datos || {}, e = S.leg || {};
+  const o = obraById(l.obra_id) || {};
+  const fila = (k, v) => (v ? `<tr><td style="padding:3px 0;color:#666;width:48%">${esc(k)}</td><td style="font-weight:500">${esc(v)}</td></tr>` : '');
+  const seccion = (titulo, filas) => (filas.trim() ? `<div style="font:600 10px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:#666;margin:14px 0 4px">${esc(titulo)}</div><table style="width:100%;font:400 11.5px var(--sans);border-collapse:collapse">${filas}</table>` : '');
+  const el = $('#print');
+  const secciones = LEGAL_SECCIONES.filter((s) => s.id !== 'verificacion').map((s) => seccion(s.titulo, s.campos.map((c) => fila(c[1], legValorTxt(c, d[c[0]]))).join(''))).join('');
+  const verif = d.verif_hecha ? seccion('Verificación en obra', LEGAL_SECCIONES.find((s) => s.id === 'verificacion').campos.map((c) => fila(c[1], legValorTxt(c, d[c[0]]))).join('')
+    + `<div style="font:400 11px var(--sans);color:#666;margin-top:6px">Los armónicos por orden y fase van en el certificado adjunto.</div>`) : '';
+  el.innerHTML = `<div style="font-family:var(--sans);color:#14170f;max-width:180mm;position:relative;z-index:0">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start">
+      <div><img src="logo-trans.png" alt="" style="height:17mm">
+      ${S.cif ? `<div style="font:400 10px var(--mono);color:#666;margin-top:2px">${esc(S.empresa)} · ${esc(S.cif)}</div>` : ''}</div>
+      <div style="text-align:right"><div style="font:600 11px var(--mono);letter-spacing:.1em">MODELO 034 · DATOS</div>
+      <div style="font:700 16px var(--cond);margin-top:2px">Legalización fotovoltaica</div>
+      <div style="font:400 10px var(--mono);color:#666;margin-top:2px">${fechaCorta(new Date().toISOString())}</div></div>
+    </div>
+    <div style="height:2px;background:#14170f;margin:10px 0 12px"></div>
+    ${seccion('Obra', fila('Obra', o.titulo) + fila('Dirección', o.dir) + fila('Responsable', userById(V.user.id).nombre))}
+    ${seccion('Instalador', fila('Razón social', e.instalador_razon_social) + fila('Nº de instalador autorizado', e.instalador_numero) + fila('Nombre del instalador', e.instalador_nombre) + fila('DNI', e.instalador_nif) + fila('Dirección', e.instalador_direccion) + fila('CP y localidad', e.instalador_cp_localidad) + fila('Teléfono', e.instalador_telefono) + fila('Aparato verificador', e.aparato_verificador))}
+    ${secciones}
+    ${verif}
+    <div style="margin-top:22px;font:400 10px var(--mono);color:#999">Documento interno de ${esc(S.empresa)} para preparar el Modelo 034 · generado por la app el ${fechaLarga(hoyISO() + 'T12:00')}</div>
+  </div>`;
+}
+
+const legB64 = (bytes) => { let bin = ''; const u = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes); for (let i = 0; i < u.length; i += 0x8000) bin += String.fromCharCode.apply(null, u.subarray(i, i + 0x8000)); return btoa(bin); };
+
+/** Ver el certificado tal como va a salir (vista previa en móvil, impresión en ordenador). */
+A.legVerCertificado = async () => {
+  const l = V.legVer; if (!l) return;
+  toast('Preparando el certificado…');
+  try {
+    const bytes = await legCertificadoPDF(l);
+    const blob = new Blob([bytes], { type: 'application/pdf' });
+    const nombre = 'certificat-verificacio-' + (l.datos.cliente_nombre || 'sysefen').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-') + '.pdf';
+    if (enMovil()) {
+      // El certificado no es una captura: se enseña con el visor del navegador.
+      pdfParaCompartir = { archivo: new File([blob], nombre, { type: 'application/pdf' }), title: 'Certificado', text: 'Certificado' };
+      const url = URL.createObjectURL(blob);
+      V.sheet = { tipo: 'vistaPdf', nombre, paginas: [], iframe: url }; render();
+    } else {
+      const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = nombre; a.click();
+    }
+  } catch (e) { avisar('No se pudo preparar el certificado: ' + msgError(e)); }
+};
+A.legVerDatos = async () => {
+  const l = V.legVer; if (!l) return;
+  toast('Preparando la hoja de datos…');
+  legDatosHTML(l);
+  await salidaImpresion('modelo-034-datos.pdf', 'Modelo 034 · datos', S.empresa + ' · Legalización');
+};
+
+/** Los dos PDF a Drive y al correo de legalizaciones. */
+A.legEnviar = async () => {
+  const l = V.legVer; if (!l || V.legBusy) return;
+  const faltan = ['cliente_nombre', 'cliente_dni', 'inst_direccion', 'inst_cups', 'inst_potencia_kw'].filter((k) => !l.datos[k]);
+  if (faltan.length) { V.legErr = 'Falta: ' + faltan.map(legEtiqueta).join(' · '); render(); return; }
+  if (!navigator.onLine) { V.legErr = 'Sin conexión: no se puede enviar.'; render(); return; }
+  V.legBusy = true; V.legErr = null; render();
+  try {
+    await legGuardarAhora();
+    const cert = await legCertificadoPDF(l);
+    legDatosHTML(l);
+    const datos = await pdfDeImpresion();
+    const r = await visitasDB.enviarLegalizacion(l.id, legB64(cert), legB64(new Uint8Array(await datos.arrayBuffer())));
+    l.estado = 'enviada'; l.enviada_a = r.para; l.enviada_at = new Date().toISOString();
+    V.legLista.cargado = false;
+    V.legOk = 'Enviado a ' + r.para + (r.cc && r.cc.length ? ' (copia a ti)' : '') + '. En Drive: 08-Legalizaciones / ' + r.carpeta + '.';
+  } catch (e) { V.legErr = msgError(e); }
+  V.legBusy = false; render();
+};
+
+/* --- las pantallas ------------------------------------------------------------ */
+function vLegalizaciones() {
+  const l = V.legLista;
+  const estado = (x) => x.estado === 'enviada' ? ['var(--verde)', 'Enviada' + (x.enviada_at ? ' · ' + fechaCorta(x.enviada_at) : '')] : ['var(--ambar)', 'Borrador'];
+  return `<div class="hdr">
+    <div class="volver" data-a="ir" data-v="ajustes">‹ ${esAdmin() ? 'Ajustes' : 'Perfil'}</div>
+    <div class="row" style="justify-content:space-between;margin-top:6px">
+      <div class="h1">Legalizaciones</div>
+      <button class="pill" data-a="legNueva" style="background:var(--tinta);color:#fff">+ Nueva</button>
+    </div>
+    <div class="sub" style="margin-top:8px">Modelo 034 y certificado de verificación, por obra. Al enviar van a Drive y a ${esc(S.leg && S.leg.email_legalizaciones ? S.leg.email_legalizaciones : 'quien legaliza')}.</div>
+  </div>
+  <div class="scroll pad pb-nav sin-marca">
+    ${l.error ? `<div class="card" style="background:var(--rojo-cl)"><div class="sub" style="color:var(--rojo)">${esc(l.error)}</div></div>` : ''}
+    ${!l.cargado && l.cargando ? '<div class="tiny">Cargando…</div>' : ''}
+    ${l.filas.map((x) => { const [color, txt] = estado(x); const o = x.obra || obraById(x.obra_id) || {}; return `<div class="card" data-a="legAbrir" data-id="${x.id}" style="margin-bottom:10px;cursor:pointer">
+      <div class="row g8"><span class="dot" style="width:8px;height:8px;background:${color}"></span><span class="lbl">${txt}</span><div class="grow"></div><span class="tiny">${fechaCorta(x.updated_at || x.created_at)}</span></div>
+      <div class="h2" style="margin-top:9px">${esc((x.datos && x.datos.cliente_nombre) || o.nombre || o.titulo || 'Sin cliente')}</div>
+      <div class="sub" style="margin-top:3px">${esc([o.nombre || o.titulo, x.datos && x.datos.inst_direccion].filter(Boolean).join(' · ') || 'Sin obra')}</div>
+    </div>`; }).join('')}
+    ${l.cargado && !l.filas.length && !l.error ? '<div class="card"><div class="h2">Ninguna legalización todavía</div><div class="sub" style="margin-top:6px">Se empieza desde aquí con «+ Nueva» o desde la ficha de la obra.</div></div>' : ''}
+  </div>`;
+}
+
+function vLegalizacion() {
+  const l = V.legVer;
+  if (!l) { V.view = 'legalizaciones'; return vLegalizaciones(); }
+  const d = l.datos, o = obraById(l.obra_id) || {};
+  const enviada = l.estado === 'enviada';
+  const campo = (c) => {
+    const [k, etiqueta, tipo, opciones] = c;
+    if (tipo === 'opcion') {
+      return `<div style="margin-top:12px"><div class="lbl" style="margin-bottom:6px">${esc(etiqueta)}</div>
+        <div class="wrap">${(opciones || []).map(([v, t]) => `<div class="chip ${d[k] === v ? 'sel' : ''}" data-a="legOpcion" data-k="${k}" data-v="${esc(v)}">${esc(t)}</div>`).join('')}</div></div>`;
+    }
+    const modo = tipo === 'numero' ? 'inputmode="decimal"' : tipo === 'fecha' ? 'type="date"' : '';
+    return `<div style="margin-top:12px"><div class="lbl" style="margin-bottom:6px">${esc(etiqueta)}</div>
+      <input class="inp" data-f="legCampo" data-k="${k}" ${modo} value="${esc(d[k] == null ? '' : d[k])}" ${enviada ? 'readonly' : ''}></div>`;
+  };
+  const rellenos = (s) => s.campos.filter((c) => d[c[0]] != null && d[c[0]] !== '').length;
+  const seccion = (s) => {
+    const abierta = V.legPaso === s.id;
+    const n = rellenos(s), total = s.campos.length;
+    const esVerif = s.id === 'verificacion';
+    return `<div class="card" style="margin-top:10px;padding:0;overflow:hidden">
+      <div class="row" data-a="legPaso" data-id="${s.id}" style="padding:14px 16px;cursor:pointer;gap:12px">
+        <div class="grow"><div style="font:600 15px var(--sans)">${esc(s.titulo)}</div>
+        <div class="tiny" style="margin-top:3px">${esVerif ? (d.verif_hecha ? 'Con las medidas · ' + n + ' de ' + total : 'Sin medidas: el certificado va con esas casillas en blanco') : n + ' de ' + total + ' datos'}</div></div>
+        <div style="font:400 20px/1 var(--sans);color:var(--t3);transform:rotate(${abierta ? 90 : 0}deg)">›</div>
+      </div>
+      ${abierta ? `<div style="padding:0 16px 16px;border-top:1px solid var(--l1)">
+        ${s.id === 'cliente' && !enviada ? `<div class="row g8" style="margin-top:12px">
+          <button class="pill grow" data-a="legElegirCliente" style="padding:11px;text-align:center">Elegir de la lista o del CRM</button>
+        </div><div class="tiny" style="margin-top:6px">O escríbelo aquí abajo. Viene puesto el cliente de la obra.</div>` : ''}
+        ${esVerif ? `<div class="row g8" style="margin-top:12px;align-items:center">
+          <div class="chip ${d.verif_hecha ? 'sel' : ''}" data-a="legVerif">${d.verif_hecha ? '✓ Medidas tomadas en obra' : 'Tengo las medidas del analizador'}</div></div>
+          <div class="tiny" style="margin-top:8px">Si no las tienes, déjalo así: el certificado sale con los datos generales y la oficina rellena las medidas.</div>` : ''}
+        ${!esVerif || d.verif_hecha ? s.campos.map(campo).join('') : ''}
+        ${esVerif && d.verif_hecha ? `<div class="lbl" style="margin:18px 0 6px">Armónicos (% · orden 2 a 25)</div>
+          <div class="tiny" style="margin-bottom:8px">Por fase. A la derecha, el máximo que admite la norma.</div>
+          <div style="display:grid;grid-template-columns:34px 1fr 1fr 1fr 44px;gap:6px;align-items:center;font:500 11px var(--mono)">
+            <div></div><div style="text-align:center">L1</div><div style="text-align:center">L2</div><div style="text-align:center">L3</div><div style="text-align:right;color:var(--t3)">máx</div>
+            ${Object.keys(LEGAL_ARMONICOS_MAX).map((h) => `<div style="color:var(--t2)">${h}</div>${[1, 2, 3].map((f) => `<input class="inp" data-f="legCampo" data-k="verif_h${h}_l${f}" inputmode="decimal" value="${esc(d['verif_h' + h + '_l' + f] == null ? '' : d['verif_h' + h + '_l' + f])}" style="padding:8px 6px;text-align:center;font-size:13px" ${enviada ? 'readonly' : ''}>`).join('')}<div style="text-align:right;color:var(--t3)">${LEGAL_ARMONICOS_MAX[h]}</div>`).join('')}
+          </div>` : ''}
+      </div>` : ''}
+    </div>`;
+  };
+  return `<div class="hdr-dark">
+    <div class="volver" data-a="abrirLegalizaciones">‹ Legalizaciones</div>
+    <div style="font:600 27px/1.1 var(--cond);margin-top:6px">${esc(d.cliente_nombre || o.titulo || 'Legalización')}</div>
+    <div class="sub" style="color:rgba(255,255,255,.5);margin-top:6px">${esc([o.titulo, d.inst_direccion].filter(Boolean).join(' · ') || 'Sin obra')}</div>
+    <div class="row g8" style="margin-top:12px;align-items:center">
+      <span class="dot" style="width:8px;height:8px;background:${enviada ? 'var(--verde-c)' : 'var(--ambar)'}"></span>
+      <span class="tiny" style="color:rgba(255,255,255,.7)">${enviada ? 'Enviada a ' + esc(l.enviada_a || '') + (l.enviada_at ? ' el ' + fechaCorta(l.enviada_at) : '') : 'Borrador · se guarda solo mientras escribes'}</span>
+    </div>
+  </div>
+  <div class="scroll pad pb-nav sin-marca">
+    ${!(S.leg && S.leg.instalador_razon_social) ? `<div class="card" style="box-shadow:0 0 0 1.5px var(--ambar),var(--sh)"><div class="sub">Faltan los datos del instalador (razón social, nº de instalador, aparato verificador) y el correo de legalizaciones. ${esAdmin() ? 'Están en Ajustes → Legalizaciones.' : 'Los pone Administración en Ajustes.'}</div></div>` : ''}
+    ${LEGAL_SECCIONES.map(seccion).join('')}
+    <div class="card" style="margin-top:14px">
+      <div class="lbl">Los documentos</div>
+      <div class="sub" style="margin-top:6px;font-size:13px">El certificado oficial (CAIB) con las casillas rellenas y la hoja con todos los datos para el Modelo 034.</div>
+      <div class="row g8" style="margin-top:12px">
+        <button class="pill grow" data-a="legVerCertificado" style="padding:12px;text-align:center">Ver certificado</button>
+        <button class="pill grow" data-a="legVerDatos" style="padding:12px;text-align:center">Ver hoja de datos</button>
+      </div>
+      ${V.legErr ? `<div class="aviso-rojo" style="margin-top:12px"><span class="ex">!</span><span style="font:400 13px/1.4 var(--sans)">${esc(V.legErr)}</span></div>` : ''}
+      ${V.legOk ? `<div class="tiny" style="margin-top:12px;color:var(--verde-o)">✓ ${esc(V.legOk)}</div>` : ''}
+      <button class="btn btn-verde" data-a="legEnviar" style="margin-top:12px" ${V.legBusy ? 'disabled' : ''}>${V.legBusy ? 'Generando y enviando…' : enviada ? 'Volver a enviar' : 'Enviar a Drive y a legalizaciones'}</button>
+      <div class="tiny" style="margin-top:8px;text-align:center">Se suben a Drive (08-Legalizaciones / ${esc(o.titulo || 'la obra')}) y van por correo a ${esc(S.leg && S.leg.email_legalizaciones ? S.leg.email_legalizaciones : 'quien legaliza')}.</div>
+    </div>
+    ${!enviada ? `<div style="text-align:center;margin-top:22px"><span class="tiny" data-a="legBorrar" style="color:var(--rojo);cursor:pointer;text-decoration:underline">${V.legConfirmaBorrar ? '¿Seguro? Toca otra vez para borrar' : 'Borrar esta legalización'}</span></div>` : ''}
+  </div>`;
+}
+
 function vPresupuestos() {
   const l = V.presuLista;
   return `<div class="hdr">
@@ -8569,7 +9031,7 @@ function nav(v) {
   const act = (id) => v === id
     || (id === 'obras' && v === 'obra')
     || (id === 'horas' && ['imputar', 'revisarImp', 'resumenImp'].includes(v))
-    || (id === 'ajustes' && v === 'errores')
+    || (id === 'ajustes' && ['errores', 'legalizaciones', 'legalizacion'].includes(v))
     || (id === 'empleados' && (v === 'empleado' || v === 'planilla'))
     || (id === 'visitas' && v === 'visita')
     || (id === 'presupuestos' && ['presuNuevo', 'presupuestoVer'].includes(v))
@@ -8890,7 +9352,7 @@ function sheet() {
         <div class="grow" style="min-width:0;font:600 13px var(--sans);color:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:center">${esc(s.nombre)}</div>
         <button class="btn btn-verde" data-a="compartirListo" style="font-size:14px;border-radius:99px">Compartir</button>
       </div>
-      <div class="vista-pdf-hojas">${(s.paginas || []).map((src) => `<img src="${src}" alt="">`).join('')}</div>
+      <div class="vista-pdf-hojas">${s.iframe ? `<iframe src="${esc(s.iframe)}" style="width:100%;height:100%;border:0;background:#fff;border-radius:6px"></iframe>` : (s.paginas || []).map((src) => `<img src="${src}" alt="">`).join('')}</div>
     </div>`;
   }
   if (s.tipo === 'compartirListo') {
@@ -8943,6 +9405,38 @@ function sheet() {
         <button class="btn btn-gris" data-a="cerrarSheet" style="border-radius:99px">Cancelar</button>
         <button class="btn btn-verde" data-a="guardarObraRapida" style="font-size:14px" ${s.busy ? 'disabled' : ''}>${s.busy ? 'Creando…' : 'Crear obra'}</button>
       </div>
+    </div></div>`;
+  }
+  if (s.tipo === 'legObra') {
+    const abiertas = S.obras.filter((o) => o.estado !== 'Cerrada');
+    const q = sinTildes(s.buscar || '');
+    const lista = q ? abiertas.filter((o) => sinTildes([o.titulo, o.cliente, o.dir].join(' ')).includes(q)) : abiertas;
+    return `<div class="sheet"><div>
+      <div style="font:600 25px/1.15 var(--cond)">¿De qué obra es la legalización?</div>
+      ${abiertas.length > 5 ? `<input class="inp" data-f="buscarObraLeg" value="${esc(s.buscar || '')}" placeholder="Buscar obra o cliente" autocomplete="off" style="margin-top:14px">` : ''}
+      ${abiertas.length ? '' : '<div class="sub" style="margin-top:10px">No hay obras abiertas. Crea la obra primero, en Obras.</div>'}
+      <div class="lista-obras">
+        ${lista.map((o) => `<button class="fila-obra" data-a="legNueva" data-id="${o.id}">${esc(o.titulo)}${o.cliente || o.dir ? `<small>${esc([o.cliente, o.dir].filter(Boolean).join(' · '))}</small>` : ''}</button>`).join('')}
+      </div>
+      <button class="btn btn-gris" data-a="cerrarSheet" style="border-radius:99px;margin-top:14px">Cancelar</button>
+    </div></div>`;
+  }
+  if (s.tipo === 'legCliente') {
+    const q = sinTildes(s.buscar || '');
+    const lista = (V.agenda.clientes || []).filter((c) => !q || sinTildes([c.nombre, c.telefono, c.poblacion, c.nif].join(' ')).includes(q)).slice(0, 30);
+    return `<div class="sheet"><div>
+      <div style="font:600 25px/1.15 var(--cond)">El cliente (titular)</div>
+      <div class="row g8" style="margin-top:14px">
+        <input class="inp grow" data-f="legBuscar" value="${esc(s.buscar || '')}" placeholder="Nombre, NIF o teléfono" autocomplete="off">
+        <button class="pill" data-a="legBuscarCRM" style="padding:13px 14px" ${s.crmBusy ? 'disabled' : ''}>${s.crmBusy ? '…' : 'CRM'}</button>
+      </div>
+      <div class="tiny" style="margin-top:6px">Abajo, los clientes de la app. El botón CRM lo busca en Teamleader.</div>
+      <div class="lista-obras">
+        ${(s.crm || []).map((c) => `<button class="fila-obra" data-a="legClienteCRM" data-tl="${esc(c.tl_id || c.id)}" data-tipo="${esc(c.tl_tipo || c.tipo || 'contact')}">${esc(c.nombre)}<small>Teamleader · ${esc([c.telefono, c.email].filter(Boolean).join(' · '))}</small></button>`).join('')}
+        ${lista.map((c) => `<button class="fila-obra" data-a="legClienteDe" data-id="${c.id}">${esc(c.nombre)}<small>${esc([c.nif, c.telefono, c.poblacion].filter(Boolean).join(' · '))}</small></button>`).join('')}
+        ${!lista.length && !(s.crm || []).length ? '<div class="sub" style="padding:14px 4px">Nadie con ese nombre. Prueba en el CRM, o escribe el cliente a mano en la ficha.</div>' : ''}
+      </div>
+      <button class="btn btn-gris" data-a="cerrarSheet" style="border-radius:99px;margin-top:14px">Cancelar</button>
     </div></div>`;
   }
   if (s.tipo === 'nuevoParteObra') {
@@ -9272,6 +9766,21 @@ document.addEventListener('click', (e) => {
   if (a === 'presuPdf') return A.presuPdf();
   if (a === 'presuATeamleader') return A.presuATeamleader();
   if (a === 'presuGuardadoATL') return A.presuGuardadoATL();
+  if (a === 'abrirLegalizaciones') return A.abrirLegalizaciones();
+  if (a === 'legNueva') return A.legNueva(d.id);
+  if (a === 'legAbrir') return A.legAbrir(d.id);
+  if (a === 'legPaso') return A.legPaso(d.id);
+  if (a === 'legOpcion') return A.legOpcion(d.k, d.v);
+  if (a === 'legVerif') return A.legVerif();
+  if (a === 'legElegirCliente') return A.legElegirCliente();
+  if (a === 'legClienteDe') return A.legClienteDe(d.id);
+  if (a === 'legBuscarCRM') return A.legBuscarCRM();
+  if (a === 'legClienteCRM') return A.legClienteCRM(d.tl, d.tipo);
+  if (a === 'legVerCertificado') return A.legVerCertificado();
+  if (a === 'legVerDatos') return A.legVerDatos();
+  if (a === 'legEnviar') return A.legEnviar();
+  if (a === 'legBorrar') return A.legBorrar();
+  if (a === 'legGuardarEmpresa') return A.legGuardarEmpresa();
   if (a === 'presuEditarCancelar') return A.presuEditarCancelar();
   if (a === 'presuQuitarLinea') return A.presuQuitarLinea(d.id);
   if (a === 'presuLineaNueva') return A.presuLineaNueva();
@@ -9478,6 +9987,10 @@ document.addEventListener('input', (e) => {
   if (f === 'presuTexto') { A.presuTexto(t.value); return; }
   if (f === 'presuDto') { A.presuDto(t.value); return; }
   if (f === 'presuCantidad') { A.presuCantidadExtra(t.dataset.i, t.value); return; }
+  if (f === 'legCampo') { A.legCampo(t.dataset.k, t.value); return; }
+  if (f === 'legEmpresa') { S.leg = S.leg || {}; S.leg[t.dataset.k] = t.value; return; }
+  if (f === 'legBuscar') { if (V.sheet && V.sheet.tipo === 'legCliente') V.sheet.buscar = t.value; return; }
+  if (f === 'buscarObraLeg') { if (V.sheet && V.sheet.tipo === 'legObra') { V.sheet.buscar = t.value; const caja = document.querySelector('.lista-obras'); if (caja) { const tmp = document.createElement('div'); tmp.innerHTML = sheet(); const nueva = tmp.querySelector('.lista-obras'); if (nueva) caja.innerHTML = nueva.innerHTML; } } return; }
   if (f === 'buscarObraParte') {
     if (!V.sheet || V.sheet.tipo !== 'nuevoParteObra') return;
     V.sheet.buscar = t.value;

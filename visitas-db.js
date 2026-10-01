@@ -535,6 +535,33 @@ export async function buscarProductos(texto, familia) {
   return unwrap(await consulta) || [];
 }
 
+/* --- legalizaciones fotovoltaicas (sql/etapa55) ------------------------------- */
+const CAMPOS_LEG = 'id, obra_id, cliente_id, autor_id, estado, datos, drive_carpeta_id, drive_cert_id, drive_datos_id, enviada_a, enviada_at, created_at, updated_at';
+export async function listarLegalizaciones() {
+  return unwrap(await supabase.from('legalizaciones').select(CAMPOS_LEG + ', obra:obras(id, nombre, cliente, direccion)').order('updated_at', { ascending: false }).limit(200)) || [];
+}
+export async function guardarLegalizacion(fila) {
+  const { id, ...campos } = fila;
+  if (id) return unwrap(await supabase.from('legalizaciones').update(campos).eq('id', id).select(CAMPOS_LEG).single());
+  return unwrap(await supabase.from('legalizaciones').insert(campos).select(CAMPOS_LEG).single());
+}
+export async function borrarLegalizacion(id) {
+  const { error } = await supabase.from('legalizaciones').delete().eq('id', id).eq('estado', 'borrador');
+  if (error) throw error;
+  return true;
+}
+/** Los dos PDF a Drive y al correo de legalizaciones. */
+export async function enviarLegalizacion(id, certBase64, datosBase64) {
+  return invocar('legalizacion-enviar', { legalizacion_id: id, cert_base64: certBase64, datos_base64: datosBase64 });
+}
+/** Los datos fijos de la empresa (sql/etapa50 y 55): una fila. */
+export async function obtenerEmpresa() {
+  return unwrap(await supabase.from('empresa').select('*').eq('id', 1).maybeSingle());
+}
+export async function guardarEmpresa(cambios) {
+  return unwrap(await supabase.from('empresa').update(cambios).eq('id', 1).select().single());
+}
+
 /** Busca en el CRM por nombre, email, teléfono o NIF. */
 export async function buscarEnCRM(texto) {
   return invocar('teamleader-cliente', { accion: 'buscar', texto });
