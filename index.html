@@ -351,7 +351,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '18.1'; // versión visible de la app (única fuente)
+const APP_VERSION = '18.2'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -2750,6 +2750,18 @@ const compartirSoloArchivo = (archivo) => navigator.share({ files: [archivo] });
 let paginasPdf = [];
 
 // PDF de lo que haya pintado en #print (un parte o una planilla).
+// La última fila del lienzo que tiene algo pintado (mira una de cada 4 filas,
+// por rapidez; «algo» es cualquier píxel que no sea casi blanco).
+function ultimaFilaConTinta(lienzo) {
+  const cx = lienzo.getContext('2d', { willReadFrequently: true });
+  const w = lienzo.width;
+  for (let y = lienzo.height - 1; y >= 0; y -= 4) {
+    const px = cx.getImageData(0, y, w, 1).data;
+    for (let i = 0; i < px.length; i += 16) if (px[i] < 245 || px[i + 1] < 245 || px[i + 2] < 245) return Math.min(lienzo.height, y + 4);
+  }
+  return lienzo.height;
+}
+
 async function pdfDeImpresion() {
   paginasPdf = [];
   await cargarLibsPdf();
@@ -2763,6 +2775,9 @@ async function pdfDeImpresion() {
     const anchoMM = 210, altoMM = 297;
     const pxPorMM = lienzo.width / anchoMM;
     const altoPagina = Math.floor(altoMM * pxPorMM);
+    // El blanco del final no cuenta: si la marca de agua o el relleno hacían
+    // el lienzo un dedo más alto que un A4, salía una segunda hoja en blanco.
+    const altoUtil = ultimaFilaConTinta(lienzo) + Math.round(6 * pxPorMM);
     // Si no cabe en una hoja, se parte en páginas A4 en vez de encogerlo hasta
     // que no se lea. El corte se hace al final de una fila o de un bloque, para
     // no partir una línea de horas por la mitad entre dos páginas.
@@ -2770,10 +2785,11 @@ async function pdfDeImpresion() {
     const cortes = [...el.querySelectorAll('tr, img, #print > div > *')]
       .map((n) => Math.round((n.getBoundingClientRect().bottom - arriba) * escala))
       .sort((a, b) => a - b);
+    const altoTotal = Math.min(lienzo.height, Math.max(altoUtil, altoPagina / 4));
     let y = 0;
-    while (y < lienzo.height) {
-      let fin = Math.min(y + altoPagina, lienzo.height);
-      if (fin < lienzo.height) {
+    while (y < altoTotal) {
+      let fin = Math.min(y + altoPagina, altoTotal);
+      if (fin < altoTotal) {
         const c = cortes.filter((v) => v > y + altoPagina / 2 && v <= fin).pop();
         if (c) fin = c;
       }

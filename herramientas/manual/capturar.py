@@ -63,7 +63,7 @@ def pagina_prueba():
     s = open(os.path.join(RAIZ, 'index.html'), encoding='utf-8').read()
     i = s.rfind('</script>')
     gancho = """
-window.__m = { S, V, A, render, agNuevoCliente, agNuevaCita, limpiarBorradorVisita,
+window.__m = { S, V, A, render, agNuevoCliente, agNuevaCita, limpiarBorradorVisita, pdfDeImpresion,
   empRows: (x) => { empRows = x; }, empIdPorNombre: (x) => { empIdPorNombre = x; }, nombrePorEmpId: (x) => { nombrePorEmpId = x; } };
 """
     s = s[:i] + gancho + s[i:]
