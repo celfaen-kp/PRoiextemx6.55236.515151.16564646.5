@@ -32,10 +32,10 @@
     { id: 'e5', nombre: 'Ramón', rol: 'presupuestos', activo: true, nombre_completo: 'Ramón Bauzá Coll', email_avisos: 'ramon@sysefen.app' },
   ];
   const OBRAS = [
-    { id: 'o1', nombre: 'Casa Can Roca', cliente: 'Familia Roca', titulo: 'Casa Can Roca', dir: 'Camí de Son Vich 12, Esporles', estado: 'En curso', creado_en: iso(40, 9) },
-    { id: 'o2', nombre: 'Nave Polígono Son Castelló', cliente: 'Talleres Pons', titulo: 'Nave Polígono Son Castelló', dir: 'Gremi Fusters 8, Palma', estado: 'En curso', creado_en: iso(25, 9) },
-    { id: 'o3', nombre: 'Piso Blanquerna', cliente: 'Ana Ferrer', titulo: 'Piso Blanquerna', dir: 'Blanquerna 41, Palma', estado: 'En curso', creado_en: iso(10, 9) },
-    { id: 'o4', nombre: 'Villa Sa Coma', cliente: 'J. Romero', titulo: 'Villa Sa Coma', dir: 'Rosas 34, Sa Coma', estado: 'Cerrada', creado_en: iso(90, 9) },
+    { id: 'o1', numero: 137, categorias: ['AE', 'FV'], nombre: 'Casa Can Roca', cliente: 'Familia Roca', titulo: 'Casa Can Roca', dir: 'Camí de Son Vich 12', poblacion: 'Esporles', estado: 'en_curso', creado_en: iso(40, 9) },
+    { id: 'o2', numero: 138, categorias: ['FV'], nombre: 'Nave Polígono Son Castelló', cliente: 'Talleres Pons', titulo: 'Nave Polígono Son Castelló', dir: 'Gremi Fusters 8', poblacion: 'Palma', estado: 'en_curso', creado_en: iso(25, 9) },
+    { id: 'o3', numero: 140, categorias: ['AC'], nombre: 'Piso Blanquerna', cliente: 'Ana Ferrer', titulo: 'Piso Blanquerna', dir: 'Blanquerna 41', poblacion: 'Palma', estado: 'planificada', creado_en: iso(10, 9) },
+    { id: 'o4', numero: 1000, categorias: ['AE'], nombre: 'Villa Sa Coma', cliente: 'J. Romero', titulo: 'Villa Sa Coma', dir: 'Rosas 34', poblacion: 'Sa Coma', estado: 'cerrada', creado_en: iso(90, 9) },
   ];
   const FICHAJES = [];
   let fid = 1;

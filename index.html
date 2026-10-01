@@ -351,7 +351,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '18.3'; // versión visible de la app (única fuente)
+const APP_VERSION = '18.4'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -691,17 +691,43 @@ function mapObraDeDB(row) {
     // no se usaba, así que en pantalla salía el cliente donde va la obra.
     nombre: row.nombre || '',
     cliente: row.cliente || '',
-    titulo: row.nombre || row.cliente || '—',
+    titulo: row.nombre || row.cliente || (row.numero != null ? 'OB-' + String(row.numero).padStart(3, '0') : '—'),
     dir: row.direccion || '',
     email: row.email_cliente || '',
-    estado: row.estado || 'En curso',
+    // Estado con valores fijos desde sql/etapa58. Lo anterior ('En curso',
+    // 'Cerrada') se traduce para que la app funcione también antes de la etapa.
+    estado: estadoObraDeDB(row.estado),
     creado_en: row.creado_en,
+    // Código de obra (etapa58): el número lo pone la base; OB-137 se calcula.
+    numero: row.numero != null ? Number(row.numero) : null,
+    categorias: Array.isArray(row.categorias) ? row.categorias : [],
+    poblacion: row.poblacion || '',
+    clienteId: row.cliente_id || null,
     // Enlace con el cliente de Teamleader (sql/etapa33). Si esa etapa todavía
     // no se ha ejecutado, las columnas no vienen y esto queda a null.
     tlId: row.tl_id || null,
     tlTipo: row.tl_tipo || null,
   };
 }
+
+// --- código, estado y presentación de la obra (PLAN-OBRAS-PLANIFICACION, etapa A) ---
+const OBRA_ESTADOS = { planificada: 'Planificada', en_curso: 'En curso', finalizada: 'Finalizada', cerrada: 'Cerrada' };
+const OBRA_CATEGORIAS = [['AE', 'Aerotermia'], ['FV', 'Fotovoltaica'], ['AC', 'Aire acond.']];
+const estadoObraDeDB = (v) => (v in OBRA_ESTADOS ? v : v === 'Cerrada' ? 'cerrada' : 'en_curso');
+const estadoObraTxt = (o) => OBRA_ESTADOS[o.estado] || 'En curso';
+const obraCerrada = (o) => o.estado === 'cerrada';
+// OB-007, OB-137, OB-1000. Igual que codigo_obra() en la base. Vacío si la obra
+// aún no tiene número (etapa58 sin ejecutar).
+const codigoObra = (o) => (o && o.numero != null ? 'OB-' + String(o.numero).padStart(3, '0') : '');
+// Nombre completo para correos, PDF y listas: «OB-137 · Casa Can Roca».
+const nombreObra = (o) => { const c = codigoObra(o); return c ? c + ' · ' + (o.titulo || o.cliente || '') : (o.titulo || o.cliente || '—'); };
+// Chips de categoría: [AE] [FV].
+const chipsCategorias = (o, claro) => (o.categorias || []).map((k) => `<span class="badge" style="background:${claro ? 'rgba(255,255,255,.16)' : 'rgba(20,23,15,.07)'};color:${claro ? '#fff' : 'var(--t2)'};font-weight:600">${esc(k)}</span>`).join('');
+// Lo que se escribe en el buscador puede ser «137», «OB-137», «ob137» o
+// «OB-0137»: todo es la obra número 137. Devuelve el número o null.
+const numeroBuscado = (q) => { const m = String(q || '').trim().match(/^(?:ob[\s-]?)?0*(\d+)$/i); return m ? Number(m[1]) : null; };
+// Dirección completa para pantalla: «Camí de Son Vich 12 · Esporles».
+const direccionObra = (o) => [o.dir, o.poblacion].filter(Boolean).join(' · ');
 
 // Qué columnas trae hoy `obras` en Supabase. Igual que columnaEmp: sirve para no
 // mandar campos que PostgREST no conoce, que tirarían la fila entera.
@@ -2263,7 +2289,7 @@ A.confirmarFichaje = async () => {
 };
 
 /* alta de obra (public.obras). La obra NO tiene lista de empleados. */
-A.nuevaObra = () => { V.draft = { cliente: '', dir: '', email: '' }; V.crmBuscar = { texto: '', busy: false, hecho: false, error: null, filas: [] }; V.view = 'alta'; render(); };
+A.nuevaObra = () => { V.draft = { cliente: '', dir: '', poblacion: '', email: '', categorias: [] }; V.crmBuscar = { texto: '', busy: false, hecho: false, error: null, filas: [] }; V.view = 'alta'; render(); };
 
 /**
  * Engancha la obra con un cliente de Teamleader: el nombre queda exactamente
@@ -2287,13 +2313,14 @@ A.obraDelCRM = (tlId, tipo) => {
 A.obraSoltarCRM = () => { if (V.draft) { V.draft.tlId = null; V.draft.tlTipo = null; render(); } };
 A.editarObra = (id) => {
   const o = obraById(id); if (!o) return;
-  V.draft = { id: o.id, nombre: o.nombre, cliente: o.cliente, dir: o.dir, email: o.email, tlId: o.tlId || null, tlTipo: o.tlTipo || null };
+  V.draft = { id: o.id, nombre: o.nombre, cliente: o.cliente, dir: o.dir, poblacion: o.poblacion || '', email: o.email, tlId: o.tlId || null, tlTipo: o.tlTipo || null, categorias: [...(o.categorias || [])], numero: o.numero };
   V.crmBuscar = { texto: '', busy: false, hecho: false, error: null, filas: [] };
   V.view = 'alta'; render();
 };
 A.guardarObra = async () => {
   const d = V.draft;
-  if (!(d.nombre || '').trim() && !(d.cliente || '').trim()) { avisar('Pon al menos el nombre de la obra o el cliente.'); return; }
+  if (!(d.nombre || '').trim() && !(d.cliente || '').trim()) { avisar('Pon al menos el cliente o el nombre de la obra.'); return; }
+  if (columnaObra('categorias') && !(d.categorias || []).length) { avisar('Marca qué lleva la obra: aerotermia, fotovoltaica o aire.'); return; }
   if (!navigator.onLine) { avisar('Sin conexión — la obra no se ha guardado'); return; }
   const campos = {
     nombre: (d.nombre || '').trim() || (d.cliente || '').trim(),
@@ -2304,14 +2331,18 @@ A.guardarObra = async () => {
   // Solo si la etapa 33 está ejecutada: si no, PostgREST rechazaría la fila
   // entera por columnas que no conoce y no se podría guardar nada.
   if (columnaObra('tl_id')) { campos.tl_id = d.tlId || null; campos.tl_tipo = d.tlTipo || null; }
+  // Etapa 58: categorías y población. El número lo pone la base, nunca la app.
+  if (columnaObra('categorias')) { campos.categorias = d.categorias || []; campos.poblacion = (d.poblacion || '').trim() || null; }
   try {
+    let fila;
     if (d.id) {
-      await Sysefen.db.actualizarObra(d.id, campos);
+      fila = await Sysefen.db.actualizarObra(d.id, campos);
     } else {
-      await Sysefen.db.crearObra(campos);
+      fila = await Sysefen.db.crearObra(campos);
     }
     await sincronizarObras();
-    V.draft = null; V.view = 'obras'; toast('Obra guardada'); render();
+    const nueva = fila && fila.numero != null && !d.id ? codigoObra({ numero: fila.numero }) : '';
+    V.draft = null; V.view = 'obras'; toast(nueva ? 'Obra guardada: ' + nueva : 'Obra guardada'); render();
   } catch (e) {
     avisar('No se pudo guardar la obra: ' + (e && e.message ? e.message : 'error'));
   }
@@ -2319,8 +2350,10 @@ A.guardarObra = async () => {
 A.cerrarObra = async (id) => {
   const o = obraById(id); if (!o) return;
   if (!navigator.onLine) { avisar('Sin conexión — no se ha cambiado el estado'); return; }
-  const nuevo = o.estado === 'Cerrada' ? 'En curso' : 'Cerrada';
-  try { await Sysefen.db.actualizarObra(id, { estado: nuevo }); await sincronizarObras(); render(); }
+  const nuevo = obraCerrada(o) ? 'en_curso' : 'cerrada';
+  // Antes de la etapa58 la columna lleva los textos antiguos.
+  const enDB = columnaObra('numero') ? nuevo : (nuevo === 'cerrada' ? 'Cerrada' : 'En curso');
+  try { await Sysefen.db.actualizarObra(id, { estado: enDB }); await sincronizarObras(); render(); }
   catch (e) { avisar('No se pudo cambiar el estado: ' + (e && e.message ? e.message : 'error')); }
 };
 // Borrar una obra: solo si está vacía (sin partes, fichajes ni horas). Lo
@@ -2358,7 +2391,7 @@ A.exportarHorasObraCSV = async () => {
   const csv = '\uFEFF' + filas.map((r) => r.map((c) => '"' + String(c).replace(/"/g, '""') + '"').join(';')).join('\n');
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
-  a.download = 'horas-' + o.titulo.toLowerCase().replace(/\s+/g, '-') + '-' + rango + '-' + hoyISO() + '.csv';
+  a.download = 'horas-' + (codigoObra(o) || o.titulo).toLowerCase().replace(/\s+/g, '-') + '-' + rango + '-' + hoyISO() + '.csv';
   a.click();
   toast('Horas de la obra exportadas en CSV');
 };
@@ -2658,7 +2691,7 @@ function enviarEmail(p) {
     S.empresa,
     'Parte de trabajo ' + p.ref,
     '',
-    'Obra: ' + o.titulo,
+    'Obra: ' + nombreObra(o),
     ...(o.cliente ? ['Cliente: ' + o.cliente] : []),
     'Obra: ' + (o.dir || '—'),
     'Fecha: ' + fechaLarga(p.fecha),
@@ -2681,7 +2714,7 @@ function enviarEmail(p) {
   // Cuando la app genere el PDF y lo envíe desde el servidor, irá de verdad.
   lineas.push('', p.firma ? 'Firmado por ' + (p.firmante || 'el cliente') + ' el ' + fechaLarga(p.fecha) + '.' : 'Cliente no presente: parte emitido sin firma del cliente.', '', 'Si necesita el PDF, respóndanos a este correo y se lo hacemos llegar.');
   const dest = [p.email, S.emailCopia].filter(Boolean).join(',');
-  const url = 'mailto:' + encodeURIComponent(dest) + '?subject=' + encodeURIComponent('Parte de trabajo ' + p.ref + ' — ' + o.titulo) + '&body=' + encodeURIComponent(lineas.join('\n'));
+  const url = 'mailto:' + encodeURIComponent(dest) + '?subject=' + encodeURIComponent('Parte de trabajo ' + p.ref + ' — ' + nombreObra(o)) + '&body=' + encodeURIComponent(lineas.join('\n'));
   location.href = url;
 }
 // El correo suelto (mailto:, sin adjunto) queda como último recurso desde
@@ -2844,10 +2877,10 @@ async function enviarParteAhora(p, para, copia) {
   const o = obraById(p.obraId) || {};
   const r = await Sysefen.db.enviarParteCorreo({
     para, copia,
-    asunto: 'Parte de trabajo ' + p.ref + (o.titulo ? ' — ' + o.titulo : ''),
+    asunto: 'Parte de trabajo ' + p.ref + (o.titulo ? ' — ' + nombreObra(o) : ''),
     texto: [
       'Hola,', '',
-      'Adjuntamos el parte de trabajo ' + p.ref + (o.titulo ? ' de la obra ' + o.titulo : '') + ', del ' + fechaLarga(p.fecha) + (p.firma
+      'Adjuntamos el parte de trabajo ' + p.ref + (o.titulo ? ' de la obra ' + nombreObra(o) : '') + ', del ' + fechaLarga(p.fecha) + (p.firma
         ? ', firmado' + (p.firmante ? ' por ' + p.firmante : '') + '.'
         : '. El cliente no estaba presente al finalizar los trabajos, por lo que el parte se emite sin su firma.'),
       '', 'Un saludo,', S.empresa,
@@ -2928,7 +2961,7 @@ A.compartirParte = async (id) => {
     const blob = await pdfDeImpresion();
     const archivo = new File([blob], 'parte-' + p.ref + '.pdf', { type: 'application/pdf' });
     const o = obraById(p.obraId) || {};
-    pdfParaCompartir = { archivo, title: 'Parte ' + p.ref, text: S.empresa + ' · Parte de trabajo ' + p.ref + (o.titulo ? ' · ' + o.titulo : '') };
+    pdfParaCompartir = { archivo, title: 'Parte ' + p.ref, text: S.empresa + ' · Parte de trabajo ' + p.ref + (o.titulo ? ' · ' + nombreObra(o) : '') };
     if (navigator.canShare && navigator.canShare({ files: [archivo] })) {
       await compartirSoloArchivo(archivo);
       return;
@@ -3544,20 +3577,46 @@ function vObras() {
   // las que están en marcha y las cerradas, para que estas no estorben.
   const cerradas = V.obrasTab === 'cerradas';
   const todas = [...S.obras].sort(porTitulo);
-  const enCurso = todas.filter((o) => o.estado !== 'Cerrada'), cerr = todas.filter((o) => o.estado === 'Cerrada');
+  const enCurso = todas.filter((o) => !obraCerrada(o)), cerr = todas.filter(obraCerrada);
   return `<div class="hdr">
     ${marcaSysefen(false)}
     <div class="row" style="justify-content:space-between">
       <div class="h1">Obras</div>
       ${puedeCrear() ? '<button class="pill" data-a="nuevaObra" style="background:var(--tinta);color:#fff">+ Nueva</button>' : ''}
     </div>
-    <input class="inp" id="obras-buscar" data-f="obrasBuscar" value="${esc(V.obrasBuscar || '')}" placeholder="Obra, cliente o dirección" autocomplete="off" style="margin-top:14px">
+    <input class="inp" id="obras-buscar" data-f="obrasBuscar" value="${esc(V.obrasBuscar || '')}" placeholder="Número (137), cliente, obra o dirección" autocomplete="off" style="margin-top:14px">
     <div class="wrap" style="margin-top:12px">
       <span class="chip ${!cerradas ? 'on' : ''}" data-a="obrasTab" data-t="curso" style="cursor:pointer">En curso · ${enCurso.length}</span>
       <span class="chip ${cerradas ? 'on' : ''}" data-a="obrasTab" data-t="cerradas" style="cursor:pointer">Cerradas${cerr.length ? ' · ' + cerr.length : ''}</span>
+      <span class="grow"></span>
+      <span class="chip" data-a="obrasOrden" style="cursor:pointer">${V.obrasOrden === 'cliente' ? 'A-Z cliente' : 'Más nuevas'} ⇅</span>
     </div>
   </div>
   <div class="scroll pad pb-nav"><div id="obras-lista">${obrasListaHTML()}</div></div>`;
+}
+
+// Orden de la lista de obras: por número (la más nueva arriba) o por cliente.
+const porNumeroDesc = (a, b) => (b.numero || 0) - (a.numero || 0) || porTitulo(a, b);
+const porCliente = (a, b) => String(a.cliente || a.titulo || '').localeCompare(String(b.cliente || b.titulo || ''), 'es', { sensitivity: 'base' }) || porNumeroDesc(a, b);
+
+/**
+ * La misma cabecera de obra en toda la app (§7 del plan): el código grande y
+ * primero con las categorías y el estado; debajo el cliente y la calle con la
+ * población, en letra que se lea en la furgoneta. Si la obra aún no tiene
+ * número, el nombre hace de título.
+ */
+function cabeceraObraHTML(o) {
+  const cod = codigoObra(o);
+  const descr = o.nombre && o.nombre !== o.cliente ? o.nombre : '';
+  return `<div class="row g8" style="align-items:center;flex-wrap:wrap">
+      <span style="font:600 ${cod ? '22px' : '19px'}/1.1 var(--cond);letter-spacing:.01em">${esc(cod || o.titulo)}</span>
+      ${chipsCategorias(o)}
+      <span class="grow"></span>
+      <span class="row g8" style="align-items:center"><span class="dot" style="width:8px;height:8px;background:${obraCerrada(o) ? 'rgba(20,23,15,.22)' : o.estado === 'planificada' ? 'var(--ambar)' : 'var(--verde)'}"></span><span class="lbl">${esc(estadoObraTxt(o))}</span></span>
+    </div>
+    <div style="font:600 16px/1.3 var(--sans);margin-top:${cod ? '9px' : '6px'}">${esc(o.cliente || (cod ? o.titulo : '') || 'Sin cliente')}</div>
+    ${direccionObra(o) ? `<div style="font:400 15px/1.35 var(--sans);color:var(--t2);margin-top:3px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">${esc(direccionObra(o))}</div>` : ''}
+    ${cod && descr ? `<div class="sub" style="margin-top:3px">${esc(descr)}</div>` : ''}`;
 }
 
 // La lista de obras de la pestaña elegida, filtrada por lo que se ha escrito.
@@ -3565,16 +3624,17 @@ function vObras() {
 function obrasListaHTML() {
   const cerradas = V.obrasTab === 'cerradas';
   const q = String(V.obrasBuscar || '').trim().toLowerCase();
-  let lista = [...S.obras].sort(porTitulo).filter((o) => (o.estado === 'Cerrada') === cerradas);
-  if (q) lista = lista.filter((o) => [o.titulo, o.cliente, o.dir].some((v) => String(v || '').toLowerCase().includes(q)));
-  if (!lista.length && q) return `<div class="card"><div class="sub">Ninguna obra ${cerradas ? 'cerrada' : 'en curso'} con «${esc(q)}».${cerradas ? '' : (S.obras.some((o) => o.estado === 'Cerrada' && [o.titulo, o.cliente, o.dir].some((v) => String(v || '').toLowerCase().includes(q))) ? ' Mira en «Cerradas».' : '')}</div></div>`;
+  const num = numeroBuscado(q);
+  const casa = (o) => (num != null ? o.numero === num : true) && (num != null || !q || [o.titulo, o.cliente, o.dir, o.poblacion, codigoObra(o)].some((v) => String(v || '').toLowerCase().includes(q)));
+  // Por número, la más nueva arriba; o por cliente si se ha pedido (A-Z).
+  const orden = V.obrasOrden === 'cliente' ? porCliente : porNumeroDesc;
+  let lista = [...S.obras].sort(orden).filter((o) => obraCerrada(o) === cerradas);
+  if (q) lista = lista.filter(casa);
+  if (!lista.length && q) return `<div class="card"><div class="sub">Ninguna obra ${cerradas ? 'cerrada' : 'en curso'} con «${esc(q)}».${cerradas ? '' : (S.obras.some((o) => obraCerrada(o) && casa(o)) ? ' Mira en «Cerradas».' : '')}</div></div>`;
   return `
     ${!lista.length && cerradas ? '<div class="card"><div class="h2">Ninguna obra cerrada</div><div class="sub" style="margin-top:6px">Cuando una obra se da por terminada, desde su ficha se marca como cerrada y pasa aquí.</div></div>' : ''}
     ${lista.length ? lista.map((o) => `<div class="card" data-a="verObra" data-id="${o.id}" style="margin-bottom:11px;cursor:pointer">
-      <div class="row g8"><span class="dot" style="width:8px;height:8px;background:${o.estado === 'Cerrada' ? 'rgba(20,23,15,.22)' : 'var(--verde)'}"></span><span class="lbl">${esc(o.estado)}</span>
-</div>
-      <div class="h2" style="margin-top:9px">${esc(o.titulo)}</div>
-      <div class="sub" style="margin-top:4px">${esc([o.cliente, o.dir].filter(Boolean).join(' · ') || '')}</div>
+      ${cabeceraObraHTML(o)}
       <div class="row" style="align-items:flex-end;gap:18px;margin-top:13px;padding-top:12px;border-top:1px solid var(--l1)">
         <div><div class="lbl">Horas</div><div class="num" style="font-size:18px;margin-top:5px">${durMin(minutosObra(o.id))}</div></div>
         <div><div class="lbl">Partes</div><div class="num" style="font-size:18px;margin-top:5px">${S.partes.filter((p) => p.obraId === o.id && p.estado !== 'anulado').length}</div></div>
@@ -3603,8 +3663,9 @@ function vObra() {
   const total = filas.reduce((t, f) => t + f.m, 0) || 1;
   return `<div class="hdr-dark">
     <div class="back" data-a="ir" data-v="obras">‹ Obras</div>
-    <div style="font:600 27px/1.1 var(--cond)">${esc(o.titulo)}</div>
-    <div class="sub" style="color:rgba(255,255,255,.5);margin-top:6px">${esc([o.cliente, o.dir].filter(Boolean).join(' · ') || 'Sin cliente ni dirección')}</div>
+    <div class="row g8" style="align-items:center;flex-wrap:wrap"><span style="font:600 27px/1.1 var(--cond)">${esc(codigoObra(o) || o.titulo)}</span>${chipsCategorias(o, true)}<span class="grow"></span><span class="tiny" style="color:rgba(255,255,255,.55)">${esc(estadoObraTxt(o))}</span></div>
+    ${codigoObra(o) ? `<div style="font:600 17px/1.3 var(--sans);margin-top:8px">${esc(o.cliente || o.titulo)}</div>${o.nombre && o.nombre !== o.cliente ? `<div class="sub" style="color:rgba(255,255,255,.55);margin-top:2px">${esc(o.nombre)}</div>` : ''}` : (o.cliente ? `<div style="font:600 17px/1.3 var(--sans);margin-top:8px">${esc(o.cliente)}</div>` : '')}
+    <div style="font:400 15px/1.35 var(--sans);color:rgba(255,255,255,.7);margin-top:4px">${esc(direccionObra(o) || 'Sin dirección')}</div>
     ${o.tlId ? '<div class="tiny" style="color:var(--verde-c);margin-top:6px">✓ Cliente enlazado con Teamleader</div>' : ''}
     ${o.dir ? `<div class="ag-acciones" style="justify-content:flex-start;gap:26px">${accionComoLlegar(o.dir)}</div>` : ''}
     ${puedeCrear() ? `<div class="row g8" style="margin-top:16px">
@@ -3636,7 +3697,7 @@ function vObra() {
     ${puedeCrear() ? docsObraHTML(o) : ''}
     <div class="lbl" style="font-weight:600;font-size:12px;color:var(--t2);margin:22px 0 10px">Partes de esta obra</div>
     ${partes.length ? partes.map(cardParte).join('') : '<div class="card"><div class="sub">Todavía no hay partes en esta obra.</div></div>'}
-    ${puedeCrear() ? `<button class="btn btn-gris" data-a="cerrarObra" data-id="${o.id}" style="margin-top:14px;border-radius:99px">${o.estado === 'Cerrada' ? 'Reabrir obra' : 'Marcar obra como cerrada'}</button>
+    ${puedeCrear() ? `<button class="btn btn-gris" data-a="cerrarObra" data-id="${o.id}" style="margin-top:14px;border-radius:99px">${obraCerrada(o) ? 'Reabrir obra' : 'Marcar obra como cerrada'}</button>
     <button class="btn" data-a="borrarObra" data-id="${o.id}" style="margin-top:10px;border-radius:99px;background:none;color:var(--rojo);box-shadow:inset 0 0 0 1.5px var(--rojo)">Borrar obra</button>
     <div class="tiny" style="text-align:center;margin-top:8px">Solo se puede borrar una obra sin partes ni horas. Si se creó dos veces, borra la que esté vacía.</div>` : ''}
   </div>`;
@@ -3795,10 +3856,12 @@ function obraCRMHTML(d) {
 
 function vAlta() {
   const d = V.draft;
+  const conCodigo = columnaObra('categorias');
   const campos = [
-    ['nombre', 'Nombre de la obra', 'Selva, Inca, Can Concos…'],
     ['cliente', 'Cliente', 'Comunidad, empresa o particular'],
-    ['dir', 'Dirección de la obra', 'Calle, número, población'],
+    ['dir', 'Dirección de la obra', conCodigo ? 'Calle y número' : 'Calle, número, población'],
+    ...(conCodigo ? [['poblacion', 'Población', 'Palma, Inca, Esporles…']] : []),
+    ['nombre', 'Nombre de la obra (opcional)', 'Selva, Can Concos, Nave 2…'],
     ['email', 'Email para los informes', 'cliente@correo.es'],
   ];
   return `<div class="hdr row g12">
@@ -3807,6 +3870,14 @@ function vAlta() {
     <div data-a="guardarObra" style="font:600 13px var(--sans);color:var(--verde-o);cursor:pointer">Guardar</div>
   </div>
   <div class="scroll pad" style="padding-bottom:40px">
+    ${conCodigo ? `<div class="card" style="padding:12px 15px;margin-bottom:16px;background:rgba(20,23,15,.03)">
+      <div class="lbl">Código de obra</div>
+      <div style="font:600 24px/1.1 var(--cond);margin-top:5px;color:${d.numero != null ? 'var(--tinta)' : 'var(--t3)'}">${d.numero != null ? esc(codigoObra(d)) : 'OB-··· · se asignará al guardar'}</div>
+      <div class="tiny" style="margin-top:5px">Correlativo y único. Lo pone el sistema; no se puede cambiar.</div>
+    </div>
+    <div style="margin-bottom:14px"><div class="lbl" style="margin-bottom:7px">Qué lleva la obra</div>
+      <div class="wrap">${OBRA_CATEGORIAS.map(([k, l]) => `<span class="chip ${(d.categorias || []).includes(k) ? 'on' : ''}" data-a="obraCat" data-k="${k}" style="cursor:pointer">${k} · ${l}</span>`).join('')}</div>
+      <div class="tiny" style="margin-top:6px">Puede llevar varias: una casa con aerotermia y placas es una sola obra.</div></div>` : ''}
     ${campos.map(([k, l, ph]) => `<div style="margin-bottom:14px"><div class="lbl" style="margin-bottom:7px">${l}</div>
       <input class="inp" data-f="${k}" value="${esc(d[k] || '')}" placeholder="${ph}" ${k === 'email' ? 'type="email" inputmode="email" autocapitalize="off"' : ''}></div>`).join('')}
     ${obraCRMHTML(d)}
@@ -3825,7 +3896,7 @@ function cardParte(p) {
       <div class="tiny" style="letter-spacing:.08em">${esc(p.ref)} · ${fechaCorta(p.creado)}</div>
       <span class="badge" style="background:${bg[0]};color:${bg[1]}">${bg[2]}</span>
     </div>
-    <div class="h2" style="margin-top:9px">${esc(o.titulo)}</div>
+    <div class="h2" style="margin-top:9px">${esc(nombreObra(o))}</div>
     <div class="sub" style="margin-top:4px">${esc(p.desc.slice(0, 90))}${p.desc.length > 90 ? '…' : ''}</div>
     ${inc ? `<div class="row" style="gap:7px;margin-top:9px"><span class="dot" style="width:7px;height:7px;background:var(--rojo)"></span><span style="font:500 12px/1.35 var(--sans);color:var(--rojo)">${esc(p.nivel)}${p.inc ? ' · ' + esc(p.inc.slice(0, 46)) : ''}</span></div>` : ''}
     <div class="row" style="align-items:baseline;gap:12px;margin-top:12px;padding-top:11px;border-top:1px solid var(--l1)">
@@ -3889,7 +3960,7 @@ function vHoras() {
         det: puedeCrear() ? detalleHoy(u) : null,
       }))
     : S.obras.map((o) => ({
-        nombre: o.titulo, total: durMin(minutosObra(o.id)),
+        nombre: nombreObra(o), total: durMin(minutosObra(o.id)),
         sub: o.estado + ' · ' + S.partes.filter((p) => p.obraId === o.id).length + ' partes',
         barras: dias.map((d) => minutosObraImp(o.id, null, d)),
         pie: empleadosDeObra(o.id).map((x) => x.nombre).join(' · ') || '—',
@@ -4325,7 +4396,7 @@ function vImputarGrupo() {
   const fecha = V.impFecha || hoyISO();
   const cand = impGrupoCandidatos(fecha);
   const sel = V.impGrupoSel || [];
-  const obras = S.obras.filter((o) => o.estado !== 'Cerrada');
+  const obras = S.obras.filter((o) => !obraCerrada(o));
   const lineas = (V.impGrupoLineas && V.impGrupoLineas.length) ? V.impGrupoLineas : [impGrupoLineaNueva()];
   const seleccionados = cand.filter((x) => sel.includes(x.u.id));
   const tope = impGrupoRestanteMin();
@@ -4362,7 +4433,7 @@ function vImputarGrupo() {
     ${lineas.map((l, i) => `<div class="card" style="margin-bottom:10px">
       <div class="wrap">${IMP_CATS.map(([c, lab]) => `<div class="chip ${l.categoria === c ? 'on' : ''}" data-a="impGrupoCat" data-i="${i}" data-c="${c}">${lab}</div>`).join('')}</div>
       ${l.categoria === 'obra' ? `<div class="lbl" style="margin:12px 0 7px">Obra</div>
-        <div class="wrap">${obras.map((o) => `<div class="chip ${l.obraId === o.id ? 'on' : ''}" data-a="impGrupoObra" data-i="${i}" data-id="${o.id}">${esc(o.titulo)}</div>`).join('')}<div class="chip" data-a="obraRapida" data-o="impGrupo" data-i="${i}" style="border:1.5px dashed var(--verde-o);color:var(--verde-o)">+ Nueva obra</div></div>` : ''}
+        <div class="wrap">${obras.map((o) => `<div class="chip ${l.obraId === o.id ? 'on' : ''}" data-a="impGrupoObra" data-i="${i}" data-id="${o.id}">${esc(nombreObra(o))}</div>`).join('')}<div class="chip" data-a="obraRapida" data-o="impGrupo" data-i="${i}" style="border:1.5px dashed var(--verde-o);color:var(--verde-o)">+ Nueva obra</div></div>` : ''}
       <input class="inp" data-f="impGrupoNota" data-i="${i}" value="${esc(l.nota || '')}" placeholder="Nota (opcional): ida, vuelta…" style="margin-top:10px;font-size:14px;padding:10px 12px">
       ${relojHTML('impGrupo', i, l.minutos || 0, RELOJ_MAX_DEFECTO, seleccionados.length > 0, 15)}
       ${lineas.length > 1 ? `<button class="pill pill-rojo" data-a="impGrupoDelLinea" data-i="${i}" style="display:block;margin:2px auto 0">Quitar línea</button>` : ''}
@@ -4384,7 +4455,7 @@ function vImputarEmpleado() {
   const imp = draft.reduce((t, l) => t + (l.minutos || 0), 0);
   const sinImp = Math.max(0, disp - imp);
   const exceso = imp > disp;
-  const obras = S.obras.filter((o) => o.estado !== 'Cerrada');
+  const obras = S.obras.filter((o) => !obraCerrada(o));
   const bloqueado = draft.some((l) => l.bloqueado);
   const editable = jefe && !bloqueado && disp > 0;
   const ult = impUltimaImputacion(V.impEmp, V.impFecha);
@@ -4406,7 +4477,7 @@ function vImputarEmpleado() {
     ${disp > 0 ? (draft.length ? draft.map((l, i) => `<div class="card" style="margin-bottom:10px">
       <div class="wrap">${IMP_CATS.map(([c, lab]) => `<div class="chip ${l.categoria === c ? 'on' : ''}" ${editable ? `data-a="impCat" data-i="${i}" data-c="${c}"` : ''}>${lab}</div>`).join('')}</div>
       ${l.categoria === 'obra' ? `<div class="lbl" style="margin:12px 0 7px">Obra</div>
-        <div class="wrap">${obras.map((o) => `<div class="chip ${l.obraId === o.id ? 'on' : ''}" ${editable ? `data-a="impObra" data-i="${i}" data-id="${o.id}"` : ''}>${esc(o.titulo)}</div>`).join('')}${editable ? `<div class="chip" data-a="obraRapida" data-o="imp" data-i="${i}" style="border:1.5px dashed var(--verde-o);color:var(--verde-o)">+ Nueva obra</div>` : ''}</div>` : ''}
+        <div class="wrap">${obras.map((o) => `<div class="chip ${l.obraId === o.id ? 'on' : ''}" ${editable ? `data-a="impObra" data-i="${i}" data-id="${o.id}"` : ''}>${esc(nombreObra(o))}</div>`).join('')}${editable ? `<div class="chip" data-a="obraRapida" data-o="imp" data-i="${i}" style="border:1.5px dashed var(--verde-o);color:var(--verde-o)">+ Nueva obra</div>` : ''}</div>` : ''}
       <input class="inp" data-f="impNota" data-i="${i}" value="${esc(l.nota || '')}" placeholder="Nota (opcional): ida, vuelta…" style="margin-top:10px;font-size:14px;padding:10px 12px" ${editable ? '' : 'disabled'}>
       ${relojHTML('imp', i, l.minutos || 0, RELOJ_MAX_DEFECTO, editable, 15)}
       ${editable ? `<button class="pill pill-rojo" data-a="impDelLinea" data-i="${i}" style="display:block;margin:2px auto 0">Quitar línea</button>` : ''}
@@ -4784,7 +4855,7 @@ function imprimirHorasObra(obraId, rango) {
     </div>
     <div style="height:2px;background:#14170f;margin:10px 0 12px"></div>
     <table style="width:100%;font:400 12px var(--sans);border-collapse:collapse">
-      <tr><td style="padding:2px 0;color:#666;width:28%">Obra</td><td style="font-weight:600">${esc(o.titulo)}</td></tr>
+      <tr><td style="padding:2px 0;color:#666;width:28%">Obra</td><td style="font-weight:600">${esc(nombreObra(o))}</td></tr>
       ${o.cliente ? `<tr><td style="padding:2px 0;color:#666">Cliente</td><td>${esc(o.cliente)}</td></tr>` : ''}
       <tr><td style="padding:2px 0;color:#666">Dirección</td><td>${esc(o.dir || '—')}</td></tr>
       <tr><td style="padding:2px 0;color:#666">Estado</td><td>${esc(o.estado)}</td></tr>
@@ -4976,7 +5047,7 @@ function vP1() {
       <div class="tiny" style="color:rgba(255,255,255,.45)">1/3</div>
     </div>
     <div class="pasos"><i class="on"></i><i></i><i></i></div>
-    <div style="font:600 21px/1.15 var(--cond);margin-top:16px">${esc(o.titulo)}</div>
+    <div style="font:600 21px/1.15 var(--cond);margin-top:16px">${esc(nombreObra(o))}</div>
     <div class="tiny" style="color:rgba(255,255,255,.5);margin-top:5px">${esc(o.dir || '')} · ${fechaLarga(d.fecha)}</div>
   </div>
   <div class="scroll pad" style="padding-bottom:110px">
@@ -5159,7 +5230,7 @@ function vP3() {
         <img src="logo-trans.png" alt="" style="height:34px">
       </div>
       <div class="hr"></div>
-      <div style="font:600 16px/1.2 var(--sans)">${esc(o.titulo)}</div>
+      <div style="font:600 16px/1.2 var(--sans)">${esc(nombreObra(o))}</div>
       <div class="sub" style="font-size:12px;margin-top:4px">${esc(o.dir || '')} · ${fechaLarga(d.fecha)} · ${esc(yo().nombre)}</div>
       <div style="font:400 13px/1.5 var(--sans);color:rgba(20,23,15,.78);margin-top:12px">${esc(d.desc)}</div>
       <div class="hr"></div>
@@ -6902,7 +6973,7 @@ function legDatosHTML(l) {
       <div style="font:400 10px var(--mono);color:#666;margin-top:2px">${fechaCorta(new Date().toISOString())}</div></div>
     </div>
     <div style="height:2px;background:#14170f;margin:10px 0 12px"></div>
-    ${seccion('Obra', fila('Obra', o.titulo) + fila('Dirección', o.dir) + fila('Responsable', userById(V.user.id).nombre))}
+    ${seccion('Obra', fila('Obra', nombreObra(o)) + fila('Dirección', direccionObra(o)) + fila('Responsable', userById(V.user.id).nombre))}
     ${seccion('Instalador', fila('Razón social', e.instalador_razon_social) + fila('Nº de instalador autorizado', e.instalador_numero) + fila('Nombre del instalador', e.instalador_nombre) + fila('DNI', e.instalador_nif) + fila('Dirección', e.instalador_direccion) + fila('CP y localidad', e.instalador_cp_localidad) + fila('Teléfono', e.instalador_telefono) + fila('Aparato verificador', e.aparato_verificador))}
     ${secciones}
     ${verif}
@@ -9094,7 +9165,7 @@ function sheet() {
     const o = obraById(s.obraId) || { titulo: '' };
     return `<div class="sheet"><div style="max-height:88vh;overflow-y:auto">
       <div style="font:600 23px/1.15 var(--cond)">Nuevo documento</div>
-      <div class="sub" style="margin-top:4px">${esc(o.titulo)}${docArchivo ? ' · ' + esc(docArchivo.nombre) : ''}</div>
+      <div class="sub" style="margin-top:4px">${esc(nombreObra(o))}${docArchivo ? ' · ' + esc(docArchivo.nombre) : ''}</div>
       ${docArchivo && docArchivo.esImagen ? `<div style="margin-top:12px;height:120px;border-radius:12px;background:#2b3024 center/contain no-repeat;background-image:url('${docArchivo.data}')"></div>` : ''}
       <div class="lbl" style="margin:16px 0 8px">Tipo</div>
       <div class="wrap">${DOC_TIPOS.map(([k, l]) => `<span class="chip ${s.tipoDoc === k ? 'on' : ''}" data-a="docTipo" data-t="${k}" style="cursor:pointer">${l}</span>`).join('')}</div>
@@ -9190,15 +9261,16 @@ function sheet() {
     </div></div>`;
   }
   if (s.tipo === 'legObra') {
-    const abiertas = S.obras.filter((o) => o.estado !== 'Cerrada');
+    const abiertas = S.obras.filter((o) => !obraCerrada(o)).sort(porNumeroDesc);
     const q = sinTildes(s.buscar || '');
-    const lista = q ? abiertas.filter((o) => sinTildes([o.titulo, o.cliente, o.dir].join(' ')).includes(q)) : abiertas;
+    const num = numeroBuscado(q);
+    const lista = q ? abiertas.filter((o) => (num != null && o.numero === num) || sinTildes([codigoObra(o), o.titulo, o.cliente, o.dir, o.poblacion].join(' ')).includes(q)) : abiertas;
     return `<div class="sheet"><div>
       <div style="font:600 25px/1.15 var(--cond)">¿De qué obra es la legalización?</div>
       ${abiertas.length > 5 ? `<input class="inp" data-f="buscarObraLeg" value="${esc(s.buscar || '')}" placeholder="Buscar obra o cliente" autocomplete="off" style="margin-top:14px">` : ''}
       ${abiertas.length ? '' : '<div class="sub" style="margin-top:10px">No hay obras abiertas. Crea la obra primero, en Obras.</div>'}
       <div class="lista-obras">
-        ${lista.map((o) => `<button class="fila-obra" data-a="legNueva" data-id="${o.id}">${esc(o.titulo)}${o.cliente || o.dir ? `<small>${esc([o.cliente, o.dir].filter(Boolean).join(' · '))}</small>` : ''}</button>`).join('')}
+        ${lista.map((o) => `<button class="fila-obra" data-a="legNueva" data-id="${o.id}">${esc(nombreObra(o))}${o.cliente || o.dir ? `<small>${esc([o.cliente, direccionObra(o)].filter(Boolean).join(' · '))}</small>` : ''}</button>`).join('')}
       </div>
       <button class="btn btn-gris" data-a="cerrarSheet" style="border-radius:99px;margin-top:14px">Cancelar</button>
     </div></div>`;
@@ -9224,15 +9296,16 @@ function sheet() {
   if (s.tipo === 'nuevoParteObra') {
     // Con muchas obras la hoja se salía de la pantalla y no dejaba elegir las
     // de arriba: ahora es una lista que se desliza, con buscador.
-    const abiertas = S.obras.filter((o) => o.estado !== 'Cerrada');
+    const abiertas = S.obras.filter((o) => !obraCerrada(o)).sort(porNumeroDesc);
     const q = sinTildes(s.buscar || '');
-    const lista = q ? abiertas.filter((o) => sinTildes([o.titulo, o.cliente, o.dir].join(' ')).includes(q)) : abiertas;
+    const num = numeroBuscado(q);
+    const lista = q ? abiertas.filter((o) => (num != null && o.numero === num) || sinTildes([codigoObra(o), o.titulo, o.cliente, o.dir, o.poblacion].join(' ')).includes(q)) : abiertas;
     return `<div class="sheet"><div>
       <div style="font:600 25px/1.15 var(--cond)">¿De qué obra es el parte?</div>
       ${abiertas.length > 5 ? `<input class="inp" data-f="buscarObraParte" value="${esc(s.buscar || '')}" placeholder="Buscar obra o cliente" autocomplete="off" style="margin-top:14px">` : ''}
       ${abiertas.length ? '' : '<div class="sub" style="margin-top:10px">Todavía no hay obras. Créala aquí y sigues con el parte.</div>'}
       <div class="lista-obras">
-        ${lista.map((o) => `<button class="fila-obra" data-a="nuevoParte" data-id="${o.id}">${esc(o.titulo)}${o.cliente || o.dir ? `<small>${esc([o.cliente, o.dir].filter(Boolean).join(' · '))}</small>` : ''}</button>`).join('')}
+        ${lista.map((o) => `<button class="fila-obra" data-a="nuevoParte" data-id="${o.id}">${esc(nombreObra(o))}${o.cliente || o.dir ? `<small>${esc([o.cliente, direccionObra(o)].filter(Boolean).join(' · '))}</small>` : ''}</button>`).join('')}
         ${q && !lista.length ? '<div class="sub" style="padding:14px 4px">Ninguna obra abierta con ese nombre.</div>' : ''}
       </div>
       <div class="row g8" style="margin-top:14px">
@@ -9274,12 +9347,12 @@ function sheet() {
     const o = obraById(s.id) || {};
     return `<div class="sheet"><div>
       <div style="font:600 25px/1.15 var(--cond)">${s.actividad ? 'Esta obra no se puede borrar' : '¿Borrar esta obra?'}</div>
-      <div class="sub" style="margin-top:8px"><b>${esc(o.titulo || '')}</b>${o.cliente ? ' · ' + esc(o.cliente) : ''}</div>
+      <div class="sub" style="margin-top:8px"><b>${esc(nombreObra(o))}</b>${o.cliente && o.cliente !== o.titulo ? ' · ' + esc(o.cliente) : ''}</div>
       ${s.actividad
         ? `<div class="sub" style="margin-top:10px">Tiene ${esc(s.actividad)}. Las obras con actividad se cierran, no se borran: así no se pierde nada de lo fichado ni de los partes.</div>
            <div class="row g8" style="margin-top:20px">
              <button class="btn btn-gris" data-a="cerrarSheet" style="border-radius:99px">Cerrar</button>
-             ${o.estado !== 'Cerrada' ? `<button class="btn btn-verde" data-a="cerrarObraYSalir" data-id="${s.id}" style="font-size:14px">Marcar como cerrada</button>` : ''}
+             ${!obraCerrada(o) ? `<button class="btn btn-verde" data-a="cerrarObraYSalir" data-id="${s.id}" style="font-size:14px">Marcar como cerrada</button>` : ''}
            </div>`
         : `<div class="sub" style="margin-top:10px">No tiene partes, fichajes ni horas. Se borra del todo, con los empleados asignados. <b>No se puede deshacer.</b></div>
            ${(o.driveId || o.drive_id) ? '<div class="sub" style="margin-top:8px">La carpeta de Drive NO se borra: quítala tú desde Drive si quieres.</div>' : ''}
@@ -9410,7 +9483,7 @@ function imprimirParte(p) {
   imprimirParteHTML(p);
   const o = obraById(p.obraId) || {};
   salidaImpresion('parte-' + p.ref + '.pdf', 'Parte ' + p.ref,
-    S.empresa + ' · Parte de trabajo ' + p.ref + (o.titulo ? ' · ' + o.titulo : ''));
+    S.empresa + ' · Parte de trabajo ' + p.ref + (o.titulo ? ' · ' + nombreObra(o) : ''));
 }
 function imprimirParteHTML(p) {
   const o = obraById(p.obraId) || { titulo: '—', cliente: '' };
@@ -9425,7 +9498,7 @@ function imprimirParteHTML(p) {
     </div>
     <div style="height:2px;background:#14170f;margin:10px 0 14px"></div>
     <table style="width:100%;font:400 12px var(--sans);border-collapse:collapse">
-      <tr><td style="padding:3px 0;color:#666;width:32%">Obra</td><td style="font-weight:600">${esc(o.titulo)}</td></tr>
+      <tr><td style="padding:3px 0;color:#666;width:32%">Obra</td><td style="font-weight:600">${esc(nombreObra(o))}</td></tr>
       ${o.cliente ? `<tr><td style="padding:3px 0;color:#666">Cliente</td><td>${esc(o.cliente)}</td></tr>` : ''}
       ${o.dir ? `<tr><td style="padding:3px 0;color:#666">Dirección</td><td>${esc(o.dir)}</td></tr>` : ''}
       <tr><td style="padding:3px 0;color:#666">Fecha</td><td>${fechaLarga(p.fecha)}</td></tr>
@@ -9641,6 +9714,8 @@ document.addEventListener('click', (e) => {
   if (a === 'confirmarBorrarObra') return A.confirmarBorrarObra();
   if (a === 'cerrarObraYSalir') { V.sheet = null; return A.cerrarObra(d.id); }
   if (a === 'obrasTab') { V.obrasTab = d.t; return render(); }
+  if (a === 'obrasOrden') { V.obrasOrden = V.obrasOrden === 'cliente' ? 'numero' : 'cliente'; return render(); }
+  if (a === 'obraCat') { if (V.draft) { const c = new Set(V.draft.categorias || []); c.has(d.k) ? c.delete(d.k) : c.add(d.k); V.draft.categorias = [...c]; } return render(); }
   if (a === 'tabHoras') return A.tabHoras(d.t);
   if (a === 'abrirImputar') return A.abrirImputar();
   if (a === 'abrirResumenImp') return A.abrirResumenImp();

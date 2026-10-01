@@ -64,7 +64,7 @@ def pagina_prueba():
     i = s.rfind('</script>')
     gancho = """
 window.__m = { S, V, A, render, agNuevoCliente, agNuevaCita, limpiarBorradorVisita, pdfDeImpresion,
-  empRows: (x) => { empRows = x; }, empIdPorNombre: (x) => { empIdPorNombre = x; }, nombrePorEmpId: (x) => { nombrePorEmpId = x; } };
+  obraColumnas: (x) => { obraColumnas = x; }, empRows: (x) => { empRows = x; }, empIdPorNombre: (x) => { empIdPorNombre = x; }, nombrePorEmpId: (x) => { nombrePorEmpId = x; } };
 """
     s = s[:i] + gancho + s[i:]
     # sin service worker ni Turnstile ni sesión de Supabase: es una foto
