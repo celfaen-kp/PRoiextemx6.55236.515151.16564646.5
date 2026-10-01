@@ -148,7 +148,6 @@
     'op-hoy-dentro': () => { base('u3'); V.view = 'hoy'; },
     'op-obras': () => { base('u3'); V.view = 'obras'; },
     'op-horas': () => { base('u3'); V.view = 'horas'; },
-    'op-material': () => { base('u3'); V.view = 'material'; },
     'op-perfil': () => { base('u3'); V.view = 'ajustes'; },
     'op-menu': () => { base('u3'); V.view = 'hoy'; V.sheet = { tipo: 'menuUsuario' }; },
     // --- jefe de obra ------------------------------------------------------------
@@ -160,7 +159,6 @@
     'jefe-horas': () => { base('u1'); V.view = 'horas'; V.tabHoras = 'empleado'; },
     'jefe-horas-obra': () => { base('u1'); V.view = 'horas'; V.tabHoras = 'obra'; },
     'jefe-imputar': () => { base('u1'); V.view = 'imputar'; V.impFecha = fecha(1); },
-    'jefe-material': () => { base('u1'); V.view = 'material'; },
     'jefe-ajustes': () => { base('u1'); V.view = 'ajustes'; },
     // --- administración ----------------------------------------------------------
     'admin-hoy': () => { base('u0'); V.view = 'hoy'; },
@@ -202,7 +200,6 @@
     'jefe-legalizacion': () => { base('u1'); S.leg = EMPRESA_LEG; V.legLista = { cargado: true, cargando: false, error: null, filas: LEGS }; V.legVer = Object.assign({}, LEGS[0], { datos: Object.assign({}, LEGS[0].datos) }); V.legPaso = 'produccion'; V.legErr = null; V.legOk = null; V.view = 'legalizacion'; },
     'jefe-legalizacion-verif': () => { base('u1'); S.leg = EMPRESA_LEG; V.legVer = Object.assign({}, LEGS[0], { datos: Object.assign({}, LEGS[0].datos, { verif_hecha: true, verif_retorno: 'si', verif_ucon: 231, verif_udes: 236, verif_dv: 1.2, verif_cosp: 0.99, verif_thd_l1: 2.1, verif_h3_l1: 1.4 }) }); V.legPaso = 'verificacion'; V.view = 'legalizacion'; },
     'admin-ajustes-legalizacion': () => { base('u0'); S.leg = EMPRESA_LEG; V.view = 'ajustes'; },
-    'pres-material': () => { base('u5'); V.view = 'material'; },
     'pres-perfil': () => { base('u5'); V.view = 'ajustes'; },
   };
 

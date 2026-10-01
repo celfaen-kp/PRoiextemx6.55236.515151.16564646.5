@@ -98,7 +98,6 @@ footer{margin-top:60px;padding-top:20px;border-top:1px solid var(--l1);color:var
   <a class="rol" href="#operario">Tu día a día</a>
   <a href="#op-fichar">Fichar</a>
   <a href="#op-obras">Obras y horas</a>
-  <a href="#op-material">Material y notas</a>
   <a href="#op-perfil">Perfil</a>
   <h4>Jefe de obra</h4>
   <a class="rol" href="#jefe">Tu día a día</a>
@@ -127,7 +126,7 @@ footer{margin-top:60px;padding-top:20px;border-top:1px solid var(--l1);color:var
 <p class="sub">Cómo se usa la app de Sysefen, paso a paso y por tipo de usuario. Las pantallas que verás aquí son de ejemplo, con nombres inventados; la tuya tendrá tus obras y tu gente.</p>
 
 <div class="roles">
-  <a href="#operario"><b>Operario</b><span>Fichas tus horas, ves tus obras y pides material.</span></a>
+  <a href="#operario"><b>Operario</b><span>Fichas tus horas y ves tus obras.</span></a>
   <a href="#jefe"><b>Jefe de obra</b><span>Lo del operario, más obras, partes firmados y reparto de horas.</span></a>
   <a href="#pres"><b>Presupuestos</b><span>Clientes, citas, visitas con toma de datos y presupuestos que van a Teamleader.</span></a>
   <a href="#admin"><b>Administración</b><span>Empleados, planillas, revisión de horas, copias y ajustes.</span></a>
@@ -166,7 +165,7 @@ footer{margin-top:60px;padding-top:20px;border-top:1px solid var(--l1);color:var
 
 <!-- ============================================================ OPERARIO -->
 <h2 id="operario"><span class="quien op">Operario</span> Tu día a día</h2>
-<p>Tu trabajo en la app son tres cosas: <b>fichar</b> al entrar y al salir, mirar tus <b>horas</b>, y apuntar el <b>material</b> que falta. Los partes los hace tu jefe de obra; tú solo tienes que fichar bien.</p>
+<p>Tu trabajo en la app son dos cosas: <b>fichar</b> al entrar y al salir, y mirar tus <b>horas</b>. Los partes los hace tu jefe de obra; tú solo tienes que fichar bien.</p>
 
 <h3 id="op-fichar">Fichar</h3>
 <div class="pantalla">
@@ -174,7 +173,7 @@ footer{margin-top:60px;padding-top:20px;border-top:1px solid var(--l1);color:var
   <div class="txt">
     <h4>Hoy, antes de fichar</h4>
     <p>Arriba, en oscuro, la hora y <span class="btn verde">Fichar entrada</span>. Se guarda la hora exacta y, si está activado, dónde estabas al fichar.</p>
-    <p>Debajo: el material pendiente (amarillo si hay algo), y tus horas de <b>hoy</b>, esta <b>semana</b> y este <b>mes</b>.</p>
+    <p>Debajo: tus horas de <b>hoy</b>, esta <b>semana</b> y este <b>mes</b>.</p>
     <ul><li>Ficha al llegar a la obra y al irte, no antes ni después.</li><li>Si se te olvida, avisa a tu jefe o a Administración: ellos lo pueden corregir.</li></ul>
   </div>
 </div>
@@ -210,20 +209,6 @@ footer{margin-top:60px;padding-top:20px;border-top:1px solid var(--l1);color:var
   </div>
 </div>
 
-<h3 id="op-material">Material y notas</h3>
-<div class="pantalla">
-  <img src="img/op-material.png" alt="Material y notas">
-  <div class="txt">
-    <h4>Lo que falta, lo ve todo el equipo</h4>
-    <p>Escribe qué hace falta (o díctalo con el micrófono), marca si es <b>Comprar</b> o <b>Del despacho</b>, si es <b>Urgente</b> y para qué obra. Al pulsar <span class="btn verde">+</span> queda en la lista de todos.</p>
-    <ul>
-      <li><b>Lo llevo yo</b>: te lo apuntas para traerlo.</li>
-      <li>Cuando está, se <b>tacha</b>. Si se compró, se pone el importe y cuenta en la obra.</li>
-      <li><b>Notas</b>: avisos para el equipo ("la llave la tiene el cliente").</li>
-    </ul>
-  </div>
-</div>
-
 <h3 id="op-perfil">Perfil</h3>
 <div class="dos">
   <figure><img src="img/op-perfil.png" alt="Perfil del operario"><figcaption><b>Perfil.</b> Cambiar tu PIN, activar o quitar la ubicación al fichar y el aviso de la tarde, e instalar la app. Abajo, la versión.</figcaption></figure>
@@ -232,7 +217,7 @@ footer{margin-top:60px;padding-top:20px;border-top:1px solid var(--l1);color:var
 
 <!-- ============================================================ JEFE -->
 <h2 id="jefe"><span class="quien jefe">Jefe de obra</span> Tu día a día</h2>
-<p>Haces lo mismo que un operario (fichar, horas, material) y además llevas las <b>obras</b>, los <b>partes de trabajo</b> que firma el cliente, y el <b>reparto de horas</b> del equipo entre obras.</p>
+<p>Haces lo mismo que un operario (fichar, horas) y además llevas las <b>obras</b>, los <b>partes de trabajo</b> que firma el cliente, y el <b>reparto de horas</b> del equipo entre obras.</p>
 <div class="pantalla">
   <img src="img/jefe-hoy.png" alt="Hoy del jefe de obra">
   <div class="txt">
@@ -345,7 +330,6 @@ footer{margin-top:60px;padding-top:20px;border-top:1px solid var(--l1);color:var
 </div>
 <div class="nota">Las horas se imputan en tramos de 15 minutos y solo hasta lo que se fichó. Si alguien echó horas sin fichar, primero corrige el fichaje (Administración) y después imputa.</div>
 <div class="dos">
-  <figure><img src="img/jefe-material.png" alt="Material"><figcaption><b>Material y notas.</b> Igual que para el operario. Como jefe verás qué pide cada uno y quién lo lleva.</figcaption></figure>
   <figure><img src="img/jefe-ajustes.png" alt="Ajustes del jefe"><figcaption><b>Ajustes.</b> PIN, ubicación al fichar, aviso de la tarde e instalar.</figcaption></figure>
 </div>
 
