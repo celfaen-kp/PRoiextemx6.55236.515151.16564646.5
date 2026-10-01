@@ -400,7 +400,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '17.8'; // versión visible de la app (única fuente)
+const APP_VERSION = '17.9'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -7884,9 +7884,11 @@ const agContactadoTxt = (c) => {
   return partes.join(' · ');
 };
 // Los dos botones de la llamada. Cuando ya consta como contactado no salen.
+// Los dos salen apagados; el que está marcado se enciende: «No cogió» en rojo.
+// (Si ya consta como contactado no salen: la tarjeta lo dice en el texto.)
 const agContactoBotones = (c) => (c.contacto_estado === 'contactado' || !puedeCitar() ? '' : `
-  <button class="pill" data-a="ag_contactado" data-id="${c.id}" data-e="no_contesta" style="padding:8px 10px;background:var(--l1);color:var(--tinta)">No cogió</button>
-  <button class="pill" data-a="ag_contactado" data-id="${c.id}" data-e="contactado" style="padding:8px 10px;background:var(--ambar);color:#fff">Contactado</button>`);
+  <button class="pill" data-a="ag_contactado" data-id="${c.id}" data-e="no_contesta" style="padding:8px 10px;${c.contacto_estado === 'no_contesta' ? 'background:var(--rojo);color:#fff' : 'background:var(--l1);color:var(--tinta)'}">No cogió${c.contacto_estado === 'no_contesta' && (c.contacto_intentos || 0) > 1 ? ' ×' + c.contacto_intentos : ''}</button>
+  <button class="pill" data-a="ag_contactado" data-id="${c.id}" data-e="contactado" style="padding:8px 10px;background:var(--l1);color:var(--tinta)">Contactado</button>`);
 A.agContactado = async (id, estado) => {
   const c = agCliente(id); if (!c || !puedeCitar()) return;
   if (!navigator.onLine) { avisar('Sin conexión: no se ha guardado.'); return; }
