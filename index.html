@@ -351,7 +351,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '18.4'; // versión visible de la app (única fuente)
+const APP_VERSION = '18.5'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -896,7 +896,7 @@ async function sincronizarAusencias() {
     S.festivos = (await Sysefen.db.listarFestivos()) || [];
   } catch (e) { registrarError('sincronizarAusencias', e); /* sigue sin vacaciones */ }
 }
-const refrescarDatos = () => esPresupuestos() ? Promise.all([cargarAvatares()]) : Promise.all([sincronizarFichajes(), sincronizarObras(), sincronizarImputaciones(), sincronizarPartes(), cargarAvatares(), sincronizarAusencias()]);
+const refrescarDatos = () => esPresupuestos() ? Promise.all([cargarAvatares(), sincronizarObras(), sincronizarPartes(), sincronizarImputaciones()]) : Promise.all([sincronizarFichajes(), sincronizarObras(), sincronizarImputaciones(), sincronizarPartes(), cargarAvatares(), sincronizarAusencias()]);
 
 // Ausencia de una persona en un día concreto (o null).
 // Un día puede estar marcado por dos vías: la ausencia PERSONAL (vacaciones de
@@ -982,6 +982,12 @@ const puedeCrear = () => ['admin', 'jefe'].includes(rol());
 // Presupuestos (Ramón): toma datos en casa del cliente. No ficha ni hace partes.
 const esPresupuestos = () => rol() === 'presupuestos';
 const esComercial = () => ['presupuestos', 'jefe', 'admin'].includes(rol());
+// Quién ve costes (sql/etapa59): Administración y presupuestos. El jefe de
+// obra pone albaranes y gastos, pero no ve el coste del personal ni la
+// economía de la obra. Igual que ve_costes() en la base.
+const veCostes = () => ['presupuestos', 'admin'].includes(rol());
+// Quién crea y edita obras: todo comercial (obras_insert/update = es_comercial()).
+const puedeObras = () => esComercial();
 // La agenda de Ramón es cosa suya y de Administración: los jefes de obra tienen
 // lo suyo. Va también en las políticas de Supabase (sql/etapa33), no solo aquí.
 const verAgenda = () => ['presupuestos', 'admin'].includes(rol());
@@ -1237,7 +1243,8 @@ A.verObra = (id) => {
   const o = obraById(id);
   asegurarDesde(o && o.creado_en ? String(o.creado_en).slice(0, 10) : null)
     .then(() => refrescarDatos()).then(render);
-  if (puedeCrear()) A.cargarDocsObra(id);
+  if (puedeCrear() || veCostes()) A.cargarDocsObra(id);
+  if (veCostes()) A.cargarEconomia(id);
 };
 A.obraRango = (r) => { V.obraRango = r; render(); };
 // (Sin "obra de hoy": el fichaje NUNCA lleva obra — se guarda con obraId null —
@@ -2356,6 +2363,149 @@ A.cerrarObra = async (id) => {
   try { await Sysefen.db.actualizarObra(id, { estado: enDB }); await sincronizarObras(); render(); }
   catch (e) { avisar('No se pudo cambiar el estado: ' + (e && e.message ? e.message : 'error')); }
 };
+/* ---------- economía de la obra y costes (sql/etapa59) ------------------------
+ * Solo para quien ve costes (Administración y presupuestos). El bloque no se
+ * pinta para los demás: no es que esté oculto, es que no existe en su HTML.
+ * ----------------------------------------------------------------------------- */
+Object.assign(V, { eco: {}, ecoError: {}, costesEmp: null, costesEmpError: null, costesBuscar: '', presuBuscar: '' });
+const faltaEtapa59 = (e) => /v_obra_economia|empleado_costes|obra_costes|respuesta_cliente|schema cache|PGRST205/i.test(typeof e === 'string' ? e : msgError(e));
+A.cargarEconomia = async (id) => {
+  if (!veCostes() || !navigator.onLine) return;
+  try { V.eco[id] = await Sysefen.db.economiaObra(id); V.ecoError[id] = null; }
+  catch (e) { V.ecoError[id] = msgError(e); }
+  if (V.view === 'obra' && V.obraId === id) render();
+};
+const euros2 = (n) => (n == null ? '—' : new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(Number(n)));
+const horas1 = (n) => (n == null ? '—' : (Math.round(Number(n) * 10) / 10).toLocaleString('es-ES') + ' h');
+// Semáforo de la obra: verde si las horas van por debajo del 90 % de lo
+// previsto; ámbar entre 90 y 105; rojo si se pasa del 105 % o el margen real
+// es menos de la mitad del previsto. Sin presupuesto enlazado no hay color.
+function semaforoEco(e) {
+  if (!e || e.venta_presupuestada == null) return { color: 'var(--t3)', txt: 'Sin presupuesto enlazado' };
+  const pct = e.pct_horas == null ? null : Number(e.pct_horas);
+  const margenMal = e.margen_previsto != null && Number(e.margen_previsto) > 0 && Number(e.margen_real) < Number(e.margen_previsto) / 2;
+  if (margenMal || (pct != null && pct > 105)) return { color: 'var(--rojo)', txt: margenMal ? 'Margen por debajo de la mitad' : 'Horas por encima de lo previsto' };
+  if (pct != null && pct >= 90) return { color: 'var(--ambar)', txt: 'Horas al límite' };
+  return { color: 'var(--verde)', txt: pct == null ? 'Dentro del presupuesto' : 'Va bien' };
+}
+function economiaHTML(o) {
+  const d = V.eco[o.id], err = V.ecoError[o.id];
+  const cab = `<div class="row" style="justify-content:space-between;align-items:baseline;margin:22px 0 10px">
+      <div class="lbl" style="font-weight:600;font-size:12px;color:var(--t2)">Economía</div>
+      <span class="tiny">Solo Administración y presupuestos</span></div>`;
+  if (err) return cab + `<div class="card"><div class="sub">${faltaEtapa59(err) ? 'Falta ejecutar sql/etapa59 en Supabase.' : 'No se pudo cargar: ' + esc(err)}</div></div>`;
+  if (!d) return cab + '<div class="card"><div class="sub">Cargando…</div></div>';
+  const e = d.eco || {};
+  const sem = semaforoEco(e);
+  const pct = e.pct_horas == null ? null : Math.min(140, Number(e.pct_horas));
+  const barra = (v, color) => `<div style="height:8px;border-radius:99px;background:rgba(20,23,15,.07);overflow:hidden;margin-top:6px"><div style="width:${Math.max(2, Math.min(100, v))}%;height:100%;background:${color}"></div></div>`;
+  // Cada dato en su fila: la etiqueta a la izquierda, el número a la derecha
+  // y, debajo del número, con qué se compara.
+  const fila = (k, a, b) => `<div class="row" style="justify-content:space-between;align-items:flex-start;gap:12px;padding:7px 0;border-bottom:1px solid var(--l1)">
+      <span class="sub" style="font-size:13px;padding-top:2px;white-space:nowrap">${k}</span>
+      <span style="text-align:right"><span class="num" style="font-size:17px;white-space:nowrap">${a}</span>${b != null ? `<div class="tiny" style="margin-top:2px">${b}</div>` : ''}</span></div>`;
+  const pres = d.presupuestos || [];
+  return cab + `<div class="card" style="padding:12px 15px">
+      <div class="row g8" style="align-items:center"><span class="dot" style="width:10px;height:10px;background:${sem.color}"></span><span style="font:600 15px var(--sans)">${esc(sem.txt)}</span></div>
+      <div style="margin-top:10px">
+        ${fila('Presupuestado', euros2(e.venta_presupuestada))}
+        ${fila('Coste previsto', euros2(e.coste_previsto))}
+        ${fila('Coste real', euros2(e.coste_real), 'personal ' + euros2(e.coste_mano_obra_real) + ' · material ' + euros2(e.coste_material_real))}
+        ${fila('Margen', euros2(e.margen_real), 'previsto ' + euros2(e.margen_previsto))}
+        ${fila('Horas', horas1(e.horas_reales), e.horas_previstas != null ? 'previstas ' + horas1(e.horas_previstas) : null)}
+      </div>
+      ${pct != null ? barra(pct, sem.color) : ''}
+      ${Number(e.dias_sin_coste) > 0 ? `<div class="tiny" style="margin-top:8px;color:var(--ambar-o)">${e.dias_sin_coste} jornada${e.dias_sin_coste > 1 ? 's' : ''} sin coste de personal: falta la tarifa de alguien en «Costes de personal».</div>` : ''}
+      ${(d.categorias || []).length > 1 ? `<div style="margin-top:12px"><div class="lbl" style="margin-bottom:4px">Por categoría</div>${d.categorias.map((c) => fila(esc(nombreCat(c.categoria)), euros2(c.venta_presupuestada), 'coste real ' + euros2((Number(c.coste_mano_obra_real) || 0) + (Number(c.coste_material_real) || 0)) + ' · ' + horas1(c.horas_reales) + (c.horas_previstas != null ? ' de ' + horas1(c.horas_previstas) : ''))).join('')}</div>` : ''}
+    </div>
+    <div class="card" style="padding:12px 15px;margin-top:10px">
+      <div class="row" style="justify-content:space-between;align-items:center">
+        <div class="lbl">Presupuestos aceptados</div>
+        <button class="pill" data-a="enlazarPresu" data-id="${o.id}" style="padding:7px 12px;font-size:12px">Enlazar</button>
+      </div>
+      ${pres.length ? pres.map((p) => `<div class="row g8" style="align-items:center;padding:9px 0;border-bottom:1px solid var(--l1)">
+          <div class="grow"><div style="font:500 14px var(--sans)">${esc(nombreCat(p.categoria))}</div><div class="tiny" style="margin-top:2px">${esc((p.visita && p.visita.codigo) || '')}</div></div>
+          <span class="num" style="font-size:16px;white-space:nowrap">${euros2(p.total_venta)}</span>
+          <button class="pill" data-a="desenlazarPresu" data-id="${p.id}" data-obra="${o.id}" style="padding:6px 10px;font-size:11px;background:var(--l1);color:var(--tinta)">Quitar</button></div>`).join('')
+        : '<div class="sub" style="margin-top:6px">Ninguno todavía. Enlaza el presupuesto que aceptó el cliente para comparar con lo real.</div>'}
+    </div>`;
+}
+function presuListaHTML(s) {
+  const q = sinTildes(V.presuBuscar);
+  const filas = (s.filas || []).filter((p) => !p.obra_id || p.obra_id === s.obraId).filter((p) => !q || sinTildes([(p.cliente || {}).nombre, (p.visita || {}).codigo, nombreCat(p.categoria)].join(' ')).includes(q));
+  if (s.error) return `<div class="sub">${esc(s.error)}</div>`;
+  if (!s.filas) return '<div class="sub">Cargando…</div>';
+  if (!filas.length) return '<div class="sub">Ningún presupuesto con eso.</div>';
+  return filas.slice(0, 60).map((p) => `<button class="fila-obra" data-a="enlazarPresuElegir" data-id="${p.id}" ${s.busy ? 'disabled' : ''}>${esc((p.cliente || {}).nombre || 'Sin cliente')} · ${esc(nombreCat(p.categoria))}<small>${esc((p.visita || {}).codigo || '')} · ${euros2(p.total_venta)} · ${esc(fechaCorta(p.created_at))}${p.obra_id ? ' · ya enlazado' : ''}</small></button>`).join('');
+}
+A.enlazarPresu = async (obraId) => {
+  V.sheet = { tipo: 'enlazarPresu', obraId, filas: null, error: null, busy: false }; V.presuBuscar = ''; render();
+  try { V.sheet.filas = await visitasDB.listarPresupuestos(300); }
+  catch (e) { V.sheet.error = msgError(e); }
+  render();
+};
+A.enlazarPresuElegir = async (presuId) => {
+  const s = V.sheet; if (!s || s.tipo !== 'enlazarPresu' || s.busy) return;
+  s.busy = true; render();
+  try { await Sysefen.db.enlazarPresupuesto(presuId, s.obraId); V.sheet = null; toast('Presupuesto enlazado.'); await A.cargarEconomia(s.obraId); }
+  catch (e) { s.busy = false; avisar(faltaEtapa59(e) ? 'Falta ejecutar sql/etapa59 en Supabase.' : 'No se pudo enlazar: ' + msgError(e)); render(); }
+};
+A.desenlazarPresu = async (presuId, obraId) => {
+  try { await Sysefen.db.enlazarPresupuesto(presuId, null); toast('Quitado.'); await A.cargarEconomia(obraId); }
+  catch (e) { avisar('No se pudo quitar: ' + msgError(e)); }
+};
+// Costes de personal: lo que cuesta la hora de cada uno, con histórico.
+A.abrirCostes = async () => {
+  if (!veCostes()) return;
+  V.view = 'costesPersonal'; render();
+  try { V.costesEmp = await Sysefen.db.listarCostesEmpleados(); V.costesEmpError = null; }
+  catch (e) { V.costesEmpError = msgError(e); }
+  render();
+};
+const costeVigente = (empId) => (V.costesEmp || []).find((c) => c.empleado_id === empId && !c.hasta && c.desde <= hoyISO()) || (V.costesEmp || []).find((c) => c.empleado_id === empId) || null;
+A.costeEmpNuevo = (empId) => { const v = costeVigente(empId); V.sheet = { tipo: 'costeEmp', empId, coste: v ? String(v.coste_hora).replace('.', ',') : '', desde: hoyISO(), busy: false }; render(); };
+A.costeEmpGuardar = async () => {
+  const s = V.sheet; if (!s || s.tipo !== 'costeEmp' || s.busy) return;
+  const coste = Number(String(s.coste).replace(',', '.'));
+  if (!(coste >= 0) || !s.desde) { avisar('Pon el coste por hora y desde qué día.'); return; }
+  s.busy = true; render();
+  try {
+    await Sysefen.db.guardarCosteEmpleado({ empleado_id: s.empId, coste_hora: coste, desde: s.desde });
+    V.sheet = null; toast('Tarifa guardada.'); await A.abrirCostes();
+  } catch (e) { s.busy = false; avisar(faltaEtapa59(e) ? 'Falta ejecutar sql/etapa59 en Supabase.' : 'No se pudo guardar: ' + msgError(e)); render(); }
+};
+function costesListaHTML() {
+  const q = String(V.costesBuscar || '').trim().toLowerCase();
+  const gente = empRows.filter((r) => r.activo !== false && r.rol !== 'admin').filter((r) => !q || String(r.nombre || '').toLowerCase().includes(q));
+  if (!V.costesEmp && !V.costesEmpError) return '<div class="card"><div class="sub">Cargando…</div></div>';
+  if (!gente.length) return '<div class="card"><div class="sub">Nadie con ese nombre.</div></div>';
+  return gente.map((r) => {
+      const v = costeVigente(r.id);
+      const hist = (V.costesEmp || []).filter((c) => c.empleado_id === r.id);
+      return `<div class="card" style="margin-bottom:10px">
+        <div class="row g8" style="align-items:center">
+          <div class="grow"><div style="font:600 16px var(--sans)">${esc(r.nombre)}</div>
+            <div class="tiny" style="margin-top:4px">${v ? `Desde ${fechaCorta(v.desde)}${hist.length > 1 ? ' · ' + hist.length + ' tarifas' : ''}` : '<span style="color:var(--rojo)">Sin tarifa · cuenta a 0 €</span>'}</div></div>
+          <div class="num" style="font-size:22px">${v ? esc(String(v.coste_hora).replace('.', ',')) + ' €/h' : '—'}</div>
+          <button class="pill" data-a="costeEmpNuevo" data-id="${r.id}" style="padding:8px 12px">${v ? 'Cambiar' : 'Poner'}</button>
+        </div>
+      </div>`;
+    }).join('');
+}
+function vCostesPersonal() {
+  const err = V.costesEmpError;
+  return `<div class="hdr">
+    <div class="volver" data-a="ir" data-v="ajustes">‹ ${esAdmin() ? 'Ajustes' : 'Perfil'}</div>
+    <div class="h1" style="margin-top:6px">Costes de personal</div>
+    <div class="sub" style="margin-top:6px">Lo que cuesta cada hora de cada persona (sueldo, seguros, dietas). Con esto la obra sabe su coste real. Solo lo veis Administración y presupuestos.</div>
+    <input class="inp" data-f="costesBuscar" value="${esc(V.costesBuscar || '')}" placeholder="Buscar persona" autocomplete="off" style="margin-top:12px">
+  </div>
+  <div class="scroll pad pb-nav">
+    ${err ? `<div class="card" style="margin-bottom:12px"><div class="sub">${faltaEtapa59(err) ? 'Falta ejecutar sql/etapa59 en Supabase.' : 'No se pudo cargar: ' + esc(err)}</div></div>` : ''}
+    <div id="costes-lista">${costesListaHTML()}</div>
+  </div>`;
+}
+
 // Borrar una obra: solo si está vacía (sin partes, fichajes ni horas). Lo
 // normal es que sea una obra creada dos veces. Si tiene actividad, se cierra.
 const obraTieneActividad = (id) => {
@@ -3312,7 +3462,7 @@ A.instalar = async () => {
 /* ---------- render ---------- */
 function render() {
   // Ramón entra directo a sus visitas: ninguna pantalla de fichar, obras ni partes.
-  if (V.user && esPresupuestos() && !VISITA_VISTAS.includes(V.view) && !['legalizaciones', 'legalizacion'].includes(V.view)) {
+  if (V.user && esPresupuestos() && !VISITA_VISTAS.includes(V.view) && !['legalizaciones', 'legalizacion', 'obras', 'obra', 'alta', 'costesPersonal'].includes(V.view)) {
     V.view = 'agenda';
     if (!V.agenda.cargado) A.cargarAgenda();
   }
@@ -3339,6 +3489,7 @@ function render() {
   else if (v === 'ajustes') html = vAjustes();
   else if (v === 'presupuestos' && verMotor()) html = vPresupuestos();
   else if (v === 'legalizaciones' && esComercial()) html = vLegalizaciones();
+  else if (v === 'costesPersonal' && veCostes()) html = vCostesPersonal();
   else if (v === 'legalizacion' && esComercial()) html = vLegalizacion();
   else if (v === 'presuNuevo' && verMotor()) html = vPresuNuevo();
   else if (v === 'presupuestoVer' && verMotor()) html = vPresupuestoVer();
@@ -3355,7 +3506,7 @@ function render() {
   else if (v === 'clienteVer' && verAgenda()) html = vClienteVer();
   else if (v === 'citaNueva' && puedeCitar()) html = vCitaNueva();
   else if (v === 'citaVer' && verAgenda()) html = vCitaVer();
-  if (V.user && ['hoy', 'obras', 'obra', 'partes', 'horas', 'imputar', 'empleados', 'ajustes', 'presupuestos', 'presupuestoVer', 'visitas', 'visita', 'agenda', 'clientes', 'clienteVer', 'revisarImp', 'errores', 'legalizaciones', 'legalizacion'].includes(v)) html += nav(v);
+  if (V.user && ['hoy', 'obras', 'obra', 'partes', 'horas', 'imputar', 'empleados', 'ajustes', 'presupuestos', 'presupuestoVer', 'visitas', 'visita', 'agenda', 'clientes', 'clienteVer', 'revisarImp', 'errores', 'legalizaciones', 'legalizacion', 'costesPersonal'].includes(v)) html += nav(v);
   if (!navigator.onLine && V.user) html = '<div class="offline">Sin conexión — todo se guarda en el móvil</div>' + html;
   // Red de seguridad: si un sheet revienta al pintarse (p. ej. depende de
   // datos que cambiaron justo antes, como el usuario tras salir), que se
@@ -3582,7 +3733,7 @@ function vObras() {
     ${marcaSysefen(false)}
     <div class="row" style="justify-content:space-between">
       <div class="h1">Obras</div>
-      ${puedeCrear() ? '<button class="pill" data-a="nuevaObra" style="background:var(--tinta);color:#fff">+ Nueva</button>' : ''}
+      ${puedeObras() ? '<button class="pill" data-a="nuevaObra" style="background:var(--tinta);color:#fff">+ Nueva</button>' : ''}
     </div>
     <input class="inp" id="obras-buscar" data-f="obrasBuscar" value="${esc(V.obrasBuscar || '')}" placeholder="Número (137), cliente, obra o dirección" autocomplete="off" style="margin-top:14px">
     <div class="wrap" style="margin-top:12px">
@@ -3668,8 +3819,8 @@ function vObra() {
     <div style="font:400 15px/1.35 var(--sans);color:rgba(255,255,255,.7);margin-top:4px">${esc(direccionObra(o) || 'Sin dirección')}</div>
     ${o.tlId ? '<div class="tiny" style="color:var(--verde-c);margin-top:6px">✓ Cliente enlazado con Teamleader</div>' : ''}
     ${o.dir ? `<div class="ag-acciones" style="justify-content:flex-start;gap:26px">${accionComoLlegar(o.dir)}</div>` : ''}
-    ${puedeCrear() ? `<div class="row g8" style="margin-top:16px">
-      <button class="pill pill-verde grow" data-a="nuevoParte" data-id="${o.id}" style="padding:14px">Nuevo parte</button>
+    ${puedeObras() ? `<div class="row g8" style="margin-top:16px">
+      ${puedeCrear() ? `<button class="pill pill-verde grow" data-a="nuevoParte" data-id="${o.id}" style="padding:14px">Nuevo parte</button>` : ''}
       <button class="pill grow" data-a="editarObra" data-id="${o.id}" style="padding:14px;background:rgba(255,255,255,.12);color:#fff">Editar</button>
     </div>
     <div class="row g8" style="margin-top:8px">
@@ -3694,7 +3845,8 @@ function vObra() {
       <button class="pill grow" data-a="imprimirHorasObra" style="padding:12px;text-align:center;background:var(--tinta);color:#fff">Imprimir PDF</button>
       <button class="pill grow" data-a="exportarHorasObraCSV" style="padding:12px;text-align:center">Exportar CSV</button>
     </div>` : ''}
-    ${puedeCrear() ? docsObraHTML(o) : ''}
+    ${veCostes() ? economiaHTML(o) : ''}
+    ${puedeCrear() || veCostes() ? docsObraHTML(o) : ''}
     <div class="lbl" style="font-weight:600;font-size:12px;color:var(--t2);margin:22px 0 10px">Partes de esta obra</div>
     ${partes.length ? partes.map(cardParte).join('') : '<div class="card"><div class="sub">Todavía no hay partes en esta obra.</div></div>'}
     ${puedeCrear() ? `<button class="btn btn-gris" data-a="cerrarObra" data-id="${o.id}" style="margin-top:14px;border-radius:99px">${obraCerrada(o) ? 'Reabrir obra' : 'Marcar obra como cerrada'}</button>
@@ -4916,6 +5068,11 @@ function vAjustes() {
       </div>`).join('')}
     </div>` : ''}
 
+    ${veCostes() ? `<div class="card row" data-a="abrirCostes" style="margin-top:14px;cursor:pointer">
+      <div class="grow"><div style="font:600 15px var(--sans)">Costes de personal</div>
+      <div class="sub" style="font-size:12px;margin-top:4px">Lo que cuesta la hora de cada persona. Con ello cada obra enseña su coste real y su margen.</div></div>
+      <div style="font:400 20px/1 var(--sans);color:var(--t3)">›</div>
+    </div>` : ''}
     ${esComercial() ? `<div class="card row" data-a="abrirLegalizaciones" style="margin-top:14px;cursor:pointer">
       <div class="grow"><div style="font:600 15px var(--sans)">Legalizaciones fotovoltaicas</div>
       <div class="sub" style="font-size:12px;margin-top:4px">Modelo 034 y certificado de verificación por obra. A Drive y al correo de quien legaliza.</div></div>
@@ -8875,7 +9032,7 @@ A.visitaSeguirMedias = () => { V.sheet = null; A.seguirBorrador(); };
 /* --- nav --- */
 function nav(v) {
   const items = esPresupuestos()
-    ? [['agenda', 'Agenda', '5px'], ['clientes', 'Clientes', '3px'], ['presupuestos', 'Presupuestos', '2px'], ['legalizaciones', 'Legalizaciones', '6px'], ['ajustes', 'Perfil', '99px']]
+    ? [['agenda', 'Agenda', '5px'], ['clientes', 'Clientes', '3px'], ['presupuestos', 'Presup.', '2px'], ['obras', 'Obras', '5px'], ['legalizaciones', 'Legaliz.', '6px'], ['ajustes', 'Perfil', '99px']]
     : esAdmin()
     ? [['hoy', 'Hoy', '99px'], ['empleados', 'Empleados', '4px'], ['obras', 'Obras', '5px'], ['partes', 'Partes', '3px'], ['horas', 'Horas', '2px'], ['agenda', 'Citas', '6px'], ['ajustes', 'Ajustes', '99px']]
     : puedeCrear()
@@ -8885,6 +9042,8 @@ function nav(v) {
     || (id === 'obras' && v === 'obra')
     || (id === 'horas' && ['imputar', 'revisarImp', 'resumenImp'].includes(v))
     || (id === 'ajustes' && !esPresupuestos() && ['errores', 'legalizaciones', 'legalizacion'].includes(v))
+    || (id === 'ajustes' && v === 'costesPersonal')
+    || (id === 'obras' && v === 'alta')
     || (id === 'legalizaciones' && v === 'legalizacion')
     || (id === 'empleados' && (v === 'empleado' || v === 'planilla'))
     || (id === 'visitas' && v === 'visita')
@@ -9343,6 +9502,30 @@ function sheet() {
       <div data-a="compartirParte" data-id="${esc(s.id)}" class="tiny" style="margin-top:12px;text-align:center;text-decoration:underline;cursor:pointer">O compartirlo yo (WhatsApp, otro correo…)</div>
     </div></div>`;
   }
+  if (s.tipo === 'costeEmp') {
+    const r = empRowById(s.empId) || {};
+    return `<div class="sheet"><div>
+      <div style="font:600 23px/1.15 var(--cond)">Coste por hora · ${esc(r.nombre || '')}</div>
+      <div class="sub" style="margin-top:8px">Coste total para la empresa de una hora de esta persona. La tarifa anterior se cierra sola el día antes.</div>
+      <div class="row g8" style="margin-top:14px">
+        <div class="grow"><div class="lbl" style="margin-bottom:6px">€ por hora</div><input class="inp" data-f="costeValor" value="${esc(s.coste)}" inputmode="decimal" placeholder="24,50"></div>
+        <div class="grow"><div class="lbl" style="margin-bottom:6px">Desde</div><input class="inp" type="date" data-f="costeDesde" value="${esc(s.desde)}"></div>
+      </div>
+      <div class="row g8" style="margin-top:18px">
+        <button class="btn btn-gris" data-a="cerrarSheet" style="border-radius:99px">Cancelar</button>
+        <button class="btn btn-verde" data-a="costeEmpGuardar" ${s.busy ? 'disabled' : ''}>${s.busy ? 'Guardando…' : 'Guardar'}</button>
+      </div>
+    </div></div>`;
+  }
+  if (s.tipo === 'enlazarPresu') {
+    return `<div class="sheet"><div style="max-height:85vh;display:flex;flex-direction:column">
+      <div style="font:600 23px/1.15 var(--cond)">Enlazar presupuesto</div>
+      <div class="sub" style="margin-top:6px">El que aceptó el cliente. Se marca como aceptado y su importe pasa a ser lo presupuestado de la obra.</div>
+      <input class="inp" data-f="presuBuscar" value="${esc(V.presuBuscar || '')}" placeholder="Cliente, código de visita o categoría" autocomplete="off" style="margin:12px 0">
+      <div class="lista-obras" id="presu-lista" style="overflow:auto;flex:1;min-height:0">${presuListaHTML(s)}</div>
+      <button class="btn btn-gris" data-a="cerrarSheet" style="border-radius:99px;margin-top:12px">Cerrar</button>
+    </div></div>`;
+  }
   if (s.tipo === 'borrarObra') {
     const o = obraById(s.id) || {};
     return `<div class="sheet"><div>
@@ -9711,6 +9894,12 @@ document.addEventListener('click', (e) => {
   if (a === 'borrarParte') { e.stopPropagation(); return A.borrarParte(d.id); }
   if (a === 'confirmarBorrarParte') return A.confirmarBorrarParte();
   if (a === 'borrarObra') return A.borrarObra(d.id);
+  if (a === 'abrirCostes') return A.abrirCostes();
+  if (a === 'costeEmpNuevo') return A.costeEmpNuevo(d.id);
+  if (a === 'costeEmpGuardar') return A.costeEmpGuardar();
+  if (a === 'enlazarPresu') return A.enlazarPresu(d.id);
+  if (a === 'enlazarPresuElegir') return A.enlazarPresuElegir(d.id);
+  if (a === 'desenlazarPresu') return A.desenlazarPresu(d.id, d.obra);
   if (a === 'confirmarBorrarObra') return A.confirmarBorrarObra();
   if (a === 'cerrarObraYSalir') { V.sheet = null; return A.cerrarObra(d.id); }
   if (a === 'obrasTab') { V.obrasTab = d.t; return render(); }
@@ -9803,6 +9992,10 @@ document.addEventListener('input', (e) => {
   }
   if (!f) return;
   if (f.startsWith('vf')) return A.vf(f, t.dataset, t.value);
+  if (f === 'costesBuscar') { V.costesBuscar = t.value; const box = document.getElementById('costes-lista'); if (box) box.innerHTML = costesListaHTML(); return; }
+  if (f === 'costeValor') { if (V.sheet) V.sheet.coste = t.value; return; }
+  if (f === 'costeDesde') { if (V.sheet) V.sheet.desde = t.value; return; }
+  if (f === 'presuBuscar') { V.presuBuscar = t.value; const box = document.getElementById('presu-lista'); if (box && V.sheet) box.innerHTML = presuListaHTML(V.sheet); return; }
   if (f === 'obrasBuscar') { V.obrasBuscar = t.value; const box = document.getElementById('obras-lista'); if (box) box.innerHTML = obrasListaHTML(); return; }
   if (f === 'ag_buscar') { V.agenda.buscar = t.value; const box = document.getElementById('clientes-lista'); if (box) box.innerHTML = clientesListaHTML(); return; }
   if (f === 'ag_cli') { if (V.clienteDraft) V.clienteDraft[t.dataset.k] = t.value; return; }

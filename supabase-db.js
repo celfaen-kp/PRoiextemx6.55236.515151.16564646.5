@@ -62,6 +62,43 @@ export async function actualizarObra(id, cambios) {
  * app ya lo comprueba con lo que tiene en memoria, pero la memoria puede ir
  * atrasada). Los empleados asignados y los días de la obra se van con ella.
  */
+/* ---------------- economía de la obra y costes (sql/etapa59) ----------------
+ * Solo devuelven filas a quien tiene ve_costes() (Administración y
+ * presupuestos): la RLS y las vistas lo garantizan, aquí no se filtra nada. */
+export async function economiaObra(obraId) {
+  const [eco, cats, pres] = await Promise.all([
+    supabase.from('v_obra_economia').select('*').eq('obra_id', obraId).maybeSingle(),
+    supabase.from('v_obra_economia_categoria').select('*').eq('obra_id', obraId),
+    supabase.from('presupuestos').select('id, categoria, total_venta, total_coste, respuesta_cliente, estado, created_at, visita:visitas(id, codigo), cliente:clientes_cache(id, nombre)').eq('obra_id', obraId).order('created_at', { ascending: false }),
+  ]);
+  if (eco.error) throw eco.error;
+  return { eco: eco.data || null, categorias: unwrap(cats) || [], presupuestos: unwrap(pres) || [] };
+}
+/** Los gastos apuntados de una obra (albaranes, materiales de partes, a mano). */
+export async function costesObra(obraId) {
+  return unwrap(await supabase.from('obra_costes').select('*').eq('obra_id', obraId).order('fecha', { ascending: false })) || [];
+}
+export async function anadirCosteObra(fila) {
+  return unwrap(await supabase.from('obra_costes').insert(fila).select().single());
+}
+export async function borrarCosteObra(id) {
+  return unwrap(await supabase.from('obra_costes').delete().eq('id', id).select('id'));
+}
+/** Enlazar a la obra el presupuesto que el cliente aceptó (o quitarlo). */
+export async function enlazarPresupuesto(presupuestoId, obraId) {
+  const cambios = obraId
+    ? { obra_id: obraId, respuesta_cliente: 'aceptado', respondido_at: new Date().toISOString() }
+    : { obra_id: null };
+  return unwrap(await supabase.from('presupuestos').update(cambios).eq('id', presupuestoId).select('id, obra_id').single());
+}
+/** Coste de la hora de cada empleado, con histórico. */
+export async function listarCostesEmpleados() {
+  return unwrap(await supabase.from('empleado_costes').select('*').order('desde', { ascending: false })) || [];
+}
+export async function guardarCosteEmpleado(fila) {
+  return unwrap(await supabase.from('empleado_costes').insert(fila).select().single());
+}
+
 export async function borrarObra(id) {
   const cuenta = async (tabla) => {
     const r = await supabase.from(tabla).select('id', { count: 'exact', head: true }).eq('obra_id', id);
@@ -708,6 +745,7 @@ export async function borrarImputacion(id) {
 export default {
   listarEmpleados, crearEmpleado, actualizarEmpleado,
   listarObras, crearObra, actualizarObra, borrarObra,
+  economiaObra, costesObra, anadirCosteObra, borrarCosteObra, enlazarPresupuesto, listarCostesEmpleados, guardarCosteEmpleado,
   empleadosDeObra, listarAsignaciones, asignarEmpleadoAObra, quitarEmpleadoDeObra,
   fichajeAbierto, ficharEntrada, ficharSalida, corregirFichaje, crearFichajeManual, importarFichajes, borrarFichaje,
   fichajesDelDia, listarFichajes, escucharFichajes,

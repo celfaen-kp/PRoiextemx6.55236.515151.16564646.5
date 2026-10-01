@@ -136,6 +136,9 @@ function marcoCorreo({ preheader, cuerpo }: { preheader: string; cuerpo: string 
 </body></html>`;
 }
 
+// REGLA FIJA: el parte que sale de aquí (PDF, correo, Drive) NUNCA lleva
+// importes ni costes. Los costes viven en obra_costes / empleado_costes y solo
+// los ve quien tiene ve_costes() dentro de la app. No añadir precios aquí.
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
   if (req.method !== 'POST') return json({ error: 'Método no permitido.' }, 405);
