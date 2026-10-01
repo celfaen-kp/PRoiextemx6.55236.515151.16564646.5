@@ -56,6 +56,30 @@ export async function actualizarObra(id, cambios) {
   return unwrap(await supabase.from('obras').update(cambios).eq('id', id).select().single());
 }
 
+/**
+ * Borra una obra que no tiene actividad. Antes mira en la base si tiene
+ * partes, fichajes u horas imputadas: si tiene, no borra y dice por qué (la
+ * app ya lo comprueba con lo que tiene en memoria, pero la memoria puede ir
+ * atrasada). Los empleados asignados y los días de la obra se van con ella.
+ */
+export async function borrarObra(id) {
+  const cuenta = async (tabla) => {
+    const r = await supabase.from(tabla).select('id', { count: 'exact', head: true }).eq('obra_id', id);
+    if (r.error) throw r.error;
+    return r.count || 0;
+  };
+  const [partes, fichajes, imputaciones] = await Promise.all([cuenta('partes'), cuenta('fichajes'), cuenta('imputaciones')]);
+  if (partes || fichajes || imputaciones) {
+    const que = [partes && `${partes} parte${partes > 1 ? 's' : ''}`, fichajes && `${fichajes} fichaje${fichajes > 1 ? 's' : ''}`, imputaciones && `${imputaciones} hora${imputaciones > 1 ? 's' : ''} imputada${imputaciones > 1 ? 's' : ''}`].filter(Boolean).join(', ');
+    const e = new Error('Esta obra tiene ' + que + '. Ciérrala en vez de borrarla.'); e.conActividad = true; throw e;
+  }
+  await supabase.from('obra_empleados').delete().eq('obra_id', id);
+  const r = await supabase.from('obras').delete().eq('id', id).select('id');
+  if (r.error) throw r.error;
+  if (!r.data || !r.data.length) throw new Error('No se ha borrado: puede que no tengas permiso (falta la etapa 57) o que ya no exista.');
+  return true;
+}
+
 export async function empleadosDeObra(obraId) {
   return unwrap(await supabase.from('obra_empleados').select('empleado_id').eq('obra_id', obraId));
 }
@@ -683,7 +707,7 @@ export async function borrarImputacion(id) {
 
 export default {
   listarEmpleados, crearEmpleado, actualizarEmpleado,
-  listarObras, crearObra, actualizarObra,
+  listarObras, crearObra, actualizarObra, borrarObra,
   empleadosDeObra, listarAsignaciones, asignarEmpleadoAObra, quitarEmpleadoDeObra,
   fichajeAbierto, ficharEntrada, ficharSalida, corregirFichaje, crearFichajeManual, importarFichajes, borrarFichaje,
   fichajesDelDia, listarFichajes, escucharFichajes,

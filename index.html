@@ -351,7 +351,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '18.2'; // versión visible de la app (única fuente)
+const APP_VERSION = '18.3'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -2323,6 +2323,29 @@ A.cerrarObra = async (id) => {
   try { await Sysefen.db.actualizarObra(id, { estado: nuevo }); await sincronizarObras(); render(); }
   catch (e) { avisar('No se pudo cambiar el estado: ' + (e && e.message ? e.message : 'error')); }
 };
+// Borrar una obra: solo si está vacía (sin partes, fichajes ni horas). Lo
+// normal es que sea una obra creada dos veces. Si tiene actividad, se cierra.
+const obraTieneActividad = (id) => {
+  const partes = S.partes.filter((p) => p.obraId === id && p.estado !== 'anulado').length;
+  const fich = S.fichajes.filter((f) => f.obraId === id).length;
+  const imp = S.imputaciones.filter((i) => i.categoria === 'obra' && i.obraId === id).length;
+  return [partes && `${partes} parte${partes > 1 ? 's' : ''}`, fich && `${fich} fichaje${fich > 1 ? 's' : ''}`, imp && 'horas imputadas'].filter(Boolean).join(', ');
+};
+A.borrarObra = (id) => { const o = obraById(id); if (!o) return; V.sheet = { tipo: 'borrarObra', id, actividad: obraTieneActividad(id), busy: false }; render(); };
+A.confirmarBorrarObra = async () => {
+  const s = V.sheet; if (!s || s.tipo !== 'borrarObra' || s.busy) return;
+  if (!navigator.onLine) { avisar('Sin conexión: no se ha borrado.'); return; }
+  s.busy = true; render();
+  try {
+    await Sysefen.db.borrarObra(s.id);
+    V.sheet = null; V.view = 'obras';
+    await sincronizarObras(); render();
+    toast('Obra borrada.');
+  } catch (e) {
+    V.sheet = null; render();
+    avisar(e && e.conActividad ? e.message : 'No se pudo borrar: ' + (e && e.message ? e.message : 'error'));
+  }
+};
 A.imprimirHorasObra = () => { imprimirHorasObra(V.obraId, V.obraRango || 'total'); };
 A.exportarHorasObraCSV = async () => {
   { const o = obraById(V.obraId); if (o && o.creado_en) await asegurarDesde(String(o.creado_en).slice(0, 10)); }
@@ -3517,17 +3540,36 @@ function vHoyAdmin(u) {
 
 /* --- obras --- */
 function vObras() {
-  // Todo el equipo ve todas las obras: por orden alfabético, las cerradas al final.
-  const lista = [...S.obras].sort((a, b) => (a.estado === 'Cerrada') - (b.estado === 'Cerrada') || porTitulo(a, b));
+  // Todo el equipo ve todas las obras, por orden alfabético. Dos pestañas:
+  // las que están en marcha y las cerradas, para que estas no estorben.
+  const cerradas = V.obrasTab === 'cerradas';
+  const todas = [...S.obras].sort(porTitulo);
+  const enCurso = todas.filter((o) => o.estado !== 'Cerrada'), cerr = todas.filter((o) => o.estado === 'Cerrada');
   return `<div class="hdr">
     ${marcaSysefen(false)}
     <div class="row" style="justify-content:space-between">
       <div class="h1">Obras</div>
       ${puedeCrear() ? '<button class="pill" data-a="nuevaObra" style="background:var(--tinta);color:#fff">+ Nueva</button>' : ''}
     </div>
-    <div class="sub" style="margin-top:8px">${lista.filter((o) => o.estado !== 'Cerrada').length} en curso · ${lista.filter((o) => o.estado === 'Cerrada').length} cerradas</div>
+    <input class="inp" id="obras-buscar" data-f="obrasBuscar" value="${esc(V.obrasBuscar || '')}" placeholder="Obra, cliente o dirección" autocomplete="off" style="margin-top:14px">
+    <div class="wrap" style="margin-top:12px">
+      <span class="chip ${!cerradas ? 'on' : ''}" data-a="obrasTab" data-t="curso" style="cursor:pointer">En curso · ${enCurso.length}</span>
+      <span class="chip ${cerradas ? 'on' : ''}" data-a="obrasTab" data-t="cerradas" style="cursor:pointer">Cerradas${cerr.length ? ' · ' + cerr.length : ''}</span>
+    </div>
   </div>
-  <div class="scroll pad pb-nav">
+  <div class="scroll pad pb-nav"><div id="obras-lista">${obrasListaHTML()}</div></div>`;
+}
+
+// La lista de obras de la pestaña elegida, filtrada por lo que se ha escrito.
+// Va aparte para repintar solo esto al teclear, sin perder el foco de la caja.
+function obrasListaHTML() {
+  const cerradas = V.obrasTab === 'cerradas';
+  const q = String(V.obrasBuscar || '').trim().toLowerCase();
+  let lista = [...S.obras].sort(porTitulo).filter((o) => (o.estado === 'Cerrada') === cerradas);
+  if (q) lista = lista.filter((o) => [o.titulo, o.cliente, o.dir].some((v) => String(v || '').toLowerCase().includes(q)));
+  if (!lista.length && q) return `<div class="card"><div class="sub">Ninguna obra ${cerradas ? 'cerrada' : 'en curso'} con «${esc(q)}».${cerradas ? '' : (S.obras.some((o) => o.estado === 'Cerrada' && [o.titulo, o.cliente, o.dir].some((v) => String(v || '').toLowerCase().includes(q))) ? ' Mira en «Cerradas».' : '')}</div></div>`;
+  return `
+    ${!lista.length && cerradas ? '<div class="card"><div class="h2">Ninguna obra cerrada</div><div class="sub" style="margin-top:6px">Cuando una obra se da por terminada, desde su ficha se marca como cerrada y pasa aquí.</div></div>' : ''}
     ${lista.length ? lista.map((o) => `<div class="card" data-a="verObra" data-id="${o.id}" style="margin-bottom:11px;cursor:pointer">
       <div class="row g8"><span class="dot" style="width:8px;height:8px;background:${o.estado === 'Cerrada' ? 'rgba(20,23,15,.22)' : 'var(--verde)'}"></span><span class="lbl">${esc(o.estado)}</span>
 </div>
@@ -3539,8 +3581,8 @@ function vObras() {
         <div class="grow"></div>
         <div class="tiny ell" style="max-width:140px">${empleadosDeObra(o.id).map((x) => esc(x.nombre)).join(' · ')}</div>
       </div>
-    </div>`).join('') : `<div class="card"><div class="h2">Sin obras todavía</div><div class="sub" style="margin-top:6px">${puedeCrear() ? 'Dale a “+ Nueva” para crear la primera.' : 'Todavía no hay obras dadas de alta.'}</div></div>`}
-  </div>`;
+    </div>`).join('') : (cerradas ? '' : `<div class="card"><div class="h2">Sin obras todavía</div><div class="sub" style="margin-top:6px">${puedeCrear() ? 'Dale a “+ Nueva” para crear la primera.' : 'Todavía no hay obras dadas de alta.'}</div></div>`)}
+  `;
 }
 const OBRA_RANGOS = [['hoy', 'Hoy'], ['semana', 'Semana'], ['mes', 'Mes'], ['total', 'Total']];
 function vObra() {
@@ -3594,7 +3636,9 @@ function vObra() {
     ${puedeCrear() ? docsObraHTML(o) : ''}
     <div class="lbl" style="font-weight:600;font-size:12px;color:var(--t2);margin:22px 0 10px">Partes de esta obra</div>
     ${partes.length ? partes.map(cardParte).join('') : '<div class="card"><div class="sub">Todavía no hay partes en esta obra.</div></div>'}
-    ${puedeCrear() ? `<button class="btn btn-gris" data-a="cerrarObra" data-id="${o.id}" style="margin-top:14px;border-radius:99px">${o.estado === 'Cerrada' ? 'Reabrir obra' : 'Marcar obra como cerrada'}</button>` : ''}
+    ${puedeCrear() ? `<button class="btn btn-gris" data-a="cerrarObra" data-id="${o.id}" style="margin-top:14px;border-radius:99px">${o.estado === 'Cerrada' ? 'Reabrir obra' : 'Marcar obra como cerrada'}</button>
+    <button class="btn" data-a="borrarObra" data-id="${o.id}" style="margin-top:10px;border-radius:99px;background:none;color:var(--rojo);box-shadow:inset 0 0 0 1.5px var(--rojo)">Borrar obra</button>
+    <div class="tiny" style="text-align:center;margin-top:8px">Solo se puede borrar una obra sin partes ni horas. Si se creó dos veces, borra la que esté vacía.</div>` : ''}
   </div>`;
 }
 /* --- albaranes y recibos de la obra (control interno: jefe y admin) --- */
@@ -9226,6 +9270,25 @@ function sheet() {
       <div data-a="compartirParte" data-id="${esc(s.id)}" class="tiny" style="margin-top:12px;text-align:center;text-decoration:underline;cursor:pointer">O compartirlo yo (WhatsApp, otro correo…)</div>
     </div></div>`;
   }
+  if (s.tipo === 'borrarObra') {
+    const o = obraById(s.id) || {};
+    return `<div class="sheet"><div>
+      <div style="font:600 25px/1.15 var(--cond)">${s.actividad ? 'Esta obra no se puede borrar' : '¿Borrar esta obra?'}</div>
+      <div class="sub" style="margin-top:8px"><b>${esc(o.titulo || '')}</b>${o.cliente ? ' · ' + esc(o.cliente) : ''}</div>
+      ${s.actividad
+        ? `<div class="sub" style="margin-top:10px">Tiene ${esc(s.actividad)}. Las obras con actividad se cierran, no se borran: así no se pierde nada de lo fichado ni de los partes.</div>
+           <div class="row g8" style="margin-top:20px">
+             <button class="btn btn-gris" data-a="cerrarSheet" style="border-radius:99px">Cerrar</button>
+             ${o.estado !== 'Cerrada' ? `<button class="btn btn-verde" data-a="cerrarObraYSalir" data-id="${s.id}" style="font-size:14px">Marcar como cerrada</button>` : ''}
+           </div>`
+        : `<div class="sub" style="margin-top:10px">No tiene partes, fichajes ni horas. Se borra del todo, con los empleados asignados. <b>No se puede deshacer.</b></div>
+           ${(o.driveId || o.drive_id) ? '<div class="sub" style="margin-top:8px">La carpeta de Drive NO se borra: quítala tú desde Drive si quieres.</div>' : ''}
+           <div class="row g8" style="margin-top:20px">
+             <button class="btn btn-gris" data-a="cerrarSheet" style="border-radius:99px">Cancelar</button>
+             <button class="btn btn-rojo" data-a="confirmarBorrarObra" style="font-size:14px" ${s.busy ? 'disabled' : ''}>${s.busy ? 'Borrando…' : 'Sí, borrar'}</button>
+           </div>`}
+    </div></div>`;
+  }
   if (s.tipo === 'borrarParte') {
     const p = S.partes.find((x) => x.id === s.id);
     return `<div class="sheet"><div>
@@ -9574,6 +9637,10 @@ document.addEventListener('click', (e) => {
   if (a === 'confirmarEnvioParte') return A.confirmarEnvioParte();
   if (a === 'borrarParte') { e.stopPropagation(); return A.borrarParte(d.id); }
   if (a === 'confirmarBorrarParte') return A.confirmarBorrarParte();
+  if (a === 'borrarObra') return A.borrarObra(d.id);
+  if (a === 'confirmarBorrarObra') return A.confirmarBorrarObra();
+  if (a === 'cerrarObraYSalir') { V.sheet = null; return A.cerrarObra(d.id); }
+  if (a === 'obrasTab') { V.obrasTab = d.t; return render(); }
   if (a === 'tabHoras') return A.tabHoras(d.t);
   if (a === 'abrirImputar') return A.abrirImputar();
   if (a === 'abrirResumenImp') return A.abrirResumenImp();
@@ -9661,6 +9728,7 @@ document.addEventListener('input', (e) => {
   }
   if (!f) return;
   if (f.startsWith('vf')) return A.vf(f, t.dataset, t.value);
+  if (f === 'obrasBuscar') { V.obrasBuscar = t.value; const box = document.getElementById('obras-lista'); if (box) box.innerHTML = obrasListaHTML(); return; }
   if (f === 'ag_buscar') { V.agenda.buscar = t.value; const box = document.getElementById('clientes-lista'); if (box) box.innerHTML = clientesListaHTML(); return; }
   if (f === 'ag_cli') { if (V.clienteDraft) V.clienteDraft[t.dataset.k] = t.value; return; }
   if (f === 'ag_cita') { if (V.citaDraft) V.citaDraft[t.dataset.k] = t.value; return; }
