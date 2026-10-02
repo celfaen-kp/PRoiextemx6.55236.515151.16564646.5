@@ -368,7 +368,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '19.0'; // versión visible de la app (única fuente)
+const APP_VERSION = '19.1'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -7833,7 +7833,7 @@ function vPresupuestos() {
     ${!l.cargado && l.cargando ? '<div class="tiny">Cargando…</div>' : ''}
     ${l.filas.map((x) => `<div class="card" data-a="presuAbrir" data-id="${x.id}" style="margin-bottom:10px;cursor:pointer">
       <div class="row g8"><span class="badge" style="background:rgba(20,23,15,.06);color:var(--tinta)">${esc(nombreCat(x.categoria) || x.categoria)}</span>
-        ${x.estado === 'revisar' ? '<span class="badge" style="background:var(--rojo-cl);color:var(--rojo)">Por revisar</span>' : ''}
+        ${(() => { const sg = seguimientoPresu(x); return `<span class="badge" style="background:${sg.k === 'aceptado' ? '#e3efe5' : sg.k === 'rechazado' ? 'var(--rojo-cl)' : sg.k === 'esperando' ? '#f8efdc' : 'rgba(20,23,15,.06)'};color:${sg.color}">${esc(sg.txt)}</span>`; })()}
         <div class="grow"></div><span class="tiny">${fechaCorta(x.created_at)}</span></div>
       <div class="h2" style="margin-top:9px">${esc(x.titulo || (x.cliente && x.cliente.nombre) || 'Sin título')}</div>
       <div class="row" style="align-items:baseline;justify-content:space-between;margin-top:8px">
@@ -8306,10 +8306,78 @@ function vPresupuestoVer() {
            <div class="tiny" style="margin-top:6px;text-align:center">Se crea la oferta en el CRM. Al cliente se la mandas tú desde allí.</div>`}
       ${d.sync_estado === 'error' && d.sync_error ? `<div class="tiny" style="margin-top:8px;color:var(--rojo)">${esc(d.sync_error)}</div>` : ''}
     </div>
+    ${seguimientoHTML(d)}
     <button class="btn" data-a="presuBorrar" data-id="${d.id}" style="margin-top:14px;border-radius:99px;background:none;color:var(--rojo);box-shadow:inset 0 0 0 1.5px var(--rojo)">Borrar presupuesto</button>
     <div class="tiny" style="text-align:center;margin-top:8px">Para pruebas y duplicados. Si ya está en Teamleader, la oferta de allí se queda: quítala desde el CRM.</div>` : ''}
   </div>`;
 }
+// El seguimiento del presupuesto, en su ficha: los pasos de crearlo a la
+// respuesta del cliente, y los botones para marcar cada uno (sql/etapa64).
+const CAT_A_OBRA = { aerotermia: 'AE', solar: 'FV', aire_acondicionado: 'AC' };
+function seguimientoHTML(d) {
+  const sg = seguimientoPresu(d);
+  const ob = d.obra_id ? obraById(d.obra_id) : null;
+  const pasos = [
+    ['Creado', fechaCorta(d.created_at), true],
+    ['En Teamleader', d.tl_quotation_id ? 'subido' : 'sin subir', !!d.tl_quotation_id],
+    ['Revisado y enviado al cliente', d.enviado_cliente_at ? fechaCorta(d.enviado_cliente_at) + (d.enviado_cliente_por ? ' · ' + agNombreEmp(d.enviado_cliente_por) : '') : 'pendiente', !!(d.enviado_cliente_at || d.estado === 'enviado')],
+    ['Respuesta del cliente', d.respuesta_cliente && d.respuesta_cliente !== 'pendiente' ? { aceptado: 'Aceptado', rechazado: 'Rechazado', caducado: 'Caducado' }[d.respuesta_cliente] + (d.respondido_at ? ' · ' + fechaCorta(d.respondido_at) : '') : 'esperando', d.respuesta_cliente && d.respuesta_cliente !== 'pendiente'],
+  ];
+  const busy = V.presuSegBusy;
+  return `<div class="card" style="margin-top:12px;padding:12px 15px">
+    <div class="row g8" style="align-items:center"><span class="dot" style="width:10px;height:10px;background:${sg.color}"></span><span style="font:600 15px var(--sans)">${esc(sg.txt)}</span></div>
+    <div style="margin-top:10px">${pasos.map(([t, sub, ok]) => `<div class="row g10" style="align-items:center;padding:7px 0;border-bottom:1px solid var(--l1)">
+      <span class="dot" style="width:9px;height:9px;background:${ok ? 'var(--verde)' : 'rgba(20,23,15,.15)'}"></span>
+      <span class="grow" style="font:500 14px var(--sans);${ok ? '' : 'color:var(--t2)'}">${t}</span><span class="tiny">${esc(sub)}</span></div>`).join('')}</div>
+    ${!(d.enviado_cliente_at || d.estado === 'enviado') ? `<button class="btn btn-verde" data-a="presuEnviadoCliente" style="margin-top:12px" ${busy ? 'disabled' : ''}>Ya lo revisé y se lo envié al cliente</button>
+      <div class="tiny" style="margin-top:6px;text-align:center">${d.tl_quotation_id ? 'Revísalo en Teamleader y mándaselo desde allí; aquí solo se apunta.' : 'Normalmente primero se sube a Teamleader, se revisa y se envía desde allí.'}</div>`
+    : `<div class="lbl" style="margin:12px 0 6px">¿Qué dijo el cliente?</div>
+      <div class="row g8" style="flex-wrap:wrap">${[['pendiente', 'Esperando'], ['aceptado', 'Aceptó'], ['rechazado', 'Rechazó'], ['caducado', 'Caducó']].map(([k, l]) => `<span class="chip ${(d.respuesta_cliente || 'pendiente') === k ? 'on' : ''}" data-a="presuRespuesta" data-r="${k}" style="cursor:pointer;${k === 'aceptado' && (d.respuesta_cliente || 'pendiente') === k ? 'background:var(--verde);border-color:var(--verde)' : ''}">${l}</span>`).join('')}</div>
+      ${d.respuesta_cliente === 'rechazado' ? `<input class="inp" data-f="presuMotivoRechazo" value="${esc(d.motivo_rechazo || '')}" placeholder="Por qué (precio, otra empresa, lo aplaza…)" style="margin-top:10px">` : ''}
+      ${d.respuesta_cliente === 'aceptado' ? (ob
+        ? `<button class="btn btn-gris" data-a="verObra" data-id="${ob.id}" style="margin-top:12px;border-radius:99px">Ver la obra ${esc(codigoObra(ob) || ob.titulo)}</button>`
+        : `<button class="btn btn-verde" data-a="presuCrearObra" style="margin-top:12px" ${busy ? 'disabled' : ''}>${busy ? 'Creando…' : 'Crear la obra con este presupuesto'}</button>
+           <div class="tiny" style="margin-top:6px;text-align:center">Se crea con el cliente, la dirección de la visita y la categoría, y el presupuesto queda enlazado para la economía.</div>`) : ''}`}
+  </div>`;
+}
+A.presuEnviadoCliente = async () => {
+  const d = V.presuVer && V.presuVer.datos; if (!d || V.presuSegBusy) return;
+  V.presuSegBusy = true; render();
+  try { Object.assign(d, await visitasDB.seguimientoPresupuesto(d.id, { estado: 'enviado', enviado_cliente_at: new Date().toISOString(), enviado_cliente_por: miEmpId() || null })); toast('Apuntado: enviado al cliente.'); }
+  catch (e) { avisar(/enviado_cliente/i.test(msgError(e)) ? 'Falta ejecutar sql/etapa64 en Supabase.' : 'No se pudo guardar: ' + msgError(e)); }
+  V.presuSegBusy = false; render();
+};
+A.presuRespuesta = async (r) => {
+  const d = V.presuVer && V.presuVer.datos; if (!d || V.presuSegBusy) return;
+  V.presuSegBusy = true; render();
+  try { Object.assign(d, await visitasDB.seguimientoPresupuesto(d.id, { respuesta_cliente: r, respondido_at: r === 'pendiente' ? null : new Date().toISOString() })); if (V.agenda.cargado) A.cargarAgenda(); }
+  catch (e) { avisar('No se pudo guardar: ' + msgError(e)); }
+  V.presuSegBusy = false; render();
+};
+A.presuMotivoRechazo = async (txt) => {
+  const d = V.presuVer && V.presuVer.datos; if (!d) return;
+  try { Object.assign(d, await visitasDB.seguimientoPresupuesto(d.id, { motivo_rechazo: (txt || '').trim() || null })); } catch (_) { /* se reintenta al escribir más */ }
+};
+// La obra nace del presupuesto aceptado: cliente, dirección y categoría ya puestos.
+A.presuCrearObra = async () => {
+  const d = V.presuVer && V.presuVer.datos; if (!d || V.presuSegBusy) return;
+  if (!navigator.onLine) { avisar('Sin conexión.'); return; }
+  V.presuSegBusy = true; render();
+  try {
+    const cli = d.cliente || {};
+    const cliFull = cli.id ? (agCliente(cli.id) || cli) : cli;
+    const campos = { nombre: cliFull.nombre || d.titulo || 'Obra', cliente: cliFull.nombre || null, direccion: cliFull.direccion || null, email_cliente: cliFull.email || null };
+    if (columnaObra('categorias')) { campos.categorias = CAT_A_OBRA[d.categoria] ? [CAT_A_OBRA[d.categoria]] : []; campos.poblacion = cliFull.poblacion || null; }
+    if (columnaObra('cliente_id') && cli.id) campos.cliente_id = cli.id;
+    if (columnaObra('tl_id') && cliFull.tl_id) { campos.tl_id = cliFull.tl_id; campos.tl_tipo = cliFull.tl_tipo || 'contact'; }
+    const obra = await Sysefen.db.crearObra(campos);
+    await Sysefen.db.enlazarPresupuesto(d.id, obra.id);
+    d.obra_id = obra.id;
+    await sincronizarObras(); await sincronizarFases();
+    toast('Obra creada: ' + (obra.numero != null ? codigoObra({ numero: obra.numero }) : campos.nombre));
+    V.presuSegBusy = false; A.verObra(obra.id);
+  } catch (e) { V.presuSegBusy = false; avisar('No se pudo crear la obra: ' + msgError(e)); render(); }
+};
 // Borrar un presupuesto: con confirmación. Lo normal es que sea una prueba.
 A.presuBorrar = (id) => { const d = V.presuVer && V.presuVer.datos; if (!d || d.id !== id) return; V.sheet = { tipo: 'borrarPresu', id, busy: false }; render(); };
 A.confirmarBorrarPresu = async () => {
@@ -8393,9 +8461,39 @@ A.agContactado = async (id, estado) => {
   } catch (e) { avisar(/contacto_|schema cache/i.test(msgError(e)) ? 'Falta ejecutar sql/etapa56 en Supabase.' : 'No se pudo guardar: ' + msgError(e)); }
 };
 
+// Los presupuestos de un cliente: los suyos directos y los de sus visitas.
+const presupuestosDeCliente = (c) => {
+  const vistos = new Set(); const out = [];
+  [...(c.presupuestos || []), ...(c.visitas || []).flatMap((v) => v.presupuestos || [])].forEach((p) => { if (p && !vistos.has(p.id)) { vistos.add(p.id); out.push(p); } });
+  return out.sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
+};
+// En qué punto está un presupuesto (sql/etapa64): de crearlo a la respuesta del cliente.
+function seguimientoPresu(p) {
+  if (!p) return null;
+  if (p.respuesta_cliente === 'aceptado') return { k: 'aceptado', color: 'var(--verde)', txt: 'Aceptado', paso: 5 };
+  if (p.respuesta_cliente === 'rechazado') return { k: 'rechazado', color: 'var(--rojo)', txt: 'Rechazado', paso: 5 };
+  if (p.respuesta_cliente === 'caducado') return { k: 'rechazado', color: 'var(--t3)', txt: 'Caducado', paso: 5 };
+  if (p.enviado_cliente_at || p.estado === 'enviado') return { k: 'esperando', color: 'var(--ambar)', txt: 'Enviado al cliente · esperando', paso: 4 };
+  if (p.tl_quotation_id) return { k: 'presupuestado', color: 'var(--tinta)', txt: 'En Teamleader · por revisar y enviar', paso: 3 };
+  if (p.estado === 'revisar') return { k: 'presupuestado', color: 'var(--rojo)', txt: 'Por revisar · sin subir', paso: 2 };
+  return { k: 'presupuestado', color: 'var(--tinta)', txt: 'Hecho · sin subir a Teamleader', paso: 2 };
+}
+// El presupuesto que manda para el estado del cliente: el aceptado si lo hay;
+// si no, el más avanzado; si no, el más nuevo.
+function presuQueManda(c) {
+  const ps = presupuestosDeCliente(c);
+  if (!ps.length) return null;
+  const ac = ps.find((p) => p.respuesta_cliente === 'aceptado'); if (ac) return ac;
+  const vivos = ps.filter((p) => !['rechazado', 'caducado'].includes(p.respuesta_cliente));
+  const lista = vivos.length ? vivos : ps;
+  return lista.slice().sort((a, b) => seguimientoPresu(b).paso - seguimientoPresu(a).paso || String(b.created_at).localeCompare(String(a.created_at)))[0];
+}
 function agEstadoCliente(c) {
   const vis = c.visitas || [];
   const pend = (c.citas || []).filter((x) => x.estado === 'pendiente');
+  // Con presupuesto, manda el presupuesto: es lo último que ha pasado.
+  const pm = presuQueManda(c);
+  if (pm) { const sg = seguimientoPresu(pm); return { k: sg.k, color: sg.color, txt: 'Presupuesto · ' + sg.txt.toLowerCase() }; }
   if (vis.some((v) => v.sync_estado === 'sincronizada')) return { k: 'teamleader', color: 'var(--verde)', txt: 'En Teamleader' };
   const prox = pend.filter((x) => x.inicio).sort((a, b) => a.inicio.localeCompare(b.inicio))[0];
   if (prox) return { k: 'citado', color: 'var(--ambar)', txt: 'Citado · ' + (agDiaDe(prox.inicio) === agHoy() ? 'hoy' : fechaCorta(prox.inicio)) + ' ' + agHora(prox.inicio) };
@@ -9165,7 +9263,7 @@ function clientesListaHTML() {
 function vClientes() {
   const ag = V.agenda;
   const cuenta = (k) => ag.clientes.filter((c) => k === 'sin_contactar' ? (agEstadoCliente(c).k === 'sin_cita' && c.contacto_estado !== 'contactado') : agEstadoCliente(c).k === k).length;
-  const filtros = [['todos', 'Todos'], ['sin_contactar', 'Sin contactar'], ['sin_cita', 'Sin cita'], ['citado', 'Citados'], ['visitado', 'Visitados'], ['teamleader', 'En Teamleader']];
+  const filtros = [['todos', 'Todos'], ['sin_contactar', 'Sin contactar'], ['sin_cita', 'Sin cita'], ['citado', 'Citados'], ['visitado', 'Visitados'], ['teamleader', 'En Teamleader'], ['presupuestado', 'Presup. por enviar'], ['esperando', 'Esperando respuesta'], ['aceptado', 'Aceptados'], ['rechazado', 'Rechazados']];
   return `<div class="hdr">
     <div class="row" style="justify-content:space-between">
       <div class="h1">Clientes</div>
@@ -9215,6 +9313,7 @@ function webListaHTML() {
       <span class="tiny">Llegó ${cuando(c.lead_at)}</span></div>
     <div class="h2" style="margin-top:9px">${esc(c.nombre)}</div>
     <div class="sub" style="margin-top:4px">${esc([agTipoNombre(c), c.telefono, c.poblacion].filter(Boolean).join(' · ') || 'Sin más datos')}</div>
+    ${c.motivo_web ? `<div style="margin-top:8px;padding:8px 10px;border-radius:10px;background:#f8efdc;color:var(--ambar-o);font:500 13px/1.4 var(--sans);display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden">${esc(c.motivo_web)}</div>` : ''}
     ${agContactadoTxt(c) ? `<div class="tiny" style="margin-top:8px;color:${c.contacto_estado === 'contactado' ? 'var(--ambar-o)' : 'var(--rojo)'}">${esc(agContactadoTxt(c))}</div>` : ''}
     ${puedeCitar() ? `<div class="row g8" style="margin-top:12px;flex-wrap:wrap">${agContactoBotones(c)}
       <button class="pill pill-verde grow" data-a="ag_nuevaCita" data-id="${c.id}" style="padding:8px 14px;text-align:center">Citar</button></div>` : ''}
@@ -9497,9 +9596,19 @@ function vClienteVer() {
   const items = [
     ...citas.map((x) => ({ t: x.inicio || x.created_at || '', tipo: 'cita', x })),
     ...visitasCli.map((v) => ({ t: v.fecha_visita ? v.fecha_visita + 'T12:00' : '', tipo: 'visita', v })),
+    ...presupuestosDeCliente(c).map((p) => ({ t: p.created_at || '', tipo: 'presupuesto', p })),
   ].sort((p, q) => String(q.t).localeCompare(String(p.t)));
 
   const hito = (it) => {
+    if (it.tipo === 'presupuesto') {
+      const p = it.p, sg = seguimientoPresu(p);
+      const ob = p.obra_id ? obraById(p.obra_id) : null;
+      return `<div class="ag-hito ${sg.k === 'aceptado' ? 'ahora' : 'hecho'}"><div class="card" data-a="presuAbrir" data-id="${p.id}" style="cursor:pointer">
+        <div class="row g8"><span class="dot" style="width:8px;height:8px;background:${sg.color}"></span><span class="lbl">Presupuesto · ${esc(sg.txt)}</span></div>
+        <div class="row" style="align-items:baseline;justify-content:space-between;margin-top:7px"><span style="font:600 15px/1.25 var(--sans)">${esc(nombreCat(p.categoria) || p.categoria)}</span><span class="num" style="font-size:16px">${eur(p.total_venta)}</span></div>
+        <div class="tiny" style="margin-top:3px">${fechaCorta(p.created_at)}${p.enviado_cliente_at ? ' · enviado al cliente el ' + fechaCorta(p.enviado_cliente_at) : ''}${ob ? ' · obra ' + esc(codigoObra(ob) || ob.titulo) : ''}</div>
+      </div></div>`;
+    }
     if (it.tipo === 'cita') {
       const x = it.x;
       const futura = x.estado === 'pendiente';
@@ -9549,6 +9658,10 @@ function vClienteVer() {
         ${agContactoBotones(c)}
         ${c.contacto_estado ? `<button class="pill" data-a="ag_contactado" data-id="${c.id}" data-e="quitar" style="padding:8px 10px;background:var(--l1);color:var(--tinta)">Quitar</button>` : ''}
       </div>
+    </div>` : ''}
+    ${c.motivo_web ? `<div class="card" style="padding:12px 15px;margin-bottom:18px;box-shadow:0 0 0 1.5px var(--ambar),var(--sh)">
+      <div class="lbl" style="color:var(--ambar-o)">Qué pidió por la web</div>
+      <div style="font:500 14px/1.45 var(--sans);margin-top:6px;white-space:pre-wrap">${esc(c.motivo_web)}</div>
     </div>` : ''}
     ${agCarpetaHTML(c)}
     ${agCRMHTML(c)}
@@ -10463,6 +10576,9 @@ document.addEventListener('click', (e) => {
   if (a === 'presuQuitarExtra') return A.presuQuitarExtra(d.i);
   if (a === 'borrarVisita') return A.borrarVisita(d.id);
   if (a === 'presuBorrar') return A.presuBorrar(d.id);
+  if (a === 'presuEnviadoCliente') return A.presuEnviadoCliente();
+  if (a === 'presuRespuesta') return A.presuRespuesta(d.r);
+  if (a === 'presuCrearObra') return A.presuCrearObra();
   if (a === 'confirmarBorrarPresu') return A.confirmarBorrarPresu();
   if (a === 'confirmarBorrarVisita') return A.confirmarBorrarVisita();
   if (a === 'cliDriveReintentar') return A.cliDriveReintentar(d.id);
@@ -10690,6 +10806,7 @@ document.addEventListener('input', (e) => {
   }
   if (!f) return;
   if (f.startsWith('vf')) return A.vf(f, t.dataset, t.value);
+  if (f === 'presuMotivoRechazo') { clearTimeout(V._tRech); V._tRech = setTimeout(() => A.presuMotivoRechazo(t.value), 800); return; }
   if (f === 'faseNota') { if (V.sheet) V.sheet.nota = t.value; return; }
   if (f === 'faseNombre') { if (V.sheet) V.sheet.nombre = t.value; return; }
   if (f === 'faseDescripcion') { if (V.sheet) V.sheet.descripcion = t.value; return; }

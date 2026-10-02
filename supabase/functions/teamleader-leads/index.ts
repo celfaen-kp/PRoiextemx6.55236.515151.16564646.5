@@ -133,6 +133,39 @@ async function novedades(token: string, metodo: string, desde: string) {
   return fuera;
 }
 
+// Lo que el cliente escribió al pedir presupuesto por la web. La web lo deja
+// en Teamleader en las observaciones del contacto (remarks), en algún campo
+// personalizado de texto, o en el resumen de la oportunidad que se crea. Se
+// junta todo en un texto para que quien llame sepa de qué va.
+// deno-lint-ignore no-explicit-any
+async function motivoDe(token: string, x: any, esEmpresa: boolean) {
+  const trozos: string[] = [];
+  try {
+    const info = await crm(token, esEmpresa ? 'companies.info' : 'contacts.info', { id: x.id });
+    const d = info?.data || {};
+    if (limpio(d.remarks)) trozos.push(limpio(d.remarks));
+    // deno-lint-ignore no-explicit-any
+    for (const cf of (d.custom_fields || []) as any[]) {
+      const v = cf?.value;
+      if (typeof v === 'string' && limpio(v).length > 3 && !/^\+?[\d\s().-]{6,}$/.test(v) && !/@/.test(v)) trozos.push(limpio(v));
+    }
+  } catch { /* sin detalle: se sigue con lo que haya */ }
+  try {
+    const deals = await crm(token, 'deals.list', {
+      filter: { customer: { type: esEmpresa ? 'company' : 'contact', id: x.id } },
+      page: { size: 5, number: 1 },
+    });
+    // deno-lint-ignore no-explicit-any
+    for (const dl of (deals?.data || []) as any[]) {
+      const titulo = limpio(dl.title), resumen = limpio(dl.summary);
+      if (titulo && !trozos.some((z) => z.includes(titulo))) trozos.push(titulo);
+      if (resumen && !trozos.some((z) => z.includes(resumen))) trozos.push(resumen);
+    }
+  } catch { /* igual */ }
+  // Sin repetir y sin pasarse de largo.
+  return [...new Set(trozos)].join(' · ').slice(0, 1200);
+}
+
 // deno-lint-ignore no-explicit-any
 const primerEmail = (x: any) => limpio((x?.emails || []).find((e: any) => e?.email)?.email);
 // deno-lint-ignore no-explicit-any
@@ -234,6 +267,11 @@ Deno.serve(async (req) => {
     };
     contactos.forEach((x) => preparar(x, false));
     empresas.forEach((x) => preparar(x, true));
+    // Y por qué escribió cada uno (una llamada más al CRM por cliente nuevo).
+    for (const n of nuevas) {
+      const motivo = await motivoDe(token, { id: n.tl_id }, n.tl_tipo === 'company');
+      if (motivo) n.motivo_web = motivo;
+    }
 
     // La marca de agua se mueve al más nuevo que hemos visto, no a "ahora": si
     // entra uno mientras corremos, la próxima pasada lo pilla igual.
@@ -242,12 +280,16 @@ Deno.serve(async (req) => {
 
     if (soloVer) {
       return json({ ok: true, desde, mirados: contactos.length + empresas.length, traeria: nuevas.length,
-        nombres: nuevas.map((n) => n.nombre) });
+        nombres: nuevas.map((n) => n.nombre + (n.motivo_web ? ' — ' + n.motivo_web : '')) });
     }
 
     let guardados = 0;
     if (nuevas.length) {
-      const { error } = await sb.from('clientes_cache').insert(nuevas);
+      let { error } = await sb.from('clientes_cache').insert(nuevas);
+      // Sin la etapa 64 no existe motivo_web: se guardan sin el motivo.
+      if (error && /motivo_web/i.test(error.message)) {
+        ({ error } = await sb.from('clientes_cache').insert(nuevas.map(({ motivo_web: _m, ...resto }) => resto)));
+      }
       if (error) return json({ error: 'No se pudieron guardar: ' + error.message }, 500);
       guardados = nuevas.length;
     }

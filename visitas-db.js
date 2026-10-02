@@ -359,7 +359,7 @@ export async function listarClientesAgenda() {
   return unwrap(
     await supabase
       .from('clientes_cache')
-      .select('*, citas(id, inicio, estado), visitas(id, codigo, estado, sync_estado, fecha_visita)')
+      .select('*, citas(id, inicio, estado), visitas(id, codigo, estado, sync_estado, fecha_visita, presupuestos(id, categoria, estado, respuesta_cliente, tl_quotation_id, total_venta, created_at, enviado_cliente_at, obra_id)), presupuestos(id, categoria, estado, respuesta_cliente, tl_quotation_id, total_venta, created_at, enviado_cliente_at, obra_id)')
       .order('nombre')
   ) || [];
 }
@@ -466,6 +466,14 @@ export async function borrarPresupuesto(id) {
   if (error) throw new Error(error.message);
   if (!data || !data.length) throw new Error('No se ha borrado: puede que no tengas permiso o que ya no exista.');
   return true;
+}
+
+/**
+ * El seguimiento del presupuesto (sql/etapa64): enviado al cliente, respuesta,
+ * obra enlazada. `cambios` lleva solo lo que cambia.
+ */
+export async function seguimientoPresupuesto(id, cambios) {
+  return unwrap(await supabase.from('presupuestos').update(cambios).eq('id', id).select().single());
 }
 
 /** Un presupuesto guardado, con sus líneas y sus incidencias. */
