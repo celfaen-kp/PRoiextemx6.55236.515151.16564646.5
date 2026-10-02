@@ -368,7 +368,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '18.8'; // versión visible de la app (única fuente)
+const APP_VERSION = '18.9'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -913,7 +913,7 @@ async function sincronizarAusencias() {
     S.festivos = (await Sysefen.db.listarFestivos()) || [];
   } catch (e) { registrarError('sincronizarAusencias', e); /* sigue sin vacaciones */ }
 }
-const refrescarDatos = () => esPresupuestos() ? Promise.all([cargarAvatares(), sincronizarObras(), sincronizarPartes(), sincronizarImputaciones()]) : Promise.all([sincronizarFichajes(), sincronizarObras(), sincronizarImputaciones(), sincronizarPartes(), cargarAvatares(), sincronizarAusencias(), sincronizarPlanMio()]);
+const refrescarDatos = () => esPresupuestos() ? Promise.all([cargarAvatares(), sincronizarObras(), sincronizarPartes(), sincronizarImputaciones(), sincronizarFases()]) : Promise.all([sincronizarFichajes(), sincronizarObras(), sincronizarImputaciones(), sincronizarPartes(), cargarAvatares(), sincronizarAusencias(), sincronizarPlanMio(), sincronizarFases()]);
 
 // Ausencia de una persona en un día concreto (o null).
 // Un día puede estar marcado por dos vías: la ausencia PERSONAL (vacaciones de
@@ -2438,6 +2438,181 @@ A.cerrarObra = async (id) => {
   try { await Sysefen.db.actualizarObra(id, { estado: enDB }); await sincronizarObras(); render(); }
   catch (e) { avisar('No se pudo cambiar el estado: ' + (e && e.message ? e.message : 'error')); }
 };
+/* ---------- el proyecto de la obra: fases con avance (sql/etapa63) ---------------
+ * Cada obra tiene sus fases (pedido de material, fijaciones, paneles…) con un
+ * porcentaje. Se actualizan desde el parte o a mano en la ficha. La obra
+ * enseña su avance global y se finaliza sola al llegar todo al 100 %.
+ * ------------------------------------------------------------------------------- */
+S.fases = S.fases || [];
+const PCTS = [0, 25, 50, 75, 100];
+const faltaEtapa63 = (e) => /obra_fases|parte_fases|fase_plantillas|schema cache|PGRST205/i.test(typeof e === 'string' ? e : msgError(e));
+let sincFases = false;
+async function sincronizarFases() {
+  if (!V.user || sincFases) return;
+  sincFases = true;
+  try { S.fases = await Sysefen.db.listarFases(); V.fasesCargadas = true; }
+  catch (e) { /* sin la etapa 63 no hay fases: no se enseña nada */ V.fasesCargadas = false; }
+  finally { sincFases = false; }
+}
+const fasesDe = (obraId) => S.fases.filter((f) => f.obra_id === obraId).sort((a, b) => a.orden - b.orden || String(a.nombre).localeCompare(String(b.nombre), 'es'));
+const faseById = (id) => S.fases.find((f) => f.id === id) || null;
+// Avance global: media de las fases que aplican. null si la obra no tiene fases.
+function avanceObra(obraId) {
+  const fs = fasesDe(obraId).filter((f) => !f.no_aplica);
+  if (!fs.length) return null;
+  const pct = Math.round(fs.reduce((t, f) => t + (Number(f.pct) || 0), 0) / fs.length);
+  return { pct, hechas: fs.filter((f) => Number(f.pct) === 100).length, total: fs.length };
+}
+const CAT_NOMBRE = { AE: 'Aerotermia', FV: 'Fotovoltaica', AC: 'Aire acondicionado' };
+// Las fases agrupadas: comunes de arranque, cada categoría, comunes de cierre.
+function fasesAgrupadas(obraId) {
+  const fs = fasesDe(obraId);
+  const grupos = [];
+  const mete = (clave, titulo, lista) => { if (lista.length) grupos.push({ clave, titulo, fases: lista }); };
+  mete('ini', 'Preparación', fs.filter((f) => !f.categoria && f.orden < 500));
+  ['AE', 'FV', 'AC'].forEach((k) => mete(k, CAT_NOMBRE[k], fs.filter((f) => f.categoria === k)));
+  mete('fin', 'Cierre', fs.filter((f) => !f.categoria && f.orden >= 500));
+  return grupos;
+}
+const barraPct = (pct, color, alto) => `<div style="height:${alto || 6}px;border-radius:99px;background:rgba(20,23,15,.08);overflow:hidden"><div style="width:${Math.max(0, Math.min(100, pct))}%;height:100%;background:${color || 'var(--verde)'}"></div></div>`;
+const colorPct = (pct) => (pct >= 100 ? 'var(--verde)' : pct > 0 ? 'var(--verde-c)' : 'rgba(20,23,15,.2)');
+// La línea de avance que va en las tarjetas: «Avance 62 % · 7 de 12 fases».
+function avanceLineaHTML(obraId) {
+  const a = avanceObra(obraId);
+  if (!a) return '';
+  return `<div style="margin-top:10px"><div class="row" style="justify-content:space-between;align-items:baseline"><span class="lbl">Avance ${a.pct} %</span><span class="tiny">${a.hechas} de ${a.total} fases</span></div><div style="margin-top:5px">${barraPct(a.pct, colorPct(a.pct))}</div></div>`;
+}
+// Quién puede mover el avance: quien puede hacer el parte (la base lo deja a
+// comerciales y a quien está en la obra).
+const puedeAvance = (obraId) => puedeCrear() || esComercial() || planificadoHoyEn(obraId);
+// La ficha de la obra: el proyecto.
+function proyectoHTML(o) {
+  const grupos = fasesAgrupadas(o.id);
+  const a = avanceObra(o.id);
+  const cab = `<div class="row" style="justify-content:space-between;align-items:baseline;margin:22px 0 10px">
+      <div class="lbl" style="font-weight:600;font-size:12px;color:var(--t2)">Proyecto</div>
+      ${esComercial() ? `<span class="tiny" data-a="faseNueva" data-id="${o.id}" style="cursor:pointer;text-decoration:underline">+ Añadir fase</span>` : ''}</div>`;
+  if (!grupos.length) {
+    if (!V.fasesCargadas) return '';
+    return cab + `<div class="card"><div class="sub">Esta obra no tiene fases.${esComercial() ? ' Marca qué lleva la obra (AE, FV, AC) en «Editar» o ' : ' '}${esComercial() ? `<span data-a="faseGenerar" data-id="${o.id}" style="text-decoration:underline;cursor:pointer">genera las fases</span> de su categoría.` : 'Pídeselo a presupuestos.'}</div></div>`;
+  }
+  return cab + `<div class="card" style="padding:12px 15px">
+      <div class="row" style="justify-content:space-between;align-items:baseline"><span style="font:600 22px/1 var(--cond)">${a ? a.pct + ' %' : '—'}</span><span class="tiny">${a ? a.hechas + ' de ' + a.total + ' fases hechas' : 'todas marcadas como no aplica'}</span></div>
+      <div style="margin-top:8px">${barraPct(a ? a.pct : 0, colorPct(a ? a.pct : 0), 8)}</div>
+    </div>
+    ${grupos.map((g) => `<div class="lbl" style="margin:14px 0 6px">${esc(g.titulo)}</div>
+      <div class="card" style="padding:2px 15px">${g.fases.map((f) => `<div class="row g10" data-a="faseVer" data-id="${f.id}" style="align-items:center;padding:10px 0;border-bottom:1px solid var(--l1);cursor:pointer;${f.no_aplica ? 'opacity:.45' : ''}">
+          <span class="dot" style="width:10px;height:10px;background:${f.no_aplica ? 'transparent' : colorPct(f.pct)};${f.no_aplica ? 'border:1.5px solid var(--t3)' : ''}"></span>
+          <div class="grow"><div style="font:500 15px/1.25 var(--sans);${f.pct === 100 ? 'color:var(--t2)' : ''}">${esc(f.nombre)}</div>
+            ${f.no_aplica ? '<div class="tiny">No aplica</div>' : `<div style="margin-top:5px;max-width:200px">${barraPct(f.pct, colorPct(f.pct), 4)}</div>`}</div>
+          <span class="num" style="font-size:15px;min-width:44px;text-align:right">${f.no_aplica ? '—' : f.pct + ' %'}</span>
+        </div>`).join('')}</div>`).join('')}`;
+}
+// El bloque del parte: hasta dónde queda cada fase con este parte.
+function avanceParteHTML(d) {
+  const fs = fasesDe(d.obraId).filter((f) => !f.no_aplica);
+  if (!fs.length) return '';
+  const pendientes = fs.filter((f) => f.pct < 100), hechas = fs.length - pendientes.length;
+  const avance = d.avance || {};
+  return `<div class="row" style="justify-content:space-between;margin:22px 0 8px;align-items:baseline">
+      <div class="lbl">Avance de la obra</div>
+      <div class="tiny">${hechas} de ${fs.length} fases hechas</div>
+    </div>
+    <div class="tiny" style="margin-bottom:8px">Con este parte, ¿hasta dónde queda cada fase? Toca el porcentaje. Lo que no cambie, se queda como está.</div>
+    <div class="card" style="padding:2px 15px">
+      ${pendientes.length ? pendientes.map((f) => { const v = avance[f.id] != null ? avance[f.id] : f.pct; return `<div style="padding:11px 0;border-bottom:1px solid var(--l1)">
+        <div class="row" style="justify-content:space-between;align-items:baseline"><span style="font:500 15px/1.25 var(--sans)">${esc(f.nombre)}${f.categoria ? ` <span class="badge" style="background:rgba(20,23,15,.07);color:var(--t2)">${esc(f.categoria)}</span>` : ''}</span><span class="tiny">${avance[f.id] != null && avance[f.id] !== f.pct ? 'antes ' + f.pct + ' %' : ''}</span></div>
+        <div class="row g8" style="margin-top:8px">${PCTS.map((pc) => `<span class="chip ${v === pc ? 'on' : ''}" data-a="parteAvance" data-id="${f.id}" data-p="${pc}" style="padding:8px 0;flex:1;text-align:center;${pc < f.pct ? 'opacity:.35' : ''}">${pc}</span>`).join('')}</div>
+      </div>`; }).join('') : '<div class="sub" style="padding:12px 0">Todas las fases están al 100 %.</div>'}
+    </div>`;
+}
+A.parteAvance = (faseId, pct) => {
+  const d = V.draft; if (!d) return;
+  d.avance = d.avance || {};
+  const f = faseById(faseId);
+  if (f && Number(pct) === Number(f.pct)) delete d.avance[faseId]; else d.avance[faseId] = Number(pct);
+  render();
+};
+// Las filas de avance que se guardan con el parte: solo lo que cambió.
+const avanceFilasDe = (d) => Object.keys(d.avance || {}).map((id) => { const f = faseById(id); return f && Number(d.avance[id]) !== Number(f.pct) ? { fase_id: id, pct_antes: Number(f.pct) || 0, pct_despues: Number(d.avance[id]) } : null; }).filter(Boolean);
+// Una fase a mano, desde la ficha.
+A.faseVer = (id) => { const f = faseById(id); if (!f) return; V.sheet = { tipo: 'faseVer', id, nota: f.nota || '', busy: false }; render(); };
+A.fasePct = async (id, pct) => {
+  const f = faseById(id); if (!f || !puedeAvance(f.obra_id)) return;
+  try { const nf = await Sysefen.db.actualizarFase(id, { pct: Number(pct), no_aplica: false, hecha_en: Number(pct) === 100 ? new Date().toISOString() : null, hecha_por: Number(pct) === 100 ? (miEmpId() || null) : null }); Object.assign(f, nf); await sincronizarObras(); render(); }
+  catch (e) { avisar('No se pudo guardar: ' + msgError(e)); }
+};
+A.faseNoAplica = async (id) => {
+  const f = faseById(id); if (!f || !esComercial()) return;
+  try { const nf = await Sysefen.db.actualizarFase(id, { no_aplica: !f.no_aplica }); Object.assign(f, nf); V.sheet = null; await sincronizarObras(); render(); }
+  catch (e) { avisar('No se pudo guardar: ' + msgError(e)); }
+};
+A.faseNota = async () => {
+  const s = V.sheet; const f = s && faseById(s.id); if (!f) return;
+  try { const nf = await Sysefen.db.actualizarFase(f.id, { nota: (s.nota || '').trim() || null }); Object.assign(f, nf); V.sheet = null; toast('Guardado.'); render(); }
+  catch (e) { avisar('No se pudo guardar: ' + msgError(e)); }
+};
+A.faseQuitar = async (id) => {
+  const f = faseById(id); if (!f || !esComercial()) return;
+  try { await Sysefen.db.borrarFase(id); S.fases = S.fases.filter((x) => x.id !== id); V.sheet = null; toast('Fase quitada.'); render(); }
+  catch (e) { avisar('No se pudo quitar: ' + msgError(e)); }
+};
+A.faseNueva = (obraId) => { const o = obraById(obraId); V.sheet = { tipo: 'faseNueva', obraId, nombre: '', categoria: (o && o.categorias && o.categorias[0]) || null, busy: false }; render(); };
+A.faseCrear = async () => {
+  const s = V.sheet; if (!s || s.tipo !== 'faseNueva' || s.busy) return;
+  const nombre = (s.nombre || '').trim(); if (!nombre) { avisar('Pon el nombre de la fase.'); return; }
+  s.busy = true; render();
+  const fs = fasesDe(s.obraId).filter((f) => (f.categoria || null) === (s.categoria || null));
+  const orden = fs.length ? Math.max(...fs.map((f) => f.orden)) + 1 : (s.categoria ? 400 : 40);
+  try { const nf = await Sysefen.db.crearFase({ obra_id: s.obraId, categoria: s.categoria || null, nombre, orden }); S.fases.push(nf); V.sheet = null; toast('Fase añadida.'); render(); }
+  catch (e) { s.busy = false; avisar(faltaEtapa63(e) ? 'Falta ejecutar sql/etapa63 en Supabase.' : 'No se pudo añadir: ' + msgError(e)); render(); }
+};
+A.faseGenerar = async (obraId) => {
+  try { await Sysefen.db.generarFasesObra(obraId); await sincronizarFases(); render(); }
+  catch (e) { avisar(faltaEtapa63(e) ? 'Falta ejecutar sql/etapa63 en Supabase.' : 'No se pudo: ' + msgError(e)); }
+};
+// Las plantillas (Administración): qué fases lleva cada categoría.
+A.abrirPlantillas = async () => {
+  if (!esAdmin()) return;
+  V.view = 'fasesPlantillas'; V.plantillas = null; V.plantillasError = null; render();
+  try { V.plantillas = await Sysefen.db.listarPlantillasFases(); } catch (e) { V.plantillasError = msgError(e); }
+  render();
+};
+A.plantillaActiva = async (id) => {
+  const t = (V.plantillas || []).find((x) => x.id === id); if (!t) return;
+  try { Object.assign(t, await Sysefen.db.guardarPlantillaFase({ id, activa: !t.activa })); render(); }
+  catch (e) { avisar('No se pudo: ' + msgError(e)); }
+};
+A.plantillaNueva = (categoria) => { V.sheet = { tipo: 'plantillaNueva', categoria: categoria || null, nombre: '', descripcion: '', busy: false }; render(); };
+A.plantillaCrear = async () => {
+  const s = V.sheet; if (!s || s.tipo !== 'plantillaNueva' || s.busy) return;
+  const nombre = (s.nombre || '').trim(); if (!nombre) { avisar('Pon el nombre.'); return; }
+  s.busy = true; render();
+  const mismas = (V.plantillas || []).filter((t) => (t.categoria || null) === (s.categoria || null) && !t.al_final);
+  const orden = mismas.length ? Math.max(...mismas.map((t) => t.orden)) + 10 : (s.categoria ? { AE: 200, FV: 100, AC: 300 }[s.categoria] + 10 : 40);
+  try { const t = await Sysefen.db.guardarPlantillaFase({ categoria: s.categoria || null, nombre, descripcion: (s.descripcion || '').trim() || null, orden }); V.plantillas.push(t); V.sheet = null; toast('Añadida. Las obras nuevas la llevarán; a las que ya existen se les puede añadir desde su ficha.'); render(); }
+  catch (e) { s.busy = false; avisar('No se pudo añadir: ' + msgError(e)); render(); }
+};
+function vFasesPlantillas() {
+  const ts = V.plantillas;
+  const grupo = (titulo, lista, cat) => `<div class="row" style="justify-content:space-between;align-items:baseline;margin:16px 0 6px"><div class="lbl">${titulo}</div><span class="tiny" data-a="plantillaNueva" data-c="${cat || ''}" style="cursor:pointer;text-decoration:underline">+ Añadir</span></div>
+    <div class="card" style="padding:2px 15px">${lista.length ? lista.map((t) => `<div class="row g10" style="align-items:center;padding:10px 0;border-bottom:1px solid var(--l1);${t.activa ? '' : 'opacity:.45'}">
+      <div class="grow"><div style="font:500 15px/1.25 var(--sans)">${esc(t.nombre)}</div>${t.descripcion ? `<div class="tiny" style="margin-top:2px">${esc(t.descripcion)}</div>` : ''}</div>
+      <button class="pill" data-a="plantillaActiva" data-id="${t.id}" style="padding:6px 10px;font-size:11px;background:${t.activa ? 'var(--l1)' : 'var(--verde)'};color:${t.activa ? 'var(--tinta)' : '#fff'}">${t.activa ? 'Quitar' : 'Activar'}</button>
+    </div>`).join('') : '<div class="sub" style="padding:12px 0">Ninguna.</div>'}</div>`;
+  return `<div class="hdr">
+    <div class="volver" data-a="ir" data-v="ajustes">‹ Ajustes</div>
+    <div class="h1" style="margin-top:6px">Fases por categoría</div>
+    <div class="sub" style="margin-top:6px">Las fases que lleva cada obra nueva según lo que tenga (aerotermia, fotovoltaica, aire). Las de «Preparación» y «Cierre» las llevan todas. Quitar una no la borra de las obras que ya la tienen.</div>
+  </div>
+  <div class="scroll pad pb-nav">
+    ${V.plantillasError ? `<div class="card"><div class="sub">${faltaEtapa63(V.plantillasError) ? 'Falta ejecutar sql/etapa63 en Supabase.' : esc(V.plantillasError)}</div></div>` : !ts ? '<div class="card"><div class="sub">Cargando…</div></div>'
+      : grupo('Preparación (todas las obras)', ts.filter((t) => !t.categoria && !t.al_final), '')
+        + ['FV', 'AE', 'AC'].map((k) => grupo(CAT_NOMBRE[k], ts.filter((t) => t.categoria === k), k)).join('')
+        + grupo('Cierre (todas las obras)', ts.filter((t) => !t.categoria && t.al_final), '')}
+  </div>`;
+}
+
 /* ---------- planificación diaria: quién va mañana a dónde (sql/etapa60) ----------
  * Tablero semanal para los comerciales: filas = personas (operarios y jefes),
  * columnas = días. Cada operario ve en «Hoy» lo suyo. Se planifica por
@@ -2661,6 +2836,7 @@ function planHoyHTML() {
       <div class="row g8" style="align-items:baseline;margin-top:8px"><span style="font:600 22px/1.1 var(--cond)">${esc(f.codigo || '')}</span><span style="font:600 16px/1.3 var(--sans)">${esc(f.cliente || f.obra || '')}</span></div>
       ${[f.direccion, f.poblacion].filter(Boolean).length ? `<div style="font:400 15px/1.35 var(--sans);color:var(--t2);margin-top:3px">${esc([f.direccion, f.poblacion].filter(Boolean).join(' · '))}</div>` : ''}
       ${f.nota ? `<div style="margin-top:8px;padding:8px 10px;border-radius:10px;background:#f8efdc;color:var(--ambar-o);font:500 13px/1.4 var(--sans)">${esc(f.nota)}${f.planificador ? ` <span class="tiny">· ${esc(f.planificador)}</span>` : ''}</div>` : ''}
+      ${avanceLineaHTML(f.obra_id)}
       <div class="row g8" style="margin-top:10px">
         ${f.direccion ? `<a class="pill grow" style="text-align:center;padding:9px" href="https://maps.apple.com/?q=${encodeURIComponent([f.direccion, f.poblacion].filter(Boolean).join(', '))}" target="_blank" rel="noopener">Cómo llegar</a>` : ''}
         ${obraById(f.obra_id) ? `<button class="pill grow" data-a="verObra" data-id="${f.obra_id}" style="padding:9px">Ver obra</button>` : ''}
@@ -3120,6 +3296,13 @@ A.guardarEnviar = async (enviar) => {
     } else nuevo = await Sysefen.db.crearParte(campos);
     if (horasFilas.length) await Sysefen.db.guardarHorasParte(nuevo.id, horasFilas);
     if (matsFilas.length) await Sysefen.db.guardarMaterialesParte(nuevo.id, matsFilas);
+    // El avance de las fases que se apuntó en este parte (etapa 63). Si falla
+    // no se tira el parte: se avisa.
+    const avance = avanceFilasDe(d);
+    if (avance.length) {
+      try { await Sysefen.db.guardarAvanceParte(nuevo.id, avance); await sincronizarFases(); }
+      catch (eA) { avisar('El parte se guardó, pero el avance de las fases no: ' + msgError(eA)); }
+    }
     // Las fotos van a Supabase Storage. Si alguna falla no se tira el parte
     // entero a la basura: se guarda igual y se dice cuántas no subieron, que
     // es mejor que perder el trabajo escrito por una foto.
@@ -3831,6 +4014,7 @@ function render() {
   else if (v === 'presupuestos' && verMotor()) html = vPresupuestos();
   else if (v === 'legalizaciones' && esComercial()) html = vLegalizaciones();
   else if (v === 'costesPersonal' && veCostes()) html = vCostesPersonal();
+  else if (v === 'fasesPlantillas' && esAdmin()) html = vFasesPlantillas();
   else if (v === 'planificacion' && esComercial()) html = vPlanificacion();
   else if (v === 'legalizacion' && esComercial()) html = vLegalizacion();
   else if (v === 'presuNuevo' && verMotor()) html = vPresuNuevo();
@@ -3848,7 +4032,7 @@ function render() {
   else if (v === 'clienteVer' && verAgenda()) html = vClienteVer();
   else if (v === 'citaNueva' && puedeCitar()) html = vCitaNueva();
   else if (v === 'citaVer' && verAgenda()) html = vCitaVer();
-  if (V.user && ['hoy', 'obras', 'obra', 'partes', 'horas', 'imputar', 'empleados', 'ajustes', 'presupuestos', 'presupuestoVer', 'visitas', 'visita', 'agenda', 'clientes', 'clienteVer', 'revisarImp', 'errores', 'legalizaciones', 'legalizacion', 'costesPersonal', 'planificacion'].includes(v)) html += nav(v);
+  if (V.user && ['hoy', 'obras', 'obra', 'partes', 'horas', 'imputar', 'empleados', 'ajustes', 'presupuestos', 'presupuestoVer', 'visitas', 'visita', 'agenda', 'clientes', 'clienteVer', 'revisarImp', 'errores', 'legalizaciones', 'legalizacion', 'costesPersonal', 'planificacion', 'fasesPlantillas'].includes(v)) html += nav(v);
   if (!navigator.onLine && V.user) html = '<div class="offline">Sin conexión — todo se guarda en el móvil</div>' + html;
   // Red de seguridad: si un sheet revienta al pintarse (p. ej. depende de
   // datos que cambiaron justo antes, como el usuario tras salir), que se
@@ -4137,6 +4321,7 @@ function obrasListaHTML() {
         <div class="grow"></div>
         <div class="tiny ell" style="max-width:140px">${empleadosDeObra(o.id).map((x) => esc(x.nombre)).join(' · ')}</div>
       </div>
+      ${avanceLineaHTML(o.id)}
     </div>`).join('') : (cerradas ? '' : `<div class="card"><div class="h2">Sin obras todavía</div><div class="sub" style="margin-top:6px">${puedeCrear() ? 'Dale a “+ Nueva” para crear la primera.' : 'Todavía no hay obras dadas de alta.'}</div></div>`)}
   `;
 }
@@ -4190,6 +4375,7 @@ function vObra() {
       <button class="pill grow" data-a="imprimirHorasObra" style="padding:12px;text-align:center;background:var(--tinta);color:#fff">Imprimir PDF</button>
       <button class="pill grow" data-a="exportarHorasObraCSV" style="padding:12px;text-align:center">Exportar CSV</button>
     </div>` : ''}
+    ${proyectoHTML(o)}
     ${veCostes() ? economiaHTML(o) : ''}
     ${puedeCrear() || veCostes() ? docsObraHTML(o) : ''}
     <div class="lbl" style="font-weight:600;font-size:12px;color:var(--t2);margin:22px 0 10px">Partes de esta obra</div>
@@ -5414,6 +5600,11 @@ function vAjustes() {
       </div>`).join('')}
     </div>` : ''}
 
+    ${esAdmin() ? `<div class="card row" data-a="abrirPlantillas" style="margin-top:14px;cursor:pointer">
+      <div class="grow"><div style="font:600 15px var(--sans)">Fases por categoría</div>
+      <div class="sub" style="font-size:12px;margin-top:4px">Las fases que lleva cada obra nueva: preparación, montaje, puesta en marcha, legalización, cobro.</div></div>
+      <div style="font:400 20px/1 var(--sans);color:var(--t3)">›</div>
+    </div>` : ''}
     ${veCostes() ? `<div class="card row" data-a="abrirCostes" style="margin-top:14px;cursor:pointer">
       <div class="grow"><div style="font:600 15px var(--sans)">Costes de personal</div>
       <div class="sub" style="font-size:12px;margin-top:4px">Lo que cuesta la hora de cada persona. Con ello cada obra enseña su coste real y su margen.</div></div>
@@ -5561,6 +5752,7 @@ function vP1() {
     <div class="tiny" style="margin-bottom:18px">${d.fecha === hoyISO() ? 'Hoy. Cámbiala si el parte es de otro día.' : 'Parte de un día anterior. Las horas salen de las imputaciones de ese día.'}</div>
     <div class="lbl" style="margin-bottom:8px">Trabajos realizados</div>
     <textarea class="inp" data-f="desc" rows="4" placeholder="Qué se ha hecho hoy en la obra...">${esc(d.desc)}</textarea>
+    ${avanceParteHTML(d)}
 
     <div class="row" style="justify-content:space-between;margin:22px 0 8px;align-items:baseline">
       <div class="lbl">Personal y horas</div>
@@ -9388,7 +9580,7 @@ function nav(v) {
     || (id === 'obras' && v === 'obra')
     || (id === 'horas' && ['imputar', 'revisarImp', 'resumenImp'].includes(v))
     || (id === 'ajustes' && !esPresupuestos() && ['errores', 'legalizaciones', 'legalizacion'].includes(v))
-    || (id === 'ajustes' && v === 'costesPersonal')
+    || (id === 'ajustes' && ['costesPersonal', 'fasesPlantillas'].includes(v))
     || (id === 'obras' && ['alta', 'planificacion'].includes(v))
     || (id === 'legalizaciones' && v === 'legalizacion')
     || (id === 'empleados' && (v === 'empleado' || v === 'planilla'))
@@ -9847,6 +10039,42 @@ function sheet() {
         <button class="btn btn-verde" data-a="confirmarEnvioParte" style="font-size:14px" ${s.busy ? 'disabled' : ''}>${s.busy ? 'Enviando…' : 'Enviar'}</button>
       </div>
       <div data-a="compartirParte" data-id="${esc(s.id)}" class="tiny" style="margin-top:12px;text-align:center;text-decoration:underline;cursor:pointer">O compartirlo yo (WhatsApp, otro correo…)</div>
+    </div></div>`;
+  }
+  if (s.tipo === 'faseVer') {
+    const f = faseById(s.id); if (!f) { V.sheet = null; return ''; }
+    const puede = puedeAvance(f.obra_id);
+    return `<div class="sheet"><div>
+      <div class="row g8" style="align-items:baseline"><span style="font:600 23px/1.15 var(--cond)">${esc(f.nombre)}</span>${f.categoria ? `<span class="badge" style="background:rgba(20,23,15,.07);color:var(--t2)">${esc(f.categoria)}</span>` : ''}</div>
+      <div class="sub" style="margin-top:6px">${f.no_aplica ? 'Marcada como «no aplica» en esta obra.' : f.pct === 100 ? 'Hecha' + (f.hecha_en ? ' el ' + fechaCorta(f.hecha_en) : '') + (f.hecha_por ? ' · ' + esc(agNombreEmp(f.hecha_por)) : '') + '.' : f.pct > 0 ? 'Al ' + f.pct + ' %.' : 'Sin empezar.'}</div>
+      ${puede && !f.no_aplica ? `<div class="lbl" style="margin:14px 0 8px">Avance</div>
+      <div class="row g8">${PCTS.map((pc) => `<span class="chip ${f.pct === pc ? 'on' : ''}" data-a="fasePct" data-id="${f.id}" data-p="${pc}" style="padding:10px 0;flex:1;text-align:center">${pc}</span>`).join('')}</div>` : ''}
+      <div class="lbl" style="margin:14px 0 6px">Nota</div>
+      <input class="inp" data-f="faseNota" value="${esc(s.nota)}" placeholder="Falta la bancada, viene el lunes…" ${puede ? '' : 'disabled'}>
+      <div class="row g8" style="margin-top:16px">
+        ${esComercial() ? `<button class="btn btn-gris" data-a="faseNoAplica" data-id="${f.id}" style="border-radius:99px">${f.no_aplica ? 'Sí aplica' : 'No aplica'}</button>
+        <button class="btn btn-gris" data-a="faseQuitar" data-id="${f.id}" style="border-radius:99px;color:var(--rojo)">Quitar</button>` : ''}
+      </div>
+      <div class="row g8" style="margin-top:10px">
+        <button class="btn btn-gris" data-a="cerrarSheet" style="border-radius:99px">Cerrar</button>
+        ${puede ? '<button class="btn btn-verde" data-a="faseNota">Guardar nota</button>' : ''}
+      </div>
+    </div></div>`;
+  }
+  if (s.tipo === 'faseNueva' || s.tipo === 'plantillaNueva') {
+    const o = s.obraId ? obraById(s.obraId) : null;
+    const cats = o ? (o.categorias || []) : ['FV', 'AE', 'AC'];
+    return `<div class="sheet"><div>
+      <div style="font:600 23px/1.15 var(--cond)">${s.tipo === 'faseNueva' ? 'Añadir fase a ' + esc(codigoObra(o) || (o || {}).titulo || '') : 'Nueva fase de plantilla'}</div>
+      <div class="lbl" style="margin:14px 0 6px">Nombre</div>
+      <input class="inp" data-f="faseNombre" value="${esc(s.nombre)}" placeholder="Montaje de paneles, zanja, andamio…">
+      ${s.tipo === 'plantillaNueva' ? `<div class="lbl" style="margin:12px 0 6px">Descripción (opcional)</div><input class="inp" data-f="faseDescripcion" value="${esc(s.descripcion || '')}" placeholder="Qué incluye">` : ''}
+      <div class="lbl" style="margin:12px 0 6px">De qué parte</div>
+      <div class="wrap"><span class="chip ${!s.categoria ? 'on' : ''}" data-a="faseCat" data-c="" style="cursor:pointer">${s.tipo === 'faseNueva' ? 'Toda la obra' : 'Todas las obras'}</span>${cats.map((k) => `<span class="chip ${s.categoria === k ? 'on' : ''}" data-a="faseCat" data-c="${k}" style="cursor:pointer">${esc(CAT_NOMBRE[k] || k)}</span>`).join('')}</div>
+      <div class="row g8" style="margin-top:18px">
+        <button class="btn btn-gris" data-a="cerrarSheet" style="border-radius:99px">Cancelar</button>
+        <button class="btn btn-verde" data-a="${s.tipo === 'faseNueva' ? 'faseCrear' : 'plantillaCrear'}" ${s.busy ? 'disabled' : ''}>${s.busy ? 'Guardando…' : 'Añadir'}</button>
+      </div>
     </div></div>`;
   }
   if (s.tipo === 'parteOtraObra') {
@@ -10319,6 +10547,20 @@ document.addEventListener('click', (e) => {
   if (a === 'planFueraIgnorar') return A.planFuera(d.id, false);
   if (a === 'parteDePlan') return A.nuevoParte(d.id, d.plan);
   if (a === 'parteOtraObraSeguro') return A.nuevoParte(d.id, null, true);
+  if (a === 'parteAvance') return A.parteAvance(d.id, d.p);
+  if (a === 'faseVer') return A.faseVer(d.id);
+  if (a === 'fasePct') return A.fasePct(d.id, d.p);
+  if (a === 'faseNoAplica') return A.faseNoAplica(d.id);
+  if (a === 'faseNota') return A.faseNota();
+  if (a === 'faseQuitar') return A.faseQuitar(d.id);
+  if (a === 'faseNueva') return A.faseNueva(d.id);
+  if (a === 'faseCrear') return A.faseCrear();
+  if (a === 'faseCat') { if (V.sheet) V.sheet.categoria = d.c || null; return render(); }
+  if (a === 'faseGenerar') return A.faseGenerar(d.id);
+  if (a === 'abrirPlantillas') return A.abrirPlantillas();
+  if (a === 'plantillaActiva') return A.plantillaActiva(d.id);
+  if (a === 'plantillaNueva') return A.plantillaNueva(d.c || null);
+  if (a === 'plantillaCrear') return A.plantillaCrear();
   if (a === 'costeEmpNuevo') return A.costeEmpNuevo(d.id);
   if (a === 'costeEmpGuardar') return A.costeEmpGuardar();
   if (a === 'enlazarPresu') return A.enlazarPresu(d.id);
@@ -10416,6 +10658,9 @@ document.addEventListener('input', (e) => {
   }
   if (!f) return;
   if (f.startsWith('vf')) return A.vf(f, t.dataset, t.value);
+  if (f === 'faseNota') { if (V.sheet) V.sheet.nota = t.value; return; }
+  if (f === 'faseNombre') { if (V.sheet) V.sheet.nombre = t.value; return; }
+  if (f === 'faseDescripcion') { if (V.sheet) V.sheet.descripcion = t.value; return; }
   if (f === 'planBuscar') { if (V.sheet) { V.sheet.buscar = t.value; const box = document.getElementById('plan-obras'); if (box) box.innerHTML = planObrasListaHTML(V.sheet); } return; }
   if (f === 'planHora') { if (V.sheet) V.sheet.hora = t.value; return; }
   if (f === 'planNota') { if (V.sheet) V.sheet.nota = t.value; return; }

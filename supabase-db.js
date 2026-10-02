@@ -126,6 +126,43 @@ export async function obrasSinPlanificar(fecha) {
   return unwrap(await supabase.from('v_obras_sin_planificar').select('*').eq('fecha', fecha).order('numero', { ascending: false })) || [];
 }
 
+/* ---------------- fases de obra: el proyecto (sql/etapa63) ----------------
+ * Cada obra tiene sus fases con un porcentaje; el avance se apunta desde el
+ * parte (parte_fases) o a mano en la ficha. */
+export async function listarFases(obraIds) {
+  let q = supabase.from('obra_fases').select('*').order('orden');
+  if (obraIds && obraIds.length) q = q.in('obra_id', obraIds);
+  return unwrap(await q) || [];
+}
+export async function actualizarFase(id, cambios) {
+  return unwrap(await supabase.from('obra_fases').update(cambios).eq('id', id).select().single());
+}
+export async function crearFase(fila) {
+  return unwrap(await supabase.from('obra_fases').insert(fila).select().single());
+}
+export async function borrarFase(id) {
+  return unwrap(await supabase.from('obra_fases').delete().eq('id', id).select('id'));
+}
+/** El avance apuntado en un parte: [{fase_id, pct_antes, pct_despues}]. */
+export async function guardarAvanceParte(parteId, filas) {
+  const rows = filas.map((f) => ({ ...f, parte_id: parteId }));
+  return unwrap(await supabase.from('parte_fases').insert(rows).select());
+}
+export async function avanceDeParte(parteId) {
+  return unwrap(await supabase.from('parte_fases').select('*, fase:obra_fases(nombre, categoria)').eq('parte_id', parteId)) || [];
+}
+export async function generarFasesObra(obraId) {
+  const { data, error } = await supabase.rpc('generar_fases_obra', { p_obra: obraId });
+  if (error) throw new Error(error.message);
+  return data;
+}
+export async function listarPlantillasFases() {
+  return unwrap(await supabase.from('fase_plantillas').select('*').order('al_final').order('orden')) || [];
+}
+export async function guardarPlantillaFase(fila) {
+  return unwrap(await supabase.from('fase_plantillas').upsert(fila).select().single());
+}
+
 export async function borrarObra(id) {
   const cuenta = async (tabla) => {
     const r = await supabase.from(tabla).select('id', { count: 'exact', head: true }).eq('obra_id', id);
@@ -774,6 +811,7 @@ export default {
   listarObras, crearObra, actualizarObra, borrarObra,
   economiaObra, costesObra, anadirCosteObra, borrarCosteObra, enlazarPresupuesto, listarCostesEmpleados, guardarCosteEmpleado,
   listarPlanificacion, crearPlanificacion, actualizarPlanificacion, borrarPlanificacion, obrasSinPlanificar, partesFueraDePlan, revisarParteFueraDePlan,
+  listarFases, actualizarFase, crearFase, borrarFase, guardarAvanceParte, avanceDeParte, generarFasesObra, listarPlantillasFases, guardarPlantillaFase,
   empleadosDeObra, listarAsignaciones, asignarEmpleadoAObra, quitarEmpleadoDeObra,
   fichajeAbierto, ficharEntrada, ficharSalida, corregirFichaje, crearFichajeManual, importarFichajes, borrarFichaje,
   fichajesDelDia, listarFichajes, escucharFichajes,

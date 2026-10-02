@@ -119,12 +119,35 @@
   ];
 
   // --- lo común a todas las escenas ------------------------------------------
+  const FASES = [
+    { id: 'f1', obra_id: 'o1', categoria: null, orden: 10, nombre: 'Pedido de material', pct: 100, no_aplica: false, hecha_en: iso(30, 9), hecha_por: 'e1' },
+    { id: 'f2', obra_id: 'o1', categoria: null, orden: 20, nombre: 'Recepción de material', pct: 80, no_aplica: false },
+    { id: 'f3', obra_id: 'o1', categoria: null, orden: 30, nombre: 'Replanteo', pct: 100, no_aplica: false },
+    { id: 'f4', obra_id: 'o1', categoria: 'AE', orden: 210, nombre: 'Ubicación unidad exterior', pct: 100, no_aplica: false },
+    { id: 'f5', obra_id: 'o1', categoria: 'AE', orden: 220, nombre: 'Unidad interior y depósito', pct: 50, no_aplica: false },
+    { id: 'f6', obra_id: 'o1', categoria: 'AE', orden: 230, nombre: 'Hidráulica', pct: 0, no_aplica: false },
+    { id: 'f7', obra_id: 'o1', categoria: 'AE', orden: 240, nombre: 'Eléctrica', pct: 0, no_aplica: false },
+    { id: 'f8', obra_id: 'o1', categoria: 'AE', orden: 250, nombre: 'Puesta en marcha', pct: 0, no_aplica: false },
+    { id: 'f9', obra_id: 'o1', categoria: 'AE', orden: 260, nombre: 'Legalización', pct: 0, no_aplica: false },
+    { id: 'f10', obra_id: 'o1', categoria: 'FV', orden: 110, nombre: 'Fijaciones y estructura', pct: 100, no_aplica: false },
+    { id: 'f11', obra_id: 'o1', categoria: 'FV', orden: 120, nombre: 'Montaje de paneles', pct: 75, no_aplica: false },
+    { id: 'f12', obra_id: 'o1', categoria: 'FV', orden: 130, nombre: 'Cableado de continua', pct: 25, no_aplica: false },
+    { id: 'f13', obra_id: 'o1', categoria: 'FV', orden: 140, nombre: 'Inversor y baterías', pct: 0, no_aplica: false },
+    { id: 'f14', obra_id: 'o1', categoria: 'FV', orden: 150, nombre: 'Cableado de alterna y protecciones', pct: 0, no_aplica: false },
+    { id: 'f15', obra_id: 'o1', categoria: 'FV', orden: 160, nombre: 'Puesta en marcha', pct: 0, no_aplica: false },
+    { id: 'f16', obra_id: 'o1', categoria: 'FV', orden: 170, nombre: 'Legalización', pct: 0, no_aplica: false },
+    { id: 'f17', obra_id: 'o1', categoria: null, orden: 900, nombre: 'Cobro final', pct: 0, no_aplica: false },
+    { id: 'f20', obra_id: 'o2', categoria: 'FV', orden: 110, nombre: 'Fijaciones y estructura', pct: 100, no_aplica: false },
+    { id: 'f21', obra_id: 'o2', categoria: 'FV', orden: 120, nombre: 'Montaje de paneles', pct: 100, no_aplica: false },
+    { id: 'f22', obra_id: 'o2', categoria: 'FV', orden: 160, nombre: 'Puesta en marcha', pct: 50, no_aplica: false },
+  ];
   function base(userId) {
     S.users = USERS.map((u) => Object.assign({}, u));
     S.obras = OBRAS.map((o) => Object.assign({}, o));
     S.fichajes = FICHAJES.map((f) => Object.assign({}, f));
     S.imputaciones = IMPUT.map((i) => Object.assign({}, i));
     S.partes = PARTES.map((p) => Object.assign({}, p));
+    S.fases = FASES.map((f) => Object.assign({}, f)); V.fasesCargadas = true;
     S.ausencias = []; S.festivos = []; S.empresa = 'Sysefen'; S.opts = { gps: true, recordatorio: true, importesOperario: false };
     m.empRows(EMP.map((e) => Object.assign({}, e)));
     const mapa = {}; EMP.forEach((e) => { mapa[e.nombre] = e.id; }); m.empIdPorNombre(mapa);
@@ -192,6 +215,8 @@
     'pres-presu-ver': () => { base('u5'); V.view = 'presupuestoVer'; V.presuVer = { id: 'q2', cargando: false, datos: PRESU_VER, error: null }; V.presuEdit = null; },
     'pres-presu-nuevo': () => { base('u5'); A.presuNuevo(); V.suelto.cat = 'aire_acondicionado'; V.suelto.cliente = 'Familia Gil'; V.suelto.equipos = 2; V.suelto.estancias = [{ m2: '30', metros: '4' }, { m2: '12', metros: '6' }]; },
     // --- flujos paso a paso ------------------------------------------------------
+    'jefe-parte-avance': () => { base('u1'); A.nuevoParte('o1'); V.draft.desc = 'Montaje de los últimos paneles y tirada del cableado de continua.'; V.draft.avance = { f11: 100, f12: 75 }; },
+    'admin-fases-plantillas': () => { base('u0'); V.view = 'fasesPlantillas'; V.plantillas = [{ id: 't1', categoria: null, orden: 10, nombre: 'Pedido de material', activa: true }, { id: 't2', categoria: null, orden: 20, nombre: 'Recepción de material', activa: true }, { id: 't3', categoria: null, orden: 30, nombre: 'Replanteo', activa: true }, { id: 't4', categoria: 'FV', orden: 110, nombre: 'Fijaciones y estructura', descripcion: 'Anclajes, pies y perfilería en cubierta', activa: true }, { id: 't5', categoria: 'FV', orden: 120, nombre: 'Montaje de paneles', activa: true }, { id: 't6', categoria: 'FV', orden: 140, nombre: 'Inversor y baterías', activa: true }, { id: 't7', categoria: 'AE', orden: 210, nombre: 'Ubicación unidad exterior', activa: true }, { id: 't8', categoria: 'AC', orden: 310, nombre: 'Unidades interiores', activa: false }, { id: 't9', categoria: null, orden: 900, nombre: 'Cobro final', al_final: true, activa: true }]; },
     'jefe-obra-nueva': () => { base('u1'); A.nuevaObra(); V.draft.cliente = 'Familia Roca'; V.draft.dir = 'Camí de Son Vich 12, Esporles'; },
     'jefe-parte-p1': () => { base('u1'); A.nuevoParte('o1'); V.draft.desc = 'Montaje de la unidad exterior de aerotermia y conexión hidráulica al acumulador.'; V.draft.mats = [{ id: 'mm1', nombre: 'Tubo multicapa 20 mm', cant: '12 m', importe: '', compra: true }]; },
     'jefe-parte-p2': () => { base('u1'); A.nuevoParte('o1'); V.draft.desc = 'Montaje de la unidad exterior.'; V.draft.firmante = 'Miquel Roca'; V.view = 'p2'; },
