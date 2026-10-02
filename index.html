@@ -368,7 +368,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '18.7'; // versión visible de la app (única fuente)
+const APP_VERSION = '18.8'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -1279,6 +1279,29 @@ A.resumenRango = (r) => {
 };
 
 /* --- imputación de horas --- */
+// Lo que los partes de ese día dicen de una persona: por obra, en minutos
+// redondeados a 15. Es el punto de partida al imputar: si Pau firmó 6 h en
+// OB-137, eso ya viene puesto y el jefe solo confirma o ajusta.
+function horasDePartesDia(userId, fecha) {
+  const porObra = {};
+  S.partes.filter((p) => p.fecha === fecha && p.estado !== 'anulado' && (p.horas[userId] || 0) > 0)
+    .forEach((p) => { porObra[p.obraId] = (porObra[p.obraId] || 0) + p.horas[userId] * 60; });
+  return Object.keys(porObra).map((obraId) => ({ obraId, minutos: redondear15(porObra[obraId]) })).filter((l) => l.minutos > 0);
+}
+// Líneas de imputación propuestas a partir de los partes, sin pasarse de lo
+// que queda por imputar (`disp`); lo que sobre va a «otros».
+function impLineasDesdePartes(userId, fecha, disp) {
+  const lineas = [];
+  let queda = disp;
+  for (const l of horasDePartesDia(userId, fecha)) {
+    const m = Math.min(l.minutos, queda);
+    if (m <= 0) break;
+    lineas.push({ categoria: 'obra', obraId: l.obraId, minutos: m, origen: 'manual', deParte: true });
+    queda -= m;
+  }
+  if (lineas.length && queda > 0) lineas.push({ categoria: 'otros', obraId: null, minutos: redondear15(queda), origen: 'manual' });
+  return lineas;
+}
 const impDraftDeLineas = (userId, fecha) => impLineasDe(userId, fecha).map((l) => ({
   id: l.id, categoria: l.categoria, obraId: l.obraId, minutos: l.minutos, nota: l.nota || '', origen: l.origen, bloqueado: l.bloqueado,
 }));
@@ -1329,7 +1352,10 @@ A.abrirImputEmp = (userId) => {
   const disp = disponibleImputar(userId, V.impFecha);
   if (disp > 0) {
     if (!V.impDraft.length) {
-      V.impDraft.push({ categoria: 'otros', obraId: null, minutos: disp, origen: 'manual' });
+      // Si hay partes de ese día, se parte de ellos; si no, una línea con todo.
+      const dePartes = impLineasDesdePartes(userId, V.impFecha, disp);
+      if (dePartes.length) V.impDraft.push(...dePartes);
+      else V.impDraft.push({ categoria: 'otros', obraId: null, minutos: disp, origen: 'manual' });
     } else {
       const asignado = V.impDraft.reduce((t, l) => t + (l.minutos || 0), 0);
       const restante = redondear15(Math.max(0, disp - asignado));
@@ -1450,6 +1476,34 @@ const impGrupoLineaNueva = () => ({ categoria: 'obra', obraId: null, minutos: im
 // "ya repartido" y la línea nueva saldría en 0.
 function impGrupoReiniciarLineas() {
   V.impGrupoLineas = [];
+  V.impGrupoNota = '';
+  // Si los seleccionados tienen partes ese día, se propone lo que dicen los
+  // partes: se agrupa a los que tienen el MISMO reparto (misma obra, mismas
+  // horas), que es lo normal en una cuadrilla, y se dejan fuera los demás
+  // para hacerlos en otra tanda.
+  const cand = impGrupoCandidatos(V.impFecha);
+  const sel = (V.impGrupoSel || []).filter((id) => cand.some((x) => x.u.id === id));
+  const firma = (id) => horasDePartesDia(id, V.impFecha).map((l) => l.obraId + ':' + l.minutos).sort().join('|');
+  const grupos = {};
+  sel.forEach((id) => { const f = firma(id); if (f) (grupos[f] = grupos[f] || []).push(id); });
+  const mejor = Object.keys(grupos).sort((a, b) => grupos[b].length - grupos[a].length)[0];
+  if (mejor) {
+    const ids = grupos[mejor];
+    const fuera = sel.filter((id) => !ids.includes(id));
+    V.impGrupoSel = ids;
+    const tope = impGrupoRestanteMin();
+    const lineas = impLineasDesdePartes(ids[0], V.impFecha, tope);
+    if (lineas.length) {
+      V.impGrupoLineas = lineas;
+      const nombres = ids.map((id) => (userById(id) || {}).nombre).filter(Boolean).join(', ');
+      const nom = (ids2) => ids2.map((id) => (userById(id) || {}).nombre).filter(Boolean).join(', ');
+      const otroReparto = fuera.filter((id) => firma(id)), sinParte = fuera.filter((id) => !firma(id));
+      V.impGrupoNota = 'Según el parte de ' + nombres + '.'
+        + (otroReparto.length ? ' ' + nom(otroReparto) + ': otro reparto, en otra tanda.' : '')
+        + (sinParte.length ? ' ' + nom(sinParte) + ': sin parte ese día, en otra tanda.' : '');
+      return;
+    }
+  }
   V.impGrupoLineas = [impGrupoLineaNueva()];
 }
 A.abrirImputGrupo = () => {
@@ -2628,8 +2682,8 @@ function sinPlanHoyHTML() {
   if ((V.planMio || []).some((f) => f.fecha === hoy)) return '';
   return `<div class="card" style="margin-bottom:10px">
     <div class="h2">Sin obra asignada hoy</div>
-    <div class="sub" style="margin-top:6px">Nadie te ha planificado para hoy. Habla con tu jefe de obra o con presupuestos.</div>
-    ${S.obras.length ? '<button class="pill" data-a="nuevoParteElegir" style="margin-top:12px;padding:10px 14px">Hacer parte de otra obra</button>' : ''}
+    <div class="sub" style="margin-top:6px">Nadie te ha planificado para hoy. Habla con tu jefe de obra o con presupuestos. Si estás en una obra, haz el parte igualmente.</div>
+    ${S.obras.length ? '<button class="pill pill-verde" data-a="nuevoParteElegir" style="margin-top:12px;padding:10px 14px">Hacer el parte de hoy</button>' : ''}
   </div>`;
 }
 
@@ -2865,13 +2919,20 @@ function horasDeObraEnFecha(oid, fecha) {
   Object.keys(horas).forEach((k) => { horas[k] = cuarto(horas[k]); });
   return horas;
 }
-A.nuevoParte = (obraId, planId) => {
-  V.sheet = null;
+A.nuevoParte = (obraId, planId, seguro) => {
   // Sin obra por defecto: un parte que sale con una obra puesta "porque sí" se
   // firma sin mirar y acaba con las horas en el cliente equivocado.
   const oid = obraId;
   if (!oid) { A.nuevoParteElegir(); return; }
   const o = obraById(oid);
+  // El operario que tenía otra obra planificada hoy y hace el parte de esta:
+  // se le avisa y se le pregunta si está seguro. Puede, pero que lo sepa.
+  const hoyMias = (V.planMio || []).filter((f) => f.fecha === hoyISO());
+  if (!seguro && !puedeCrear() && hoyMias.length && !planificadoHoyEn(oid)) {
+    V.sheet = { tipo: 'parteOtraObra', obraId: oid, planificadas: hoyMias.map((f) => f.codigo + ' · ' + (f.cliente || f.obra || '')).join(', ') };
+    render(); return;
+  }
+  V.sheet = null;
   const fecha = hoyISO(); // por defecto, siempre el día en curso
   const horas = horasDeObraEnFecha(oid, fecha);
   // El operario no tiene imputaciones a mano: sus horas salen de su fichaje de
@@ -3111,9 +3172,7 @@ A.guardarEnviar = async (enviar) => {
     render();
   } catch (e) {
     V.parteBusy = false;
-    avisar(/row-level security|policy/i.test(msgError(e)) && !puedeCrear()
-      ? 'No estás planificado en esa obra: el parte solo lo puedes hacer de la obra que tienes asignada. Pídeselo a tu jefe.'
-      : 'No se pudo guardar el parte: ' + (e && e.message ? e.message : 'error'));
+    avisar('No se pudo guardar el parte: ' + (e && e.message ? e.message : 'error'));
     render();
   }
 };
@@ -4868,6 +4927,7 @@ function vImputarGrupo() {
       <div class="lbl">Reparto</div>
       <div class="tiny"><span data-num="grupoAsignado">${durMin(asignado)}</span> de ${durMin(tope)} · <span data-num="grupoLibre">${durMin(libre)}</span> sin repartir</div>
     </div>
+    ${V.impGrupoNota ? `<div style="margin-bottom:10px;padding:9px 12px;border-radius:12px;background:#e3efe5;color:var(--verde-o);font:500 13px/1.4 var(--sans)">${esc(V.impGrupoNota)}</div>` : ''}
     ${lineas.map((l, i) => `<div class="card" style="margin-bottom:10px">
       <div class="wrap">${IMP_CATS.map(([c, lab]) => `<div class="chip ${l.categoria === c ? 'on' : ''}" data-a="impGrupoCat" data-i="${i}" data-c="${c}">${lab}</div>`).join('')}</div>
       ${l.categoria === 'obra' ? `<div class="lbl" style="margin:12px 0 7px">Obra</div>
@@ -9789,6 +9849,18 @@ function sheet() {
       <div data-a="compartirParte" data-id="${esc(s.id)}" class="tiny" style="margin-top:12px;text-align:center;text-decoration:underline;cursor:pointer">O compartirlo yo (WhatsApp, otro correo…)</div>
     </div></div>`;
   }
+  if (s.tipo === 'parteOtraObra') {
+    const o = obraById(s.obraId) || {};
+    return `<div class="sheet"><div>
+      <div style="font:600 23px/1.15 var(--cond)">Esta no era tu obra de hoy</div>
+      <div class="sub" style="margin-top:8px">Hoy tenías planificado: <b>${esc(s.planificadas)}</b>.</div>
+      <div class="sub" style="margin-top:8px">Vas a hacer el parte de <b>${esc(codigoObra(o) || o.titulo || '')}${o.cliente ? ' · ' + esc(o.cliente) : ''}</b>. Si de verdad has estado ahí, adelante: quien planifica lo verá y lo apuntará.</div>
+      <div class="row g8" style="margin-top:18px">
+        <button class="btn btn-gris" data-a="cerrarSheet" style="border-radius:99px">Cancelar</button>
+        <button class="btn btn-verde" data-a="parteOtraObraSeguro" data-id="${s.obraId}">Sí, estuve ahí</button>
+      </div>
+    </div></div>`;
+  }
   if (s.tipo === 'planAsignar') {
     const o = s.obraId ? obraById(s.obraId) : null;
     const gente = planGente();
@@ -10246,6 +10318,7 @@ document.addEventListener('click', (e) => {
   if (a === 'planFueraMover') return A.planFuera(d.id, true);
   if (a === 'planFueraIgnorar') return A.planFuera(d.id, false);
   if (a === 'parteDePlan') return A.nuevoParte(d.id, d.plan);
+  if (a === 'parteOtraObraSeguro') return A.nuevoParte(d.id, null, true);
   if (a === 'costeEmpNuevo') return A.costeEmpNuevo(d.id);
   if (a === 'costeEmpGuardar') return A.costeEmpGuardar();
   if (a === 'enlazarPresu') return A.enlazarPresu(d.id);
