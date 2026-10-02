@@ -51,7 +51,10 @@ $$;
 grant execute on function public.coste_hora_externo(text, date) to authenticated;
 
 -- 2 · La economía de la obra suma la mano extra ----------------------------------------
-create or replace view public.v_obra_economia
+-- La vista cambia de columnas (añade horas_extra y coste_extra): hay que
+-- quitarla y volver a crearla; con «replace» Postgres no deja reordenarlas.
+drop view if exists public.v_obra_economia;
+create view public.v_obra_economia
 with (security_invoker = true) as
 with pres as (
   select obra_id,
