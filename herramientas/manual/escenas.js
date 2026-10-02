@@ -146,6 +146,8 @@
     // --- operario ---------------------------------------------------------------
     'op-hoy-fuera': () => { base('u4'); V.view = 'hoy'; },
     'op-hoy-dentro': () => { base('u3'); V.view = 'hoy'; },
+    'op-hoy-plan': () => { base('u3'); V.view = 'hoy'; const hoy = new Date().toISOString().slice(0, 10); V.planCargado = true; V.planMio = [{ id: 'plx', fecha: hoy, empleado_id: 'e3', obra_id: 'o1', codigo: 'OB-137', cliente: 'Familia Roca', obra: 'Casa Can Roca', direccion: 'Camí de Son Vich 12', poblacion: 'Esporles', categorias: ['AE', 'FV'], hora_prevista: '08:00:00', nota: 'Llevar escalera grande', planificador: 'Ramón' }]; },
+    'op-hoy-sinplan': () => { base('u3'); V.view = 'hoy'; V.planCargado = true; V.planMio = []; },
     'op-obras': () => { base('u3'); V.view = 'obras'; },
     'op-horas': () => { base('u3'); V.view = 'horas'; },
     'op-perfil': () => { base('u3'); V.view = 'ajustes'; },

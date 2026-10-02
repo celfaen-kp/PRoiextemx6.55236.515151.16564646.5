@@ -368,7 +368,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '18.6'; // versión visible de la app (única fuente)
+const APP_VERSION = '18.7'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -1005,6 +1005,10 @@ const esComercial = () => ['presupuestos', 'jefe', 'admin'].includes(rol());
 const veCostes = () => ['presupuestos', 'admin'].includes(rol());
 // Quién crea y edita obras: todo comercial (obras_insert/update = es_comercial()).
 const puedeObras = () => esComercial();
+// Quién puede hacer el parte de una obra: jefes y Administración, de cualquiera;
+// el operario, de la que tiene planificada hoy (sql/etapa61: partes_insert).
+const planificadoHoyEn = (obraId) => (V.planMio || []).some((f) => f.obra_id === obraId && f.fecha === hoyISO());
+const puedeParteDe = (obraId) => puedeCrear() || planificadoHoyEn(obraId);
 // La agenda de Ramón es cosa suya y de Administración: los jefes de obra tienen
 // lo suyo. Va también en las políticas de Supabase (sql/etapa33), no solo aquí.
 const verAgenda = () => ['presupuestos', 'admin'].includes(rol());
@@ -2385,7 +2389,7 @@ A.cerrarObra = async (id) => {
  * columnas = días. Cada operario ve en «Hoy» lo suyo. Se planifica por
  * personas sueltas (decidido con Enzo, 2 oct 2026).
  * -------------------------------------------------------------------------------- */
-Object.assign(V, { plan: { lunes: null, dia: null, finde: false, filas: [], cargado: false, cargando: false, error: null }, planMio: [] });
+Object.assign(V, { plan: { lunes: null, dia: null, finde: false, filas: [], cargado: false, cargando: false, error: null, fuera: [] }, planMio: [], planCargado: false });
 const faltaEtapa60 = (e) => /planificacion|schema cache|PGRST205/i.test(typeof e === 'string' ? e : msgError(e));
 const lunesDe = (fecha) => { const d = new Date(fecha + 'T12:00'); d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return fechaLocal(d); };
 const esFinde = (fecha) => [0, 6].includes(new Date(fecha + 'T12:00').getDay());
@@ -2425,6 +2429,7 @@ A.cargarPlan = async () => {
     // semanas hacia delante.
     p.filas = await Sysefen.db.listarPlanificacion(agSumaDias(p.lunes, -60), agSumaDias(p.lunes, 20));
     p.cargado = true; p.error = null;
+    try { p.fuera = await Sysefen.db.partesFueraDePlan(); } catch (e2) { p.fuera = []; /* sin la etapa 61 */ }
   } catch (e) { p.error = msgError(e); }
   p.cargando = false;
   if (V.view === 'planificacion') render();
@@ -2432,8 +2437,8 @@ A.cargarPlan = async () => {
 // Lo mío de hoy y mañana, para la tarjeta de «Hoy» (todos los roles).
 async function sincronizarPlanMio() {
   if (!V.user || esAdmin()) return;
-  try { const hoy = hoyISO(); V.planMio = (await Sysefen.db.listarPlanificacion(hoy, agSumaDias(hoy, 1))).filter((f) => f.empleado_id === miEmpId()); }
-  catch (e) { /* sin la etapa 60 no hay planificación: la tarjeta no sale */ V.planMio = []; }
+  try { const hoy = hoyISO(); V.planMio = (await Sysefen.db.listarPlanificacion(hoy, agSumaDias(hoy, 1))).filter((f) => f.empleado_id === miEmpId()); V.planCargado = true; }
+  catch (e) { /* sin la etapa 60 no hay planificación: la tarjeta no sale */ V.planMio = []; V.planCargado = false; }
 }
 A.planSemana = (delta) => { V.plan.lunes = agSumaDias(V.plan.lunes, 7 * delta); V.plan.dia = agSumaDias(V.plan.dia, 7 * delta); render(); A.cargarPlan(); };
 A.planHoy = () => { V.plan.dia = siguienteLaborable(hoyISO()); V.plan.lunes = lunesDe(V.plan.dia); render(); A.cargarPlan(); };
@@ -2488,6 +2493,34 @@ A.planRepetir = async (empId) => {
   try { await Sysefen.db.crearPlanificacion(filas); toast('Repetido lo del ' + planFechaTxt(ayer) + '.'); await A.cargarPlan(); }
   catch (e) { avisar(faltaEtapa60(e) ? 'Falta ejecutar sql/etapa60 en Supabase.' : 'No se pudo: ' + msgError(e)); }
 };
+// Un parte hecho donde esa persona no estaba planificada: o era correcto (se
+// apunta la asignación a posteriori) o se deja pasar. En los dos casos deja de
+// salir.
+A.planFuera = async (id, mover) => {
+  const f = (V.plan.fuera || []).find((x) => x.id === id); if (!f) return;
+  try {
+    if (mover) await Sysefen.db.crearPlanificacion([{ obra_id: f.obra_id, empleado_id: f.autor_id, fecha: f.fecha, nota: 'Apuntado desde el parte' }]);
+    await Sysefen.db.revisarParteFueraDePlan(id);
+    toast(mover ? 'Planificación corregida.' : 'Revisado.');
+    await A.cargarPlan();
+  } catch (e) { avisar('No se pudo: ' + msgError(e)); }
+};
+function planFueraHTML() {
+  const lista = V.plan.fuera || [];
+  if (!lista.length) return '';
+  return `<div class="card" style="margin-bottom:12px;padding:12px 15px;box-shadow:0 0 0 1.5px var(--rojo),var(--sh)">
+    <div class="row g8" style="align-items:center"><span class="dot" style="width:8px;height:8px;background:var(--rojo)"></span><span class="lbl" style="color:var(--rojo)">Partes fuera de plan · ${lista.length}</span></div>
+    <div class="tiny" style="margin-top:4px">Partes hechos en una obra donde esa persona no estaba planificada ese día.</div>
+    ${lista.map((f) => `<div style="padding:10px 0;border-top:1px solid var(--l1);margin-top:8px">
+      <div style="font:600 14px var(--sans)">${esc(f.autor || '')} · ${esc(f.codigo || '')} · ${esc(f.cliente || f.obra || '')}</div>
+      <div class="tiny" style="margin-top:3px">${esc(planFechaTxt(f.fecha))}${f.planificado_en ? ' · estaba planificado en ' + esc(f.planificado_en) : ' · no tenía nada planificado'}</div>
+      <div class="row g8" style="margin-top:8px">
+        <button class="pill" data-a="planFueraMover" data-id="${f.id}" style="padding:7px 11px;font-size:12px;background:var(--verde);color:#fff">Era correcto · apuntar</button>
+        <button class="pill" data-a="planFueraIgnorar" data-id="${f.id}" style="padding:7px 11px;font-size:12px;background:var(--l1);color:var(--tinta)">Ignorar</button>
+      </div>
+    </div>`).join('')}
+  </div>`;
+}
 A.planVer = (id) => { const f = V.plan.filas.find((x) => x.id === id); if (!f) return; V.sheet = { tipo: 'planVer', id, hora: f.hora_prevista ? String(f.hora_prevista).slice(0, 5) : '', nota: f.nota || '', busy: false }; render(); };
 A.planGuardarCambios = async () => {
   const s = V.sheet; if (!s || s.tipo !== 'planVer' || s.busy) return;
@@ -2545,6 +2578,7 @@ function vPlanificacion() {
   </div>
   <div class="scroll pad pb-nav">
     ${p.error ? `<div class="card" style="margin-bottom:12px"><div class="sub">${faltaEtapa60(p.error) ? 'Falta ejecutar sql/etapa60 en Supabase.' : 'No se pudo cargar: ' + esc(p.error)}</div></div>` : ''}
+    ${planFueraHTML()}
     <div class="card" style="margin-bottom:12px;padding:12px 15px;${sin.length ? 'box-shadow:0 0 0 1.5px var(--ambar),var(--sh)' : ''}">
       <div class="row g8" style="align-items:center"><span class="dot" style="width:8px;height:8px;background:${sin.length ? 'var(--ambar)' : 'var(--verde)'}"></span>
         <span class="lbl" style="color:${sin.length ? 'var(--ambar-o)' : 'var(--verde-o)'}">${sin.length ? `Sin asignar ${esc(planFechaTxt(p.dia))} · ${sin.length}` : `Todas las obras en marcha tienen a alguien ${esc(planFechaTxt(p.dia))}`}</span></div>
@@ -2577,9 +2611,26 @@ function planHoyHTML() {
         ${f.direccion ? `<a class="pill grow" style="text-align:center;padding:9px" href="https://maps.apple.com/?q=${encodeURIComponent([f.direccion, f.poblacion].filter(Boolean).join(', '))}" target="_blank" rel="noopener">Cómo llegar</a>` : ''}
         ${obraById(f.obra_id) ? `<button class="pill grow" data-a="verObra" data-id="${f.obra_id}" style="padding:9px">Ver obra</button>` : ''}
       </div>
+      ${fecha === hoy && obraById(f.obra_id) ? (parteHoyDe(f.obra_id)
+        ? `<div class="tiny" style="margin-top:10px;color:var(--verde-o)">✓ Parte de hoy hecho: ${esc(parteHoyDe(f.obra_id).ref)}</div>`
+        : `<button class="pill pill-verde" data-a="parteDePlan" data-id="${f.obra_id}" data-plan="${f.id}" style="margin-top:10px;padding:12px;width:100%;text-align:center">Hacer el parte de hoy</button>`) : ''}
     </div>`).join('');
   };
   return bloque(hoy, 'Hoy vas a') + bloque(agSumaDias(hoy, 1), 'Mañana vas a');
+}
+// El parte que ya hice hoy en esa obra, si lo hay.
+const parteHoyDe = (obraId) => S.partes.find((p) => p.obraId === obraId && p.fecha === hoyISO() && p.autorId === V.user.id && p.estado !== 'anulado') || null;
+// El operario sin nada planificado hoy: que lo sepa, y que pueda hacer un parte
+// de otra obra si hace falta (la base solo se lo deja en las suyas).
+function sinPlanHoyHTML() {
+  if (puedeCrear() || !V.planCargado) return '';
+  const hoy = hoyISO();
+  if ((V.planMio || []).some((f) => f.fecha === hoy)) return '';
+  return `<div class="card" style="margin-bottom:10px">
+    <div class="h2">Sin obra asignada hoy</div>
+    <div class="sub" style="margin-top:6px">Nadie te ha planificado para hoy. Habla con tu jefe de obra o con presupuestos.</div>
+    ${S.obras.length ? '<button class="pill" data-a="nuevoParteElegir" style="margin-top:12px;padding:10px 14px">Hacer parte de otra obra</button>' : ''}
+  </div>`;
 }
 
 /* ---------- economía de la obra y costes (sql/etapa59) ------------------------
@@ -2814,7 +2865,7 @@ function horasDeObraEnFecha(oid, fecha) {
   Object.keys(horas).forEach((k) => { horas[k] = cuarto(horas[k]); });
   return horas;
 }
-A.nuevoParte = (obraId) => {
+A.nuevoParte = (obraId, planId) => {
   V.sheet = null;
   // Sin obra por defecto: un parte que sale con una obra puesta "porque sí" se
   // firma sin mirar y acaba con las horas en el cliente equivocado.
@@ -2823,8 +2874,12 @@ A.nuevoParte = (obraId) => {
   const o = obraById(oid);
   const fecha = hoyISO(); // por defecto, siempre el día en curso
   const horas = horasDeObraEnFecha(oid, fecha);
+  // El operario no tiene imputaciones a mano: sus horas salen de su fichaje de
+  // hoy, redondeadas al cuarto. Si aún no ha fichado la salida, lo que lleve.
+  if (!puedeCrear() && !horas[V.user.id]) { const h = cuarto(minutosDia(V.user.id, fecha) / 60); if (h > 0) horas[V.user.id] = h; }
+  const plan = (V.planMio || []).find((f) => f.id === planId) || (V.planMio || []).find((f) => f.obra_id === oid && f.fecha === fecha);
   V.draft = {
-    id: uid(), obraId: oid, fecha, autorId: V.user.id,
+    id: uid(), obraId: oid, fecha, autorId: V.user.id, planificacionId: plan ? plan.id : null,
     desc: '', horas, incluidos: Object.keys(horas),
     mats: [], nivel: 'Sin incidencias', inc: '', adjuntos: [],
     importe: '', obs: '', firmante: '', firma: null, email: o.email || '',
@@ -2995,7 +3050,13 @@ A.guardarEnviar = async (enviar) => {
     nombre: m.nombre.trim(), cantidad: m.cant || null, importe: null, compra: !!m.compra,
   }));
   try {
-    const nuevo = await Sysefen.db.crearParte(campos);
+    // De qué asignación del tablero nace el parte (etapa 61). Si esa columna
+    // aún no existe, se guarda sin ella en vez de perder el parte.
+    let nuevo;
+    if (d.planificacionId) {
+      try { nuevo = await Sysefen.db.crearParte(Object.assign({ planificacion_id: d.planificacionId }, campos)); }
+      catch (e1) { if (/planificacion_id/i.test(msgError(e1))) nuevo = await Sysefen.db.crearParte(campos); else throw e1; }
+    } else nuevo = await Sysefen.db.crearParte(campos);
     if (horasFilas.length) await Sysefen.db.guardarHorasParte(nuevo.id, horasFilas);
     if (matsFilas.length) await Sysefen.db.guardarMaterialesParte(nuevo.id, matsFilas);
     // Las fotos van a Supabase Storage. Si alguna falla no se tira el parte
@@ -3050,7 +3111,9 @@ A.guardarEnviar = async (enviar) => {
     render();
   } catch (e) {
     V.parteBusy = false;
-    avisar('No se pudo guardar el parte: ' + (e && e.message ? e.message : 'error'));
+    avisar(/row-level security|policy/i.test(msgError(e)) && !puedeCrear()
+      ? 'No estás planificado en esa obra: el parte solo lo puedes hacer de la obra que tienes asignada. Pídeselo a tu jefe.'
+      : 'No se pudo guardar el parte: ' + (e && e.message ? e.message : 'error'));
     render();
   }
 };
@@ -3875,6 +3938,7 @@ function vHoy() {
       <button class="pill pill-verde" data-a="firmarMesPendiente" style="margin-top:12px;padding:11px;width:100%;text-align:center">Ver y firmar</button>
     </div>` : ''}
     ${planHoyHTML()}
+    ${sinPlanHoyHTML()}
     ${S.obras.length ? '' : `<div class="card"><div class="h2">Todavía no hay obras</div><div class="sub" style="margin-top:6px">Se pueden crear más adelante: para fichar no hacen falta.</div>
       ${puedeCrear() ? '<button class="btn btn-verde" data-a="nuevaObra" style="margin-top:14px">Crear obra</button>' : ''}</div>`}
 
@@ -3902,7 +3966,7 @@ function vHoy() {
       <div class="tiny" style="color:rgba(255,255,255,.5);margin-top:6px">Selecciona una obra</div></div>
       <div class="av" style="width:28px;height:28px;background:var(--ambar);color:var(--tinta);font-size:16px">+</div>
     </div>` : ''}`
-    : `<div style="margin-top:16px;padding:15px;border-radius:16px;border:1px dashed var(--l2);font:400 13px/1.5 var(--sans);color:var(--t2)">Los partes de trabajo los crea y firma el jefe de obra. Tú solo tienes que fichar bien tus horas.</div>`}
+    : ((V.planMio || []).some((f) => f.fecha === hoyISO()) ? '' : `<div style="margin-top:16px;padding:15px;border-radius:16px;border:1px dashed var(--l2);font:400 13px/1.5 var(--sans);color:var(--t2)">Los partes de trabajo los crea el jefe de obra, o tú mismo el día que estés planificado en una obra. Lo que siempre toca es fichar bien tus horas.</div>`)}
   </div></div>`;
 }
 
@@ -5446,7 +5510,7 @@ function vP1() {
       </div>
     </div>
     <div class="card" style="padding:0;overflow:hidden">
-      ${equipo().map((uu, i) => { const id = uu.id; const on = d.incluidos.includes(id); return `<div style="padding:12px 13px;${i ? 'border-top:1px solid var(--l1)' : ''}">
+      ${(puedeCrear() ? equipo() : equipo().filter((uu) => uu.id === V.user.id)).map((uu, i) => { const id = uu.id; const on = d.incluidos.includes(id); return `<div style="padding:12px 13px;${i ? 'border-top:1px solid var(--l1)' : ''}">
         <div class="row" data-a="togglePersona" data-id="${id}" style="gap:10px;cursor:pointer;padding:4px 0">
           <div style="width:22px;height:22px;border-radius:7px;flex:none;display:flex;align-items:center;justify-content:center;font:700 12px var(--sans);color:#fff;background:${on ? 'var(--verde)' : 'transparent'};border:1.5px solid ${on ? 'var(--verde)' : 'rgba(20,23,15,.25)'}">${on ? '✓' : ''}</div>
           <div class="grow" style="font:500 15px/1.1 var(--sans);color:${on ? 'var(--tinta)' : 'rgba(20,23,15,.35)'}">${esc(uu.nombre)}</div>
@@ -9676,8 +9740,9 @@ function sheet() {
   }
   if (s.tipo === 'nuevoParteObra') {
     // Con muchas obras la hoja se salía de la pantalla y no dejaba elegir las
-    // de arriba: ahora es una lista que se desliza, con buscador.
-    const abiertas = S.obras.filter((o) => !obraCerrada(o)).sort(porNumeroDesc);
+    // de arriba: ahora es una lista que se desliza, con buscador. Primero las
+    // que tengo planificadas hoy; después las demás, las más nuevas arriba.
+    const abiertas = S.obras.filter((o) => !obraCerrada(o)).sort((a, b) => (planificadoHoyEn(b.id) ? 1 : 0) - (planificadoHoyEn(a.id) ? 1 : 0) || porNumeroDesc(a, b));
     const q = sinTildes(s.buscar || '');
     const num = numeroBuscado(q);
     const lista = q ? abiertas.filter((o) => (num != null && o.numero === num) || sinTildes([codigoObra(o), o.titulo, o.cliente, o.dir, o.poblacion].join(' ')).includes(q)) : abiertas;
@@ -9686,7 +9751,7 @@ function sheet() {
       ${abiertas.length > 5 ? `<input class="inp" data-f="buscarObraParte" value="${esc(s.buscar || '')}" placeholder="Buscar obra o cliente" autocomplete="off" style="margin-top:14px">` : ''}
       ${abiertas.length ? '' : '<div class="sub" style="margin-top:10px">Todavía no hay obras. Créala aquí y sigues con el parte.</div>'}
       <div class="lista-obras">
-        ${lista.map((o) => `<button class="fila-obra" data-a="nuevoParte" data-id="${o.id}">${esc(nombreObra(o))}${o.cliente || o.dir ? `<small>${esc([o.cliente, direccionObra(o)].filter(Boolean).join(' · '))}</small>` : ''}</button>`).join('')}
+        ${lista.map((o) => `<button class="fila-obra" data-a="nuevoParte" data-id="${o.id}">${esc(nombreObra(o))}${planificadoHoyEn(o.id) ? ' <span class="badge" style="background:#e3efe5;color:var(--verde-o)">hoy</span>' : ''}${o.cliente || o.dir ? `<small>${esc([o.cliente, direccionObra(o)].filter(Boolean).join(' · '))}</small>` : ''}</button>`).join('')}
         ${q && !lista.length ? '<div class="sub" style="padding:14px 4px">Ninguna obra abierta con ese nombre.</div>' : ''}
       </div>
       <div class="row g8" style="margin-top:14px">
@@ -10178,6 +10243,9 @@ document.addEventListener('click', (e) => {
   if (a === 'planGuardarCambios') return A.planGuardarCambios();
   if (a === 'planQuitar') return A.planQuitar(d.id);
   if (a === 'planCopiarManana') return A.planCopiarManana(d.id);
+  if (a === 'planFueraMover') return A.planFuera(d.id, true);
+  if (a === 'planFueraIgnorar') return A.planFuera(d.id, false);
+  if (a === 'parteDePlan') return A.nuevoParte(d.id, d.plan);
   if (a === 'costeEmpNuevo') return A.costeEmpNuevo(d.id);
   if (a === 'costeEmpGuardar') return A.costeEmpGuardar();
   if (a === 'enlazarPresu') return A.enlazarPresu(d.id);

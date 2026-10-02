@@ -115,6 +115,13 @@ export async function actualizarPlanificacion(id, cambios) {
 export async function borrarPlanificacion(id) {
   return unwrap(await supabase.from('planificacion').delete().eq('id', id).select('id'));
 }
+/** Partes hechos en una obra donde el autor no estaba planificado (sql/etapa61). */
+export async function partesFueraDePlan() {
+  return unwrap(await supabase.from('v_partes_fuera_de_plan').select('*').order('fecha', { ascending: false })) || [];
+}
+export async function revisarParteFueraDePlan(id) {
+  return unwrap(await supabase.from('partes').update({ fuera_de_plan_revisado_at: new Date().toISOString() }).eq('id', id).select('id'));
+}
 export async function obrasSinPlanificar(fecha) {
   return unwrap(await supabase.from('v_obras_sin_planificar').select('*').eq('fecha', fecha).order('numero', { ascending: false })) || [];
 }
@@ -766,7 +773,7 @@ export default {
   listarEmpleados, crearEmpleado, actualizarEmpleado,
   listarObras, crearObra, actualizarObra, borrarObra,
   economiaObra, costesObra, anadirCosteObra, borrarCosteObra, enlazarPresupuesto, listarCostesEmpleados, guardarCosteEmpleado,
-  listarPlanificacion, crearPlanificacion, actualizarPlanificacion, borrarPlanificacion, obrasSinPlanificar,
+  listarPlanificacion, crearPlanificacion, actualizarPlanificacion, borrarPlanificacion, obrasSinPlanificar, partesFueraDePlan, revisarParteFueraDePlan,
   empleadosDeObra, listarAsignaciones, asignarEmpleadoAObra, quitarEmpleadoDeObra,
   fichajeAbierto, ficharEntrada, ficharSalida, corregirFichaje, crearFichajeManual, importarFichajes, borrarFichaje,
   fichajesDelDia, listarFichajes, escucharFichajes,
