@@ -1,6 +1,8 @@
 /* El proyecto de la obra (sql/etapa63): avance global, agrupación de fases y
  * lo que se guarda con el parte. */
 
+// Como Administración: ve también las fases comunes.
+S.users = [{ id: 'u0', nombre: 'Enzo', rol: 'admin', activo: true }]; V.user = { id: 'u0' };
 S.fases = [
   { id: 'f1', obra_id: 'o1', categoria: null, orden: 10, nombre: 'Pedido de material', pct: 100, no_aplica: false },
   { id: 'f2', obra_id: 'o1', categoria: null, orden: 20, nombre: 'Recepción de material', pct: 80, no_aplica: false },
@@ -34,5 +36,11 @@ comprueba('enseña las pendientes', html.indexOf('Montaje de paneles') !== -1 &&
 comprueba('no enseña las hechas ni las que no aplican', html.indexOf('Fijaciones') === -1 && html.indexOf('Legalización') === -1);
 comprueba('dice cuántas van hechas', html.indexOf('2 de 6 fases hechas') !== -1);
 igual('obra sin fases: el parte no enseña el bloque', avanceParteHTML({ obraId: 'o9' }), '');
+
+// Un jefe de obra solo ve las fases de la categoría: ni material, ni cobro.
+S.users = [{ id: 'u1', nombre: 'Xavi', rol: 'jefe', activo: true }]; V.user = { id: 'u1' };
+igual('jefe: solo el grupo de la categoría', fasesAgrupadas('o1').map((x) => x.titulo).join(','), 'Fotovoltaica');
+igual('jefe: el avance se calcula con esas', avanceObra('o1').pct, Math.round((100 + 75 + 0) / 3));
+comprueba('jefe: en el parte no sale el material', avanceParteHTML({ obraId: 'o1', avance: {} }).indexOf('Recepción de material') === -1);
 
 resultado();

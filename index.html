@@ -368,7 +368,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '19.2'; // versión visible de la app (única fuente)
+const APP_VERSION = '19.3'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -2454,7 +2454,11 @@ async function sincronizarFases() {
   catch (e) { /* sin la etapa 63 no hay fases: no se enseña nada */ V.fasesCargadas = false; }
   finally { sincFases = false; }
 }
-const fasesDe = (obraId) => S.fases.filter((f) => f.obra_id === obraId).sort((a, b) => a.orden - b.orden || String(a.nombre).localeCompare(String(b.nombre), 'es'));
+// Las fases comunes (pedido y recepción de material, replanteo, cobro) son
+// cosa de la oficina: jefes y operarios solo ven las de la categoría, que es
+// lo que ellos ejecutan y lo que va en los partes.
+const veFasesComunes = () => veCostes();
+const fasesDe = (obraId) => S.fases.filter((f) => f.obra_id === obraId && (veFasesComunes() || f.categoria)).sort((a, b) => a.orden - b.orden || String(a.nombre).localeCompare(String(b.nombre), 'es'));
 const faseById = (id) => S.fases.find((f) => f.id === id) || null;
 // Avance global: media de las fases que aplican. null si la obra no tiene fases.
 function avanceObra(obraId) {
@@ -2910,7 +2914,7 @@ function economiaHTML(o) {
       <div style="margin-top:10px">
         ${fila('Presupuestado', euros2(e.venta_presupuestada))}
         ${fila('Coste previsto', euros2(e.coste_previsto))}
-        ${fila('Coste real', euros2(e.coste_real), 'personal ' + euros2(e.coste_mano_obra_real) + ' · material ' + euros2(e.coste_material_real))}
+        ${fila('Coste real', euros2(e.coste_real), 'personal ' + euros2(e.coste_mano_obra_real) + (Number(e.coste_extra) > 0 ? ' (mano extra ' + euros2(e.coste_extra) + ')' : '') + ' · material ' + euros2(e.coste_material_real))}
         ${fila('Margen', euros2(e.margen_real), 'previsto ' + euros2(e.margen_previsto))}
         ${fila('Horas', horas1(e.horas_reales), e.horas_previstas != null ? 'previstas ' + horas1(e.horas_previstas) : null)}
       </div>
@@ -2962,7 +2966,14 @@ A.abrirCostes = async () => {
   catch (e) { V.costesEmpError = msgError(e); }
   render();
 };
-const costeVigente = (empId) => (V.costesEmp || []).find((c) => c.empleado_id === empId && !c.hasta && c.desde <= hoyISO()) || (V.costesEmp || []).find((c) => c.empleado_id === empId) || null;
+// La tarifa vigente de una persona, o de un rol externo ('ext:peon', 'ext:oficial').
+const EXTRA_COSTES = [['ext:peon', 'Peón', 'peon'], ['ext:oficial', 'Oficial', 'oficial']];
+const extraRolDe = (id) => (EXTRA_COSTES.find((x) => x[0] === id) || [])[2] || null;
+const costeVigente = (id) => {
+  const rol = extraRolDe(id);
+  const mias = (V.costesEmp || []).filter((c) => (rol ? c.externo === rol : c.empleado_id === id));
+  return mias.find((c) => !c.hasta && c.desde <= hoyISO()) || mias[0] || null;
+};
 A.costeEmpNuevo = (empId) => { const v = costeVigente(empId); V.sheet = { tipo: 'costeEmp', empId, coste: v ? String(v.coste_hora).replace('.', ',') : '', desde: hoyISO(), busy: false }; render(); };
 A.costeEmpGuardar = async () => {
   const s = V.sheet; if (!s || s.tipo !== 'costeEmp' || s.busy) return;
@@ -2970,7 +2981,8 @@ A.costeEmpGuardar = async () => {
   if (!(coste >= 0) || !s.desde) { avisar('Pon el coste por hora y desde qué día.'); return; }
   s.busy = true; render();
   try {
-    await Sysefen.db.guardarCosteEmpleado({ empleado_id: s.empId, coste_hora: coste, desde: s.desde });
+    const rol = extraRolDe(s.empId);
+    await Sysefen.db.guardarCosteEmpleado(rol ? { externo: rol, coste_hora: coste, desde: s.desde } : { empleado_id: s.empId, coste_hora: coste, desde: s.desde });
     V.sheet = null; toast('Tarifa guardada.'); await A.abrirCostes();
   } catch (e) { s.busy = false; avisar(faltaEtapa59(e) ? 'Falta ejecutar sql/etapa59 en Supabase.' : 'No se pudo guardar: ' + msgError(e)); render(); }
 };
@@ -2978,13 +2990,18 @@ function costesListaHTML() {
   const q = String(V.costesBuscar || '').trim().toLowerCase();
   const gente = empRows.filter((r) => r.activo !== false && r.rol !== 'admin').filter((r) => !q || String(r.nombre || '').toLowerCase().includes(q));
   if (!V.costesEmp && !V.costesEmpError) return '<div class="card"><div class="sub">Cargando…</div></div>';
-  if (!gente.length) return '<div class="card"><div class="sub">Nadie con ese nombre.</div></div>';
-  return gente.map((r) => {
+  // Al final, la mano extra: peón y oficial sin ficha (lo que cobra la empresa
+  // de albañilería por hora, por ejemplo). Sus horas van en los partes.
+  const extras = q ? EXTRA_COSTES.filter((x) => x[1].toLowerCase().includes(q)) : EXTRA_COSTES;
+  const filas = [...gente, ...extras.map(([id, nombre]) => ({ id, nombre, extra: true }))];
+  if (!filas.length) return '<div class="card"><div class="sub">Nadie con ese nombre.</div></div>';
+  return filas.map((r, i) => {
       const v = costeVigente(r.id);
-      const hist = (V.costesEmp || []).filter((c) => c.empleado_id === r.id);
-      return `<div class="card" style="margin-bottom:10px">
+      const hist = (V.costesEmp || []).filter((c) => (r.extra ? c.externo === extraRolDe(r.id) : c.empleado_id === r.id));
+      const cab = r.extra && (i === 0 || !filas[i - 1].extra) ? '<div class="lbl" style="margin:16px 0 8px">Mano extra (sin ficha)</div>' : '';
+      return cab + `<div class="card" style="margin-bottom:10px">
         <div class="row g8" style="align-items:center">
-          <div class="grow"><div style="font:600 16px var(--sans)">${esc(r.nombre)}</div>
+          <div class="grow"><div style="font:600 16px var(--sans)">${esc(r.nombre)}${r.extra ? ' <span class="tiny">externo</span>' : ''}</div>
             <div class="tiny" style="margin-top:4px">${v ? `Desde ${fechaCorta(v.desde)}${hist.length > 1 ? ' · ' + hist.length + ' tarifas' : ''}` : '<span style="color:var(--rojo)">Sin tarifa · cuenta a 0 €</span>'}</div></div>
           <div class="num" style="font-size:22px">${v ? esc(String(v.coste_hora).replace('.', ',')) + ' €/h' : '—'}</div>
           <button class="pill" data-a="costeEmpNuevo" data-id="${r.id}" style="padding:8px 12px">${v ? 'Cambiar' : 'Poner'}</button>
@@ -5771,18 +5788,22 @@ function vP1() {
         ${on ? relojHTML('parte', id, (d.horas[id] || 0) * 60, RELOJ_MAX_DEFECTO, true, 15) : ''}
       </div>`; }).join('')}
     </div>
-    <div class="lbl" style="margin:16px 0 6px">Ayuda externa</div>
-    <div class="tiny" style="margin-bottom:8px">Peones u oficiales que no son de plantilla (albañilería, por ejemplo). Solo cuentan en este parte: no fichan ni van a ninguna planilla.</div>
-    <div class="card" style="padding:0;overflow:hidden">
-      ${EXTERNOS.map(([id, nombre], i) => { const on = d.incluidos.includes(id); return `<div style="padding:12px 13px;${i ? 'border-top:1px solid var(--l1)' : ''}">
+    ${(() => { const conHoras = EXTERNOS.filter(([id]) => d.incluidos.includes(id) && (d.horas[id] || 0) > 0); const abierto = d.verExtra || conHoras.length > 0; return `
+    <div class="card" style="padding:0;overflow:hidden;margin-top:10px">
+      <div class="row" data-a="toggleExtra" style="padding:12px 13px;cursor:pointer;align-items:center;gap:10px">
+        <div class="grow"><div style="font:500 15px/1.1 var(--sans)">Mano extra</div>
+          <div class="tiny" style="margin-top:3px">${conHoras.length ? conHoras.map(([id, n]) => n + ' ' + fmtH(d.horas[id]) + ' h').join(' · ') : 'Peón u oficial sin ficha, si los hubo'}</div></div>
+        <div style="font:400 18px/1 var(--sans);color:var(--t3);transform:rotate(${abierto ? 90 : 0}deg)">›</div>
+      </div>
+      ${abierto ? EXTERNOS.map(([id, nombre], i) => { const on = d.incluidos.includes(id); return `<div style="padding:12px 13px;${i ? 'border-top:1px solid var(--l1)' : ''}">
         <div class="row" data-a="togglePersona" data-id="${id}" style="gap:10px;cursor:pointer;padding:4px 0">
           <div style="width:22px;height:22px;border-radius:7px;flex:none;display:flex;align-items:center;justify-content:center;font:700 12px var(--sans);color:#fff;background:${on ? 'var(--ambar)' : 'transparent'};border:1.5px solid ${on ? 'var(--ambar)' : 'rgba(20,23,15,.25)'}">${on ? '✓' : ''}</div>
           <div class="grow" style="font:500 15px/1.1 var(--sans);color:${on ? 'var(--tinta)' : 'rgba(20,23,15,.35)'}">${nombre}</div>
           <div class="num" data-num="parteHoras" data-id="${id}" style="font-size:16px;color:${on ? 'var(--tinta)' : 'rgba(20,23,15,.3)'}">${on ? fmtH(d.horas[id] || 0) + ' h' : 'tocar para incluir'}</div>
         </div>
         ${on ? relojHTML('parte', id, (d.horas[id] || 0) * 60, RELOJ_MAX_DEFECTO, true, 15) : ''}
-      </div>`; }).join('')}
-    </div>
+      </div>`; }).join('') + '<div class="tiny" style="padding:0 13px 12px">Solo cuentan en este parte: no fichan ni van a ninguna planilla. Su coste se pone en Costes de personal.</div>' : ''}
+    </div>`; })()}
     <div class="row" style="justify-content:space-between;padding:11px 4px 0"><div class="sub">Total del parte</div><div class="num" data-num="parteTotal" style="font-size:17px">${fmtH(total)} h</div></div>
 
     <div class="row" style="justify-content:space-between;margin:22px 0 4px">
@@ -10289,7 +10310,7 @@ function sheet() {
     </div></div>`;
   }
   if (s.tipo === 'costeEmp') {
-    const r = empRowById(s.empId) || {};
+    const r = empRowById(s.empId) || (extraRolDe(s.empId) ? { nombre: (EXTRA_COSTES.find((x) => x[0] === s.empId) || [])[1] + ' externo' } : {});
     return `<div class="sheet"><div>
       <div style="font:600 23px/1.15 var(--cond)">Coste por hora · ${esc(r.nombre || '')}</div>
       <div class="sub" style="margin-top:8px">Coste total para la empresa de una hora de esta persona. La tarifa anterior se cierra sola el día antes.</div>
@@ -10706,6 +10727,7 @@ document.addEventListener('click', (e) => {
   if (a === 'planFueraMover') return A.planFuera(d.id, true);
   if (a === 'planFueraIgnorar') return A.planFuera(d.id, false);
   if (a === 'parteDePlan') return A.nuevoParte(d.id, d.plan);
+  if (a === 'toggleExtra') { if (V.draft) { sincronizarRuedas(); V.draft.verExtra = !V.draft.verExtra; } return render(); }
   if (a === 'parteOtraObraSeguro') return A.nuevoParte(d.id, null, true);
   if (a === 'parteAvance') return A.parteAvance(d.id, d.p);
   if (a === 'faseVer') return A.faseVer(d.id);
