@@ -26,7 +26,7 @@ setTimeout(function () {
   ] };
   var h = vPresupuestos();
   comprueba('sale el suelto y el de la visita', h.indexOf('Casa de Ana') > -1 && h.indexOf('Visita V-12') > -1);
-  comprueba('el que hay que revisar va marcado', h.indexOf('Por revisar') > -1);
+  comprueba('el que hay que revisar va marcado', h.indexOf('Pendiente de revisar') > -1);
   comprueba('sin visita lo dice', h.indexOf('Sin visita') > -1);
   comprueba('botón de nuevo', h.indexOf('data-a="presuNuevo"') > -1);
   V.presuLista.filas = [];

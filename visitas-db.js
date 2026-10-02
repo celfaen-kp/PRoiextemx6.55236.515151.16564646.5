@@ -359,7 +359,7 @@ export async function listarClientesAgenda() {
   return unwrap(
     await supabase
       .from('clientes_cache')
-      .select('*, citas(id, inicio, estado), visitas(id, codigo, estado, sync_estado, fecha_visita, presupuestos(id, categoria, estado, respuesta_cliente, tl_quotation_id, total_venta, created_at, enviado_cliente_at, obra_id)), presupuestos(id, categoria, estado, respuesta_cliente, tl_quotation_id, total_venta, created_at, enviado_cliente_at, obra_id)')
+      .select('*, citas(id, inicio, estado), visitas(id, codigo, estado, sync_estado, fecha_visita, presupuestos(id, categoria, estado, respuesta_cliente, tl_quotation_id, total_venta, created_at, enviado_cliente_at, revisado_at, obra_id)), presupuestos(id, categoria, estado, respuesta_cliente, tl_quotation_id, total_venta, created_at, enviado_cliente_at, revisado_at, obra_id)')
       .order('nombre')
   ) || [];
 }

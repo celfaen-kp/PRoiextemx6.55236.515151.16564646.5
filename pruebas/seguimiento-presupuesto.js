@@ -1,9 +1,10 @@
 /* Seguimiento del presupuesto (sql/etapa64): en qué punto está cada uno y
  * cuál manda para el estado del cliente. */
 
-igual('recién creado', seguimientoPresu({ estado: 'generado' }).txt, 'Hecho · sin subir a Teamleader');
-igual('con incidencias', seguimientoPresu({ estado: 'revisar' }).txt, 'Por revisar · sin subir');
-igual('subido', seguimientoPresu({ estado: 'generado', tl_quotation_id: 'q1' }).k, 'presupuestado');
+igual('recién creado', seguimientoPresu({ estado: 'generado' }).txt, 'Hecho · pendiente de revisar');
+igual('con incidencias', seguimientoPresu({ estado: 'revisar' }).txt, 'Pendiente de revisar · sin subir');
+igual('subido, sin revisar', seguimientoPresu({ estado: 'generado', tl_quotation_id: 'q1' }).txt, 'En Teamleader · pendiente de revisar');
+igual('revisado, por enviar', seguimientoPresu({ estado: 'aprobado', tl_quotation_id: 'q1', revisado_at: '2026-10-01' }).txt, 'Revisado · por enviar al cliente');
 igual('enviado al cliente', seguimientoPresu({ estado: 'enviado', tl_quotation_id: 'q1', enviado_cliente_at: '2026-10-01' }).k, 'esperando');
 igual('aceptado manda sobre todo', seguimientoPresu({ estado: 'generado', respuesta_cliente: 'aceptado' }).k, 'aceptado');
 igual('rechazado', seguimientoPresu({ respuesta_cliente: 'rechazado' }).color, 'var(--rojo)');

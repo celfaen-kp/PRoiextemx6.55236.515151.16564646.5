@@ -368,7 +368,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '19.1'; // versión visible de la app (única fuente)
+const APP_VERSION = '19.2'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -8320,7 +8320,8 @@ function seguimientoHTML(d) {
   const pasos = [
     ['Creado', fechaCorta(d.created_at), true],
     ['En Teamleader', d.tl_quotation_id ? 'subido' : 'sin subir', !!d.tl_quotation_id],
-    ['Revisado y enviado al cliente', d.enviado_cliente_at ? fechaCorta(d.enviado_cliente_at) + (d.enviado_cliente_por ? ' · ' + agNombreEmp(d.enviado_cliente_por) : '') : 'pendiente', !!(d.enviado_cliente_at || d.estado === 'enviado')],
+    ['Revisado', d.revisado_at ? fechaCorta(d.revisado_at) + (d.revisado_por ? ' · ' + agNombreEmp(d.revisado_por) : '') : 'pendiente de revisar', !!d.revisado_at],
+    ['Enviado al cliente', d.enviado_cliente_at ? fechaCorta(d.enviado_cliente_at) + (d.enviado_cliente_por ? ' · ' + agNombreEmp(d.enviado_cliente_por) : '') : 'pendiente', !!(d.enviado_cliente_at || d.estado === 'enviado')],
     ['Respuesta del cliente', d.respuesta_cliente && d.respuesta_cliente !== 'pendiente' ? { aceptado: 'Aceptado', rechazado: 'Rechazado', caducado: 'Caducado' }[d.respuesta_cliente] + (d.respondido_at ? ' · ' + fechaCorta(d.respondido_at) : '') : 'esperando', d.respuesta_cliente && d.respuesta_cliente !== 'pendiente'],
   ];
   const busy = V.presuSegBusy;
@@ -8329,8 +8330,10 @@ function seguimientoHTML(d) {
     <div style="margin-top:10px">${pasos.map(([t, sub, ok]) => `<div class="row g10" style="align-items:center;padding:7px 0;border-bottom:1px solid var(--l1)">
       <span class="dot" style="width:9px;height:9px;background:${ok ? 'var(--verde)' : 'rgba(20,23,15,.15)'}"></span>
       <span class="grow" style="font:500 14px var(--sans);${ok ? '' : 'color:var(--t2)'}">${t}</span><span class="tiny">${esc(sub)}</span></div>`).join('')}</div>
-    ${!(d.enviado_cliente_at || d.estado === 'enviado') ? `<button class="btn btn-verde" data-a="presuEnviadoCliente" style="margin-top:12px" ${busy ? 'disabled' : ''}>Ya lo revisé y se lo envié al cliente</button>
-      <div class="tiny" style="margin-top:6px;text-align:center">${d.tl_quotation_id ? 'Revísalo en Teamleader y mándaselo desde allí; aquí solo se apunta.' : 'Normalmente primero se sube a Teamleader, se revisa y se envía desde allí.'}</div>`
+    ${!d.revisado_at && !(d.enviado_cliente_at || d.estado === 'enviado') ? `<button class="btn btn-verde" data-a="presuRevisado" style="margin-top:12px" ${busy ? 'disabled' : ''}>Ya lo revisé</button>
+      <div class="tiny" style="margin-top:6px;text-align:center">${d.tl_quotation_id ? 'Repásalo en Teamleader (precios, textos, descuento) y márcalo aquí.' : 'Lo normal: subirlo a Teamleader, repasarlo allí y marcarlo aquí.'}</div>`
+    : !(d.enviado_cliente_at || d.estado === 'enviado') ? `<button class="btn btn-verde" data-a="presuEnviadoCliente" style="margin-top:12px" ${busy ? 'disabled' : ''}>Ya se lo envié al cliente</button>
+      <div class="tiny" style="margin-top:6px;text-align:center">Se lo mandas desde Teamleader; aquí solo se apunta la fecha.</div>`
     : `<div class="lbl" style="margin:12px 0 6px">¿Qué dijo el cliente?</div>
       <div class="row g8" style="flex-wrap:wrap">${[['pendiente', 'Esperando'], ['aceptado', 'Aceptó'], ['rechazado', 'Rechazó'], ['caducado', 'Caducó']].map(([k, l]) => `<span class="chip ${(d.respuesta_cliente || 'pendiente') === k ? 'on' : ''}" data-a="presuRespuesta" data-r="${k}" style="cursor:pointer;${k === 'aceptado' && (d.respuesta_cliente || 'pendiente') === k ? 'background:var(--verde);border-color:var(--verde)' : ''}">${l}</span>`).join('')}</div>
       ${d.respuesta_cliente === 'rechazado' ? `<input class="inp" data-f="presuMotivoRechazo" value="${esc(d.motivo_rechazo || '')}" placeholder="Por qué (precio, otra empresa, lo aplaza…)" style="margin-top:10px">` : ''}
@@ -8340,10 +8343,17 @@ function seguimientoHTML(d) {
            <div class="tiny" style="margin-top:6px;text-align:center">Se crea con el cliente, la dirección de la visita y la categoría, y el presupuesto queda enlazado para la economía.</div>`) : ''}`}
   </div>`;
 }
+A.presuRevisado = async () => {
+  const d = V.presuVer && V.presuVer.datos; if (!d || V.presuSegBusy) return;
+  V.presuSegBusy = true; render();
+  try { Object.assign(d, await visitasDB.seguimientoPresupuesto(d.id, { revisado_at: new Date().toISOString(), revisado_por: miEmpId() || null, estado: d.estado === 'revisar' || d.estado === 'generado' ? 'aprobado' : d.estado })); toast('Apuntado: revisado.'); if (V.agenda.cargado) A.cargarAgenda(); }
+  catch (e) { avisar(/revisado_at/i.test(msgError(e)) ? 'Falta ejecutar sql/etapa65 en Supabase.' : 'No se pudo guardar: ' + msgError(e)); }
+  V.presuSegBusy = false; render();
+};
 A.presuEnviadoCliente = async () => {
   const d = V.presuVer && V.presuVer.datos; if (!d || V.presuSegBusy) return;
   V.presuSegBusy = true; render();
-  try { Object.assign(d, await visitasDB.seguimientoPresupuesto(d.id, { estado: 'enviado', enviado_cliente_at: new Date().toISOString(), enviado_cliente_por: miEmpId() || null })); toast('Apuntado: enviado al cliente.'); }
+  try { Object.assign(d, await visitasDB.seguimientoPresupuesto(d.id, { estado: 'enviado', enviado_cliente_at: new Date().toISOString(), enviado_cliente_por: miEmpId() || null, revisado_at: d.revisado_at || new Date().toISOString(), revisado_por: d.revisado_por || miEmpId() || null })); toast('Apuntado: enviado al cliente.'); if (V.agenda.cargado) A.cargarAgenda(); }
   catch (e) { avisar(/enviado_cliente/i.test(msgError(e)) ? 'Falta ejecutar sql/etapa64 en Supabase.' : 'No se pudo guardar: ' + msgError(e)); }
   V.presuSegBusy = false; render();
 };
@@ -8470,13 +8480,14 @@ const presupuestosDeCliente = (c) => {
 // En qué punto está un presupuesto (sql/etapa64): de crearlo a la respuesta del cliente.
 function seguimientoPresu(p) {
   if (!p) return null;
-  if (p.respuesta_cliente === 'aceptado') return { k: 'aceptado', color: 'var(--verde)', txt: 'Aceptado', paso: 5 };
-  if (p.respuesta_cliente === 'rechazado') return { k: 'rechazado', color: 'var(--rojo)', txt: 'Rechazado', paso: 5 };
-  if (p.respuesta_cliente === 'caducado') return { k: 'rechazado', color: 'var(--t3)', txt: 'Caducado', paso: 5 };
-  if (p.enviado_cliente_at || p.estado === 'enviado') return { k: 'esperando', color: 'var(--ambar)', txt: 'Enviado al cliente · esperando', paso: 4 };
-  if (p.tl_quotation_id) return { k: 'presupuestado', color: 'var(--tinta)', txt: 'En Teamleader · por revisar y enviar', paso: 3 };
-  if (p.estado === 'revisar') return { k: 'presupuestado', color: 'var(--rojo)', txt: 'Por revisar · sin subir', paso: 2 };
-  return { k: 'presupuestado', color: 'var(--tinta)', txt: 'Hecho · sin subir a Teamleader', paso: 2 };
+  if (p.respuesta_cliente === 'aceptado') return { k: 'aceptado', color: 'var(--verde)', txt: 'Aceptado', paso: 6 };
+  if (p.respuesta_cliente === 'rechazado') return { k: 'rechazado', color: 'var(--rojo)', txt: 'Rechazado', paso: 6 };
+  if (p.respuesta_cliente === 'caducado') return { k: 'rechazado', color: 'var(--t3)', txt: 'Caducado', paso: 6 };
+  if (p.enviado_cliente_at || p.estado === 'enviado') return { k: 'esperando', color: 'var(--ambar)', txt: 'Enviado al cliente · esperando', paso: 5 };
+  if (p.revisado_at) return { k: 'presupuestado', color: 'var(--verde-c)', txt: 'Revisado · por enviar al cliente', paso: 4 };
+  if (p.tl_quotation_id) return { k: 'presupuestado', color: 'var(--rojo)', txt: 'En Teamleader · pendiente de revisar', paso: 3 };
+  if (p.estado === 'revisar') return { k: 'presupuestado', color: 'var(--rojo)', txt: 'Pendiente de revisar · sin subir', paso: 2 };
+  return { k: 'presupuestado', color: 'var(--tinta)', txt: 'Hecho · pendiente de revisar', paso: 2 };
 }
 // El presupuesto que manda para el estado del cliente: el aceptado si lo hay;
 // si no, el más avanzado; si no, el más nuevo.
@@ -9263,7 +9274,7 @@ function clientesListaHTML() {
 function vClientes() {
   const ag = V.agenda;
   const cuenta = (k) => ag.clientes.filter((c) => k === 'sin_contactar' ? (agEstadoCliente(c).k === 'sin_cita' && c.contacto_estado !== 'contactado') : agEstadoCliente(c).k === k).length;
-  const filtros = [['todos', 'Todos'], ['sin_contactar', 'Sin contactar'], ['sin_cita', 'Sin cita'], ['citado', 'Citados'], ['visitado', 'Visitados'], ['teamleader', 'En Teamleader'], ['presupuestado', 'Presup. por enviar'], ['esperando', 'Esperando respuesta'], ['aceptado', 'Aceptados'], ['rechazado', 'Rechazados']];
+  const filtros = [['todos', 'Todos'], ['sin_contactar', 'Sin contactar'], ['sin_cita', 'Sin cita'], ['citado', 'Citados'], ['visitado', 'Visitados'], ['teamleader', 'En Teamleader'], ['presupuestado', 'Presup. por revisar o enviar'], ['esperando', 'Esperando respuesta'], ['aceptado', 'Aceptados'], ['rechazado', 'Rechazados']];
   return `<div class="hdr">
     <div class="row" style="justify-content:space-between">
       <div class="h1">Clientes</div>
@@ -10577,6 +10588,7 @@ document.addEventListener('click', (e) => {
   if (a === 'borrarVisita') return A.borrarVisita(d.id);
   if (a === 'presuBorrar') return A.presuBorrar(d.id);
   if (a === 'presuEnviadoCliente') return A.presuEnviadoCliente();
+  if (a === 'presuRevisado') return A.presuRevisado();
   if (a === 'presuRespuesta') return A.presuRespuesta(d.r);
   if (a === 'presuCrearObra') return A.presuCrearObra();
   if (a === 'confirmarBorrarPresu') return A.confirmarBorrarPresu();
