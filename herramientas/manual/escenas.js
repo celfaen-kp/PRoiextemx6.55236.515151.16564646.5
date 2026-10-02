@@ -230,7 +230,6 @@
     'jefe-obra-proyecto': () => { ESCENAS['jefe-obra'](); window.__scrollA = 400; },
     'admin-obra-economia': () => { ESCENAS['admin-obra'](); window.__scrollA = 1430; },
     'admin-costes': () => { base('u0'); V.view = 'costesPersonal'; V.costesEmp = [{ empleado_id: 'e1', coste_hora: 24.5, desde: '2026-01-01', hasta: null }, { empleado_id: 'e1', coste_hora: 22, desde: '2025-01-01', hasta: '2025-12-31' }, { empleado_id: 'e3', coste_hora: 19, desde: '2026-03-01', hasta: null }, { empleado_id: 'e2', coste_hora: 26, desde: '2026-01-01', hasta: null }]; },
-    'jefe-planificacion': () => { ESCENAS['admin-planificacion'](); V.user = { id: 'u1' }; },
     'pres-visita-nueva-1': () => { base('u5'); A.nuevaVisita(); },
     'pres-visita-nueva-3': () => { base('u5'); A.nuevaVisita(); V.visitaDraft._cliente = { id: 'c4', nombre: 'Pep Vidal', telefono: '600 777 888', nuevo: false }; V.visitaDraft.direccion = 'Major 3'; V.visitaDraft.poblacion = 'Inca'; V.visitaDraft.categorias = ['aire_acondicionado']; V.visitaPaso = 3; },
     'pres-visita-nueva-4': () => { base('u5'); A.nuevaVisita(); V.visitaDraft._cliente = { id: 'c4', nombre: 'Pep Vidal', telefono: '600 777 888', nuevo: false }; V.visitaDraft.direccion = 'Major 3'; V.visitaDraft.poblacion = 'Inca'; V.visitaDraft.categorias = ['aire_acondicionado']; V.visitaPaso = 4; V.visitaCat = 'aire_acondicionado'; V.visitaFichas = { aire_acondicionado: { tipo_sistema: 'multisplit', uso: 'frio_calor', estancias: [{ nombre: 'Salón', m2: 30, metros: 4 }, { nombre: 'Dormitorio', m2: 12, metros: 6 }] } }; },

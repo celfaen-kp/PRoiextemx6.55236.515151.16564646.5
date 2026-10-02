@@ -368,7 +368,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '19.3'; // versión visible de la app (única fuente)
+const APP_VERSION = '19.4'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -2458,6 +2458,11 @@ async function sincronizarFases() {
 // cosa de la oficina: jefes y operarios solo ven las de la categoría, que es
 // lo que ellos ejecutan y lo que va en los partes.
 const veFasesComunes = () => veCostes();
+// Quién planifica (sql/etapa67): la oficina, presupuestos y Administración.
+// Jefes y operarios van día a día: ven hoy y, desde las 14:00, mañana.
+const planifica = () => veCostes();
+const HORA_VER_MANANA = 14;
+const yaSeVeManana = () => new Date().getHours() >= HORA_VER_MANANA;
 const fasesDe = (obraId) => S.fases.filter((f) => f.obra_id === obraId && (veFasesComunes() || f.categoria)).sort((a, b) => a.orden - b.orden || String(a.nombre).localeCompare(String(b.nombre), 'es'));
 const faseById = (id) => S.fases.find((f) => f.id === id) || null;
 // Avance global: media de las fases que aplican. null si la obra no tiene fases.
@@ -2648,7 +2653,7 @@ const sugerirPersonas = (obraId, filas, fijos) => {
 const planFechaTxt = (fecha) => { const d = new Date(fecha + 'T12:00'); const dia = DIAS_SEM[d.getDay()] + ' ' + d.getDate() + ' ' + d.toLocaleDateString('es-ES', { month: 'short' }).replace('.', ''); return fecha === hoyISO() ? 'hoy, ' + dia : fecha === agSumaDias(hoyISO(), 1) ? 'mañana, ' + dia : dia; };
 
 A.abrirPlanificacion = () => {
-  if (!esComercial()) return;
+  if (!planifica()) return;
   const hoy = hoyISO();
   if (!V.plan.dia) { V.plan.dia = siguienteLaborable(hoy); V.plan.lunes = lunesDe(V.plan.dia); }
   V.view = 'planificacion'; render();
@@ -2679,14 +2684,14 @@ A.planDia = (fecha) => { V.plan.dia = fecha; render(); };
 A.planFinde = () => { V.plan.finde = !V.plan.finde; render(); };
 // Tocar una casilla vacía: asignar a esa persona ese día.
 A.planCelda = (empId, fecha) => {
-  if (!esComercial()) return;
+  if (!planifica()) return;
   V.plan.dia = fecha;
   V.sheet = { tipo: 'planAsignar', fecha, obraId: null, personas: empId ? [empId] : [], hora: '', nota: '', buscar: '', busy: false, desde: empId || null };
   render();
 };
 // Tocar una obra de la franja «sin asignar»: elegir a quién mandar.
 A.planObraSin = (obraId) => {
-  if (!esComercial()) return;
+  if (!planifica()) return;
   const sug = sugerirPersonas(obraId, V.plan.filas, empleadosDeObra(obraId).map((x) => empIdDeUser(x.id)).filter(Boolean));
   const gente = planGente().map((r) => r.id);
   const ya = new Set(planFilasDe(null, V.plan.dia).map((f) => f.empleado_id));
@@ -2824,7 +2829,7 @@ function vPlanificacion() {
       ${gente.map((r) => `<div class="pl-nom">${esc(String(r.nombre || '').split(' ')[0])}<small>${r.rol === 'jefe' ? 'jefe' : ''}</small></div>
         ${dias.map((d) => { const mias = planFilasDe(r.id, d); return `<div class="pl-cel ${mias.length ? '' : 'libre'} ${d === p.dia ? 'sel' : ''}" data-a="planCelda" data-id="${r.id}" data-dia="${d}">${mias.length ? mias.map(planChipHTML).join('') : '<span class="pl-mas">+</span>'}</div>`; }).join('')}`).join('')}
     </div></div>
-    <div class="tiny" style="margin-top:10px">${p.cargando ? 'Cargando…' : 'Verde: obra en curso. Ámbar: obra aún planificada (no empezada). Cada operario ve en «Hoy» lo suyo; a las 19:00 le llega por correo lo de mañana.'}</div>`}
+    <div class="tiny" style="margin-top:10px">${p.cargando ? 'Cargando…' : 'Verde: obra en curso. Ámbar: obra aún planificada (no empezada). Cada persona ve en «Hoy» lo suyo de hoy y, a partir de las 14:00, lo de mañana; a esa hora le llega también por correo.'}</div>`}
   </div>`;
 }
 // La tarjeta de «Hoy» del operario y del jefe: a dónde va hoy y mañana.
@@ -2850,7 +2855,13 @@ function planHoyHTML() {
         : `<button class="pill pill-verde" data-a="parteDePlan" data-id="${f.obra_id}" data-plan="${f.id}" style="margin-top:10px;padding:12px;width:100%;text-align:center">Hacer el parte de hoy</button>`) : ''}
     </div>`).join('');
   };
-  return bloque(hoy, 'Hoy vas a') + bloque(agSumaDias(hoy, 1), 'Mañana vas a');
+  // Mañana se enseña a partir de las 14:00: al acabar la jornada ya saben a
+  // dónde van, y por la mañana no se despistan con lo de mañana.
+  const manana = agSumaDias(hoy, 1);
+  const tieneManana = mio.some((f) => f.fecha === manana);
+  return bloque(hoy, 'Hoy vas a')
+    + (yaSeVeManana() || planifica() ? bloque(manana, 'Mañana vas a')
+      : (tieneManana ? `<div class="tiny" style="margin:-2px 0 10px;text-align:center">Lo de mañana lo verás a partir de las ${HORA_VER_MANANA}:00.</div>` : ''));
 }
 // El parte que ya hice hoy en esa obra, si lo hay.
 const parteHoyDe = (obraId) => S.partes.find((p) => p.obraId === obraId && p.fecha === hoyISO() && p.autorId === V.user.id && p.estado !== 'anulado') || null;
@@ -4032,7 +4043,7 @@ function render() {
   else if (v === 'legalizaciones' && esComercial()) html = vLegalizaciones();
   else if (v === 'costesPersonal' && veCostes()) html = vCostesPersonal();
   else if (v === 'fasesPlantillas' && esAdmin()) html = vFasesPlantillas();
-  else if (v === 'planificacion' && esComercial()) html = vPlanificacion();
+  else if (v === 'planificacion' && planifica()) html = vPlanificacion();
   else if (v === 'legalizacion' && esComercial()) html = vLegalizacion();
   else if (v === 'presuNuevo' && verMotor()) html = vPresuNuevo();
   else if (v === 'presupuestoVer' && verMotor()) html = vPresupuestoVer();
@@ -4285,7 +4296,7 @@ function vObras() {
       <span class="chip ${!cerradas ? 'on' : ''}" data-a="obrasTab" data-t="curso" style="cursor:pointer">En curso · ${enCurso.length}</span>
       <span class="chip ${cerradas ? 'on' : ''}" data-a="obrasTab" data-t="cerradas" style="cursor:pointer">Cerradas${cerr.length ? ' · ' + cerr.length : ''}</span>
       <span class="grow"></span>
-      ${esComercial() ? '<span class="chip" data-a="abrirPlanificacion" style="cursor:pointer;background:var(--verde);color:#fff;border-color:var(--verde)">Planificar semana</span>' : ''}
+      ${planifica() ? '<span class="chip" data-a="abrirPlanificacion" style="cursor:pointer;background:var(--verde);color:#fff;border-color:var(--verde)">Planificar semana</span>' : ''}
       <span class="chip" data-a="obrasOrden" style="cursor:pointer">${V.obrasOrden === 'cliente' ? 'A-Z cliente' : 'Más nuevas'} ⇅</span>
     </div>
   </div>

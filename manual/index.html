@@ -159,7 +159,7 @@ footer{margin-top:60px;padding-top:20px;border-top:1px solid var(--l1);color:var
 <table>
   <tr><th>Pestaña</th><th>Operario</th><th>Jefe de obra</th><th>Presupuestos</th><th>Administración</th></tr>
   <tr><td><b>Hoy</b> · fichar, resumen del día</td><td class="si">Sí</td><td class="si">Sí, con el equipo</td><td class="no">—</td><td class="si">Sí, sin fichar</td></tr>
-  <tr><td><b>Obras</b> · ficha, proyecto, planificación</td><td class="si">Ver, y marcar avance</td><td class="si">Crear, editar, planificar</td><td class="si">Crear, editar, planificar</td><td class="si">Todo</td></tr>
+  <tr><td><b>Obras</b> · ficha, proyecto, planificación</td><td class="si">Ver, y marcar avance</td><td class="si">Crear y editar</td><td class="si">Crear, editar, planificar</td><td class="si">Todo, y planificar</td></tr>
   <tr><td><b>Partes</b> de trabajo</td><td class="si">El de su obra de hoy, desde Hoy</td><td class="si">Crear, firmar, enviar</td><td class="si">Ver</td><td class="si">Todos</td></tr>
   <tr><td><b>Horas</b></td><td class="si">Las suyas</td><td class="si">Imputar al equipo</td><td class="no">—</td><td class="si">Revisar y corregir</td></tr>
   <tr><td><b>Economía</b> de la obra y <b>costes</b> de personal</td><td class="no">—</td><td class="no">— (pone albaranes y gastos)</td><td class="si">Sí</td><td class="si">Sí</td></tr>
@@ -201,7 +201,7 @@ footer{margin-top:60px;padding-top:20px;border-top:1px solid var(--l1);color:var
     <h4>Hoy vas a…</h4>
     <p>Debajo del fichaje, la tarjeta de la obra que te han planificado: el <b>código</b> (OB-137), el <b>cliente</b>, la <b>calle y la población</b>, la hora prevista y, en ámbar, la <b>nota</b> de quien te la asignó («llevar escalera grande»). <b>Cómo llegar</b> abre el mapa; <b>Ver obra</b>, su ficha. Si mañana ya está planificado, también lo ves.</p>
     <p><span class="btn verde">Hacer el parte de hoy</span>: el parte sale con la obra, la fecha y <b>tus horas del fichaje</b> ya puestas. Tú escribes los trabajos, el material si lo hubo, marcas hasta dónde queda cada fase de la obra, y el cliente firma.</p>
-    <div class="nota">A las 19:00 te llega por correo (al email para avisos de tu ficha) a dónde vas mañana.</div>
+    <div class="nota">Lo de mañana aparece a partir de las 14:00, y a esa hora te llega también por correo (al email para avisos de tu ficha).</div>
   </div>
 </div>
 <div class="pantalla">
@@ -243,7 +243,7 @@ footer{margin-top:60px;padding-top:20px;border-top:1px solid var(--l1);color:var
 
 <!-- ============================================================ JEFE -->
 <h2 id="jefe"><span class="quien jefe">Jefe de obra</span> Tu día a día</h2>
-<p>Haces lo mismo que un operario (fichar, horas) y además llevas las <b>obras</b> y su <b>proyecto</b>, la <b>planificación</b> de quién va cada día a dónde, los <b>partes de trabajo</b> que firma el cliente, y el <b>reparto de horas</b> del equipo entre obras.</p>
+<p>Haces lo mismo que un operario (fichar, horas, ver a dónde vas hoy y mañana) y además llevas las <b>obras</b> y su <b>proyecto</b>, los <b>partes de trabajo</b> que firma el cliente, y el <b>reparto de horas</b> del equipo entre obras. La planificación de quién va a dónde la hace la oficina.</p>
 <div class="pantalla">
   <img src="img/jefe-hoy.png" alt="Hoy del jefe de obra">
   <div class="txt">
@@ -259,7 +259,7 @@ footer{margin-top:60px;padding-top:20px;border-top:1px solid var(--l1);color:var
   <div class="txt">
     <h4>La lista</h4>
     <p>Cada obra con su <b>código</b> (OB-137), lo que lleva (<b>AE</b> aerotermia, <b>FV</b> fotovoltaica, <b>AC</b> aire), su estado, el <b>cliente</b> y la <b>calle · población</b> en grande, las horas, los partes y el <b>avance</b>. Las más nuevas arriba; <i>A-Z cliente</i> cambia el orden. <b>En curso</b> y <b>Cerradas</b> en dos pestañas.</p>
-    <p>El <b>buscador</b> entiende el número («137», «OB-137»), el cliente, la obra o la dirección. <span class="btn">+ Nueva</span> para crear una; <span class="btn verde">Planificar semana</span> abre el tablero.</p>
+    <p>El <b>buscador</b> entiende el número («137», «OB-137»), el cliente, la obra o la dirección. <span class="btn">+ Nueva</span> para crear una.</p>
     <div class="nota">El código lo pone el sistema al guardar, es correlativo y no se puede cambiar: así la obra se puede decir por teléfono y escribir en un albarán sin confundirla con otra.</div>
   </div>
 </div>
@@ -307,9 +307,10 @@ footer{margin-top:60px;padding-top:20px;border-top:1px solid var(--l1);color:var
   </div>
 </div>
 
-<h3 id="jefe-planificacion">Planificar la semana</h3>
+<h3 id="jefe-planificacion">Planificar la semana (lo hace la oficina)</h3>
+<p>La planificación la hacen <b>presupuestos y Administración</b>. Como jefe no planificas: ves en Hoy a dónde vas hoy y, a partir de las 14:00, a dónde vas mañana, igual que los operarios. Esto es lo que hace la oficina:</p>
 <div class="pantalla">
-  <img src="img/jefe-planificacion.png" alt="Tablero de planificación">
+  <img src="img/admin-planificacion.png" alt="Tablero de planificación">
   <div class="txt">
     <h4>El tablero</h4>
     <p>Desde Obras → <span class="btn verde">Planificar semana</span>. Filas, las personas (operarios y jefes); columnas, los días. En cada casilla, las obras a las que va esa persona ese día. Flechas para cambiar de semana; <i>Ver fin de semana</i> si hace falta.</p>
@@ -319,7 +320,7 @@ footer{margin-top:60px;padding-top:20px;border-top:1px solid var(--l1);color:var
       <li><b>Repetir lo del último día</b> para todos de un toque. En cada asignación: cambiar hora y nota, copiar al día siguiente, quitar.</li>
       <li>La franja roja <b>Partes fuera de plan</b>: partes hechos en una obra donde esa persona no estaba planificada ese día. «Era correcto · apuntar» lo deja planificado; «Ignorar» lo da por visto.</li>
     </ul>
-    <div class="nota">A las 19:00 cada persona recibe por correo a dónde va mañana, y presupuestos y Administración un repaso: quién no tiene obra y qué obras no tienen a nadie.</div>
+    <div class="nota">A las 14:00 cada persona recibe por correo a dónde va mañana, y presupuestos y Administración un repaso: quién no tiene obra y qué obras no tienen a nadie.</div>
   </div>
 </div>
 
