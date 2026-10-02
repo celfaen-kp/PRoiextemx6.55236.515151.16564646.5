@@ -97,11 +97,14 @@ footer{margin-top:60px;padding-top:20px;border-top:1px solid var(--l1);color:var
   <h4>Operario</h4>
   <a class="rol" href="#operario">Tu día a día</a>
   <a href="#op-fichar">Fichar</a>
+  <a href="#op-hoy-obra">Tu obra de hoy y el parte</a>
   <a href="#op-obras">Obras y horas</a>
   <a href="#op-perfil">Perfil</a>
   <h4>Jefe de obra</h4>
   <a class="rol" href="#jefe">Tu día a día</a>
   <a href="#jefe-obras">Obras</a>
+  <a href="#jefe-proyecto">El proyecto: fases y avance</a>
+  <a href="#jefe-planificacion">Planificar la semana</a>
   <a href="#jefe-partes">Partes de trabajo</a>
   <a href="#jefe-horas">Horas e imputaciones</a>
   <h4>Presupuestos</h4>
@@ -111,10 +114,13 @@ footer{margin-top:60px;padding-top:20px;border-top:1px solid var(--l1);color:var
   <a href="#pres-visitas">Visitas</a>
   <a href="#pres-presupuestos">Presupuestos</a>
   <a href="#pres-teamleader">Teamleader</a>
+  <a href="#pres-obras">Obras, economía y costes</a>
+  <a href="#pres-legalizaciones">Legalizaciones</a>
   <h4>Administración</h4>
   <a class="rol" href="#admin">Tu día a día</a>
   <a href="#admin-empleados">Empleados y planillas</a>
   <a href="#admin-horas">Horas, revisión y copias</a>
+  <a href="#admin-obras">Obras, planificación y costes</a>
   <a href="#admin-ajustes">Ajustes</a>
   <h4>Ayuda</h4>
   <a href="#problemas">Si algo no va</a>
@@ -153,19 +159,20 @@ footer{margin-top:60px;padding-top:20px;border-top:1px solid var(--l1);color:var
 <table>
   <tr><th>Pestaña</th><th>Operario</th><th>Jefe de obra</th><th>Presupuestos</th><th>Administración</th></tr>
   <tr><td><b>Hoy</b> · fichar, resumen del día</td><td class="si">Sí</td><td class="si">Sí, con el equipo</td><td class="no">—</td><td class="si">Sí, sin fichar</td></tr>
-  <tr><td><b>Obras</b></td><td class="si">Ver</td><td class="si">Crear y editar</td><td class="no">—</td><td class="si">Crear y editar</td></tr>
-  <tr><td><b>Partes</b> de trabajo</td><td class="no">Solo los suyos, desde Hoy</td><td class="si">Crear, firmar, enviar</td><td class="no">—</td><td class="si">Todos</td></tr>
+  <tr><td><b>Obras</b> · ficha, proyecto, planificación</td><td class="si">Ver, y marcar avance</td><td class="si">Crear, editar, planificar</td><td class="si">Crear, editar, planificar</td><td class="si">Todo</td></tr>
+  <tr><td><b>Partes</b> de trabajo</td><td class="si">El de su obra de hoy, desde Hoy</td><td class="si">Crear, firmar, enviar</td><td class="si">Ver</td><td class="si">Todos</td></tr>
   <tr><td><b>Horas</b></td><td class="si">Las suyas</td><td class="si">Imputar al equipo</td><td class="no">—</td><td class="si">Revisar y corregir</td></tr>
-  <tr><td><b>Material</b> y notas</td><td class="si">Sí</td><td class="si">Sí</td><td class="si">Sí</td><td class="no">—</td></tr>
+  <tr><td><b>Economía</b> de la obra y <b>costes</b> de personal</td><td class="no">—</td><td class="no">— (pone albaranes y gastos)</td><td class="si">Sí</td><td class="si">Sí</td></tr>
   <tr><td><b>Empleados</b> y planillas</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="si">Sí</td></tr>
   <tr><td><b>Agenda</b>, clientes, visitas</td><td class="no">—</td><td class="no">—</td><td class="si">Sí</td><td class="si">Ver citas</td></tr>
   <tr><td><b>Presupuestos</b></td><td class="no">—</td><td class="no">—</td><td class="si">Sí</td><td class="si">Sí</td></tr>
+  <tr><td><b>Legalizaciones</b> fotovoltaicas</td><td class="no">—</td><td class="si">Desde la obra</td><td class="si">Pestaña propia</td><td class="si">Sí, y los datos fijos</td></tr>
   <tr><td><b>Perfil / Ajustes</b></td><td class="si">Perfil</td><td class="si">Ajustes</td><td class="si">Perfil + Teamleader</td><td class="si">Ajustes de la empresa</td></tr>
 </table>
 
 <!-- ============================================================ OPERARIO -->
 <h2 id="operario"><span class="quien op">Operario</span> Tu día a día</h2>
-<p>Tu trabajo en la app son dos cosas: <b>fichar</b> al entrar y al salir, y mirar tus <b>horas</b>. Los partes los hace tu jefe de obra; tú solo tienes que fichar bien.</p>
+<p>Tu trabajo en la app son tres cosas: <b>fichar</b> al entrar y al salir, ver <b>a qué obra vas</b> hoy y mañana, y <b>hacer el parte</b> de tu obra al acabar. Lo demás lo llevan tu jefe y presupuestos.</p>
 
 <h3 id="op-fichar">Fichar</h3>
 <div class="pantalla">
@@ -187,12 +194,31 @@ footer{margin-top:60px;padding-top:20px;border-top:1px solid var(--l1);color:var
   </div>
 </div>
 
+<h3 id="op-hoy-obra">Tu obra de hoy y el parte</h3>
+<div class="pantalla">
+  <img src="img/op-hoy-plan.png" alt="Hoy, con la obra planificada">
+  <div class="txt">
+    <h4>Hoy vas a…</h4>
+    <p>Debajo del fichaje, la tarjeta de la obra que te han planificado: el <b>código</b> (OB-137), el <b>cliente</b>, la <b>calle y la población</b>, la hora prevista y, en ámbar, la <b>nota</b> de quien te la asignó («llevar escalera grande»). <b>Cómo llegar</b> abre el mapa; <b>Ver obra</b>, su ficha. Si mañana ya está planificado, también lo ves.</p>
+    <p><span class="btn verde">Hacer el parte de hoy</span>: el parte sale con la obra, la fecha y <b>tus horas del fichaje</b> ya puestas. Tú escribes los trabajos, el material si lo hubo, marcas hasta dónde queda cada fase de la obra, y el cliente firma.</p>
+    <div class="nota">A las 19:00 te llega por correo (al email para avisos de tu ficha) a dónde vas mañana.</div>
+  </div>
+</div>
+<div class="pantalla">
+  <img src="img/op-hoy-sinplan.png" alt="Hoy, sin obra asignada">
+  <div class="txt">
+    <h4>Sin obra asignada</h4>
+    <p>Si nadie te ha planificado, la tarjeta lo dice: habla con tu jefe de obra o con presupuestos. Si de todos modos estás en una obra, <span class="btn">Hacer el parte de hoy</span> te deja elegirla.</p>
+    <p>Si tenías una obra planificada y haces el parte de otra, la app te avisa («Esta no era tu obra de hoy») y te pregunta si estás seguro. Puedes seguir: quien planifica lo verá y lo apuntará.</p>
+  </div>
+</div>
+
 <h3 id="op-obras">Obras y horas</h3>
 <div class="pantalla">
   <img src="img/op-obras.png" alt="Lista de obras">
   <div class="txt">
     <h4>Obras</h4>
-    <p>Las obras en curso y las cerradas, con las horas totales que llevan y cuántos partes tienen. Toca una para ver su ficha y quién ha trabajado en ella.</p>
+    <p>Las obras en curso, cada una con su código <b>OB-137</b>, el cliente, la dirección, las horas que lleva, los partes y el <b>avance</b> («62 % · 7 de 12 fases»). Las cerradas, en su pestaña. Buscador por número («137»), cliente o calle. Toca una para ver su ficha y el proyecto con sus fases.</p>
     <p>No hace falta elegir obra para fichar: las horas se reparten después.</p>
   </div>
 </div>
@@ -217,7 +243,7 @@ footer{margin-top:60px;padding-top:20px;border-top:1px solid var(--l1);color:var
 
 <!-- ============================================================ JEFE -->
 <h2 id="jefe"><span class="quien jefe">Jefe de obra</span> Tu día a día</h2>
-<p>Haces lo mismo que un operario (fichar, horas) y además llevas las <b>obras</b>, los <b>partes de trabajo</b> que firma el cliente, y el <b>reparto de horas</b> del equipo entre obras.</p>
+<p>Haces lo mismo que un operario (fichar, horas) y además llevas las <b>obras</b> y su <b>proyecto</b>, la <b>planificación</b> de quién va cada día a dónde, los <b>partes de trabajo</b> que firma el cliente, y el <b>reparto de horas</b> del equipo entre obras.</p>
 <div class="pantalla">
   <img src="img/jefe-hoy.png" alt="Hoy del jefe de obra">
   <div class="txt">
@@ -232,18 +258,19 @@ footer{margin-top:60px;padding-top:20px;border-top:1px solid var(--l1);color:var
   <img src="img/jefe-obras.png" alt="Obras del jefe">
   <div class="txt">
     <h4>La lista</h4>
-    <p>Todas las obras con sus horas y partes. <span class="btn">+ Nueva</span> para crear una.</p>
-    <p>Una obra es un sitio donde se trabaja: tiene nombre ("Casa Can Roca"), cliente y dirección. Cualquier empleado puede trabajar en cualquier obra; las horas se asignan luego al imputar.</p>
+    <p>Cada obra con su <b>código</b> (OB-137), lo que lleva (<b>AE</b> aerotermia, <b>FV</b> fotovoltaica, <b>AC</b> aire), su estado, el <b>cliente</b> y la <b>calle · población</b> en grande, las horas, los partes y el <b>avance</b>. Las más nuevas arriba; <i>A-Z cliente</i> cambia el orden. <b>En curso</b> y <b>Cerradas</b> en dos pestañas.</p>
+    <p>El <b>buscador</b> entiende el número («137», «OB-137»), el cliente, la obra o la dirección. <span class="btn">+ Nueva</span> para crear una; <span class="btn verde">Planificar semana</span> abre el tablero.</p>
+    <div class="nota">El código lo pone el sistema al guardar, es correlativo y no se puede cambiar: así la obra se puede decir por teléfono y escribir en un albarán sin confundirla con otra.</div>
   </div>
 </div>
 <div class="pantalla">
   <img src="img/jefe-obra-nueva.png" alt="Nueva obra">
   <div class="txt">
     <h4>Crear una obra</h4>
-    <div class="paso"><b class="n">1</b><div><b>Nombre de la obra</b>: como la llamáis vosotros. Es lo que sale en todas partes.</div></div>
-    <div class="paso"><b class="n">2</b><div><b>Cliente</b> y <b>dirección</b>. El <b>email</b> es a donde irán los informes de los partes.</div></div>
+    <div class="paso"><b class="n">1</b><div>El <b>código</b> sale en gris: «se asignará al guardar». Marca <b>qué lleva la obra</b>: aerotermia, fotovoltaica, aire. Puede llevar varias: una casa con aerotermia y placas es una sola obra, con las fases de las dos.</div></div>
+    <div class="paso"><b class="n">2</b><div><b>Cliente</b>, <b>dirección</b> y <b>población</b>. El nombre de la obra es opcional. El <b>email</b> es a donde irán los informes de los partes.</div></div>
     <div class="paso"><b class="n">3</b><div>Opcional: <b>Buscar el cliente en Teamleader</b>. Si lo enganchas, la obra queda enlazada con su ficha del CRM.</div></div>
-    <div class="paso"><b class="n">4</b><div><span class="btn">Guardar</span>. Si venías de crear un parte, sigues con el parte.</div></div>
+    <div class="paso"><b class="n">4</b><div><span class="btn">Guardar</span>: la app te dice el código («Obra guardada: OB-141») y la obra nace con sus fases. Si venías de crear un parte, sigues con el parte.</div></div>
   </div>
 </div>
 <div class="pantalla">
@@ -251,11 +278,48 @@ footer{margin-top:60px;padding-top:20px;border-top:1px solid var(--l1);color:var
   <div class="txt">
     <h4>La ficha de la obra</h4>
     <ul>
-      <li><b>Cómo llegar</b> abre el mapa. <span class="btn verde">Nuevo parte</span> y <span class="btn gris">Editar</span>.</li>
-      <li><b>Horas por empleado</b>: hoy, semana, mes o total. Salen los asignados y cualquiera que haya echado horas.</li>
-      <li><span class="btn">Imprimir PDF</span> y <span class="btn gris">Exportar CSV</span> del reparto.</li>
-      <li><b>Albaranes y recibos</b>: foto o PDF de lo que se compra para esa obra, con importe. Solo lo ven jefes y Administración.</li>
+      <li>Arriba, el código, las categorías, el estado, el cliente y la dirección. <b>Cómo llegar</b> abre el mapa. <span class="btn verde">Nuevo parte</span>, <span class="btn gris">Editar</span> y <span class="btn gris">Legalización fotovoltaica</span>.</li>
+      <li><b>Horas por empleado</b>: hoy, semana, mes o total. <span class="btn">Imprimir PDF</span> y <span class="btn gris">Exportar CSV</span> del reparto.</li>
+      <li><b>Proyecto</b>: las fases de la obra con su porcentaje (ver más abajo).</li>
+      <li><b>Albaranes y recibos</b>: foto o PDF de lo que se compra para esa obra, con importe. Cada uno con importe cuenta como gasto de la obra. Lo ven jefes, presupuestos y Administración.</li>
+      <li>Abajo: <b>Marcar obra como cerrada</b> (pasa a la pestaña Cerradas) y <b>Borrar obra</b>, solo si está vacía, sin partes ni horas: para las que se crearon dos veces.</li>
     </ul>
+    <div class="nota">Los <b>costes</b> (lo que cuesta la hora de cada persona, el margen de la obra) no salen aquí: solo los ven presupuestos y Administración.</div>
+  </div>
+</div>
+
+<h3 id="jefe-proyecto">El proyecto: fases y avance</h3>
+<p>Cada obra tiene sus <b>fases</b> según lo que lleva: pedido y recepción de material, replanteo; en fotovoltaica fijaciones y estructura, montaje de paneles, cableado de continua, inversor y baterías, alterna y protecciones, puesta en marcha, legalización; en aerotermia y aire las suyas; y al final el cobro. Cada fase tiene un <b>porcentaje</b> y la obra un <b>avance global</b>, la media de sus fases. Así se sabe dónde está parada cada obra sin preguntar.</p>
+<div class="pantalla">
+  <img src="img/jefe-parte-avance.png" alt="Avance de la obra en el parte">
+  <div class="txt">
+    <h4>Desde el parte</h4>
+    <p>Al hacer el parte, después de los trabajos, sale <b>Avance de la obra</b> con las fases pendientes y sus chips <b>0 · 25 · 50 · 75 · 100</b> en el valor que tenían. Toca hasta dónde queda cada una con lo hecho hoy («fijaciones al 100, paneles al 75»). Lo que no toques se queda igual.</p>
+    <p>Al guardar, el parte deja apuntado el antes y el después de cada fase: cada parte cuenta lo que avanzó.</p>
+  </div>
+</div>
+<div class="pantalla">
+  <img src="img/jefe-obra-proyecto.png" alt="Proyecto en la ficha de la obra">
+  <div class="txt">
+    <h4>Desde la ficha</h4>
+    <p>En <b>Proyecto</b>, el avance global y las fases por grupos (Preparación, Fotovoltaica, Aerotermia, Aire, Cierre). Toca una fase para cambiar su porcentaje, ponerle una <b>nota</b> («falta la bancada, viene el lunes»), marcarla como <b>no aplica</b> o quitarla. <i>+ Añadir fase</i> mete una suelta: zanja, andamio…</p>
+    <div class="nota ok">Cuando todas las fases que aplican están al 100 %, la obra pasa sola a <b>finalizada</b>. Cerrarla (cobrada y archivada) se hace a mano.</div>
+  </div>
+</div>
+
+<h3 id="jefe-planificacion">Planificar la semana</h3>
+<div class="pantalla">
+  <img src="img/jefe-planificacion.png" alt="Tablero de planificación">
+  <div class="txt">
+    <h4>El tablero</h4>
+    <p>Desde Obras → <span class="btn verde">Planificar semana</span>. Filas, las personas (operarios y jefes); columnas, los días. En cada casilla, las obras a las que va esa persona ese día. Flechas para cambiar de semana; <i>Ver fin de semana</i> si hace falta.</p>
+    <ul>
+      <li><b>Toca una casilla vacía</b>: eliges la obra (primero las que no tienen a nadie ese día) y a quién más mandas con ella; la app te propone a <b>quien suele ir</b>. Hora prevista y una nota.</li>
+      <li>La franja ámbar <b>Sin asignar</b> del día que toques arriba: las obras en marcha a las que no va nadie. Toca una para cubrirla.</li>
+      <li><b>Repetir lo del último día</b> para todos de un toque. En cada asignación: cambiar hora y nota, copiar al día siguiente, quitar.</li>
+      <li>La franja roja <b>Partes fuera de plan</b>: partes hechos en una obra donde esa persona no estaba planificada ese día. «Era correcto · apuntar» lo deja planificado; «Ignorar» lo da por visto.</li>
+    </ul>
+    <div class="nota">A las 19:00 cada persona recibe por correo a dónde va mañana, y presupuestos y Administración un repaso: quién no tiene obra y qué obras no tienen a nadie.</div>
   </div>
 </div>
 
@@ -273,7 +337,7 @@ footer{margin-top:60px;padding-top:20px;border-top:1px solid var(--l1);color:var
   <img src="img/jefe-parte-obra.png" alt="Elegir la obra del parte">
   <div class="txt">
     <h4>Crear un parte · elegir la obra</h4>
-    <p>Al pulsar <span class="btn">+ Nuevo parte</span>, primero eliges <b>de qué obra</b> es. Con muchas obras hay un buscador; si la obra no existe, <span class="btn verde">+ Nueva obra</span> la crea sin salir del parte.</p>
+    <p>Al pulsar <span class="btn">+ Nuevo parte</span>, primero eliges <b>de qué obra</b> es: las planificadas hoy salen primero con la etiqueta «hoy». Buscador por número, cliente u obra; si la obra no existe, <span class="btn verde">+ Nueva obra</span> la crea sin salir del parte. Desde la ficha de una obra, el parte ya sale con ella.</p>
     <div class="nota">El parte no viene con una obra puesta "porque sí": un parte firmado en la obra equivocada acaba con las horas en el cliente que no toca.</div>
   </div>
 </div>
@@ -282,8 +346,8 @@ footer{margin-top:60px;padding-top:20px;border-top:1px solid var(--l1);color:var
   <div class="txt">
     <h4>Paso 1 de 3 · El trabajo</h4>
     <div class="paso"><b class="n">1</b><div><b>Fecha</b>: hoy, salvo que sea de otro día.</div></div>
-    <div class="paso"><b class="n">2</b><div><b>Trabajos realizados</b>: qué se hizo, con palabras normales. Es lo que lee el cliente.</div></div>
-    <div class="paso"><b class="n">3</b><div><b>Personal y horas</b>: toca a cada persona para incluirla y pon sus horas, en pasos de 15 minutos. <i>Mismas horas a varios</i> las pone de una vez. Si ya habían fichado ese día en esa obra, vienen puestas.</div></div>
+    <div class="paso"><b class="n">2</b><div><b>Trabajos realizados</b>: qué se hizo, con palabras normales. Es lo que lee el cliente. Debajo, <b>Avance de la obra</b>: hasta dónde queda cada fase (ver <a href="#jefe-proyecto">el proyecto</a>).</div></div>
+    <div class="paso"><b class="n">3</b><div><b>Personal y horas</b>: toca a cada persona para incluirla y pon sus horas, en pasos de 15 minutos. <i>Mismas horas a varios</i> las pone de una vez. Si ya habían fichado ese día en esa obra, vienen puestas. Debajo, la <b>ayuda externa</b> sin ficha (peón, oficial) con sus horas.</div></div>
     <div class="paso"><b class="n">4</b><div><b>Material</b> usado, <b>fotos</b>, e <b>incidencias</b> (leve, grave…) si las hubo.</div></div>
     <div class="paso"><b class="n">5</b><div><span class="btn">Continuar a la firma</span>.</div></div>
   </div>
@@ -325,7 +389,7 @@ footer{margin-top:60px;padding-top:20px;border-top:1px solid var(--l1);color:var
   </div>
 </div>
 <div class="dos">
-  <figure><img src="img/jefe-imputar-grupo.png" alt="Imputar en grupo"><figcaption><b>Imputar horas (grupo).</b> Elige el día y, de una vez, a quién y a qué obra van las horas. Si nadie tiene horas pendientes ese día, lo dice.</figcaption></figure>
+  <figure><img src="img/jefe-imputar-grupo.png" alt="Imputar en grupo"><figcaption><b>Imputar horas (grupo).</b> Elige el día y, de una vez, a quién y a qué obra van las horas. Si ese día hay <b>partes</b>, las líneas salen ya con lo que dice el parte (6 h en OB-137) y se agrupa a quienes tienen el mismo reparto; los demás, en otra tanda. Si nadie tiene horas pendientes, lo dice.</figcaption></figure>
   <figure><img src="img/jefe-imputar.png" alt="Imputar una por una"><figcaption><b>Una por una.</b> Por persona: presencia fichada, disponible, imputado y lo que falta. Verde <b>completa</b>; ámbar <b>revisar</b> (imputado más de lo fichado).</figcaption></figure>
 </div>
 <div class="nota">Las horas se imputan en tramos de 15 minutos y solo hasta lo que se fichó. Si alguien echó horas sin fichar, primero corrige el fichaje (Administración) y después imputa.</div>
@@ -335,7 +399,7 @@ footer{margin-top:60px;padding-top:20px;border-top:1px solid var(--l1);color:var
 
 <!-- ============================================================ PRESUPUESTOS -->
 <h2 id="pres"><span class="quien pres">Presupuestos</span> Tu día a día</h2>
-<p>Tu trabajo empieza con un <b>cliente</b> que pide presupuesto, sigue con una <b>cita</b>, una <b>visita</b> en la que tomas los datos, y acaba con el <b>presupuesto</b>, que sale del motor de la app y se sube a <b>Teamleader</b>. No fichas ni haces partes.</p>
+<p>Tu trabajo empieza con un <b>cliente</b> que pide presupuesto, sigue con una <b>cita</b>, una <b>visita</b> en la que tomas los datos, y acaba con el <b>presupuesto</b>, que sale del motor de la app y se sube a <b>Teamleader</b>. Después sigues la <b>obra</b>: su proyecto, su planificación y su economía, y las <b>legalizaciones</b>. No fichas ni haces partes.</p>
 <div class="pantalla">
   <img src="img/pres-agenda.png" alt="Agenda, hoy primero">
   <div class="txt">
@@ -358,8 +422,8 @@ footer{margin-top:60px;padding-top:20px;border-top:1px solid var(--l1);color:var
   <img src="img/pres-clientes.png" alt="Clientes">
   <div class="txt">
     <h4>La lista</h4>
-    <p>Todos los clientes de presupuestos, con su estado: <b>Sin cita</b> (rojo, hay que llamarle), <b>Citado</b>, <b>Visitado</b> (sin cerrar o por enviar), <b>En Teamleader</b>. Buscador por nombre, teléfono o población, y filtros.</p>
-    <p>Los que llegan de la <b>web</b> entran solos, sin cita: salen arriba con <span class="btn">Mirar ahora</span>.</p>
+    <p>Todos los clientes de presupuestos, con su estado: <b>Sin cita · sin contactar</b> (rojo, hay que llamarle), <b>Citado</b>, <b>Visitado</b> (sin cerrar o por enviar), <b>En Teamleader</b>. Buscador por nombre, teléfono o población, y filtros; <b>Sin contactar</b> es el que hay que mirar cada mañana.</p>
+    <p>Los que llegan de la <b>web</b> entran solos, sin cita: salen arriba con <span class="btn">Mirar ahora</span>. En cada cliente sin cita, dos botones: <b>Contactado</b> y <b>No cogió</b>. Queda quién llamó, cuándo y cuántos intentos («No cogió el teléfono · 1 oct · Fabrizio · 2 intentos»), para que no se pase nadie.</p>
   </div>
 </div>
 <div class="pantalla">
@@ -376,7 +440,7 @@ footer{margin-top:60px;padding-top:20px;border-top:1px solid var(--l1);color:var
   <img src="img/pres-cliente.png" alt="Ficha del cliente">
   <div class="txt">
     <h4>La ficha del cliente</h4>
-    <p>Teléfono, email, dirección, si está en la <b>hoja de clientes</b>, y su <b>historial</b>: citas, visitas y presupuestos, en orden. <span class="btn verde">+ Nueva cita</span> y <span class="btn gris">Editar</span>.</p>
+    <p>Teléfono, email, dirección, la tarjeta <b>Llamada</b> (contactado o no cogió, con <i>Quitar</i> por si fue un error), si está en la <b>hoja de clientes</b>, y su <b>historial</b>: citas, visitas y presupuestos, en orden. <span class="btn verde">+ Nueva cita</span> y <span class="btn gris">Editar</span>.</p>
     <p>Abajo, <i>Borrar cliente</i>: solo si no tiene visitas ni presupuestos.</p>
   </div>
 </div>
@@ -386,7 +450,7 @@ footer{margin-top:60px;padding-top:20px;border-top:1px solid var(--l1);color:var
   <img src="img/pres-cita-nueva.png" alt="Nueva cita">
   <div class="txt">
     <h4>Poner una cita</h4>
-    <div class="paso"><b class="n">1</b><div>Toca el <b>día</b> en la tira (un punto verde: ese día ya hay citas del equipo) o escribe la fecha. <i>Sin fecha aún</i> deja la cita pendiente.</div></div>
+    <div class="paso"><b class="n">1</b><div>Toca el <b>día</b> en la tira (un punto verde: ese día ya hay citas del equipo) o escribe la fecha. Al tocarlo sale <b>Ese día ya hay N citas</b>, con la hora, el cliente y quién va, para elegir la tuya sin chocar. <i>Sin fecha aún</i> deja la cita pendiente.</div></div>
     <div class="paso"><b class="n">2</b><div>La <b>hora</b> con las ruedas. Debajo te dice si choca con otra cita.</div></div>
     <div class="paso"><b class="n">3</b><div><b>Duración</b>, <b>qué quiere presupuestar</b> (aerotermia, paneles, aire…), quién va, dirección y una nota.</div></div>
     <div class="paso"><b class="n">4</b><div><span class="btn verde">Guardar cita</span>.</div></div>
@@ -476,6 +540,40 @@ footer{margin-top:60px;padding-top:20px;border-top:1px solid var(--l1);color:var
   </div>
 </div>
 
+<h3 id="pres-obras">Obras, economía y costes</h3>
+<div class="pantalla">
+  <img src="img/pres-obras.png" alt="Obras para presupuestos">
+  <div class="txt">
+    <h4>Obras</h4>
+    <p>Tienes la pestaña <b>Obras</b>: todas, con su código, su avance y sus partes (horas y materiales, sin precios). Puedes crear y editar obras, y <span class="btn verde">Planificar semana</span> igual que un jefe (ver <a href="#jefe-planificacion">el tablero</a>). El proyecto y sus fases, igual que en <a href="#jefe-proyecto">el jefe</a>.</p>
+  </div>
+</div>
+<div class="pantalla">
+  <img src="img/admin-obra-economia.png" alt="Economía de la obra">
+  <div class="txt">
+    <h4>Economía de la obra</h4>
+    <p>En la ficha, el bloque <b>Economía</b>, que solo veis presupuestos y Administración: lo <b>presupuestado</b> frente al <b>coste real</b> (personal y material), el <b>margen</b> real frente al previsto y las <b>horas</b> reales frente a las previstas, con barra y semáforo: verde por debajo del 90 % de horas, ámbar hasta el 105 %, rojo si se pasa o el margen cae a la mitad. Si la obra es mixta, el desglose por categoría.</p>
+    <p><span class="btn">Enlazar</span> el presupuesto que aceptó el cliente: de ahí sale lo presupuestado. El coste de material se alimenta solo de los albaranes y recibos con importe y de los materiales con precio de los partes.</p>
+  </div>
+</div>
+<div class="pantalla">
+  <img src="img/admin-costes.png" alt="Costes de personal">
+  <div class="txt">
+    <h4>Costes de personal</h4>
+    <p>En Perfil (o Ajustes en Administración): lo que cuesta la hora de cada persona a la empresa, con fecha desde y su histórico. Con eso cada obra calcula su coste real de mano de obra. Si alguien no tiene tarifa, la obra lo avisa: sus horas cuentan a cero.</p>
+  </div>
+</div>
+
+<h3 id="pres-legalizaciones">Legalizaciones fotovoltaicas</h3>
+<div class="pantalla">
+  <img src="img/pres-legalizaciones.png" alt="Legalizaciones">
+  <div class="txt">
+    <h4>Modelo 034 y certificado</h4>
+    <p>Tu pestaña <b>Legaliz.</b> (los jefes la tienen en Perfil y en cada obra). Una legalización por obra: eliges la obra y el cliente (del CRM, de la lista o nuevo), rellenas los datos del Modelo 034 y, si las tienes, las medidas de la verificación. La app genera el <b>certificado oficial rellenado</b> y la <b>hoja de datos del 034</b>, los dos en PDF, los sube a Drive (08-Legalizaciones / la obra) y se los manda por correo a quien legaliza en la oficina.</p>
+    <p>Se guarda sola mientras escribes; <b>Enviar</b> cuando esté completa. Los datos fijos del instalador los pone Administración en Ajustes.</p>
+  </div>
+</div>
+
 <!-- ============================================================ ADMIN -->
 <h2 id="admin"><span class="quien admin">Administración</span> Tu día a día</h2>
 <p>Administración no ficha. Ve y corrige lo de todos: fichajes, imputaciones, empleados y sus planillas, obras, partes, citas y presupuestos, y los ajustes de la empresa.</p>
@@ -534,8 +632,14 @@ footer{margin-top:60px;padding-top:20px;border-top:1px solid var(--l1);color:var
     </ul>
   </div>
 </div>
+<h3 id="admin-obras">Obras, planificación y costes</h3>
 <div class="dos">
-  <figure><img src="img/admin-obras.png" alt="Obras"><figcaption><b>Obras</b> y <b>Partes</b>: lo mismo que ve un jefe de obra, de todo el equipo.</figcaption></figure>
+  <figure><img src="img/admin-obras.png" alt="Obras"><figcaption><b>Obras</b> y <b>Partes</b>: lo mismo que ve un jefe de obra, de todo el equipo, más la <b>economía</b> de cada obra (ver <a href="#pres-obras">presupuestos</a>) y el <b>borrar obra</b>.</figcaption></figure>
+  <figure><img src="img/admin-planificacion.png" alt="Planificación"><figcaption><b>Planificar semana</b>: el tablero de quién va cada día a dónde (ver <a href="#jefe-planificacion">el jefe</a>).</figcaption></figure>
+  <figure><img src="img/admin-costes.png" alt="Costes de personal"><figcaption><b>Costes de personal</b> (Ajustes): la tarifa por hora de cada persona, con histórico.</figcaption></figure>
+  <figure><img src="img/admin-fases-plantillas.png" alt="Fases por categoría"><figcaption><b>Fases por categoría</b> (Ajustes): qué fases lleva cada obra nueva. Quitar una no la borra de las obras que ya la tienen.</figcaption></figure>
+</div>
+<div class="dos">
   <figure><img src="img/admin-citas.png" alt="Citas"><figcaption><b>Citas</b>: la agenda de presupuestos, para saber dónde está cada uno. No se editan desde aquí.</figcaption></figure>
   <figure><img src="img/admin-presupuestos.png" alt="Presupuestos"><figcaption><b>Presupuestos</b>: los mismos que ve presupuestos, con permiso para calcular, modificar y mandar a Teamleader.</figcaption></figure>
 </div>
@@ -549,6 +653,7 @@ footer{margin-top:60px;padding-top:20px;border-top:1px solid var(--l1);color:var
       <li><b>Nombre de la empresa</b> y <b>CIF</b>: salen en los PDF.</li>
       <li><b>Email de copia</b>: la gestoría o administración recibe copia de cada parte enviado.</li>
       <li><b>Ubicación al fichar</b>, <b>aviso de fichaje</b> y si los <b>operarios ven importes</b>.</li>
+      <li><b>Costes de personal</b>, <b>Fases por categoría</b> y <b>Legalizaciones · datos fijos</b> (razón social, nº de instalador, aparato verificador y el correo a donde van los PDF).</li>
       <li><b>Errores de la app</b>: lo que ha fallado en los móviles, para revisarlo.</li>
       <li><b>Importar histórico</b> de fichajes desde un CSV.</li>
     </ul>

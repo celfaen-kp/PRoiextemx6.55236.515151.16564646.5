@@ -224,7 +224,13 @@
     'jefe-imputar-grupo': () => { base('u1'); A.abrirImputGrupo(); },
     'admin-empleado-nuevo': () => { base('u0'); A.empNuevo(); V.empDraft.nombre = 'Joan'; V.empDraft.nombreCompleto = 'Joan Amengual Riera'; },
     'pres-cliente-nuevo': () => { base('u5'); m.agNuevoCliente(); V.clienteDraft.nombre = 'Marga Salom'; V.clienteDraft.telefono = '600 123 456'; V.clienteDraft.poblacion = 'Manacor'; },
-    'pres-cita-nueva': () => { base('u5'); m.agNuevaCita('c4', false); },
+    'pres-cita-nueva': () => { base('u5'); m.agNuevaCita('c4', false); V.citaDraft.dia = new Date().toISOString().slice(0, 10); V.citaDraft.empleadoId = 'e5'; },
+    'pres-obras': () => { base('u5'); V.view = 'obras'; },
+    'admin-obra': () => { base('u0'); V.obraId = 'o1'; V.view = 'obra'; V.eco.o1 = { eco: { venta_presupuestada: 18400, coste_previsto: 12900, coste_real: 11250, coste_mano_obra_real: 6800, coste_material_real: 4450, margen_previsto: 5500, margen_real: 7150, horas_reales: 116, horas_previstas: 128, pct_horas: 90.6, dias_sin_coste: 0 }, categorias: [{ categoria: 'aerotermia', venta_presupuestada: 11000, coste_mano_obra_real: 4200, coste_material_real: 3000, horas_reales: 72, horas_previstas: 80 }, { categoria: 'solar', venta_presupuestada: 7400, coste_mano_obra_real: 2600, coste_material_real: 1450, horas_reales: 44, horas_previstas: 48 }], presupuestos: [{ id: 'p1', categoria: 'aerotermia', total_venta: 11000, visita: { codigo: 'V-2026-0012' } }, { id: 'p2', categoria: 'solar', total_venta: 7400, visita: { codigo: 'V-2026-0012' } }] }; },
+    'jefe-obra-proyecto': () => { ESCENAS['jefe-obra'](); window.__scrollA = 400; },
+    'admin-obra-economia': () => { ESCENAS['admin-obra'](); window.__scrollA = 1430; },
+    'admin-costes': () => { base('u0'); V.view = 'costesPersonal'; V.costesEmp = [{ empleado_id: 'e1', coste_hora: 24.5, desde: '2026-01-01', hasta: null }, { empleado_id: 'e1', coste_hora: 22, desde: '2025-01-01', hasta: '2025-12-31' }, { empleado_id: 'e3', coste_hora: 19, desde: '2026-03-01', hasta: null }, { empleado_id: 'e2', coste_hora: 26, desde: '2026-01-01', hasta: null }]; },
+    'jefe-planificacion': () => { ESCENAS['admin-planificacion'](); V.user = { id: 'u1' }; },
     'pres-visita-nueva-1': () => { base('u5'); A.nuevaVisita(); },
     'pres-visita-nueva-3': () => { base('u5'); A.nuevaVisita(); V.visitaDraft._cliente = { id: 'c4', nombre: 'Pep Vidal', telefono: '600 777 888', nuevo: false }; V.visitaDraft.direccion = 'Major 3'; V.visitaDraft.poblacion = 'Inca'; V.visitaDraft.categorias = ['aire_acondicionado']; V.visitaPaso = 3; },
     'pres-visita-nueva-4': () => { base('u5'); A.nuevaVisita(); V.visitaDraft._cliente = { id: 'c4', nombre: 'Pep Vidal', telefono: '600 777 888', nuevo: false }; V.visitaDraft.direccion = 'Major 3'; V.visitaDraft.poblacion = 'Inca'; V.visitaDraft.categorias = ['aire_acondicionado']; V.visitaPaso = 4; V.visitaCat = 'aire_acondicionado'; V.visitaFichas = { aire_acondicionado: { tipo_sistema: 'multisplit', uso: 'frio_calor', estancias: [{ nombre: 'Salón', m2: 30, metros: 4 }, { nombre: 'Dormitorio', m2: 12, metros: 6 }] } }; },
@@ -245,7 +251,8 @@
       if (!f) throw new Error('No hay escena ' + nombre);
       f();
       m.render();
-      const sc = document.querySelector('.scroll,.hoja'); if (sc) sc.scrollTop = 0;
+      // Una escena puede pedir salir desplazada (window.__scrollA) para fotografiar lo de abajo.
+      const sc = document.querySelector('.scroll,.hoja'); if (sc) sc.scrollTop = window.__scrollA || 0; window.__scrollA = 0;
       return true;
     },
   };
