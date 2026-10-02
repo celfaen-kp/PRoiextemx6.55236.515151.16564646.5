@@ -368,7 +368,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '18.9'; // versión visible de la app (única fuente)
+const APP_VERSION = '19.0'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -8305,9 +8305,25 @@ function vPresupuestoVer() {
         : `<button class="btn btn-verde" data-a="presuATeamleader" style="margin-top:8px" ${v.enviando ? 'disabled' : ''}>${v.enviando ? 'Subiendo…' : 'Mandar a Teamleader'}</button>
            <div class="tiny" style="margin-top:6px;text-align:center">Se crea la oferta en el CRM. Al cliente se la mandas tú desde allí.</div>`}
       ${d.sync_estado === 'error' && d.sync_error ? `<div class="tiny" style="margin-top:8px;color:var(--rojo)">${esc(d.sync_error)}</div>` : ''}
-    </div>` : ''}
+    </div>
+    <button class="btn" data-a="presuBorrar" data-id="${d.id}" style="margin-top:14px;border-radius:99px;background:none;color:var(--rojo);box-shadow:inset 0 0 0 1.5px var(--rojo)">Borrar presupuesto</button>
+    <div class="tiny" style="text-align:center;margin-top:8px">Para pruebas y duplicados. Si ya está en Teamleader, la oferta de allí se queda: quítala desde el CRM.</div>` : ''}
   </div>`;
 }
+// Borrar un presupuesto: con confirmación. Lo normal es que sea una prueba.
+A.presuBorrar = (id) => { const d = V.presuVer && V.presuVer.datos; if (!d || d.id !== id) return; V.sheet = { tipo: 'borrarPresu', id, busy: false }; render(); };
+A.confirmarBorrarPresu = async () => {
+  const s = V.sheet; if (!s || s.tipo !== 'borrarPresu' || s.busy) return;
+  if (!navigator.onLine) { avisar('Sin conexión: no se ha borrado.'); return; }
+  s.busy = true; render();
+  try {
+    await visitasDB.borrarPresupuesto(s.id);
+    V.sheet = null; V.presuVer = null; V.presuEdit = null;
+    V.presuLista.filas = (V.presuLista.filas || []).filter((x) => x.id !== s.id);
+    V.view = 'presupuestos'; toast('Presupuesto borrado.'); render();
+    A.cargarPresupuestos();
+  } catch (e) { s.busy = false; avisar('No se pudo borrar: ' + msgError(e)); render(); }
+};
 
 /* =============================================================================
  * AGENDA DE PRESUPUESTOS · clientes y citas (fase A)
@@ -9816,6 +9832,20 @@ function sheet() {
       </div>
     </div></div>`;
   }
+  if (s.tipo === 'borrarPresu') {
+    const d = V.presuVer && V.presuVer.datos;
+    const tl = d && d.tl_quotation_id;
+    return `<div class="sheet"><div>
+      <div style="font:600 23px/1.15 var(--cond)">¿Borrar este presupuesto?</div>
+      <div class="sub" style="margin-top:8px">${d ? esc(nombreCat(d.categoria)) + (d.cliente && d.cliente.nombre ? ' · ' + esc(d.cliente.nombre) : '') + (d.visita && d.visita.codigo ? ' · ' + esc(d.visita.codigo) : '') + ' · ' + eur(d.total_venta) : ''}</div>
+      <div class="sub" style="margin-top:10px">Se borra con todas sus líneas. <b>No se puede recuperar.</b> La visita y el cliente se quedan.</div>
+      ${tl ? '<div class="sub" style="margin-top:8px;color:var(--ambar-o)">Este presupuesto ya está en Teamleader. La oferta del CRM NO se borra: quítala tú desde allí si hace falta.</div>' : ''}
+      <div class="row g8" style="margin-top:18px">
+        <button class="btn btn-gris" data-a="cerrarSheet" style="border-radius:99px">Cancelar</button>
+        <button class="btn btn-rojo" data-a="confirmarBorrarPresu" style="font-size:14px" ${s.busy ? 'disabled' : ''}>${s.busy ? 'Borrando…' : 'Sí, borrar'}</button>
+      </div>
+    </div></div>`;
+  }
   if (s.tipo === 'borrarVisita') {
     return `<div class="sheet"><div>
       <div style="font:600 23px/1.15 var(--cond)">¿Borrar la visita${s.codigo ? ' ' + esc(s.codigo) : ''}?</div>
@@ -10432,6 +10462,8 @@ document.addEventListener('click', (e) => {
   if (a === 'presuAnadir') return A.presuAnadir(d.ref);
   if (a === 'presuQuitarExtra') return A.presuQuitarExtra(d.i);
   if (a === 'borrarVisita') return A.borrarVisita(d.id);
+  if (a === 'presuBorrar') return A.presuBorrar(d.id);
+  if (a === 'confirmarBorrarPresu') return A.confirmarBorrarPresu();
   if (a === 'confirmarBorrarVisita') return A.confirmarBorrarVisita();
   if (a === 'cliDriveReintentar') return A.cliDriveReintentar(d.id);
   if (a === 'cliCRMReintentar') return A.cliCRMReintentar(d.id);

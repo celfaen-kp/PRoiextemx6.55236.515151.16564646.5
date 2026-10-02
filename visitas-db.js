@@ -456,6 +456,18 @@ export async function listarPresupuestos(limite = 100) {
   ) || [];
 }
 
+/**
+ * Borrar un presupuesto (pruebas, duplicados). Las líneas y las incidencias
+ * se van con él (on delete cascade). Si estaba subido a Teamleader, la oferta
+ * de allí NO se toca: hay que quitarla a mano en el CRM.
+ */
+export async function borrarPresupuesto(id) {
+  const { data, error } = await supabase.from('presupuestos').delete().eq('id', id).select('id');
+  if (error) throw new Error(error.message);
+  if (!data || !data.length) throw new Error('No se ha borrado: puede que no tengas permiso o que ya no exista.');
+  return true;
+}
+
 /** Un presupuesto guardado, con sus líneas y sus incidencias. */
 export async function verPresupuesto(id) {
   return unwrap(
