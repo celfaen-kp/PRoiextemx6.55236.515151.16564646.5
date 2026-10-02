@@ -244,6 +244,23 @@ a:hover{color:var(--tinta)}
 #captcha{position:fixed;left:50%;bottom:calc(22px + var(--safe-b));transform:translateX(-50%);z-index:80;display:none}
 body.con-captcha #captcha{display:block}
 
+/* Tablero de planificación (sql/etapa60): personas × días, con scroll lateral. */
+.pl-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;margin:0 -16px;padding:0 16px 6px}
+.pl-grid{display:grid;grid-template-columns:84px repeat(var(--n),minmax(118px,1fr));gap:4px;min-width:max-content}
+.pl-h{font:500 10px/1.2 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--t3);text-align:center;padding:6px 2px;border-radius:10px;cursor:pointer}
+.pl-h b{display:block;font:700 17px/1 var(--cond);color:var(--tinta);margin-top:3px}
+.pl-h.sel{background:var(--tinta);color:rgba(255,255,255,.6)}.pl-h.sel b{color:#fff}
+.pl-h.hoy b{color:var(--verde)}
+.pl-nom{font:600 13px/1.2 var(--sans);padding:8px 4px 0;position:sticky;left:0;background:var(--papel);z-index:1;overflow-wrap:anywhere}
+.pl-nom small{display:block;font:500 10px/1 var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--t3);margin-top:3px}
+.pl-cel{background:#fff;border:1px solid var(--l2);border-radius:10px;min-height:54px;padding:4px;cursor:pointer;display:flex;flex-direction:column;gap:3px}
+.pl-cel.libre{background:rgba(20,23,15,.025);border-style:dashed}
+.pl-cel.sel{border-color:var(--tinta)}
+.pl-chip{display:block;background:#e3efe5;color:var(--verde-o);border-radius:8px;padding:5px 7px;font:600 11px/1.25 var(--sans);text-align:left;overflow:hidden;cursor:pointer}
+.pl-chip small{display:block;font:400 10px/1.2 var(--sans);color:var(--t2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pl-chip.plan{background:#f8efdc;color:var(--ambar-o)}
+.pl-mas{font:400 18px/1 var(--sans);color:var(--t3);text-align:center;margin:auto}
+
 /* Agenda de presupuestos */
 .ag-cita{display:grid;grid-template-columns:58px minmax(0,1fr);gap:12px;align-items:start}
 .ag-hora{font:700 22px/1 var(--cond);letter-spacing:-.01em}
@@ -351,7 +368,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '18.5'; // versión visible de la app (única fuente)
+const APP_VERSION = '18.6'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -896,7 +913,7 @@ async function sincronizarAusencias() {
     S.festivos = (await Sysefen.db.listarFestivos()) || [];
   } catch (e) { registrarError('sincronizarAusencias', e); /* sigue sin vacaciones */ }
 }
-const refrescarDatos = () => esPresupuestos() ? Promise.all([cargarAvatares(), sincronizarObras(), sincronizarPartes(), sincronizarImputaciones()]) : Promise.all([sincronizarFichajes(), sincronizarObras(), sincronizarImputaciones(), sincronizarPartes(), cargarAvatares(), sincronizarAusencias()]);
+const refrescarDatos = () => esPresupuestos() ? Promise.all([cargarAvatares(), sincronizarObras(), sincronizarPartes(), sincronizarImputaciones()]) : Promise.all([sincronizarFichajes(), sincronizarObras(), sincronizarImputaciones(), sincronizarPartes(), cargarAvatares(), sincronizarAusencias(), sincronizarPlanMio()]);
 
 // Ausencia de una persona en un día concreto (o null).
 // Un día puede estar marcado por dos vías: la ausencia PERSONAL (vacaciones de
@@ -2363,6 +2380,208 @@ A.cerrarObra = async (id) => {
   try { await Sysefen.db.actualizarObra(id, { estado: enDB }); await sincronizarObras(); render(); }
   catch (e) { avisar('No se pudo cambiar el estado: ' + (e && e.message ? e.message : 'error')); }
 };
+/* ---------- planificación diaria: quién va mañana a dónde (sql/etapa60) ----------
+ * Tablero semanal para los comerciales: filas = personas (operarios y jefes),
+ * columnas = días. Cada operario ve en «Hoy» lo suyo. Se planifica por
+ * personas sueltas (decidido con Enzo, 2 oct 2026).
+ * -------------------------------------------------------------------------------- */
+Object.assign(V, { plan: { lunes: null, dia: null, finde: false, filas: [], cargado: false, cargando: false, error: null }, planMio: [] });
+const faltaEtapa60 = (e) => /planificacion|schema cache|PGRST205/i.test(typeof e === 'string' ? e : msgError(e));
+const lunesDe = (fecha) => { const d = new Date(fecha + 'T12:00'); d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return fechaLocal(d); };
+const esFinde = (fecha) => [0, 6].includes(new Date(fecha + 'T12:00').getDay());
+// El siguiente día de trabajo: mañana, o el lunes si mañana cae en fin de semana.
+const siguienteLaborable = (fecha) => { let d = agSumaDias(fecha, 1); while (esFinde(d)) d = agSumaDias(d, 1); return d; };
+const anteriorLaborable = (fecha) => { let d = agSumaDias(fecha, -1); while (esFinde(d)) d = agSumaDias(d, -1); return d; };
+const planDias = (lunes, finde) => Array.from({ length: finde ? 7 : 5 }, (_, i) => agSumaDias(lunes, i));
+// Quién sale como fila: operarios y jefes activos. Los jefes primero.
+const planGente = () => empRows.filter((r) => r.activo !== false && ['operario', 'jefe'].includes(r.rol))
+  .sort((a, b) => (a.rol === 'jefe' ? 0 : 1) - (b.rol === 'jefe' ? 0 : 1) || String(a.nombre).localeCompare(String(b.nombre), 'es'));
+const planFilasDe = (empId, fecha) => V.plan.filas.filter((f) => f.empleado_id === empId && f.fecha === fecha);
+// Obras en marcha a las que no va nadie ese día.
+const obrasSinPlanificarDia = (fecha, filas, obras) => (obras || []).filter((o) => ['planificada', 'en_curso'].includes(o.estado) && !(filas || []).some((f) => f.obra_id === o.id && f.fecha === fecha)).sort(porNumeroDesc);
+// Quién suele ir a esa obra: por las veces que ha estado planificado, y los
+// asignados fijos (obra_empleados). Devuelve ids de empleado, los más
+// habituales primero.
+const sugerirPersonas = (obraId, filas, fijos) => {
+  const veces = {};
+  (filas || []).filter((f) => f.obra_id === obraId).forEach((f) => { veces[f.empleado_id] = (veces[f.empleado_id] || 0) + 1; });
+  (fijos || []).forEach((id) => { veces[id] = (veces[id] || 0) + 0.5; });
+  return Object.keys(veces).sort((a, b) => veces[b] - veces[a]);
+};
+const planFechaTxt = (fecha) => { const d = new Date(fecha + 'T12:00'); const dia = DIAS_SEM[d.getDay()] + ' ' + d.getDate() + ' ' + d.toLocaleDateString('es-ES', { month: 'short' }).replace('.', ''); return fecha === hoyISO() ? 'hoy, ' + dia : fecha === agSumaDias(hoyISO(), 1) ? 'mañana, ' + dia : dia; };
+
+A.abrirPlanificacion = () => {
+  if (!esComercial()) return;
+  const hoy = hoyISO();
+  if (!V.plan.dia) { V.plan.dia = siguienteLaborable(hoy); V.plan.lunes = lunesDe(V.plan.dia); }
+  V.view = 'planificacion'; render();
+  A.cargarPlan();
+};
+A.cargarPlan = async () => {
+  const p = V.plan; if (p.cargando || !V.user) return;
+  p.cargando = true;
+  try {
+    // Dos meses hacia atrás (para saber quién suele ir a cada obra) y dos
+    // semanas hacia delante.
+    p.filas = await Sysefen.db.listarPlanificacion(agSumaDias(p.lunes, -60), agSumaDias(p.lunes, 20));
+    p.cargado = true; p.error = null;
+  } catch (e) { p.error = msgError(e); }
+  p.cargando = false;
+  if (V.view === 'planificacion') render();
+};
+// Lo mío de hoy y mañana, para la tarjeta de «Hoy» (todos los roles).
+async function sincronizarPlanMio() {
+  if (!V.user || esAdmin()) return;
+  try { const hoy = hoyISO(); V.planMio = (await Sysefen.db.listarPlanificacion(hoy, agSumaDias(hoy, 1))).filter((f) => f.empleado_id === miEmpId()); }
+  catch (e) { /* sin la etapa 60 no hay planificación: la tarjeta no sale */ V.planMio = []; }
+}
+A.planSemana = (delta) => { V.plan.lunes = agSumaDias(V.plan.lunes, 7 * delta); V.plan.dia = agSumaDias(V.plan.dia, 7 * delta); render(); A.cargarPlan(); };
+A.planHoy = () => { V.plan.dia = siguienteLaborable(hoyISO()); V.plan.lunes = lunesDe(V.plan.dia); render(); A.cargarPlan(); };
+A.planDia = (fecha) => { V.plan.dia = fecha; render(); };
+A.planFinde = () => { V.plan.finde = !V.plan.finde; render(); };
+// Tocar una casilla vacía: asignar a esa persona ese día.
+A.planCelda = (empId, fecha) => {
+  if (!esComercial()) return;
+  V.plan.dia = fecha;
+  V.sheet = { tipo: 'planAsignar', fecha, obraId: null, personas: empId ? [empId] : [], hora: '', nota: '', buscar: '', busy: false, desde: empId || null };
+  render();
+};
+// Tocar una obra de la franja «sin asignar»: elegir a quién mandar.
+A.planObraSin = (obraId) => {
+  if (!esComercial()) return;
+  const sug = sugerirPersonas(obraId, V.plan.filas, empleadosDeObra(obraId).map((x) => empIdDeUser(x.id)).filter(Boolean));
+  const gente = planGente().map((r) => r.id);
+  const ya = new Set(planFilasDe(null, V.plan.dia).map((f) => f.empleado_id));
+  V.sheet = { tipo: 'planAsignar', fecha: V.plan.dia, obraId, personas: sug.filter((id) => gente.includes(id) && !ya.has(id)).slice(0, 2), hora: '', nota: '', buscar: '', busy: false, desde: null };
+  render();
+};
+A.planElegirObra = (obraId) => {
+  const s = V.sheet; if (!s || s.tipo !== 'planAsignar') return;
+  s.obraId = obraId;
+  // Si solo está la persona de la casilla, proponer a quien suele ir con ella.
+  if (s.personas.length <= 1) {
+    const sug = sugerirPersonas(obraId, V.plan.filas, empleadosDeObra(obraId).map((x) => empIdDeUser(x.id)).filter(Boolean));
+    s.sugeridas = sug.filter((id) => !s.personas.includes(id) && planGente().some((r) => r.id === id)).slice(0, 4);
+  }
+  render();
+};
+A.planPersona = (empId) => { const s = V.sheet; if (!s) return; const i = s.personas.indexOf(empId); if (i >= 0) s.personas.splice(i, 1); else s.personas.push(empId); render(); };
+A.planGuardar = async () => {
+  const s = V.sheet; if (!s || s.tipo !== 'planAsignar' || s.busy) return;
+  if (!s.obraId) { avisar('Elige la obra.'); return; }
+  if (!s.personas.length) { avisar('Marca a quién mandas.'); return; }
+  if (!navigator.onLine) { avisar('Sin conexión: no se ha guardado.'); return; }
+  s.busy = true; render();
+  const filas = s.personas.map((empId) => ({ obra_id: s.obraId, empleado_id: empId, fecha: s.fecha, hora_prevista: s.hora || null, nota: (s.nota || '').trim() || null }));
+  try {
+    await Sysefen.db.crearPlanificacion(filas);
+    V.sheet = null; toast(filas.length === 1 ? 'Asignado.' : filas.length + ' personas asignadas.');
+    await A.cargarPlan();
+  } catch (e) { s.busy = false; avisar(faltaEtapa60(e) ? 'Falta ejecutar sql/etapa60 en Supabase.' : 'No se pudo guardar: ' + msgError(e)); render(); }
+};
+// Repetir lo del último día de trabajo: para una persona o para todos.
+A.planRepetir = async (empId) => {
+  const dia = V.plan.dia, ayer = anteriorLaborable(dia);
+  const base = V.plan.filas.filter((f) => f.fecha === ayer && (!empId || f.empleado_id === empId));
+  if (!base.length) { avisar('No hay nada que repetir del ' + planFechaTxt(ayer) + '.'); return; }
+  const filas = base.map((f) => ({ obra_id: f.obra_id, empleado_id: f.empleado_id, fecha: dia, hora_prevista: f.hora_prevista, nota: f.nota }));
+  try { await Sysefen.db.crearPlanificacion(filas); toast('Repetido lo del ' + planFechaTxt(ayer) + '.'); await A.cargarPlan(); }
+  catch (e) { avisar(faltaEtapa60(e) ? 'Falta ejecutar sql/etapa60 en Supabase.' : 'No se pudo: ' + msgError(e)); }
+};
+A.planVer = (id) => { const f = V.plan.filas.find((x) => x.id === id); if (!f) return; V.sheet = { tipo: 'planVer', id, hora: f.hora_prevista ? String(f.hora_prevista).slice(0, 5) : '', nota: f.nota || '', busy: false }; render(); };
+A.planGuardarCambios = async () => {
+  const s = V.sheet; if (!s || s.tipo !== 'planVer' || s.busy) return;
+  s.busy = true; render();
+  try { await Sysefen.db.actualizarPlanificacion(s.id, { hora_prevista: s.hora || null, nota: (s.nota || '').trim() || null }); V.sheet = null; toast('Guardado.'); await A.cargarPlan(); }
+  catch (e) { s.busy = false; avisar('No se pudo guardar: ' + msgError(e)); render(); }
+};
+A.planQuitar = async (id) => {
+  try { await Sysefen.db.borrarPlanificacion(id); V.sheet = null; toast('Quitado.'); await A.cargarPlan(); }
+  catch (e) { avisar('No se pudo quitar: ' + msgError(e)); }
+};
+A.planCopiarManana = async (id) => {
+  const f = V.plan.filas.find((x) => x.id === id); if (!f) return;
+  const dia = siguienteLaborable(f.fecha);
+  try { await Sysefen.db.crearPlanificacion([{ obra_id: f.obra_id, empleado_id: f.empleado_id, fecha: dia, hora_prevista: f.hora_prevista, nota: f.nota }]); V.sheet = null; toast('Copiado al ' + planFechaTxt(dia) + '.'); await A.cargarPlan(); }
+  catch (e) { avisar('No se pudo copiar: ' + msgError(e)); }
+};
+
+// La lista de obras de la hoja de asignar: primero las que no tienen a nadie
+// ese día. Va aparte para repintar solo esto al teclear.
+function planObrasListaHTML(s) {
+  const q = sinTildes(s.buscar);
+  const num = numeroBuscado(s.buscar);
+  const sinNadie = new Set(obrasSinPlanificarDia(s.fecha, V.plan.filas, S.obras).map((x) => x.id));
+  const obras = [...S.obras].filter((x) => !obraCerrada(x)).filter((x) => !q || (num != null && x.numero === num) || sinTildes([codigoObra(x), x.titulo, x.cliente, x.dir, x.poblacion].join(' ')).includes(q))
+    .sort((a, b) => (sinNadie.has(b.id) ? 1 : 0) - (sinNadie.has(a.id) ? 1 : 0) || porNumeroDesc(a, b));
+  if (!obras.length) return '<div class="sub">Ninguna obra con eso.</div>';
+  return obras.slice(0, 80).map((x) => `<button class="fila-obra" data-a="planElegirObra" data-id="${x.id}">${esc(codigoObra(x) || x.titulo)} · ${esc(x.cliente || x.titulo)}${sinNadie.has(x.id) ? ' <span class="badge" style="background:#f8efdc;color:var(--ambar-o)">sin nadie</span>' : ''}<small>${esc([x.nombre !== x.cliente ? x.nombre : '', direccionObra(x)].filter(Boolean).join(' · '))}</small></button>`).join('');
+}
+function planChipHTML(f) {
+  return `<span class="pl-chip ${f.obra_estado === 'planificada' ? 'plan' : ''}" data-a="planVer" data-id="${f.id}">${esc(f.codigo || '')}${f.hora_prevista ? ' · ' + esc(String(f.hora_prevista).slice(0, 5)) : ''}<small>${esc(f.cliente || f.obra || '')}${f.nota ? ' · ' + esc(f.nota) : ''}</small></span>`;
+}
+function vPlanificacion() {
+  const p = V.plan;
+  const dias = planDias(p.lunes, p.finde);
+  const gente = planGente();
+  const hoy = hoyISO();
+  const sin = obrasSinPlanificarDia(p.dia, p.filas, S.obras);
+  const semanaTxt = fechaCorta(p.lunes) + ' – ' + fechaCorta(agSumaDias(p.lunes, p.finde ? 6 : 4));
+  return `<div class="hdr">
+    <div class="volver" data-a="ir" data-v="obras">‹ Obras</div>
+    <div class="row" style="justify-content:space-between;margin-top:6px;align-items:center">
+      <div class="h1">Planificación</div>
+      <div class="row g8">
+        <button class="pill" data-a="planSemana" data-d="-1" style="padding:8px 12px">‹</button>
+        <button class="pill" data-a="planHoy" style="padding:8px 12px">Esta semana</button>
+        <button class="pill" data-a="planSemana" data-d="1" style="padding:8px 12px">›</button>
+      </div>
+    </div>
+    <div class="sub" style="margin-top:6px">Semana del ${esc(semanaTxt)}. Toca una casilla para mandar a alguien a una obra; toca un día para ver qué falta por cubrir.</div>
+    <div class="wrap" style="margin-top:10px">
+      <span class="chip" data-a="planFinde" style="cursor:pointer">${p.finde ? 'Quitar fin de semana' : 'Ver fin de semana'}</span>
+      <span class="chip" data-a="planRepetirTodos" style="cursor:pointer">Repetir lo del ${esc(planFechaTxt(anteriorLaborable(p.dia)).replace(/^hoy, |^mañana, /, ''))} → ${esc(planFechaTxt(p.dia).replace(/^hoy, |^mañana, /, ''))}</span>
+    </div>
+  </div>
+  <div class="scroll pad pb-nav">
+    ${p.error ? `<div class="card" style="margin-bottom:12px"><div class="sub">${faltaEtapa60(p.error) ? 'Falta ejecutar sql/etapa60 en Supabase.' : 'No se pudo cargar: ' + esc(p.error)}</div></div>` : ''}
+    <div class="card" style="margin-bottom:12px;padding:12px 15px;${sin.length ? 'box-shadow:0 0 0 1.5px var(--ambar),var(--sh)' : ''}">
+      <div class="row g8" style="align-items:center"><span class="dot" style="width:8px;height:8px;background:${sin.length ? 'var(--ambar)' : 'var(--verde)'}"></span>
+        <span class="lbl" style="color:${sin.length ? 'var(--ambar-o)' : 'var(--verde-o)'}">${sin.length ? `Sin asignar ${esc(planFechaTxt(p.dia))} · ${sin.length}` : `Todas las obras en marcha tienen a alguien ${esc(planFechaTxt(p.dia))}`}</span></div>
+      ${sin.length ? `<div class="wrap" style="margin-top:9px">${sin.map((o) => `<span class="chip" data-a="planObraSin" data-id="${o.id}" style="cursor:pointer;border-color:var(--ambar);color:var(--ambar-o)">${esc(codigoObra(o) || o.titulo)} · ${esc(o.cliente || o.titulo)}</span>`).join('')}</div>
+      <div class="tiny" style="margin-top:8px">Toca una para mandar a alguien. Si una obra no va a tener a nadie a propósito, no pasa nada: es solo un aviso.</div>` : ''}
+    </div>
+    ${!gente.length ? '<div class="card"><div class="sub">No hay operarios ni jefes activos.</div></div>' : `<div class="pl-wrap"><div class="pl-grid" style="--n:${dias.length}">
+      <div></div>
+      ${dias.map((d) => `<div class="pl-h ${d === p.dia ? 'sel' : ''} ${d === hoy ? 'hoy' : ''}" data-a="planDia" data-dia="${d}">${esc(diaSemana(d))}<b>${+d.slice(8)}</b></div>`).join('')}
+      ${gente.map((r) => `<div class="pl-nom">${esc(String(r.nombre || '').split(' ')[0])}<small>${r.rol === 'jefe' ? 'jefe' : ''}</small></div>
+        ${dias.map((d) => { const mias = planFilasDe(r.id, d); return `<div class="pl-cel ${mias.length ? '' : 'libre'} ${d === p.dia ? 'sel' : ''}" data-a="planCelda" data-id="${r.id}" data-dia="${d}">${mias.length ? mias.map(planChipHTML).join('') : '<span class="pl-mas">+</span>'}</div>`; }).join('')}`).join('')}
+    </div></div>
+    <div class="tiny" style="margin-top:10px">${p.cargando ? 'Cargando…' : 'Verde: obra en curso. Ámbar: obra aún planificada (no empezada). Cada operario ve en «Hoy» lo suyo; a las 19:00 le llega por correo lo de mañana.'}</div>`}
+  </div>`;
+}
+// La tarjeta de «Hoy» del operario y del jefe: a dónde va hoy y mañana.
+function planHoyHTML() {
+  const mio = V.planMio || [];
+  if (!mio.length) return '';
+  const hoy = hoyISO();
+  const bloque = (fecha, etiqueta) => {
+    const filas = mio.filter((f) => f.fecha === fecha);
+    if (!filas.length) return '';
+    return filas.map((f) => `<div class="card" style="margin-bottom:10px;${fecha === hoy ? 'box-shadow:0 0 0 1.5px var(--verde),var(--sh)' : ''}">
+      <div class="row g8" style="align-items:center"><span class="lbl" style="color:${fecha === hoy ? 'var(--verde-o)' : 'var(--t2)'}">${etiqueta}${f.hora_prevista ? ' · ' + esc(String(f.hora_prevista).slice(0, 5)) : ''}</span><span class="grow"></span>${(f.categorias || []).map((k) => `<span class="badge" style="background:rgba(20,23,15,.07);color:var(--t2)">${esc(k)}</span>`).join('')}</div>
+      <div class="row g8" style="align-items:baseline;margin-top:8px"><span style="font:600 22px/1.1 var(--cond)">${esc(f.codigo || '')}</span><span style="font:600 16px/1.3 var(--sans)">${esc(f.cliente || f.obra || '')}</span></div>
+      ${[f.direccion, f.poblacion].filter(Boolean).length ? `<div style="font:400 15px/1.35 var(--sans);color:var(--t2);margin-top:3px">${esc([f.direccion, f.poblacion].filter(Boolean).join(' · '))}</div>` : ''}
+      ${f.nota ? `<div style="margin-top:8px;padding:8px 10px;border-radius:10px;background:#f8efdc;color:var(--ambar-o);font:500 13px/1.4 var(--sans)">${esc(f.nota)}${f.planificador ? ` <span class="tiny">· ${esc(f.planificador)}</span>` : ''}</div>` : ''}
+      <div class="row g8" style="margin-top:10px">
+        ${f.direccion ? `<a class="pill grow" style="text-align:center;padding:9px" href="https://maps.apple.com/?q=${encodeURIComponent([f.direccion, f.poblacion].filter(Boolean).join(', '))}" target="_blank" rel="noopener">Cómo llegar</a>` : ''}
+        ${obraById(f.obra_id) ? `<button class="pill grow" data-a="verObra" data-id="${f.obra_id}" style="padding:9px">Ver obra</button>` : ''}
+      </div>
+    </div>`).join('');
+  };
+  return bloque(hoy, 'Hoy vas a') + bloque(agSumaDias(hoy, 1), 'Mañana vas a');
+}
+
 /* ---------- economía de la obra y costes (sql/etapa59) ------------------------
  * Solo para quien ve costes (Administración y presupuestos). El bloque no se
  * pinta para los demás: no es que esté oculto, es que no existe en su HTML.
@@ -3462,7 +3681,7 @@ A.instalar = async () => {
 /* ---------- render ---------- */
 function render() {
   // Ramón entra directo a sus visitas: ninguna pantalla de fichar, obras ni partes.
-  if (V.user && esPresupuestos() && !VISITA_VISTAS.includes(V.view) && !['legalizaciones', 'legalizacion', 'obras', 'obra', 'alta', 'costesPersonal'].includes(V.view)) {
+  if (V.user && esPresupuestos() && !VISITA_VISTAS.includes(V.view) && !['legalizaciones', 'legalizacion', 'obras', 'obra', 'alta', 'costesPersonal', 'planificacion'].includes(V.view)) {
     V.view = 'agenda';
     if (!V.agenda.cargado) A.cargarAgenda();
   }
@@ -3490,6 +3709,7 @@ function render() {
   else if (v === 'presupuestos' && verMotor()) html = vPresupuestos();
   else if (v === 'legalizaciones' && esComercial()) html = vLegalizaciones();
   else if (v === 'costesPersonal' && veCostes()) html = vCostesPersonal();
+  else if (v === 'planificacion' && esComercial()) html = vPlanificacion();
   else if (v === 'legalizacion' && esComercial()) html = vLegalizacion();
   else if (v === 'presuNuevo' && verMotor()) html = vPresuNuevo();
   else if (v === 'presupuestoVer' && verMotor()) html = vPresupuestoVer();
@@ -3506,7 +3726,7 @@ function render() {
   else if (v === 'clienteVer' && verAgenda()) html = vClienteVer();
   else if (v === 'citaNueva' && puedeCitar()) html = vCitaNueva();
   else if (v === 'citaVer' && verAgenda()) html = vCitaVer();
-  if (V.user && ['hoy', 'obras', 'obra', 'partes', 'horas', 'imputar', 'empleados', 'ajustes', 'presupuestos', 'presupuestoVer', 'visitas', 'visita', 'agenda', 'clientes', 'clienteVer', 'revisarImp', 'errores', 'legalizaciones', 'legalizacion', 'costesPersonal'].includes(v)) html += nav(v);
+  if (V.user && ['hoy', 'obras', 'obra', 'partes', 'horas', 'imputar', 'empleados', 'ajustes', 'presupuestos', 'presupuestoVer', 'visitas', 'visita', 'agenda', 'clientes', 'clienteVer', 'revisarImp', 'errores', 'legalizaciones', 'legalizacion', 'costesPersonal', 'planificacion'].includes(v)) html += nav(v);
   if (!navigator.onLine && V.user) html = '<div class="offline">Sin conexión — todo se guarda en el móvil</div>' + html;
   // Red de seguridad: si un sheet revienta al pintarse (p. ej. depende de
   // datos que cambiaron justo antes, como el usuario tras salir), que se
@@ -3654,6 +3874,7 @@ function vHoy() {
       <div class="sub" style="margin-top:6px;font-size:13px">Repásalas y fírmalas: es tu registro de jornada y la empresa tiene que guardarlo.</div>
       <button class="pill pill-verde" data-a="firmarMesPendiente" style="margin-top:12px;padding:11px;width:100%;text-align:center">Ver y firmar</button>
     </div>` : ''}
+    ${planHoyHTML()}
     ${S.obras.length ? '' : `<div class="card"><div class="h2">Todavía no hay obras</div><div class="sub" style="margin-top:6px">Se pueden crear más adelante: para fichar no hacen falta.</div>
       ${puedeCrear() ? '<button class="btn btn-verde" data-a="nuevaObra" style="margin-top:14px">Crear obra</button>' : ''}</div>`}
 
@@ -3740,6 +3961,7 @@ function vObras() {
       <span class="chip ${!cerradas ? 'on' : ''}" data-a="obrasTab" data-t="curso" style="cursor:pointer">En curso · ${enCurso.length}</span>
       <span class="chip ${cerradas ? 'on' : ''}" data-a="obrasTab" data-t="cerradas" style="cursor:pointer">Cerradas${cerr.length ? ' · ' + cerr.length : ''}</span>
       <span class="grow"></span>
+      ${esComercial() ? '<span class="chip" data-a="abrirPlanificacion" style="cursor:pointer;background:var(--verde);color:#fff;border-color:var(--verde)">Planificar semana</span>' : ''}
       <span class="chip" data-a="obrasOrden" style="cursor:pointer">${V.obrasOrden === 'cliente' ? 'A-Z cliente' : 'Más nuevas'} ⇅</span>
     </div>
   </div>
@@ -9043,7 +9265,7 @@ function nav(v) {
     || (id === 'horas' && ['imputar', 'revisarImp', 'resumenImp'].includes(v))
     || (id === 'ajustes' && !esPresupuestos() && ['errores', 'legalizaciones', 'legalizacion'].includes(v))
     || (id === 'ajustes' && v === 'costesPersonal')
-    || (id === 'obras' && v === 'alta')
+    || (id === 'obras' && ['alta', 'planificacion'].includes(v))
     || (id === 'legalizaciones' && v === 'legalizacion')
     || (id === 'empleados' && (v === 'empleado' || v === 'planilla'))
     || (id === 'visitas' && v === 'visita')
@@ -9502,6 +9724,51 @@ function sheet() {
       <div data-a="compartirParte" data-id="${esc(s.id)}" class="tiny" style="margin-top:12px;text-align:center;text-decoration:underline;cursor:pointer">O compartirlo yo (WhatsApp, otro correo…)</div>
     </div></div>`;
   }
+  if (s.tipo === 'planAsignar') {
+    const o = s.obraId ? obraById(s.obraId) : null;
+    const gente = planGente();
+    const nombre = (id) => { const r = empRowById(id); return r ? String(r.nombre).split(' ')[0] : ''; };
+    return `<div class="sheet"><div style="max-height:88vh;display:flex;flex-direction:column">
+      <div style="font:600 23px/1.15 var(--cond)">${o ? 'Mandar a ' + esc(codigoObra(o) || o.titulo) : 'Asignar obra'}</div>
+      <div class="sub" style="margin-top:6px">${esc(planFechaTxt(s.fecha))}${s.desde ? ' · ' + esc(nombre(s.desde)) : ''}${o ? ' · ' + esc(o.cliente || '') + (direccionObra(o) ? ' · ' + esc(direccionObra(o)) : '') : ''}</div>
+      ${!o ? `<input class="inp" data-f="planBuscar" value="${esc(s.buscar || '')}" placeholder="Número, cliente u obra" autocomplete="off" style="margin:12px 0 8px">
+        <div class="lista-obras" id="plan-obras" style="overflow:auto;flex:1;min-height:0">${planObrasListaHTML(s)}</div>`
+      : `<div style="overflow:auto;flex:1;min-height:0">
+        <div class="lbl" style="margin:14px 0 8px">¿Quién va?</div>
+        <div class="wrap">${gente.map((r) => `<span class="chip ${s.personas.includes(r.id) ? 'on' : ''}" data-a="planPersona" data-id="${r.id}" style="cursor:pointer">${esc(nombre(r.id))}${(s.sugeridas || []).includes(r.id) && !s.personas.includes(r.id) ? ' · suele ir' : ''}</span>`).join('')}</div>
+        ${s.personas.length ? `<div class="tiny" style="margin-top:6px">${s.personas.map((id) => { const ya = planFilasDe(id, s.fecha); return ya.length ? nombre(id) + ' ya tiene ' + ya.map((f) => f.codigo).join(', ') + ' ese día' : ''; }).filter(Boolean).join(' · ')}</div>` : ''}
+        <div class="row g8" style="margin-top:14px">
+          <div style="width:120px"><div class="lbl" style="margin-bottom:6px">Hora</div><input class="inp" type="time" data-f="planHora" value="${esc(s.hora)}"></div>
+          <div class="grow"><div class="lbl" style="margin-bottom:6px">Nota</div><input class="inp" data-f="planNota" value="${esc(s.nota)}" placeholder="Llevar escalera grande, llamar antes…"></div>
+        </div>
+        <div class="tiny" style="margin-top:8px"><span data-a="planCambiarObra" style="cursor:pointer;text-decoration:underline">Cambiar de obra</span></div>
+      </div>
+      <div class="row g8" style="margin-top:16px">
+        <button class="btn btn-gris" data-a="cerrarSheet" style="border-radius:99px">Cancelar</button>
+        <button class="btn btn-verde" data-a="planGuardar" ${s.busy ? 'disabled' : ''}>${s.busy ? 'Guardando…' : s.personas.length > 1 ? 'Asignar a ' + s.personas.length : 'Asignar'}</button>
+      </div>`}
+      ${!o ? '<button class="btn btn-gris" data-a="cerrarSheet" style="border-radius:99px;margin-top:12px">Cancelar</button>' : ''}
+    </div></div>`;
+  }
+  if (s.tipo === 'planVer') {
+    const f = V.plan.filas.find((x) => x.id === s.id); if (!f) { V.sheet = null; return ''; }
+    return `<div class="sheet"><div>
+      <div class="row g8" style="align-items:baseline"><span style="font:600 26px/1.1 var(--cond)">${esc(f.codigo || '')}</span><span style="font:600 16px var(--sans)">${esc(f.cliente || f.obra || '')}</span></div>
+      <div class="sub" style="margin-top:6px">${esc(f.empleado)} · ${esc(planFechaTxt(f.fecha))}${[f.direccion, f.poblacion].filter(Boolean).length ? ' · ' + esc([f.direccion, f.poblacion].filter(Boolean).join(', ')) : ''}</div>
+      <div class="row g8" style="margin-top:14px">
+        <div style="width:120px"><div class="lbl" style="margin-bottom:6px">Hora</div><input class="inp" type="time" data-f="planHora" value="${esc(s.hora)}"></div>
+        <div class="grow"><div class="lbl" style="margin-bottom:6px">Nota</div><input class="inp" data-f="planNota" value="${esc(s.nota)}" placeholder="Llevar escalera grande…"></div>
+      </div>
+      <div class="row g8" style="margin-top:16px">
+        <button class="btn btn-gris" data-a="planQuitar" data-id="${f.id}" style="border-radius:99px;color:var(--rojo)">Quitar</button>
+        <button class="btn btn-gris" data-a="planCopiarManana" data-id="${f.id}" style="border-radius:99px">Copiar al día siguiente</button>
+      </div>
+      <div class="row g8" style="margin-top:10px">
+        <button class="btn btn-gris" data-a="cerrarSheet" style="border-radius:99px">Cerrar</button>
+        <button class="btn btn-verde" data-a="planGuardarCambios" ${s.busy ? 'disabled' : ''}>${s.busy ? 'Guardando…' : 'Guardar'}</button>
+      </div>
+    </div></div>`;
+  }
   if (s.tipo === 'costeEmp') {
     const r = empRowById(s.empId) || {};
     return `<div class="sheet"><div>
@@ -9895,6 +10162,22 @@ document.addEventListener('click', (e) => {
   if (a === 'confirmarBorrarParte') return A.confirmarBorrarParte();
   if (a === 'borrarObra') return A.borrarObra(d.id);
   if (a === 'abrirCostes') return A.abrirCostes();
+  if (a === 'abrirPlanificacion') return A.abrirPlanificacion();
+  if (a === 'planSemana') return A.planSemana(Number(d.d));
+  if (a === 'planHoy') return A.planHoy();
+  if (a === 'planDia') return A.planDia(d.dia);
+  if (a === 'planFinde') return A.planFinde();
+  if (a === 'planRepetirTodos') return A.planRepetir(null);
+  if (a === 'planCelda') return A.planCelda(d.id, d.dia);
+  if (a === 'planObraSin') return A.planObraSin(d.id);
+  if (a === 'planElegirObra') return A.planElegirObra(d.id);
+  if (a === 'planCambiarObra') { if (V.sheet) { V.sheet.obraId = null; V.sheet.sugeridas = []; } return render(); }
+  if (a === 'planPersona') return A.planPersona(d.id);
+  if (a === 'planGuardar') return A.planGuardar();
+  if (a === 'planVer') { e.stopPropagation(); return A.planVer(d.id); }
+  if (a === 'planGuardarCambios') return A.planGuardarCambios();
+  if (a === 'planQuitar') return A.planQuitar(d.id);
+  if (a === 'planCopiarManana') return A.planCopiarManana(d.id);
   if (a === 'costeEmpNuevo') return A.costeEmpNuevo(d.id);
   if (a === 'costeEmpGuardar') return A.costeEmpGuardar();
   if (a === 'enlazarPresu') return A.enlazarPresu(d.id);
@@ -9992,6 +10275,9 @@ document.addEventListener('input', (e) => {
   }
   if (!f) return;
   if (f.startsWith('vf')) return A.vf(f, t.dataset, t.value);
+  if (f === 'planBuscar') { if (V.sheet) { V.sheet.buscar = t.value; const box = document.getElementById('plan-obras'); if (box) box.innerHTML = planObrasListaHTML(V.sheet); } return; }
+  if (f === 'planHora') { if (V.sheet) V.sheet.hora = t.value; return; }
+  if (f === 'planNota') { if (V.sheet) V.sheet.nota = t.value; return; }
   if (f === 'costesBuscar') { V.costesBuscar = t.value; const box = document.getElementById('costes-lista'); if (box) box.innerHTML = costesListaHTML(); return; }
   if (f === 'costeValor') { if (V.sheet) V.sheet.coste = t.value; return; }
   if (f === 'costeDesde') { if (V.sheet) V.sheet.desde = t.value; return; }

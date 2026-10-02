@@ -99,6 +99,26 @@ export async function guardarCosteEmpleado(fila) {
   return unwrap(await supabase.from('empleado_costes').insert(fila).select().single());
 }
 
+/* ---------------- planificación diaria (sql/etapa60) ----------------
+ * Quién va cada día a qué obra. La escribe todo comercial; el operario solo
+ * lee lo suyo (lo filtra la RLS). */
+export async function listarPlanificacion(desde, hasta) {
+  return unwrap(await supabase.from('v_planificacion_dia').select('*').gte('fecha', desde).lte('fecha', hasta).order('fecha').order('hora_prevista', { nullsFirst: false })) || [];
+}
+export async function crearPlanificacion(filas) {
+  // upsert por (empleado, fecha, obra): repetir una asignación no da error.
+  return unwrap(await supabase.from('planificacion').upsert(filas, { onConflict: 'empleado_id,fecha,obra_id', ignoreDuplicates: false }).select());
+}
+export async function actualizarPlanificacion(id, cambios) {
+  return unwrap(await supabase.from('planificacion').update(cambios).eq('id', id).select().single());
+}
+export async function borrarPlanificacion(id) {
+  return unwrap(await supabase.from('planificacion').delete().eq('id', id).select('id'));
+}
+export async function obrasSinPlanificar(fecha) {
+  return unwrap(await supabase.from('v_obras_sin_planificar').select('*').eq('fecha', fecha).order('numero', { ascending: false })) || [];
+}
+
 export async function borrarObra(id) {
   const cuenta = async (tabla) => {
     const r = await supabase.from(tabla).select('id', { count: 'exact', head: true }).eq('obra_id', id);
@@ -746,6 +766,7 @@ export default {
   listarEmpleados, crearEmpleado, actualizarEmpleado,
   listarObras, crearObra, actualizarObra, borrarObra,
   economiaObra, costesObra, anadirCosteObra, borrarCosteObra, enlazarPresupuesto, listarCostesEmpleados, guardarCosteEmpleado,
+  listarPlanificacion, crearPlanificacion, actualizarPlanificacion, borrarPlanificacion, obrasSinPlanificar,
   empleadosDeObra, listarAsignaciones, asignarEmpleadoAObra, quitarEmpleadoDeObra,
   fichajeAbierto, ficharEntrada, ficharSalida, corregirFichaje, crearFichajeManual, importarFichajes, borrarFichaje,
   fichajesDelDia, listarFichajes, escucharFichajes,

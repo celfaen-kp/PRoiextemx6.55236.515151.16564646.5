@@ -171,6 +171,14 @@
     'admin-citas': () => { base('u0'); V.view = 'agenda'; },
     'admin-presupuestos': () => { base('u0'); V.view = 'presupuestos'; },
     'admin-ajustes': () => { base('u0'); V.view = 'ajustes'; },
+    'admin-planificacion': () => { base('u0'); const hoy = new Date(); const lunes = new Date(hoy); lunes.setDate(hoy.getDate() - ((hoy.getDay() + 6) % 7)); const f = (n) => { const d = new Date(lunes); d.setDate(lunes.getDate() + n); return d.toISOString().slice(0, 10); };
+      V.plan = { lunes: f(0), dia: f(2), finde: false, cargado: true, cargando: false, error: null, filas: [
+        { id: 'pl1', fecha: f(0), empleado_id: 'e3', obra_id: 'o1', empleado: 'Pau', codigo: 'OB-137', cliente: 'Familia Roca', obra: 'Casa Can Roca', direccion: 'Camí de Son Vich 12', poblacion: 'Esporles', categorias: ['AE', 'FV'], obra_estado: 'en_curso', hora_prevista: '08:00:00', nota: null },
+        { id: 'pl2', fecha: f(0), empleado_id: 'e4', obra_id: 'o1', empleado: 'Marta', codigo: 'OB-137', cliente: 'Familia Roca', obra: 'Casa Can Roca', direccion: 'Camí de Son Vich 12', poblacion: 'Esporles', categorias: ['AE', 'FV'], obra_estado: 'en_curso', hora_prevista: '08:00:00', nota: null },
+        { id: 'pl3', fecha: f(1), empleado_id: 'e3', obra_id: 'o1', empleado: 'Pau', codigo: 'OB-137', cliente: 'Familia Roca', obra: 'Casa Can Roca', direccion: 'Camí de Son Vich 12', poblacion: 'Esporles', categorias: ['AE', 'FV'], obra_estado: 'en_curso', hora_prevista: null, nota: 'Llevar escalera grande' },
+        { id: 'pl4', fecha: f(1), empleado_id: 'e1', obra_id: 'o2', empleado: 'Toni', codigo: 'OB-138', cliente: 'Talleres Pons', obra: 'Nave', direccion: 'Gremi Fusters 8', poblacion: 'Palma', categorias: ['FV'], obra_estado: 'en_curso', hora_prevista: '07:30:00', nota: null },
+        { id: 'pl5', fecha: f(2), empleado_id: 'e4', obra_id: 'o3', empleado: 'Marta', codigo: 'OB-140', cliente: 'Ana Ferrer', obra: 'Piso Blanquerna', direccion: 'Blanquerna 41', poblacion: 'Palma', categorias: ['AC'], obra_estado: 'planificada', hora_prevista: '09:00:00', nota: null },
+      ] }; V.view = 'planificacion'; },
     // --- presupuestos (Ramón) -------------------------------------------------------
     'pres-agenda': () => { base('u5'); V.view = 'agenda'; },
     'pres-agenda-mes': () => { base('u5'); V.view = 'agenda'; V.agenda.verMes = true; },

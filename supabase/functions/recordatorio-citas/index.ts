@@ -27,6 +27,10 @@
 // Además, en cada pasada normal confirma por correo las citas nuevas (las que
 // empiezan dentro de más de 24 h y aún no tienen confirmacion_enviada_at).
 //   { "resumen_dia": true, "fecha": "2026-09-20" }   resumen de ese día (pruebas)
+//   { "planificacion_manana": true }   a cada persona, a qué obra va MAÑANA
+//                                      (sql/etapa60); a los comerciales, quién
+//                                      no tiene obra y qué obras no tienen a nadie
+//   { "planificacion_manana": true, "fecha": "2026-10-03" }   la de ese día (pruebas)
 // =============================================================================
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
@@ -491,6 +495,90 @@ Deno.serve(async (req) => {
     return json(r, (r as { error?: string }).error ? 400 : 200);
   }
 
+
+  // --- la planificación de mañana (sql/etapa60) ---------------------------------------
+  // A cada operario o jefe con «email para avisos»: sus obras de mañana, con
+  // la hora, la dirección y la nota del planificador. A presupuestos y a
+  // Administración: quién no tiene obra y qué obras en marcha no tienen a nadie.
+  if (b.planificacion_manana === true) {
+    const dia = typeof b.fecha === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(b.fecha)
+      ? b.fecha
+      : fechaEnZona(new Date(Date.now() + 24 * 3600 * 1000));
+    const [{ data: plan, error: errP }, { data: gente, error: errG }, { data: sinNadie, error: errS }] = await Promise.all([
+      sb.from('v_planificacion_dia').select('*').eq('fecha', dia).order('hora_prevista', { nullsFirst: false }),
+      sb.from('empleados').select('id, nombre, rol, email_avisos, activo').eq('activo', true),
+      sb.from('v_obras_sin_planificar').select('codigo, cliente, poblacion, estado').eq('fecha', dia),
+    ]);
+    if (errP || errG || errS) return json({ error: (errP || errG || errS)!.message }, 500);
+    // deno-lint-ignore no-explicit-any
+    const filas = (plan || []) as any[];
+    const diaTxt = mayus(new Date(dia + 'T12:00:00').toLocaleDateString('es-ES', { timeZone: ZONA, weekday: 'long', day: 'numeric', month: 'long' }));
+    const horaTxt = (h: string | null) => (h ? String(h).slice(0, 5) : '');
+    const donde = (f: any) => [f.direccion, f.poblacion].filter(Boolean).join(', ');
+    const correos: { para: string; asunto: string; texto: string; html: string }[] = [];
+    // Uno por persona planificada.
+    const porPersona = new Map<string, any[]>();
+    for (const f of filas) { if (!porPersona.has(f.empleado_id)) porPersona.set(f.empleado_id, []); porPersona.get(f.empleado_id)!.push(f); }
+    for (const [empId, mias] of porPersona) {
+      const e = (gente || []).find((g: any) => g.id === empId);
+      if (!e || !esEmail(e.email_avisos)) continue;
+      correos.push({
+        para: String(e.email_avisos).trim(),
+        asunto: `Mañana vas a ${mias.length === 1 ? mias[0].codigo + ' · ' + (mias[0].cliente || mias[0].obra) : mias.length + ' obras'} · ${diaTxt}`,
+        texto: `Hola ${e.nombre}, mañana (${diaTxt}) ${mias.length === 1 ? 'vas a esta obra' : 'vas a ' + mias.length + ' obras'}:\n\n` +
+          mias.map((f) => `· ${f.codigo} · ${f.cliente || f.obra}${horaTxt(f.hora_prevista) ? ' · ' + horaTxt(f.hora_prevista) : ''}\n  ${donde(f) || 'Sin dirección'}${f.nota ? '\n  Nota: ' + f.nota : ''}`).join('\n\n') +
+          `\n\nLo tienes en «Hoy» en la app: ${APP_URL}`,
+        html: correoTecnicoHTML({
+          logoUrl: LOGO_URL, appUrl: APP_URL, nombre: e.nombre, resumen: true,
+          citas: mias.map((f) => ({
+            etiqueta: 'Mañana', dia: f.codigo, hora: horaTxt(f.hora_prevista) || '—', duracion: (f.categorias || []).join(' · '),
+            cliente: f.cliente || f.obra || 'Obra', direccion: donde(f), motivo: f.nota ? 'Nota: ' + f.nota : '',
+          })),
+        }),
+      });
+    }
+    // El repaso de los comerciales.
+    const sinObra = (gente || []).filter((g: any) => ['operario', 'jefe'].includes(g.rol) && !porPersona.has(g.id)).map((g: any) => g.nombre);
+    const obrasSolas = (sinNadie || []) as any[];
+    const comerciales = (gente || []).filter((g: any) => ['presupuestos', 'admin'].includes(g.rol) && esEmail(g.email_avisos));
+    if (comerciales.length && (filas.length || sinObra.length || obrasSolas.length)) {
+      const lineas = [
+        `Planificación de mañana, ${diaTxt}:`,
+        '',
+        ...(filas.length ? filas.map((f) => `· ${f.empleado} → ${f.codigo} · ${f.cliente || f.obra}${horaTxt(f.hora_prevista) ? ' · ' + horaTxt(f.hora_prevista) : ''}`) : ['· Nadie planificado todavía.']),
+        '',
+        sinObra.length ? `Sin obra mañana: ${sinObra.join(', ')}.` : 'Todo el mundo tiene obra.',
+        obrasSolas.length ? `Obras en marcha sin nadie: ${obrasSolas.map((o) => o.codigo + ' · ' + (o.cliente || '')).join(' / ')}.` : 'Todas las obras en marcha tienen a alguien.',
+        '',
+        `Tablero: ${APP_URL}`,
+      ];
+      const texto = lineas.join('\n');
+      const html = correoTecnicoHTML({
+        logoUrl: LOGO_URL, appUrl: APP_URL, nombre: 'equipo', resumen: true,
+        citas: [
+          ...filas.map((f) => ({ etiqueta: 'Mañana', dia: f.codigo, hora: horaTxt(f.hora_prevista) || '—', duracion: '', cliente: `${f.empleado} → ${f.cliente || f.obra}`, direccion: donde(f), motivo: f.nota || '' })),
+          { etiqueta: 'Repaso', dia: diaTxt, hora: String(sinObra.length), duracion: 'sin obra', cliente: sinObra.length ? sinObra.join(', ') : 'Todo el mundo tiene obra', direccion: '', motivo: '' },
+          { etiqueta: 'Repaso', dia: diaTxt, hora: String(obrasSolas.length), duracion: 'obras sin nadie', cliente: obrasSolas.length ? obrasSolas.map((o) => o.codigo + ' · ' + (o.cliente || '')).join(' / ') : 'Todas tienen a alguien', direccion: '', motivo: '' },
+        ],
+      });
+      for (const c of comerciales) correos.push({ para: String(c.email_avisos).trim(), asunto: `Planificación de mañana · ${sinObra.length} sin obra · ${obrasSolas.length} obras sin nadie`, texto, html });
+    }
+    if (soloVer) return json({ modo: 'planificacion', dia, filas: filas.length, sin_obra: sinObra, obras_sin_nadie: obrasSolas.map((o) => o.codigo), correos: correos.map((m) => ({ para: m.para, asunto: m.asunto })) });
+    const fallosP: string[] = [];
+    let enviadosP = 0;
+    for (const m of correos) {
+      try {
+        const r = await fetch('https://api.resend.com/emails', {
+          method: 'POST',
+          headers: { Authorization: 'Bearer ' + RESEND, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ from: REMITENTE, to: [m.para], subject: m.asunto, text: m.texto, html: m.html }),
+        });
+        if (!r.ok) throw new Error(String(r.status));
+        enviadosP++;
+      } catch (e) { fallosP.push(`${m.para}: ${(e as Error).message}`); }
+    }
+    return json({ modo: 'planificacion', dia, filas: filas.length, enviados: enviadosP, errores: fallosP });
+  }
 
   // --- resumen de las citas de mañana, para quien va ---------------------------------
   // Tarea aparte (sql/etapa24b): no toca aviso_enviado_at, así que convive con el
