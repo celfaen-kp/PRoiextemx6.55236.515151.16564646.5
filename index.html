@@ -368,7 +368,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '19.7'; // versión visible de la app (única fuente)
+const APP_VERSION = '19.8'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -718,6 +718,7 @@ function mapObraDeDB(row) {
     // Código de obra (etapa58): el número lo pone la base; OB-137 se calcula.
     numero: row.numero != null ? Number(row.numero) : null,
     categorias: Array.isArray(row.categorias) ? row.categorias : [],
+    categoriaOtra: row.categoria_otra || '',
     poblacion: row.poblacion || '',
     clienteId: row.cliente_id || null,
     // Enlace con el cliente de Teamleader (sql/etapa33). Si esa etapa todavía
@@ -729,7 +730,10 @@ function mapObraDeDB(row) {
 
 // --- código, estado y presentación de la obra (PLAN-OBRAS-PLANIFICACION, etapa A) ---
 const OBRA_ESTADOS = { planificada: 'Planificada', en_curso: 'En curso', finalizada: 'Finalizada', cerrada: 'Cerrada' };
-const OBRA_CATEGORIAS = [['AE', 'Aerotermia'], ['FV', 'Fotovoltaica'], ['AC', 'Aire acond.']];
+const OBRA_CATEGORIAS = [['AE', 'Aerotermia'], ['FV', 'Fotovoltaica'], ['AC', 'Aire acond.'], ['EL', 'Instalación eléctrica'], ['BAT', 'Baterías'], ['CC', 'Cargador de coche'], ['OT', 'Otro']];
+const OBRA_CATS = OBRA_CATEGORIAS.map((x) => x[0]);
+// El nombre de una categoría en una obra: el «otro» lleva el que se escribió.
+const catObraNombre = (k, o) => (k === 'OT' && o && o.categoriaOtra ? o.categoriaOtra : (OBRA_CATEGORIAS.find((x) => x[0] === k) || [k, k])[1]);
 const estadoObraDeDB = (v) => (v in OBRA_ESTADOS ? v : v === 'Cerrada' ? 'cerrada' : 'en_curso');
 const estadoObraTxt = (o) => OBRA_ESTADOS[o.estado] || 'En curso';
 const obraCerrada = (o) => o.estado === 'cerrada';
@@ -739,7 +743,7 @@ const codigoObra = (o) => (o && o.numero != null ? 'OB-' + String(o.numero).padS
 // Nombre completo para correos, PDF y listas: «OB-137 · Casa Can Roca».
 const nombreObra = (o) => { const c = codigoObra(o); return c ? c + ' · ' + (o.titulo || o.cliente || '') : (o.titulo || o.cliente || '—'); };
 // Chips de categoría: [AE] [FV].
-const chipsCategorias = (o, claro) => (o.categorias || []).map((k) => `<span class="badge" style="background:${claro ? 'rgba(255,255,255,.16)' : 'rgba(20,23,15,.07)'};color:${claro ? '#fff' : 'var(--t2)'};font-weight:600">${esc(k)}</span>`).join('');
+const chipsCategorias = (o, claro) => (o.categorias || []).map((k) => `<span class="badge" style="background:${claro ? 'rgba(255,255,255,.16)' : 'rgba(20,23,15,.07)'};color:${claro ? '#fff' : 'var(--t2)'};font-weight:600">${esc(k === 'OT' && o.categoriaOtra ? o.categoriaOtra : k)}</span>`).join('');
 // Lo que se escribe en el buscador puede ser «137», «OB-137», «ob137» o
 // «OB-0137»: todo es la obra número 137. Devuelve el número o null.
 const numeroBuscado = (q) => { const m = String(q || '').trim().match(/^(?:ob[\s-]?)?0*(\d+)$/i); return m ? Number(m[1]) : null; };
@@ -2371,7 +2375,7 @@ A.confirmarFichaje = async () => {
 };
 
 /* alta de obra (public.obras). La obra NO tiene lista de empleados. */
-A.nuevaObra = () => { V.draft = { cliente: '', dir: '', poblacion: '', email: '', categorias: [] }; V.crmBuscar = { texto: '', busy: false, hecho: false, error: null, filas: [] }; V.view = 'alta'; render(); };
+A.nuevaObra = () => { V.draft = { cliente: '', dir: '', poblacion: '', email: '', categorias: [], categoriaOtra: '' }; V.crmBuscar = { texto: '', busy: false, hecho: false, error: null, filas: [] }; V.view = 'alta'; render(); };
 
 /**
  * Engancha la obra con un cliente de Teamleader: el nombre queda exactamente
@@ -2395,7 +2399,7 @@ A.obraDelCRM = (tlId, tipo) => {
 A.obraSoltarCRM = () => { if (V.draft) { V.draft.tlId = null; V.draft.tlTipo = null; render(); } };
 A.editarObra = (id) => {
   const o = obraById(id); if (!o) return;
-  V.draft = { id: o.id, nombre: o.nombre, cliente: o.cliente, dir: o.dir, poblacion: o.poblacion || '', email: o.email, tlId: o.tlId || null, tlTipo: o.tlTipo || null, categorias: [...(o.categorias || [])], numero: o.numero };
+  V.draft = { id: o.id, nombre: o.nombre, cliente: o.cliente, dir: o.dir, poblacion: o.poblacion || '', email: o.email, tlId: o.tlId || null, tlTipo: o.tlTipo || null, categorias: [...(o.categorias || [])], categoriaOtra: o.categoriaOtra || '', numero: o.numero };
   V.crmBuscar = { texto: '', busy: false, hecho: false, error: null, filas: [] };
   V.view = 'alta'; render();
 };
@@ -2415,6 +2419,8 @@ A.guardarObra = async () => {
   if (columnaObra('tl_id')) { campos.tl_id = d.tlId || null; campos.tl_tipo = d.tlTipo || null; }
   // Etapa 58: categorías y población. El número lo pone la base, nunca la app.
   if (columnaObra('categorias')) { campos.categorias = d.categorias || []; campos.poblacion = (d.poblacion || '').trim() || null; }
+  if (columnaObra('categoria_otra')) campos.categoria_otra = (d.categorias || []).includes('OT') ? ((d.categoriaOtra || '').trim() || null) : null;
+  if ((d.categorias || []).includes('OT') && !(d.categoriaOtra || '').trim()) { avisar('Has marcado «Otro»: escribe qué es.'); return; }
   try {
     let fila;
     if (d.id) {
@@ -2472,14 +2478,15 @@ function avanceObra(obraId) {
   const pct = Math.round(fs.reduce((t, f) => t + (Number(f.pct) || 0), 0) / fs.length);
   return { pct, hechas: fs.filter((f) => Number(f.pct) === 100).length, total: fs.length };
 }
-const CAT_NOMBRE = { AE: 'Aerotermia', FV: 'Fotovoltaica', AC: 'Aire acondicionado' };
+const CAT_NOMBRE = { AE: 'Aerotermia', FV: 'Fotovoltaica', AC: 'Aire acondicionado', EL: 'Instalación eléctrica', BAT: 'Baterías', CC: 'Cargador de coche', OT: 'Otro' };
 // Las fases agrupadas: comunes de arranque, cada categoría, comunes de cierre.
 function fasesAgrupadas(obraId) {
   const fs = fasesDe(obraId);
   const grupos = [];
   const mete = (clave, titulo, lista) => { if (lista.length) grupos.push({ clave, titulo, fases: lista }); };
   mete('ini', 'Preparación', fs.filter((f) => !f.categoria && f.orden < 500));
-  ['AE', 'FV', 'AC'].forEach((k) => mete(k, CAT_NOMBRE[k], fs.filter((f) => f.categoria === k)));
+  const o = obraById(obraId);
+  OBRA_CATS.forEach((k) => mete(k, catObraNombre(k, o), fs.filter((f) => f.categoria === k)));
   mete('fin', 'Cierre', fs.filter((f) => !f.categoria && f.orden >= 500));
   return grupos;
 }
@@ -2617,7 +2624,7 @@ function vFasesPlantillas() {
   <div class="scroll pad pb-nav">
     ${V.plantillasError ? `<div class="card"><div class="sub">${faltaEtapa63(V.plantillasError) ? 'Falta ejecutar sql/etapa63 en Supabase.' : esc(V.plantillasError)}</div></div>` : !ts ? '<div class="card"><div class="sub">Cargando…</div></div>'
       : grupo('Preparación (todas las obras)', ts.filter((t) => !t.categoria && !t.al_final), '')
-        + ['FV', 'AE', 'AC'].map((k) => grupo(CAT_NOMBRE[k], ts.filter((t) => t.categoria === k), k)).join('')
+        + ['FV', 'AE', 'AC', 'EL', 'BAT', 'CC'].map((k) => grupo(CAT_NOMBRE[k], ts.filter((t) => t.categoria === k), k)).join('')
         + grupo('Cierre (todas las obras)', ts.filter((t) => !t.categoria && t.al_final), '')}
   </div>`;
 }
@@ -4597,8 +4604,9 @@ function vAlta() {
       <div class="tiny" style="margin-top:5px">Correlativo y único. Lo pone el sistema; no se puede cambiar.</div>
     </div>
     <div style="margin-bottom:14px"><div class="lbl" style="margin-bottom:7px">Qué lleva la obra</div>
-      <div class="wrap">${OBRA_CATEGORIAS.map(([k, l]) => `<span class="chip ${(d.categorias || []).includes(k) ? 'on' : ''}" data-a="obraCat" data-k="${k}" style="cursor:pointer">${k} · ${l}</span>`).join('')}</div>
-      <div class="tiny" style="margin-top:6px">Puede llevar varias: una casa con aerotermia y placas es una sola obra.</div></div>` : ''}
+      <div class="wrap">${OBRA_CATEGORIAS.map(([k, l]) => `<span class="chip ${(d.categorias || []).includes(k) ? 'on' : ''}" data-a="obraCat" data-k="${k}" style="cursor:pointer">${k === 'OT' ? l : k + ' · ' + l}</span>`).join('')}</div>
+      ${(d.categorias || []).includes('OT') ? `<input class="inp" data-f="categoriaOtra" value="${esc(d.categoriaOtra || '')}" placeholder="¿Qué es? Domótica, pérgola, reforma…" style="margin-top:8px">` : ''}
+      <div class="tiny" style="margin-top:6px">Puede llevar varias: una casa con aerotermia y placas es una sola obra. «Otro» no trae fases: se le añaden desde la ficha.</div></div>` : ''}
     ${campos.map(([k, l, ph]) => `<div style="margin-bottom:14px"><div class="lbl" style="margin-bottom:7px">${l}</div>
       <input class="inp" data-f="${k}" value="${esc(d[k] || '')}" placeholder="${ph}" ${k === 'email' ? 'type="email" inputmode="email" autocapitalize="off"' : ''}></div>`).join('')}
     ${obraCRMHTML(d)}
@@ -8355,7 +8363,7 @@ function vPresupuestoVer() {
 }
 // El seguimiento del presupuesto, en su ficha: los pasos de crearlo a la
 // respuesta del cliente, y los botones para marcar cada uno (sql/etapa64).
-const CAT_A_OBRA = { aerotermia: 'AE', solar: 'FV', aire_acondicionado: 'AC' };
+const CAT_A_OBRA = { aerotermia: 'AE', solar: 'FV', aire_acondicionado: 'AC', electricidad: 'EL' };
 function seguimientoHTML(d) {
   const sg = seguimientoPresu(d);
   const ob = d.obra_id ? obraById(d.obra_id) : null;
@@ -10259,7 +10267,7 @@ function sheet() {
   }
   if (s.tipo === 'faseNueva' || s.tipo === 'plantillaNueva') {
     const o = s.obraId ? obraById(s.obraId) : null;
-    const cats = o ? (o.categorias || []) : ['FV', 'AE', 'AC'];
+    const cats = o ? (o.categorias || []) : ['FV', 'AE', 'AC', 'EL', 'BAT', 'CC'];
     return `<div class="sheet"><div>
       <div style="font:600 23px/1.15 var(--cond)">${s.tipo === 'faseNueva' ? 'Añadir fase a ' + esc(codigoObra(o) || (o || {}).titulo || '') : 'Nueva fase de plantilla'}</div>
       <div class="lbl" style="margin:14px 0 6px">Nombre</div>
@@ -10865,6 +10873,7 @@ document.addEventListener('input', (e) => {
   if (!f) return;
   if (f.startsWith('vf')) return A.vf(f, t.dataset, t.value);
   if (f === 'presuMotivoRechazo') { clearTimeout(V._tRech); V._tRech = setTimeout(() => A.presuMotivoRechazo(t.value), 800); return; }
+  if (f === 'categoriaOtra') { if (V.draft) V.draft.categoriaOtra = t.value; return; }
   if (f === 'faseNota') { if (V.sheet) V.sheet.nota = t.value; return; }
   if (f === 'faseNombre') { if (V.sheet) V.sheet.nombre = t.value; return; }
   if (f === 'faseDescripcion') { if (V.sheet) V.sheet.descripcion = t.value; return; }
