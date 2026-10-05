@@ -1,5 +1,5 @@
-const CACHE = 'ch-v19-5';
-const ASSETS = ['./', './index.html', './manifest.webmanifest', './supabase-client.js', './supabase-auth.js', './supabase-db.js', './visitas-schemas.js', './visitas-form.js', './visitas-db.js', './icon-192.png', './icon-512.png', './icon-maskable.png', './logo-trans.png', './logo-blanco.png', './logo-s-blanco.png', './fondo-login.jpg'];
+const CACHE = 'ch-v19-6';
+const ASSETS = ['./', './index.html', './manifest.webmanifest', './supabase-client.js', './supabase-auth.js', './supabase-db.js', './visitas-schemas.js', './visitas-form.js', './visitas-db.js', './icon-192.png?v=2', './icon-512.png?v=2', './icon-maskable.png?v=2', './logo-trans.png?v=2', './logo-blanco.png?v=2', './logo-s-blanco.png?v=2', './fondo-login.jpg'];
 
 // Al instalarse una versión nueva NO se activa sola: se queda esperando y la
 // app enseña el cartel de «Actualizar». Antes se activaba y recargaba por su
@@ -7,7 +7,9 @@ const ASSETS = ['./', './index.html', './manifest.webmanifest', './supabase-clie
 // (Si no hay ninguna versión controlando la página, sí se activa al momento:
 // es la primera instalación y no hay nada que actualizar.)
 self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS)).then(async () => {
+  // Los archivos se piden a la red (cache: 'reload'), no a la caché del
+  // navegador: si no, un logo cambiado con el mismo nombre seguía saliendo viejo.
+  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS.map((u) => new Request(u, { cache: 'reload' })))).then(async () => {
     const abiertas = await self.clients.matchAll({ includeUncontrolled: true });
     if (!abiertas.some((c) => c.frameType === 'top-level' && self.registration.active)) return self.skipWaiting();
   }));

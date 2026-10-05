@@ -10,8 +10,8 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Sysefen">
 <link rel="manifest" href="manifest.webmanifest">
-<link rel="apple-touch-icon" href="icon-180.png">
-<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-180.png?v=2">
+<link rel="icon" href="icon-192.png?v=2">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Semi+Condensed:wght@600;700&family=IBM+Plex+Mono:wght@400;500&family=Dancing+Script:wght@500;700&display=swap" rel="stylesheet">
 <style>
@@ -114,7 +114,7 @@ a:hover{color:var(--tinta)}
   width:100%;
   height:104px;
   margin-bottom:14px;
-  background:url('logo-trans.png') center/contain no-repeat;
+  background:url('logo-trans.png?v=2') center/contain no-repeat;
   opacity:.32;
   pointer-events:none;
 }
@@ -190,7 +190,7 @@ a:hover{color:var(--tinta)}
 /* Sobre fondo oscuro (login, PIN, parte guardado) la marca de agua va en
    blanco y solo el sello de la S: el logotipo entero se repetía con el de
    arriba y, al ser negro, se veía como una mancha. */
-.scroll.marca-clara::before{background-image:url('logo-s-blanco.png');opacity:.3}
+.scroll.marca-clara::before{background-image:url('logo-s-blanco.png?v=2');opacity:.3}
 
 /* --- Portada -------------------------------------------------------------
    Foto de fondo fija (no se mueve al desplazar la lista) y un velo oscuro
@@ -368,7 +368,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '19.5'; // versión visible de la app (única fuente)
+const APP_VERSION = '19.6'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -1075,9 +1075,9 @@ function avatarHTML(userId, estilo, attrs, clases) {
   return `<div class="${cl}"${a} style="${estilo}">${esc(ini(u.nombre))}</div>`;
 }
 // Marca pequeña (logo oficial + "Sysefen") para cabeceras internas. Reutiliza
-// icon-512.png (el mismo icono ya usado como icono de la app/PWA).
+// icon-512.png?v=2 (el mismo icono ya usado como icono de la app/PWA).
 const marcaSysefen = (oscuro) => `<div class="row g8" style="margin-bottom:9px">
-    <img src="icon-512.png" alt="" style="width:16px;height:16px;border-radius:5px;flex:none">
+    <img src="icon-512.png?v=2" alt="" style="width:16px;height:16px;border-radius:5px;flex:none">
     <span style="font:700 10px/1 var(--mono);letter-spacing:.14em;text-transform:uppercase;color:${oscuro ? 'rgba(255,255,255,.5)' : 'var(--t3)'}">Sysefen</span>
   </div>`;
 
@@ -2687,7 +2687,7 @@ async function sincronizarPlanMio() {
 }
 A.planSemana = (delta) => { V.plan.lunes = agSumaDias(V.plan.lunes, 7 * delta); V.plan.dia = agSumaDias(V.plan.dia, 7 * delta); render(); A.cargarPlan(); };
 A.planHoy = () => { V.plan.dia = siguienteLaborable(hoyISO()); V.plan.lunes = lunesDe(V.plan.dia); render(); A.cargarPlan(); };
-A.planDia = (fecha) => { V.plan.dia = fecha; render(); };
+A.tabDia = (fecha) => { V.plan.dia = fecha; render(); };
 A.planFinde = () => { V.plan.finde = !V.plan.finde; render(); };
 // Tocar una casilla vacía: asignar a esa persona ese día.
 A.planCelda = (empId, fecha) => {
@@ -2832,7 +2832,7 @@ function vPlanificacion() {
     </div>
     ${!gente.length ? '<div class="card"><div class="sub">No hay operarios ni jefes activos.</div></div>' : `<div class="pl-wrap"><div class="pl-grid" style="--n:${dias.length}">
       <div></div>
-      ${dias.map((d) => `<div class="pl-h ${d === p.dia ? 'sel' : ''} ${d === hoy ? 'hoy' : ''}" data-a="planDia" data-dia="${d}">${esc(diaSemana(d))}<b>${+d.slice(8)}</b></div>`).join('')}
+      ${dias.map((d) => `<div class="pl-h ${d === p.dia ? 'sel' : ''} ${d === hoy ? 'hoy' : ''}" data-a="tabDia" data-dia="${d}">${esc(diaSemana(d))}<b>${+d.slice(8)}</b></div>`).join('')}
       ${gente.map((r) => `<div class="pl-nom">${esc(String(r.nombre || '').split(' ')[0])}<small>${r.rol === 'jefe' ? 'jefe' : ''}</small></div>
         ${dias.map((d) => { const mias = planFilasDe(r.id, d); return `<div class="pl-cel ${mias.length ? '' : 'libre'} ${d === p.dia ? 'sel' : ''}" data-a="planCelda" data-id="${r.id}" data-dia="${d}">${mias.length ? mias.map(planChipHTML).join('') : '<span class="pl-mas">+</span>'}</div>`; }).join('')}`).join('')}
     </div></div>
@@ -4134,7 +4134,7 @@ function vLogin() {
   const gente = S.users.filter((u) => u.activo !== false && u.rol !== 'admin');
   return `<div class="scroll login-fondo" style="padding:calc(50px + var(--safe-t)) 22px calc(22px + var(--safe-b))">
     <div class="login-marca">
-      <img src="logo-blanco.png" alt="Sysefen" style="width:230px;max-width:70%;display:block">
+      <img src="logo-blanco.png?v=2" alt="Sysefen" style="width:230px;max-width:70%;display:block">
       <div class="sub" style="color:rgba(255,255,255,.8);margin-top:10px;letter-spacing:.14em;text-shadow:0 1px 8px rgba(0,0,0,.7)">CRM</div>
       <div class="login-lema">Hoy construimos un futuro más limpio</div>
     </div>
@@ -5495,9 +5495,9 @@ function pintarPlanilla(userId, mesBase) {
   const selloNombre = quien && quien.id !== userId && (quien.rol === 'admin' || quien.rol === 'jefe') ? nombreLegal(quien.id) : '';
   const el = $('#print');
   el.innerHTML = `<div style="font-family:var(--sans);color:#14170f;max-width:180mm;position:relative;z-index:0">
-    <img src="logo-trans.png" alt="" style="position:absolute;top:130mm;left:50%;transform:translate(-50%,-50%);width:120mm;opacity:.11;z-index:-1;pointer-events:none">
+    <img src="logo-trans.png?v=2" alt="" style="position:absolute;top:130mm;left:50%;transform:translate(-50%,-50%);width:120mm;opacity:.11;z-index:-1;pointer-events:none">
     <div style="display:flex;justify-content:space-between;align-items:flex-start">
-      <div><img src="logo-trans.png" alt="" style="height:15mm">
+      <div><img src="logo-trans.png?v=2" alt="" style="height:15mm">
       ${S.cif ? `<div style="font:400 10px var(--mono);color:#666;margin-top:2px">${esc(S.empresa)} · ${esc(S.cif)}</div>` : ''}</div>
       <div style="text-align:right"><div style="font:600 11px var(--mono);letter-spacing:.1em">REGISTRO DE JORNADA</div>
       <div style="font:700 15px var(--cond);margin-top:2px;text-transform:capitalize">${esc(tituloRango)}</div></div>
@@ -5546,7 +5546,7 @@ function pintarPlanilla(userId, mesBase) {
         <div style="height:20mm;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1mm">
           ${selloNombre ? `<div style="font:500 26px var(--script);color:#14170f;line-height:1;padding-bottom:2px">${esc(selloNombre)}</div>` : ''}
           <div style="display:flex;align-items:center;gap:4px">
-            <img src="logo-trans.png" alt="" style="height:8mm;opacity:.92">
+            <img src="logo-trans.png?v=2" alt="" style="height:8mm;opacity:.92">
             <div style="text-align:left;line-height:1.15">
               <div style="font:700 8px var(--cond);letter-spacing:.05em">SYSEFEN</div>
               <div style="font:400 6px var(--mono);color:#666;letter-spacing:.05em;text-transform:uppercase">Eficiencia Energética</div>
@@ -5568,9 +5568,9 @@ function imprimirHorasObra(obraId, rango) {
   const totalMin = filas.reduce((t, f) => t + f.m, 0);
   const el = $('#print');
   el.innerHTML = `<div style="font-family:var(--sans);color:#14170f;max-width:180mm;position:relative;z-index:0">
-    <img src="logo-trans.png" alt="" style="position:absolute;top:110mm;left:50%;transform:translate(-50%,-50%);width:120mm;opacity:.11;z-index:-1;pointer-events:none">
+    <img src="logo-trans.png?v=2" alt="" style="position:absolute;top:110mm;left:50%;transform:translate(-50%,-50%);width:120mm;opacity:.11;z-index:-1;pointer-events:none">
     <div style="display:flex;justify-content:space-between;align-items:flex-start">
-      <div><img src="logo-trans.png" alt="" style="height:15mm">
+      <div><img src="logo-trans.png?v=2" alt="" style="height:15mm">
       ${S.cif ? `<div style="font:400 10px var(--mono);color:#666;margin-top:2px">${esc(S.empresa)} · ${esc(S.cif)}</div>` : ''}</div>
       <div style="text-align:right"><div style="font:600 11px var(--mono);letter-spacing:.1em">HORAS DE OBRA</div>
       <div style="font:700 15px var(--cond);margin-top:2px">${esc(RANGO_LARGO[rango] || rango)}</div></div>
@@ -5601,7 +5601,7 @@ function vAjustes() {
   return `<div class="hdr"><div class="h1">${esAdmin() ? 'Ajustes' : 'Perfil'}</div></div>
   <div class="scroll pad pb-nav">
     <div class="row g10" style="align-items:center;margin-bottom:16px">
-      <img src="logo-trans.png" alt="Sysefen" style="height:32px;flex:none">
+      <img src="logo-trans.png?v=2" alt="Sysefen" style="height:32px;flex:none">
       <div class="grow"><div style="font:700 15px/1 var(--cond)">Sysefen</div>
       <div class="tiny" style="margin-top:3px">Eficiencia Energética</div></div>
     </div>
@@ -5625,7 +5625,7 @@ function vAjustes() {
     </div>
 
     ${esAdmin() ? `<div class="card" style="margin-bottom:12px">
-      <div class="row" style="gap:12px;margin-bottom:12px"><img src="logo-trans.png" alt="" style="height:38px"><div class="lbl grow">Empresa</div></div>
+      <div class="row" style="gap:12px;margin-bottom:12px"><img src="logo-trans.png?v=2" alt="" style="height:38px"><div class="lbl grow">Empresa</div></div>
       <input class="inp" data-f="empresa" value="${esc(S.empresa)}" placeholder="Nombre de la empresa">
       <input class="inp" data-f="cif" value="${esc(S.cif)}" style="margin-top:8px" placeholder="CIF (sale en el PDF)">
       <input class="inp" data-f="emailCopia" value="${esc(S.emailCopia)}" style="margin-top:8px" type="email" inputmode="email" autocapitalize="off" placeholder="Email de copia (gestoría)">
@@ -5964,7 +5964,7 @@ function vP3() {
       <div class="row" style="align-items:flex-start;justify-content:space-between">
         <div><div style="font:600 15px/1 var(--sans)">${esc(S.empresa)}</div>
         <div class="tiny" style="margin-top:5px">PARTE DE TRABAJO · borrador</div></div>
-        <img src="logo-trans.png" alt="" style="height:34px">
+        <img src="logo-trans.png?v=2" alt="" style="height:34px">
       </div>
       <div class="hr"></div>
       <div style="font:600 16px/1.2 var(--sans)">${esc(nombreObra(o))}</div>
@@ -5997,7 +5997,7 @@ function vP3() {
 function vOk() {
   const p = S.partes.find((x) => x.id === V.verParte);
   return `<div class="scroll sin-marca" style="background:var(--verde);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px;text-align:center">
-    <img src="logo-blanco.png" alt="" style="width:150px;max-width:52%;margin-bottom:26px">
+    <img src="logo-blanco.png?v=2" alt="" style="width:150px;max-width:52%;margin-bottom:26px">
     <div class="av" style="width:78px;height:78px;background:#fff;color:var(--verde-o);font-size:34px">✓</div>
     <div style="font:600 30px/1.1 var(--cond);color:#fff;margin-top:22px">Parte guardado</div>
     <div style="font:400 15px/1.5 var(--sans);color:rgba(255,255,255,.85);margin-top:10px;max-width:260px">${esc(p.ref)} ${p.firma ? 'firmado por el cliente.' : 'guardado sin firma: cliente no presente.'}${
@@ -6547,9 +6547,9 @@ function imprimirVisitaHTML(vv) {
 
   const el = $('#print');
   el.innerHTML = `<div style="font-family:var(--sans);color:#14170f;max-width:180mm;position:relative;z-index:0">
-    <img src="logo-trans.png" alt="" style="position:absolute;top:110mm;left:50%;transform:translate(-50%,-50%);width:120mm;opacity:.11;z-index:-1;pointer-events:none">
+    <img src="logo-trans.png?v=2" alt="" style="position:absolute;top:110mm;left:50%;transform:translate(-50%,-50%);width:120mm;opacity:.11;z-index:-1;pointer-events:none">
     <div style="display:flex;justify-content:space-between;align-items:flex-start">
-      <div><img src="logo-trans.png" alt="" style="height:17mm">
+      <div><img src="logo-trans.png?v=2" alt="" style="height:17mm">
       ${S.cif ? `<div style="font:400 10px var(--mono);color:#666;margin-top:2px">${esc(S.empresa)} · ${esc(S.cif)}</div>` : ''}</div>
       <div style="text-align:right"><div style="font:600 11px var(--mono);letter-spacing:.1em">TOMA DE DATOS</div>
       <div style="font:700 16px var(--cond);margin-top:2px">${esc(v.codigo || '')}</div></div>
@@ -7703,7 +7703,7 @@ function legDatosHTML(l) {
     + `<div style="font:400 11px var(--sans);color:#666;margin-top:6px">Los armónicos por orden y fase van en el certificado adjunto.</div>`) : '';
   el.innerHTML = `<div style="font-family:var(--sans);color:#14170f;max-width:180mm;position:relative;z-index:0">
     <div style="display:flex;justify-content:space-between;align-items:flex-start">
-      <div><img src="logo-trans.png" alt="" style="height:17mm">
+      <div><img src="logo-trans.png?v=2" alt="" style="height:17mm">
       ${S.cif ? `<div style="font:400 10px var(--mono);color:#666;margin-top:2px">${esc(S.empresa)} · ${esc(S.cif)}</div>` : ''}</div>
       <div style="text-align:right"><div style="font:600 11px var(--mono);letter-spacing:.1em">MODELO 034 · DATOS</div>
       <div style="font:700 16px var(--cond);margin-top:2px">Legalización fotovoltaica</div>
@@ -8180,9 +8180,9 @@ function imprimirPresupuestoHTML(d) {
 
   const el = $('#print');
   el.innerHTML = `<div style="font-family:var(--sans);color:#14170f;max-width:180mm;position:relative;z-index:0">
-    <img src="logo-trans.png" alt="" style="position:absolute;top:110mm;left:50%;transform:translate(-50%,-50%);width:120mm;opacity:.11;z-index:-1;pointer-events:none">
+    <img src="logo-trans.png?v=2" alt="" style="position:absolute;top:110mm;left:50%;transform:translate(-50%,-50%);width:120mm;opacity:.11;z-index:-1;pointer-events:none">
     <div style="display:flex;justify-content:space-between;align-items:flex-start">
-      <div><img src="logo-trans.png" alt="" style="height:17mm">
+      <div><img src="logo-trans.png?v=2" alt="" style="height:17mm">
       ${S.cif ? `<div style="font:400 10px var(--mono);color:#666;margin-top:2px">${esc(S.empresa)} · ${esc(S.cif)}</div>` : ''}</div>
       <div style="text-align:right"><div style="font:600 11px var(--mono);letter-spacing:.1em">PRESUPUESTO</div>
       <div style="font:700 16px var(--cond);margin-top:2px">${esc(nombreCat(d.categoria) || d.categoria)}</div>
@@ -10500,9 +10500,9 @@ function imprimirParteHTML(p) {
   const o = obraById(p.obraId) || { titulo: '—', cliente: '' };
   const el = $('#print');
   el.innerHTML = `<div style="font-family:var(--sans);color:#14170f;max-width:180mm;position:relative;z-index:0">
-    <img src="logo-trans.png" alt="" style="position:absolute;top:110mm;left:50%;transform:translate(-50%,-50%);width:120mm;opacity:.11;z-index:-1;pointer-events:none">
+    <img src="logo-trans.png?v=2" alt="" style="position:absolute;top:110mm;left:50%;transform:translate(-50%,-50%);width:120mm;opacity:.11;z-index:-1;pointer-events:none">
     <div style="display:flex;justify-content:space-between;align-items:flex-start">
-      <div><img src="logo-trans.png" alt="" style="height:17mm">
+      <div><img src="logo-trans.png?v=2" alt="" style="height:17mm">
       ${S.cif ? `<div style="font:400 10px var(--mono);color:#666;margin-top:2px">${esc(S.empresa)} · ${esc(S.cif)}</div>` : ''}</div>
       <div style="text-align:right"><div style="font:600 11px var(--mono);letter-spacing:.1em">PARTE DE TRABAJO</div>
       <div style="font:700 16px var(--cond);margin-top:2px">${esc(p.ref)}</div></div>
@@ -10544,7 +10544,7 @@ function imprimirParteHTML(p) {
           <div style="font:500 30px var(--script);color:#14170f;line-height:1;padding-bottom:3px">${esc(userById(p.autorId).nombre)}</div>
           <div style="font:400 6px var(--mono);color:#999;letter-spacing:.05em;text-transform:uppercase;margin-top:2px">Firma digital generada por la app</div>
           <div style="display:flex;align-items:center;gap:4px;margin-top:1mm">
-            <img src="logo-trans.png" alt="" style="height:8mm;opacity:.92">
+            <img src="logo-trans.png?v=2" alt="" style="height:8mm;opacity:.92">
             <div style="text-align:left;line-height:1.15">
               <div style="font:700 8px var(--cond);letter-spacing:.05em">SYSEFEN</div>
               <div style="font:400 6px var(--mono);color:#666;letter-spacing:.05em;text-transform:uppercase">Eficiencia Energética</div>
@@ -10732,7 +10732,7 @@ document.addEventListener('click', (e) => {
   if (a === 'abrirPlanificacion') return A.abrirPlanificacion();
   if (a === 'planSemana') return A.planSemana(Number(d.d));
   if (a === 'planHoy') return A.planHoy();
-  if (a === 'planDia') return A.planDia(d.dia);
+  if (a === 'tabDia') return A.tabDia(d.dia);
   if (a === 'planFinde') return A.planFinde();
   if (a === 'planRepetirTodos') return A.planRepetir(null);
   if (a === 'planCelda') return A.planCelda(d.id, d.dia);
@@ -10976,7 +10976,7 @@ if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
     const div = document.createElement('div');
     div.id = 'actualizar';
     div.innerHTML = `<div>
-      <img src="logo-blanco.png" alt="" style="height:40px;margin-bottom:22px;opacity:.9">
+      <img src="logo-blanco.png?v=2" alt="" style="height:40px;margin-bottom:22px;opacity:.9">
       <div style="font:700 28px/1.1 var(--cond);color:#fff">Hay una versión nueva</div>
       <div style="font:400 14px/1.5 var(--sans);color:rgba(255,255,255,.7);margin-top:10px">La app se ha actualizado. Para seguir hace falta cargarla; tarda un segundo y no se pierde nada.</div>
       <button class="btn btn-verde" id="actualizar-btn" style="margin-top:26px">Actualizar</button>
