@@ -368,7 +368,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '19.4'; // versión visible de la app (única fuente)
+const APP_VERSION = '19.5'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -2675,8 +2675,15 @@ A.cargarPlan = async () => {
 // Lo mío de hoy y mañana, para la tarjeta de «Hoy» (todos los roles).
 async function sincronizarPlanMio() {
   if (!V.user || esAdmin()) return;
-  try { const hoy = hoyISO(); V.planMio = (await Sysefen.db.listarPlanificacion(hoy, agSumaDias(hoy, 1))).filter((f) => f.empleado_id === miEmpId()); V.planCargado = true; }
-  catch (e) { /* sin la etapa 60 no hay planificación: la tarjeta no sale */ V.planMio = []; V.planCargado = false; }
+  try {
+    const hoy = hoyISO();
+    const filas = await Sysefen.db.listarPlanificacion(hoy, agSumaDias(hoy, 1));
+    // A jefes y operarios la base ya solo les da lo suyo (etapa 67): no se
+    // filtra por el id del empleado, que depende de casar nombres. A la
+    // oficina, que lo ve todo, sí.
+    V.planMio = planifica() ? filas.filter((f) => f.empleado_id === miEmpId()) : filas;
+    V.planCargado = true; V.planError = null;
+  } catch (e) { V.planMio = []; V.planCargado = false; V.planError = msgError(e); }
 }
 A.planSemana = (delta) => { V.plan.lunes = agSumaDias(V.plan.lunes, 7 * delta); V.plan.dia = agSumaDias(V.plan.dia, 7 * delta); render(); A.cargarPlan(); };
 A.planHoy = () => { V.plan.dia = siguienteLaborable(hoyISO()); V.plan.lunes = lunesDe(V.plan.dia); render(); A.cargarPlan(); };
@@ -2868,7 +2875,10 @@ const parteHoyDe = (obraId) => S.partes.find((p) => p.obraId === obraId && p.fec
 // El operario sin nada planificado hoy: que lo sepa, y que pueda hacer un parte
 // de otra obra si hace falta (la base solo se lo deja en las suyas).
 function sinPlanHoyHTML() {
-  if (puedeCrear() || !V.planCargado) return '';
+  if (puedeCrear()) return '';
+  // Si la planificación no se pudo cargar, que se vea por qué (etapa 60 sin
+  // ejecutar, permiso, red): antes la tarjeta simplemente no salía.
+  if (!V.planCargado) return V.planError ? `<div class="card" style="margin-bottom:10px"><div class="sub" style="color:var(--rojo)">No se pudo cargar tu planificación: ${esc(faltaEtapa60(V.planError) ? 'falta ejecutar sql/etapa60 en Supabase.' : V.planError)}</div></div>` : '';
   const hoy = hoyISO();
   if ((V.planMio || []).some((f) => f.fecha === hoy)) return '';
   return `<div class="card" style="margin-bottom:10px">
