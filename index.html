@@ -368,7 +368,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '19.6'; // versión visible de la app (única fuente)
+const APP_VERSION = '19.7'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -2834,7 +2834,7 @@ function vPlanificacion() {
       <div></div>
       ${dias.map((d) => `<div class="pl-h ${d === p.dia ? 'sel' : ''} ${d === hoy ? 'hoy' : ''}" data-a="tabDia" data-dia="${d}">${esc(diaSemana(d))}<b>${+d.slice(8)}</b></div>`).join('')}
       ${gente.map((r) => `<div class="pl-nom">${esc(String(r.nombre || '').split(' ')[0])}<small>${r.rol === 'jefe' ? 'jefe' : ''}</small></div>
-        ${dias.map((d) => { const mias = planFilasDe(r.id, d); return `<div class="pl-cel ${mias.length ? '' : 'libre'} ${d === p.dia ? 'sel' : ''}" data-a="planCelda" data-id="${r.id}" data-dia="${d}">${mias.length ? mias.map(planChipHTML).join('') : '<span class="pl-mas">+</span>'}</div>`; }).join('')}`).join('')}
+        ${dias.map((d) => { const mias = planFilasDe(r.id, d); return `<div class="pl-cel ${mias.length ? '' : 'libre'} ${d === p.dia ? 'sel' : ''}" data-a="planCelda" data-id="${r.id}" data-dia="${d}">${mias.length ? mias.map(planChipHTML).join('') + '<span class="pl-mas" style="font-size:14px;margin:2px auto 0;color:var(--t3)" title="Otra obra ese día">+ otra</span>' : '<span class="pl-mas">+</span>'}</div>`; }).join('')}`).join('')}
     </div></div>
     <div class="tiny" style="margin-top:10px">${p.cargando ? 'Cargando…' : 'Verde: obra en curso. Ámbar: obra aún planificada (no empezada). Cada persona ve en «Hoy» lo suyo de hoy y, a partir de las 14:00, lo de mañana; a esa hora le llega también por correo.'}</div>`}
   </div>`;
@@ -10292,6 +10292,7 @@ function sheet() {
     return `<div class="sheet"><div style="max-height:88vh;display:flex;flex-direction:column">
       <div style="font:600 23px/1.15 var(--cond)">${o ? 'Mandar a ' + esc(codigoObra(o) || o.titulo) : 'Asignar obra'}</div>
       <div class="sub" style="margin-top:6px">${esc(planFechaTxt(s.fecha))}${s.desde ? ' · ' + esc(nombre(s.desde)) : ''}${o ? ' · ' + esc(o.cliente || '') + (direccionObra(o) ? ' · ' + esc(direccionObra(o)) : '') : ''}</div>
+      ${s.desde && planFilasDe(s.desde, s.fecha).length ? `<div class="tiny" style="margin-top:6px;color:var(--ambar-o)">${esc(nombre(s.desde))} ya va ese día a ${esc(planFilasDe(s.desde, s.fecha).map((f) => f.codigo).join(', '))}: esta será otra obra más, no la sustituye.</div>` : ''}
       ${!o ? `<input class="inp" data-f="planBuscar" value="${esc(s.buscar || '')}" placeholder="Número, cliente u obra" autocomplete="off" style="margin:12px 0 8px">
         <div class="lista-obras" id="plan-obras" style="overflow:auto;flex:1;min-height:0">${planObrasListaHTML(s)}</div>`
       : `<div style="overflow:auto;flex:1;min-height:0">
@@ -10324,6 +10325,7 @@ function sheet() {
         <button class="btn btn-gris" data-a="planQuitar" data-id="${f.id}" style="border-radius:99px;color:var(--rojo)">Quitar</button>
         <button class="btn btn-gris" data-a="planCopiarManana" data-id="${f.id}" style="border-radius:99px">Copiar al día siguiente</button>
       </div>
+      <button class="btn btn-gris" data-a="planOtraObra" data-id="${f.empleado_id}" data-dia="${f.fecha}" style="border-radius:99px;margin-top:10px">+ Mandarle a otra obra ese mismo día</button>
       <div class="row g8" style="margin-top:10px">
         <button class="btn btn-gris" data-a="cerrarSheet" style="border-radius:99px">Cerrar</button>
         <button class="btn btn-verde" data-a="planGuardarCambios" ${s.busy ? 'disabled' : ''}>${s.busy ? 'Guardando…' : 'Guardar'}</button>
@@ -10736,6 +10738,7 @@ document.addEventListener('click', (e) => {
   if (a === 'planFinde') return A.planFinde();
   if (a === 'planRepetirTodos') return A.planRepetir(null);
   if (a === 'planCelda') return A.planCelda(d.id, d.dia);
+  if (a === 'planOtraObra') return A.planCelda(d.id, d.dia);
   if (a === 'planObraSin') return A.planObraSin(d.id);
   if (a === 'planElegirObra') return A.planElegirObra(d.id);
   if (a === 'planCambiarObra') { if (V.sheet) { V.sheet.obraId = null; V.sheet.sugeridas = []; } return render(); }
