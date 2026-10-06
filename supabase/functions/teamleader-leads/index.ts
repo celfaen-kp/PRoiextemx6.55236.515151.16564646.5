@@ -271,6 +271,10 @@ Deno.serve(async (req) => {
     for (const n of nuevas) {
       const motivo = await motivoDe(token, { id: n.tl_id }, n.tl_tipo === 'company');
       if (motivo) n.motivo_web = motivo;
+      // Los del formulario web llevan «Alta desde el formulario web» en las
+      // observaciones. Los demás los creó alguien a mano en el CRM: también
+      // hay que mirarlos, pero no son «de la web».
+      n.origen = /formulario web/i.test(motivo) ? 'web' : 'crm';
     }
 
     // La marca de agua se mueve al más nuevo que hemos visto, no a "ahora": si

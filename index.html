@@ -368,7 +368,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '19.8'; // versión visible de la app (única fuente)
+const APP_VERSION = '19.9'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -2745,6 +2745,28 @@ A.planRepetir = async (empId) => {
   try { await Sysefen.db.crearPlanificacion(filas); toast('Repetido lo del ' + planFechaTxt(ayer) + '.'); await A.cargarPlan(); }
   catch (e) { avisar(faltaEtapa60(e) ? 'Falta ejecutar sql/etapa60 en Supabase.' : 'No se pudo: ' + msgError(e)); }
 };
+// Las obras de un cliente: por el enlace (cliente_id) o, si no lo hay, por el nombre.
+const obrasDeCliente = (c) => S.obras.filter((o) => (o.clienteId && o.clienteId === c.id) || (o.cliente && c.nombre && sinTildes(o.cliente) === sinTildes(c.nombre))).sort(porNumeroDesc);
+// «No hace falta cita»: el cliente se da por resuelto, con el porqué.
+const SIN_CITA_MOTIVOS = ['Ya tiene obra', 'Presupuesto hecho fuera de la app', 'Solo era una consulta', 'No le interesa', 'Repetido'];
+A.ag_sinCitaAbrir = (id) => { V.sheet = { tipo: 'sinCita', id, motivo: '', otro: '', busy: false }; render(); };
+A.ag_sinCitaGuardar = async () => {
+  const s = V.sheet; if (!s || s.tipo !== 'sinCita' || s.busy) return;
+  const motivo = (s.motivo === 'otro' ? s.otro : s.motivo || '').trim();
+  if (!motivo) { avisar('Di por qué no hace falta cita.'); return; }
+  s.busy = true; render();
+  try {
+    const cambios = { sin_cita_motivo: motivo, sin_cita_at: new Date().toISOString(), sin_cita_por: miEmpId() || null };
+    await visitasDB.guardarCliente(Object.assign({ id: s.id }, cambios));
+    const c = agCliente(s.id); if (c) Object.assign(c, cambios);
+    V.sheet = null; toast('Resuelto sin cita.'); render();
+  } catch (e) { s.busy = false; avisar(/sin_cita_motivo|schema cache/i.test(msgError(e)) ? 'Falta ejecutar sql/etapa69 en Supabase.' : 'No se pudo guardar: ' + msgError(e)); render(); }
+};
+A.ag_sinCitaQuitar = async (id) => {
+  try { const cambios = { sin_cita_motivo: null, sin_cita_at: null, sin_cita_por: null }; await visitasDB.guardarCliente(Object.assign({ id }, cambios)); const c = agCliente(id); if (c) Object.assign(c, cambios); toast('Vuelve a estar pendiente.'); render(); }
+  catch (e) { avisar('No se pudo: ' + msgError(e)); }
+};
+
 // Un parte hecho donde esa persona no estaba planificada: o era correcto (se
 // apunta la asignación a posteriori) o se deja pasar. En los dos casos deja de
 // salir.
@@ -8467,7 +8489,7 @@ Object.assign(V, {
 
 const AG_VISTAS = ['agenda', 'clientes', 'clienteNuevo', 'clienteVer', 'citaNueva', 'citaVer'];
 const AG_TIPOS = [['particular', 'Particular'], ['empresa', 'Empresa'], ['comunidad', 'Comunidad']];
-const AG_ORIGENES = [['recomendacion', 'Recomendación'], ['web', 'Web'], ['llamada', 'Llamada'], ['cliente_existente', 'Cliente de siempre'], ['constructora', 'Constructora'], ['vaillant', 'Vaillant']];
+const AG_ORIGENES = [['recomendacion', 'Recomendación'], ['web', 'Web'], ['crm', 'Teamleader'], ['llamada', 'Llamada'], ['cliente_existente', 'Cliente de siempre'], ['constructora', 'Constructora'], ['vaillant', 'Vaillant']];
 const AG_DURACIONES = [30, 45, 60, 90, 120];
 const AG_ESTADOS = { pendiente: 'Pendiente', visitada: 'Visitada', no_estaba: 'No estaba', anulada: 'Anulada' };
 const puedeCitar = () => esPresupuestos();
@@ -8559,6 +8581,8 @@ function agEstadoCliente(c) {
   const prox = pend.filter((x) => x.inicio).sort((a, b) => a.inicio.localeCompare(b.inicio))[0];
   if (prox) return { k: 'citado', color: 'var(--ambar)', txt: 'Citado · ' + (agDiaDe(prox.inicio) === agHoy() ? 'hoy' : fechaCorta(prox.inicio)) + ' ' + agHora(prox.inicio) };
   if (vis.length) return { k: 'visitado', color: 'var(--tinta)', txt: vis.some((v) => v.estado === 'completada') ? 'Visitado · por enviar' : 'Visitado · sin cerrar' };
+  // Resuelto sin cita (ya tiene obra, presupuesto hecho fuera, solo consulta…).
+  if (c.sin_cita_motivo && !pend.length) return { k: 'sin_cita_ok', color: 'var(--t3)', txt: 'Sin cita · ' + c.sin_cita_motivo };
   // Sin cita: rojo si nadie le ha llamado; ámbar si ya se habló con él.
   const base = pend.length ? 'Pendiente de fecha' : 'Sin cita';
   if (c.contacto_estado === 'contactado') return { k: 'sin_cita', color: 'var(--ambar)', txt: base + ' · contactado' };
@@ -8640,6 +8664,10 @@ A.ag = (a, d, e) => {
     case 'ag_guardarCita': return agGuardarCita();
     case 'ag_estado': return agCambiarEstado(d.id, d.e);
     case 'ag_contactado': if (e) e.stopPropagation(); return A.agContactado(d.id, d.e);
+    case 'ag_sinCitaAbrir': if (e) e.stopPropagation(); return A.ag_sinCitaAbrir(d.id);
+    case 'ag_sinCitaMotivo': if (V.sheet) V.sheet.motivo = d.m; return render();
+    case 'ag_sinCitaGuardar': return A.ag_sinCitaGuardar();
+    case 'ag_sinCitaQuitar': if (e) e.stopPropagation(); return A.ag_sinCitaQuitar(d.id);
     case 'ag_reenviar': return agReenviarAviso(d.id);
     case 'ag_borrarCita': if (e) e.stopPropagation(); return agBorrarCita(d.id);
     case 'ag_confirmarBorrarCita': return agConfirmarBorrarCita();
@@ -9303,7 +9331,7 @@ function clientesListaHTML() {
   if (q) lista = lista.filter(({ c }) => [c.nombre, c.telefono, c.poblacion, c.email].some((v) => String(v || '').toLowerCase().includes(q)));
   // Los avisos de la web ya están arriba con sus botones: aquí no se repiten.
   if (!q && ['todos', 'sin_contactar'].includes(ag.filtroCli) && puedeCitar()) {
-    const esWeb = (c) => c.lead_at && !(c.citas || []).length && !(c.visitas || []).length;
+    const esWeb = (c) => c.lead_at && !c.sin_cita_motivo && !(c.citas || []).length && !(c.visitas || []).length;
     const habiaWeb = lista.some(({ c }) => esWeb(c));
     lista = lista.filter(({ c }) => !esWeb(c));
     if (!lista.length && habiaWeb) return ''; // ya están todos arriba, en el bloque de la web
@@ -9315,8 +9343,9 @@ function clientesListaHTML() {
     <div class="sub" style="margin-top:3px">${esc([agTipoNombre(c), c.poblacion, c.telefono].filter(Boolean).join(' · '))}</div>
     ${e.k === 'sin_cita' && puedeCitar() ? `<div style="margin-top:12px;padding-top:11px;border-top:1px solid var(--l1)">
       <div class="tiny" style="color:${c.contacto_estado === 'contactado' ? 'var(--ambar-o)' : c.contacto_estado ? 'var(--rojo)' : 'inherit'}">${esc(agContactadoTxt(c) || c.nota || 'Nadie le ha llamado todavía')}</div>
-      <div class="row g8" style="margin-top:9px">${agContactoBotones(c)}
-        <button class="pill grow" data-a="ag_nuevaCita" data-id="${c.id}" style="padding:8px 10px;text-align:center">Citar</button></div>
+      <div class="row g8" style="margin-top:9px;flex-wrap:wrap">${agContactoBotones(c)}
+        <button class="pill grow" data-a="ag_nuevaCita" data-id="${c.id}" style="padding:8px 10px;text-align:center">Citar</button>
+        <button class="pill" data-a="ag_sinCitaAbrir" data-id="${c.id}" style="padding:8px 10px;background:var(--l1);color:var(--tinta)">No hace falta</button></div>
     </div>` : ''}
   </div>`).join('');
 }
@@ -9324,7 +9353,7 @@ function clientesListaHTML() {
 function vClientes() {
   const ag = V.agenda;
   const cuenta = (k) => ag.clientes.filter((c) => k === 'sin_contactar' ? (agEstadoCliente(c).k === 'sin_cita' && c.contacto_estado !== 'contactado') : agEstadoCliente(c).k === k).length;
-  const filtros = [['todos', 'Todos'], ['sin_contactar', 'Sin contactar'], ['sin_cita', 'Sin cita'], ['citado', 'Citados'], ['visitado', 'Visitados'], ['teamleader', 'En Teamleader'], ['presupuestado', 'Presup. por revisar o enviar'], ['esperando', 'Esperando respuesta'], ['aceptado', 'Aceptados'], ['rechazado', 'Rechazados']];
+  const filtros = [['todos', 'Todos'], ['sin_contactar', 'Sin contactar'], ['sin_cita', 'Sin cita'], ['citado', 'Citados'], ['visitado', 'Visitados'], ['teamleader', 'En Teamleader'], ['sin_cita_ok', 'Sin cita · resueltos'], ['presupuestado', 'Presup. por revisar o enviar'], ['esperando', 'Esperando respuesta'], ['aceptado', 'Aceptados'], ['rechazado', 'Rechazados']];
   return `<div class="hdr">
     <div class="row" style="justify-content:space-between">
       <div class="h1">Clientes</div>
@@ -9355,7 +9384,7 @@ function webListaHTML() {
   if (String(ag.buscar || '').trim() || !['todos', 'sin_contactar'].includes(ag.filtroCli)) return '';
   // Ya visitado o ya citado deja de estar pendiente, aunque la visita se hiciera
   // sin pasar por una cita.
-  const web = (ag.clientes || []).filter((c) => c.lead_at
+  const web = (ag.clientes || []).filter((c) => c.lead_at && !c.sin_cita_motivo
     && !(c.citas || []).length && !(c.visitas || []).length
     && (ag.filtroCli !== 'sin_contactar' || c.contacto_estado !== 'contactado'));
   const boton = `<button class="pill" data-a="leadsBuscar" style="padding:8px 14px;font-size:12px" ${V.leadsBusy ? 'disabled' : ''}>${V.leadsBusy ? 'Mirando…' : 'Mirar ahora'}</button>`;
@@ -9370,14 +9399,15 @@ function webListaHTML() {
   return `<div class="row" style="justify-content:space-between;align-items:center;margin-bottom:10px">
     <span class="lbl">De la web · ${web.length} sin cita</span>${boton}</div>
   ${web.sort((a, b) => String(b.lead_at).localeCompare(String(a.lead_at))).map((c) => `<div class="card" data-a="ag_abrirCliente" data-id="${c.id}" style="margin-bottom:11px;cursor:pointer;box-shadow:0 0 0 1.5px var(--ambar),var(--sh)">
-    <div class="row g8"><span class="badge" style="background:var(--ambar);color:var(--tinta)">Web</span>
+    <div class="row g8"><span class="badge" style="background:${c.origen === 'crm' ? 'rgba(20,23,15,.1)' : 'var(--ambar)'};color:var(--tinta)">${c.origen === 'crm' ? 'Teamleader' : 'Web'}</span>
       <span class="tiny">Llegó ${cuando(c.lead_at)}</span></div>
     <div class="h2" style="margin-top:9px">${esc(c.nombre)}</div>
     <div class="sub" style="margin-top:4px">${esc([agTipoNombre(c), c.telefono, c.poblacion].filter(Boolean).join(' · ') || 'Sin más datos')}</div>
     ${c.motivo_web ? `<div style="margin-top:8px;padding:8px 10px;border-radius:10px;background:#f8efdc;color:var(--ambar-o);font:500 13px/1.4 var(--sans);display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden">${esc(c.motivo_web)}</div>` : ''}
     ${agContactadoTxt(c) ? `<div class="tiny" style="margin-top:8px;color:${c.contacto_estado === 'contactado' ? 'var(--ambar-o)' : 'var(--rojo)'}">${esc(agContactadoTxt(c))}</div>` : ''}
     ${puedeCitar() ? `<div class="row g8" style="margin-top:12px;flex-wrap:wrap">${agContactoBotones(c)}
-      <button class="pill pill-verde grow" data-a="ag_nuevaCita" data-id="${c.id}" style="padding:8px 14px;text-align:center">Citar</button></div>` : ''}
+      <button class="pill pill-verde grow" data-a="ag_nuevaCita" data-id="${c.id}" style="padding:8px 14px;text-align:center">Citar</button>
+      <button class="pill" data-a="ag_sinCitaAbrir" data-id="${c.id}" style="padding:8px 10px;background:var(--l1);color:var(--tinta)">No hace falta</button></div>` : ''}
   </div>`).join('')}
   <div style="height:12px"></div>`;
 }
@@ -9719,7 +9749,14 @@ function vClienteVer() {
         ${agContactoBotones(c)}
         ${c.contacto_estado ? `<button class="pill" data-a="ag_contactado" data-id="${c.id}" data-e="quitar" style="padding:8px 10px;background:var(--l1);color:var(--tinta)">Quitar</button>` : ''}
       </div>
+      ${c.sin_cita_motivo ? `<div class="row g8" style="margin-top:10px;align-items:center"><span class="tiny grow">Resuelto sin cita: <b>${esc(c.sin_cita_motivo)}</b>${c.sin_cita_at ? ' · ' + fechaCorta(c.sin_cita_at) : ''}${c.sin_cita_por ? ' · ' + esc(agNombreEmp(c.sin_cita_por)) : ''}</span><button class="pill" data-a="ag_sinCitaQuitar" data-id="${c.id}" style="padding:7px 10px;font-size:11px;background:var(--l1);color:var(--tinta)">Volver a pendiente</button></div>`
+        : (!(c.citas || []).length ? `<div style="margin-top:10px"><button class="pill" data-a="ag_sinCitaAbrir" data-id="${c.id}" style="padding:8px 12px;background:var(--l1);color:var(--tinta)">No hace falta cita</button></div>` : '')}
     </div>` : ''}
+    ${(() => { const obs = obrasDeCliente(c); return obs.length ? `<div class="card" style="padding:12px 15px;margin-bottom:18px">
+      <div class="lbl" style="margin-bottom:4px">Obras de este cliente</div>
+      ${obs.map((o) => `<div class="row g8" data-a="verObra" data-id="${o.id}" style="align-items:center;padding:8px 0;border-top:1px solid var(--l1);cursor:pointer">
+        <span style="font:600 16px/1 var(--cond)">${esc(codigoObra(o) || o.titulo)}</span><span class="grow" style="font:500 14px var(--sans)">${esc(o.cliente || o.titulo)}${direccionObra(o) ? ' · ' + esc(direccionObra(o)) : ''}</span><span class="tiny">${esc(estadoObraTxt(o))}</span></div>`).join('')}
+    </div>` : ''; })()}
     ${c.motivo_web ? `<div class="card" style="padding:12px 15px;margin-bottom:18px;box-shadow:0 0 0 1.5px var(--ambar),var(--sh)">
       <div class="lbl" style="color:var(--ambar-o)">Qué pidió por la web</div>
       <div style="font:500 14px/1.45 var(--sans);margin-top:6px;white-space:pre-wrap">${esc(c.motivo_web)}</div>
@@ -10278,6 +10315,21 @@ function sheet() {
       <div class="row g8" style="margin-top:18px">
         <button class="btn btn-gris" data-a="cerrarSheet" style="border-radius:99px">Cancelar</button>
         <button class="btn btn-verde" data-a="${s.tipo === 'faseNueva' ? 'faseCrear' : 'plantillaCrear'}" ${s.busy ? 'disabled' : ''}>${s.busy ? 'Guardando…' : 'Añadir'}</button>
+      </div>
+    </div></div>`;
+  }
+  if (s.tipo === 'sinCita') {
+    const c = agCliente(s.id) || {};
+    const obs = c.id ? obrasDeCliente(c) : [];
+    return `<div class="sheet"><div>
+      <div style="font:600 23px/1.15 var(--cond)">No hace falta cita</div>
+      <div class="sub" style="margin-top:6px">${esc(c.nombre || '')}. Deja de salir como pendiente. ¿Por qué?</div>
+      ${obs.length ? `<div class="tiny" style="margin-top:6px;color:var(--verde-o)">Ya tiene obra en la app: ${esc(obs.map((o) => codigoObra(o) || o.titulo).join(', '))}.</div>` : ''}
+      <div class="wrap" style="margin-top:12px">${SIN_CITA_MOTIVOS.map((m) => `<span class="chip ${s.motivo === m ? 'on' : ''}" data-a="ag_sinCitaMotivo" data-m="${esc(m)}" style="cursor:pointer">${esc(m)}</span>`).join('')}<span class="chip ${s.motivo === 'otro' ? 'on' : ''}" data-a="ag_sinCitaMotivo" data-m="otro" style="cursor:pointer">Otro…</span></div>
+      ${s.motivo === 'otro' ? `<input class="inp" data-f="sinCitaOtro" value="${esc(s.otro)}" placeholder="Por qué" style="margin-top:10px">` : ''}
+      <div class="row g8" style="margin-top:18px">
+        <button class="btn btn-gris" data-a="cerrarSheet" style="border-radius:99px">Cancelar</button>
+        <button class="btn btn-verde" data-a="ag_sinCitaGuardar" ${s.busy ? 'disabled' : ''}>${s.busy ? 'Guardando…' : 'Guardar'}</button>
       </div>
     </div></div>`;
   }
@@ -10873,6 +10925,7 @@ document.addEventListener('input', (e) => {
   if (!f) return;
   if (f.startsWith('vf')) return A.vf(f, t.dataset, t.value);
   if (f === 'presuMotivoRechazo') { clearTimeout(V._tRech); V._tRech = setTimeout(() => A.presuMotivoRechazo(t.value), 800); return; }
+  if (f === 'sinCitaOtro') { if (V.sheet) V.sheet.otro = t.value; return; }
   if (f === 'categoriaOtra') { if (V.draft) V.draft.categoriaOtra = t.value; return; }
   if (f === 'faseNota') { if (V.sheet) V.sheet.nota = t.value; return; }
   if (f === 'faseNombre') { if (V.sheet) V.sheet.nombre = t.value; return; }
