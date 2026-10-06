@@ -368,7 +368,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '20.0'; // versión visible de la app (única fuente)
+const APP_VERSION = '20.1'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -2471,6 +2471,8 @@ const HORA_VER_MANANA = 14;
 const yaSeVeManana = () => new Date().getHours() >= HORA_VER_MANANA;
 const fasesDe = (obraId) => S.fases.filter((f) => f.obra_id === obraId && (veFasesComunes() || f.categoria)).sort((a, b) => a.orden - b.orden || String(a.nombre).localeCompare(String(b.nombre), 'es'));
 const faseById = (id) => S.fases.find((f) => f.id === id) || null;
+// «Emisores · Suelo radiante, Radiadores»: el nombre con lo elegido en la obra.
+const faseNombre = (f) => f.nombre + ((f.opciones || []).length ? ' · ' + f.opciones.join(', ') : '');
 // Avance global: media de las fases que aplican. null si la obra no tiene fases.
 function avanceObra(obraId) {
   const fs = fasesDe(obraId).filter((f) => !f.no_aplica);
@@ -2519,7 +2521,7 @@ function proyectoHTML(o) {
     ${grupos.map((g) => `<div class="lbl" style="margin:14px 0 6px">${esc(g.titulo)}</div>
       <div class="card" style="padding:2px 15px">${g.fases.map((f) => `<div class="row g10" data-a="faseVer" data-id="${f.id}" style="align-items:center;padding:10px 0;border-bottom:1px solid var(--l1);cursor:pointer;${f.no_aplica ? 'opacity:.45' : ''}">
           <span class="dot" style="width:10px;height:10px;background:${f.no_aplica ? 'transparent' : colorPct(f.pct)};${f.no_aplica ? 'border:1.5px solid var(--t3)' : ''}"></span>
-          <div class="grow"><div style="font:500 15px/1.25 var(--sans);${f.pct === 100 ? 'color:var(--t2)' : ''}">${esc(f.nombre)}</div>
+          <div class="grow"><div style="font:500 15px/1.25 var(--sans);${f.pct === 100 ? 'color:var(--t2)' : ''}">${esc(faseNombre(f))}${(f.opciones_posibles || []).length && !(f.opciones || []).length ? ' <span class="tiny" style="color:var(--ambar-o)">· elegir</span>' : ''}</div>
             ${f.no_aplica ? '<div class="tiny">No aplica</div>' : `<div style="margin-top:5px;max-width:200px">${barraPct(f.pct, colorPct(f.pct), 4)}</div>`}</div>
           <span class="num" style="font-size:15px;min-width:44px;text-align:right">${f.no_aplica ? '—' : f.pct + ' %'}</span>
         </div>`).join('')}</div>`).join('')}`;
@@ -2537,7 +2539,7 @@ function avanceParteHTML(d) {
     <div class="tiny" style="margin-bottom:8px">Con este parte, ¿hasta dónde queda cada fase? Toca el porcentaje. Lo que no cambie, se queda como está.</div>
     <div class="card" style="padding:2px 15px">
       ${pendientes.length ? pendientes.map((f) => { const v = avance[f.id] != null ? avance[f.id] : f.pct; return `<div style="padding:11px 0;border-bottom:1px solid var(--l1)">
-        <div class="row" style="justify-content:space-between;align-items:baseline"><span style="font:500 15px/1.25 var(--sans)">${esc(f.nombre)}${f.categoria ? ` <span class="badge" style="background:rgba(20,23,15,.07);color:var(--t2)">${esc(f.categoria)}</span>` : ''}</span><span class="tiny">${avance[f.id] != null && avance[f.id] !== f.pct ? 'antes ' + f.pct + ' %' : ''}</span></div>
+        <div class="row" style="justify-content:space-between;align-items:baseline"><span style="font:500 15px/1.25 var(--sans)">${esc(faseNombre(f))}${f.categoria ? ` <span class="badge" style="background:rgba(20,23,15,.07);color:var(--t2)">${esc(f.categoria)}</span>` : ''}</span><span class="tiny">${avance[f.id] != null && avance[f.id] !== f.pct ? 'antes ' + f.pct + ' %' : ''}</span></div>
         <div class="row g8" style="margin-top:8px">${PCTS.map((pc) => `<span class="chip ${v === pc ? 'on' : ''}" data-a="parteAvance" data-id="${f.id}" data-p="${pc}" style="padding:8px 0;flex:1;text-align:center;${pc < f.pct ? 'opacity:.35' : ''}">${pc}</span>`).join('')}</div>
       </div>`; }).join('') : '<div class="sub" style="padding:12px 0">Todas las fases están al 100 %.</div>'}
     </div>`;
@@ -2557,6 +2559,12 @@ A.fasePct = async (id, pct) => {
   const f = faseById(id); if (!f || !puedeAvance(f.obra_id)) return;
   try { const nf = await Sysefen.db.actualizarFase(id, { pct: Number(pct), no_aplica: false, hecha_en: Number(pct) === 100 ? new Date().toISOString() : null, hecha_por: Number(pct) === 100 ? (miEmpId() || null) : null }); Object.assign(f, nf); await sincronizarObras(); render(); }
   catch (e) { avisar('No se pudo guardar: ' + msgError(e)); }
+};
+A.faseOpcion = async (id, op) => {
+  const f = faseById(id); if (!f || !puedeAvance(f.obra_id)) return;
+  const set = new Set(f.opciones || []); set.has(op) ? set.delete(op) : set.add(op);
+  try { const nf = await Sysefen.db.actualizarFase(id, { opciones: [...set] }); Object.assign(f, nf); render(); }
+  catch (e) { avisar(/opciones/i.test(msgError(e)) ? 'Falta ejecutar sql/etapa70 en Supabase.' : 'No se pudo guardar: ' + msgError(e)); }
 };
 A.faseNoAplica = async (id) => {
   const f = faseById(id); if (!f || !esComercial()) return;
@@ -4448,6 +4456,7 @@ function vObra() {
     <div class="lbl" style="font-weight:600;font-size:12px;color:var(--t2);margin:22px 0 10px">Partes de esta obra</div>
     ${partes.length ? partes.map(cardParte).join('') : '<div class="card"><div class="sub">Todavía no hay partes en esta obra.</div></div>'}
     ${puedeCrear() ? `<button class="btn btn-gris" data-a="cerrarObra" data-id="${o.id}" style="margin-top:14px;border-radius:99px">${obraCerrada(o) ? 'Reabrir obra' : 'Marcar obra como cerrada'}</button>
+    ${partes.some((p) => p.estado !== 'anulado') ? `<button class="btn btn-gris" data-a="moverPartesObra" data-id="${o.id}" style="margin-top:10px;border-radius:99px">Mover todos los partes a otra obra</button>` : ''}
     <button class="btn" data-a="borrarObra" data-id="${o.id}" style="margin-top:10px;border-radius:99px;background:none;color:var(--rojo);box-shadow:inset 0 0 0 1.5px var(--rojo)">Borrar obra</button>
     <div class="tiny" style="text-align:center;margin-top:8px">Solo se puede borrar una obra sin partes ni horas. Si se creó dos veces, borra la que esté vacía.</div>` : ''}
   </div>`;
@@ -4660,8 +4669,37 @@ function cardParte(p) {
       <button class="pill grow" data-a="compartirParte" data-id="${p.id}" style="padding:11px;text-align:center">Compartir</button>
       ${p.estado !== 'anulado' ? `<button class="pill grow" data-a="abrirEnvioParte" data-id="${p.id}" style="padding:11px;text-align:center;background:var(--verde-c);color:#fff">Enviar</button>` : ''}
       ${puedeCrear() ? `<button class="pill pill-rojo grow" data-a="borrarParte" data-id="${p.id}" style="padding:11px;text-align:center">Borrar</button>` : ''}
+      ${puedeCrear() && p.estado !== 'anulado' ? `<button class="pill grow" data-a="moverParte" data-id="${p.id}" style="padding:11px;text-align:center;background:var(--l1);color:var(--tinta)">Cambiar de obra</button>` : ''}
     </div>` : ''}
   </div>`;
+}
+// Un parte (o todos los de una obra) que se hicieron en la obra equivocada:
+// se mueven a la buena. Las horas de la obra se recalculan solas; el PDF que
+// ya estuviera en Drive se queda en la carpeta vieja.
+A.moverParte = (id) => { V.sheet = { tipo: 'moverParte', ids: [id], desdeObra: (S.partes.find((p) => p.id === id) || {}).obraId || null, buscar: '', busy: false }; render(); };
+A.moverPartesObra = (obraId) => {
+  const ids = S.partes.filter((p) => p.obraId === obraId && p.estado !== 'anulado').map((p) => p.id);
+  if (!ids.length) { avisar('Esta obra no tiene partes.'); return; }
+  V.sheet = { tipo: 'moverParte', ids, desdeObra: obraId, buscar: '', busy: false }; render();
+};
+A.moverParteA = async (obraId) => {
+  const s = V.sheet; if (!s || s.tipo !== 'moverParte' || s.busy) return;
+  if (!navigator.onLine) { avisar('Sin conexión: no se ha movido.'); return; }
+  s.busy = true; render();
+  let hechos = 0;
+  try {
+    for (const id of s.ids) { await Sysefen.db.actualizarParte(id, { obra_id: obraId }); const p = S.partes.find((x) => x.id === id); if (p) p.obraId = obraId; hechos++; }
+    V.sheet = null; await sincronizarPartes(); render();
+    const o = obraById(obraId);
+    toast((hechos === 1 ? 'Parte movido a ' : hechos + ' partes movidos a ') + (o ? (codigoObra(o) || o.titulo) : 'la otra obra') + '.');
+  } catch (e) { s.busy = false; avisar('Se movieron ' + hechos + ' de ' + s.ids.length + '. Error: ' + msgError(e)); render(); }
+};
+function moverParteListaHTML(s) {
+  const q = sinTildes(s.buscar); const num = numeroBuscado(s.buscar);
+  const obras = S.obras.filter((o) => o.id !== s.desdeObra).filter((o) => !q || (num != null && o.numero === num) || sinTildes([codigoObra(o), o.titulo, o.cliente, o.dir, o.poblacion].join(' ')).includes(q))
+    .sort((a, b) => (obraCerrada(a) ? 1 : 0) - (obraCerrada(b) ? 1 : 0) || porNumeroDesc(a, b));
+  if (!obras.length) return '<div class="sub">Ninguna obra con eso.</div>';
+  return obras.slice(0, 80).map((o) => `<button class="fila-obra" data-a="moverParteA" data-id="${o.id}" ${s.busy ? 'disabled' : ''}>${esc(codigoObra(o) || o.titulo)} · ${esc(o.cliente || o.titulo)}${obraCerrada(o) ? ' <span class="badge" style="background:rgba(20,23,15,.07);color:var(--t2)">cerrada</span>' : ''}<small>${esc([o.nombre !== o.cliente ? o.nombre : '', direccionObra(o)].filter(Boolean).join(' · '))}</small></button>`).join('');
 }
 function vPartes() {
   const lista = puedeCrear() ? S.partes : S.partes.filter((p) => p.horas && p.horas[V.user.id] != null);
@@ -10288,6 +10326,8 @@ function sheet() {
     return `<div class="sheet"><div>
       <div class="row g8" style="align-items:baseline"><span style="font:600 23px/1.15 var(--cond)">${esc(f.nombre)}</span>${f.categoria ? `<span class="badge" style="background:rgba(20,23,15,.07);color:var(--t2)">${esc(f.categoria)}</span>` : ''}</div>
       <div class="sub" style="margin-top:6px">${f.no_aplica ? 'Marcada como «no aplica» en esta obra.' : f.pct === 100 ? 'Hecha' + (f.hecha_en ? ' el ' + fechaCorta(f.hecha_en) : '') + (f.hecha_por ? ' · ' + esc(agNombreEmp(f.hecha_por)) : '') + '.' : f.pct > 0 ? 'Al ' + f.pct + ' %.' : 'Sin empezar.'}</div>
+      ${(f.opciones_posibles || []).length ? `<div class="lbl" style="margin:14px 0 8px">¿Cuál lleva esta obra? (puede ser más de uno)</div>
+      <div class="wrap">${f.opciones_posibles.map((op) => `<span class="chip ${(f.opciones || []).includes(op) ? 'on' : ''}" data-a="faseOpcion" data-id="${f.id}" data-o="${esc(op)}" style="cursor:pointer;${puede ? '' : 'pointer-events:none'}">${esc(op)}</span>`).join('')}</div>` : ''}
       ${puede && !f.no_aplica ? `<div class="lbl" style="margin:14px 0 8px">Avance</div>
       <div class="row g8">${PCTS.map((pc) => `<span class="chip ${f.pct === pc ? 'on' : ''}" data-a="fasePct" data-id="${f.id}" data-p="${pc}" style="padding:10px 0;flex:1;text-align:center">${pc}</span>`).join('')}</div>` : ''}
       <div class="lbl" style="margin:14px 0 6px">Nota</div>
@@ -10316,6 +10356,17 @@ function sheet() {
         <button class="btn btn-gris" data-a="cerrarSheet" style="border-radius:99px">Cancelar</button>
         <button class="btn btn-verde" data-a="${s.tipo === 'faseNueva' ? 'faseCrear' : 'plantillaCrear'}" ${s.busy ? 'disabled' : ''}>${s.busy ? 'Guardando…' : 'Añadir'}</button>
       </div>
+    </div></div>`;
+  }
+  if (s.tipo === 'moverParte') {
+    const desde = s.desdeObra ? obraById(s.desdeObra) : null;
+    const n = s.ids.length;
+    return `<div class="sheet"><div style="max-height:85vh;display:flex;flex-direction:column">
+      <div style="font:600 23px/1.15 var(--cond)">${n === 1 ? 'Cambiar el parte de obra' : 'Mover ' + n + ' partes de obra'}</div>
+      <div class="sub" style="margin-top:6px">${desde ? 'Ahora ' + (n === 1 ? 'está' : 'están') + ' en <b>' + esc(codigoObra(desde) || desde.titulo) + ' · ' + esc(desde.cliente || '') + '</b>. ' : ''}¿A qué obra ${n === 1 ? 'va' : 'van'}? Las horas y los partes de las dos obras se recalculan solos. El PDF que ya esté en Drive se queda donde está.</div>
+      <input class="inp" data-f="moverBuscar" value="${esc(s.buscar || '')}" placeholder="Número, cliente u obra" autocomplete="off" style="margin:12px 0 8px">
+      <div class="lista-obras" id="mover-obras" style="overflow:auto;flex:1;min-height:0">${moverParteListaHTML(s)}</div>
+      <button class="btn btn-gris" data-a="cerrarSheet" style="border-radius:99px;margin-top:12px">Cancelar</button>
     </div></div>`;
   }
   if (s.tipo === 'sinCita') {
@@ -10788,6 +10839,9 @@ document.addEventListener('click', (e) => {
   if (a === 'guardarObraRapida') return A.guardarObraRapida();
   if (a === 'confirmarEnvioParte') return A.confirmarEnvioParte();
   if (a === 'borrarParte') { e.stopPropagation(); return A.borrarParte(d.id); }
+  if (a === 'moverParte') { e.stopPropagation(); return A.moverParte(d.id); }
+  if (a === 'moverPartesObra') return A.moverPartesObra(d.id);
+  if (a === 'moverParteA') return A.moverParteA(d.id);
   if (a === 'confirmarBorrarParte') return A.confirmarBorrarParte();
   if (a === 'borrarObra') return A.borrarObra(d.id);
   if (a === 'abrirCostes') return A.abrirCostes();
@@ -10817,6 +10871,7 @@ document.addEventListener('click', (e) => {
   if (a === 'faseVer') return A.faseVer(d.id);
   if (a === 'fasePct') return A.fasePct(d.id, d.p);
   if (a === 'faseNoAplica') return A.faseNoAplica(d.id);
+  if (a === 'faseOpcion') return A.faseOpcion(d.id, d.o);
   if (a === 'faseNota') return A.faseNota();
   if (a === 'faseQuitar') return A.faseQuitar(d.id);
   if (a === 'faseNueva') return A.faseNueva(d.id);
@@ -10925,6 +10980,7 @@ document.addEventListener('input', (e) => {
   if (!f) return;
   if (f.startsWith('vf')) return A.vf(f, t.dataset, t.value);
   if (f === 'presuMotivoRechazo') { clearTimeout(V._tRech); V._tRech = setTimeout(() => A.presuMotivoRechazo(t.value), 800); return; }
+  if (f === 'moverBuscar') { if (V.sheet) { V.sheet.buscar = t.value; const box = document.getElementById('mover-obras'); if (box) box.innerHTML = moverParteListaHTML(V.sheet); } return; }
   if (f === 'sinCitaOtro') { if (V.sheet) V.sheet.otro = t.value; return; }
   if (f === 'categoriaOtra') { if (V.draft) V.draft.categoriaOtra = t.value; return; }
   if (f === 'faseNota') { if (V.sheet) V.sheet.nota = t.value; return; }

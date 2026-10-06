@@ -1,3 +1,4 @@
+import time
 #!/usr/bin/env python3
 """
 Sysefen · Las capturas del manual de usuario
@@ -72,7 +73,8 @@ window.__m = { S, V, A, render, agNuevoCliente, agNuevaCita, limpiarBorradorVisi
     s = s.replace('restaurarSesion();', '/* sin sesión: manual */')
     # Como módulo: los módulos corren en orden y después de la app, que también
     # es un módulo. Como script normal corría antes y no encontraba window.__m.
-    s = s + '\n<script type="module" src="herramientas/manual/escenas.js"></script>\n'
+    # Con un sello de tiempo: si no, el navegador reutiliza la copia vieja del archivo.
+    s = s + '\n<script type="module" src="herramientas/manual/escenas.js?t=' + str(int(time.time())) + '"></script>\n'
     return s
 
 
