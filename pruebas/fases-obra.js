@@ -34,7 +34,7 @@ V.fasesCargadas = true;
 var html = avanceParteHTML({ obraId: 'o1', avance: {} });
 comprueba('enseña las pendientes', html.indexOf('Montaje de paneles') !== -1 && html.indexOf('Inversor') !== -1);
 comprueba('no enseña las hechas ni las que no aplican', html.indexOf('Fijaciones') === -1 && html.indexOf('Legalización') === -1);
-comprueba('dice cuántas van hechas', html.indexOf('2 de 6 fases hechas') !== -1);
+comprueba('dice cuántas van hechas', html.indexOf('2 de 6 subfases hechas') !== -1);
 igual('obra sin fases: el parte no enseña el bloque', avanceParteHTML({ obraId: 'o9' }), '');
 
 // Un jefe de obra solo ve las fases de la categoría: ni material, ni cobro.
@@ -42,6 +42,26 @@ S.users = [{ id: 'u1', nombre: 'Xavi', rol: 'jefe', activo: true }]; V.user = { 
 igual('jefe: solo el grupo de la categoría', fasesAgrupadas('o1').map((x) => x.titulo).join(','), 'Fotovoltaica');
 igual('jefe: el avance se calcula con esas', avanceObra('o1').pct, Math.round((100 + 75 + 0) / 3));
 comprueba('jefe: en el parte no sale el material', avanceParteHTML({ obraId: 'o1', avance: {} }).indexOf('Recepción de material') === -1);
+
+titulo('fases propias con subfases (V20.7)');
+S.users = [{ id: 'u0', nombre: 'Enzo', rol: 'admin', activo: true }]; V.user = { id: 'u0' };
+S.obras = (S.obras || []).concat([{ id: 'o3', numero: 3, titulo: 'Casa Roca', cliente: 'Roca', categorias: ['FV'] }]);
+S.fases = [
+  { id: 'p1', obra_id: 'o3', categoria: null, orden: 10, nombre: 'Pedido de material', pct: 0 },
+  { id: 'p9', obra_id: 'o3', categoria: null, orden: 540, nombre: 'Cobro final', pct: 0 },
+  { id: 'v1', obra_id: 'o3', categoria: 'FV', orden: 110, nombre: 'Estructura', pct: 50 },
+  { id: 'w1', obra_id: 'o3', categoria: null, grupo: 'Piscina', orden: 701, nombre: 'Vaso', pct: 100 },
+  { id: 'w2', obra_id: 'o3', categoria: null, grupo: 'Piscina', orden: 702, nombre: 'Depuradora', pct: 0 },
+  { id: 'x1', obra_id: 'o3', categoria: null, grupo: 'Fontanería', orden: 700, nombre: 'Tuberías', pct: 0 },
+];
+var g3 = fasesAgrupadas('o3');
+igual('bloques: preparación, FV, propias en orden de creación, cierre', g3.map((x) => x.titulo).join(','), 'Preparación,Fotovoltaica,Fontanería,Piscina,Cierre');
+igual('la piscina lleva sus dos subfases', g3[3].fases.map((f) => f.nombre).join('/'), 'Vaso/Depuradora');
+igual('las claves para una subfase nueva', gruposParaSubfase('o3').map((x) => x[0]).join(','), 'ini,FV,g:Fontanería,g:Piscina,fin');
+igual('el avance cuenta las propias', avanceObra('o3').total, 6);
+S.users = [{ id: 'u1', nombre: 'Xavi', rol: 'jefe', activo: true }]; V.user = { id: 'u1' };
+igual('el jefe ve FV y las propias, no las comunes', fasesAgrupadas('o3').map((x) => x.titulo).join(','), 'Fotovoltaica,Fontanería,Piscina');
+comprueba('en el parte la subfase propia lleva su fase de etiqueta', avanceParteHTML({ obraId: 'o3', avance: {} }).indexOf('>Piscina<') !== -1);
 
 titulo('al desmarcar una categoría se van sus fases (V20.5)');
 S.users = [{ id: 'u0', nombre: 'Enzo', rol: 'admin', activo: true }]; V.user = { id: 'u0' };
