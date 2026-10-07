@@ -84,6 +84,23 @@ a:hover{color:var(--tinta)}
 .chip{font:500 13px/1 var(--sans);padding:10px 13px;border-radius:99px;cursor:pointer;background:#fff;color:var(--t2);border:1px solid var(--l2)}
 .chip.on{background:var(--tinta);color:#fff;border-color:var(--tinta)}
 .chip.sel{background:var(--tinta);color:#fff;border-color:var(--tinta)} /* el elegido en el presupuesto suelto */
+/* El camino del cliente: contacto → cita → visita → presupuesto → enviado → respuesta → obra */
+.camino{display:flex;gap:4px;align-items:flex-start}
+.camino .p{flex:1;min-width:0}
+.camino .p i{display:block;height:5px;border-radius:99px;background:rgba(20,23,15,.1)}
+.camino .p.hecho i{background:var(--verde)}
+.camino .p.ahora i{background:var(--ambar)}
+.camino .p.saltado i{background:rgba(61,143,74,.35)}
+.camino .p.parado i{background:var(--rojo)}
+.camino .p b{display:block;font:500 9.5px/1.2 var(--mono);letter-spacing:.04em;text-transform:uppercase;color:var(--t3);margin-top:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.camino .p.ahora b{color:var(--ambar-o);font-weight:600}
+.camino .p.hecho b{color:var(--t2)}
+.camino.oscuro .p i{background:rgba(255,255,255,.14)}
+.camino.oscuro .p.hecho i{background:var(--verde)}
+.camino.oscuro .p.saltado i{background:rgba(61,143,74,.45)}
+.camino.oscuro .p b{color:rgba(255,255,255,.45)}
+.camino.oscuro .p.hecho b{color:rgba(255,255,255,.75)}
+.camino.oscuro .p.ahora b{color:var(--ambar)}
 .chip.alerta{background:var(--rojo);color:#fff;border-color:var(--rojo)}
 .chip.ok{background:var(--verde);color:#fff;border-color:var(--verde)}
 .wrap{display:flex;flex-wrap:wrap;gap:7px}
@@ -390,7 +407,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '20.8'; // versión visible de la app (única fuente)
+const APP_VERSION = '20.9'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -8944,6 +8961,7 @@ function tableroHTML() {
     ${col.clientes.map(({ c, e }) => { const un = ultimaNota(c); const vencida = c.proxima_accion_at && c.proxima_accion_at < hoy; return `<div class="tb-card" data-a="ag_abrirCliente" data-id="${c.id}" style="border-left-color:${e.color}">
       <div class="row" style="justify-content:space-between;align-items:baseline;gap:8px"><div class="n">${esc(c.nombre)}</div>${importe(c) ? `<span class="num" style="font-size:13px;white-space:nowrap">${importe(c)}</span>` : ''}</div>
       <div class="s">${esc([agTipoNombre(c), c.poblacion].filter(Boolean).join(' · '))}${c.contacto_estado ? ' · ' + esc(agContactadoTxt(c)) : ''}</div>
+      <div style="margin-top:7px">${caminoHTML(c)}</div>
       ${c.proxima_accion ? `<div class="a ${vencida ? 'vence' : ''}">${esc(c.proxima_accion)}${c.proxima_accion_at ? ' · ' + esc(fechaCorta(c.proxima_accion_at + 'T12:00')) : ''}${c.proxima_accion_por ? ' · ' + esc(agNombreEmp(c.proxima_accion_por)) : ''}</div>` : ''}
       ${un ? `<div class="s" style="margin-top:5px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">${esc(BIT_TIPOS[un.tipo] || '')}: ${esc(un.texto)}</div>` : ''}
     </div>`; }).join('') || '<div class="tiny" style="padding:6px 2px">Nadie</div>'}
@@ -8977,6 +8995,57 @@ function presuQueManda(c) {
   const vivos = ps.filter((p) => !['rechazado', 'caducado'].includes(p.respuesta_cliente));
   const lista = vivos.length ? vivos : ps;
   return lista.slice().sort((a, b) => seguimientoPresu(b).paso - seguimientoPresu(a).paso || String(b.created_at).localeCompare(String(a.created_at)))[0];
+}
+/* ---------- el camino del cliente ----------
+ * Siete pasos, siempre los mismos: contacto, cita, visita, presupuesto,
+ * enviado, respuesta, obra. Un paso cuenta como hecho si pasó, o si pasó uno
+ * posterior (un cliente con presupuesto no tiene «la visita pendiente»: se da
+ * por cubierta, en claro). El primero sin hacer es «ahora». Si está aplazado o
+ * rechazado, el camino se para ahí. Así, en la lista, de un vistazo se ve en
+ * qué punto está cada uno sin entrar en la ficha.
+ * ------------------------------------------- */
+const CAMINO_PASOS = [['contacto', 'Contacto'], ['cita', 'Cita'], ['visita', 'Visita'], ['presupuesto', 'Presup.'], ['enviado', 'Enviado'], ['respuesta', 'Respuesta'], ['obra', 'Obra']];
+function caminoCliente(c) {
+  const pm = presuQueManda(c);
+  const sg = pm ? seguimientoPresu(pm) : null;
+  const hechos = {
+    contacto: c.contacto_estado === 'contactado',
+    cita: (c.citas || []).length > 0 || !!c.sin_cita_motivo,
+    visita: (c.visitas || []).length > 0,
+    presupuesto: !!pm,
+    enviado: !!(pm && (pm.enviado_cliente_at || (pm.respuesta_cliente && pm.respuesta_cliente !== 'pendiente'))),
+    respuesta: !!(sg && ['aceptado', 'rechazado'].includes(sg.k)),
+    obra: !!((pm && pm.obra_id) || (typeof obrasDeCliente === 'function' && obrasDeCliente(c).length)),
+  };
+  const parado = sg && sg.k === 'rechazado' ? 'respuesta' : null;
+  const aplazado = !!(c.aplazado_hasta && c.aplazado_hasta >= hoyISO()) && !(sg && sg.k === 'aceptado');
+  // Lo último que pasó de verdad: todo lo anterior queda cubierto.
+  let ultimo = -1;
+  CAMINO_PASOS.forEach(([k], i) => { if (hechos[k]) ultimo = i; });
+  const pasos = CAMINO_PASOS.map(([k, titulo], i) => {
+    let estado = 'pendiente';
+    if (hechos[k]) estado = 'hecho';
+    else if (i < ultimo) estado = 'saltado';
+    else if (i === ultimo + 1) estado = 'ahora';
+    if (parado === k) estado = 'parado';
+    return { k, titulo, estado };
+  });
+  if (aplazado) { const a = pasos.find((x) => x.estado === 'ahora'); if (a) { a.estado = 'parado'; a.titulo = 'Aplazado'; } }
+  if (parado) pasos.forEach((x) => { if (x.estado === 'ahora') x.estado = 'pendiente'; });
+  return pasos;
+}
+function caminoHTML(c, oscuro) {
+  return `<div class="camino ${oscuro ? 'oscuro' : ''}">${caminoCliente(c).map((x) => `<div class="p ${x.estado}" title="${esc(x.titulo)}"><i></i><b>${esc(x.titulo)}</b></div>`).join('')}</div>`;
+}
+// Lo que hay que saber de un cliente sin entrar: la próxima acción y lo último que se habló.
+function seguimientoResumenHTML(c, oscuro) {
+  const un = ultimaNota(c), hoy = hoyISO();
+  const vencida = c.proxima_accion_at && c.proxima_accion_at < hoy;
+  const colorA = vencida ? 'var(--rojo)' : (oscuro ? 'var(--ambar)' : 'var(--ambar-o)');
+  const colorN = oscuro ? 'rgba(255,255,255,.7)' : 'var(--t2)';
+  if (!c.proxima_accion && !un) return '';
+  return `${c.proxima_accion ? `<div style="font:500 13px/1.35 var(--sans);color:${colorA};margin-top:8px">→ ${esc(c.proxima_accion)}${c.proxima_accion_at ? ' · ' + esc(fechaCorta(c.proxima_accion_at + 'T12:00')) : ''}${c.proxima_accion_por ? ' · ' + esc(agNombreEmp(c.proxima_accion_por)) : ''}${vencida ? ' · vencida' : ''}</div>` : ''}
+    ${un ? `<div style="font:400 13px/1.35 var(--sans);color:${colorN};margin-top:${c.proxima_accion ? 4 : 8}px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">${esc(BIT_TIPOS[un.tipo] || '')} · ${esc(fechaCorta(un.at))}${un.por ? ' · ' + esc(agNombreEmp(un.por)) : ''}: ${esc(un.texto)}</div>` : ''}`;
 }
 function agEstadoCliente(c) {
   const vis = c.visitas || [];
@@ -9022,6 +9091,8 @@ A.cargarAgenda = async () => {
     ag.citas = citas; ag.clientes = clientes; ag.error = null;
   } catch (e) { ag.error = msgError(e); }
   finally { ag.cargando = false; ag.cargado = true; if (AG_VISTAS.includes(V.view)) render(); }
+  // La última llamada y la próxima acción se ven en la lista sin entrar.
+  if (puedeCitar()) cargarBitacoraTodos();
   clientesPendientesAHoja();
 };
 
@@ -9764,6 +9835,8 @@ function clientesListaHTML() {
     <div class="row g8"><span class="dot" style="width:8px;height:8px;background:${e.color}"></span><span class="lbl"${e.k === 'sin_cita' ? ' style="color:var(--rojo)"' : ''}>${esc(e.txt)}</span></div>
     <div class="h2" style="font-size:17px;margin-top:8px">${esc(c.nombre)}</div>
     <div class="sub" style="margin-top:3px">${esc([agTipoNombre(c), c.poblacion, c.telefono].filter(Boolean).join(' · '))}</div>
+    <div style="margin-top:11px">${caminoHTML(c)}</div>
+    ${seguimientoResumenHTML(c)}
     ${e.k === 'sin_cita' && puedeCitar() ? `<div style="margin-top:12px;padding-top:11px;border-top:1px solid var(--l1)">
       <div class="tiny" style="color:${c.contacto_estado === 'contactado' ? 'var(--ambar-o)' : c.contacto_estado ? 'var(--rojo)' : 'inherit'}">${esc(agContactadoTxt(c) || c.nota || 'Nadie le ha llamado todavía')}</div>
       <div class="row g8" style="margin-top:9px;flex-wrap:wrap">${agContactoBotones(c)}
@@ -9829,6 +9902,8 @@ function webListaHTML() {
       <span class="tiny">Llegó ${cuando(c.lead_at)}</span></div>
     <div class="h2" style="margin-top:9px">${esc(c.nombre)}</div>
     <div class="sub" style="margin-top:4px">${esc([agTipoNombre(c), c.telefono, c.poblacion].filter(Boolean).join(' · ') || 'Sin más datos')}</div>
+    <div style="margin-top:11px">${caminoHTML(c)}</div>
+    ${seguimientoResumenHTML(c)}
     ${c.motivo_web ? `<div style="margin-top:8px;padding:8px 10px;border-radius:10px;background:#f8efdc;color:var(--ambar-o);font:500 13px/1.4 var(--sans);display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden">${esc(c.motivo_web)}</div>` : ''}
     ${agContactadoTxt(c) ? `<div class="tiny" style="margin-top:8px;color:${c.contacto_estado === 'contactado' ? 'var(--ambar-o)' : 'var(--rojo)'}">${esc(agContactadoTxt(c))}</div>` : ''}
     ${puedeCitar() ? `<div class="row g8" style="margin-top:12px;flex-wrap:wrap">${agContactoBotones(c)}
@@ -10151,6 +10226,7 @@ function vClienteVer() {
     <div class="volver" data-a="ag_volver" data-v="clientes">‹ Clientes</div>
     <div style="font:600 27px/1.1 var(--cond)">${esc(c.nombre)}</div>
     <div class="sub" style="color:rgba(255,255,255,.5);margin-top:6px">${esc([agTipoNombre(c), c.poblacion, c.telefono].filter(Boolean).join(' · '))}</div>
+    <div style="margin-top:14px">${caminoHTML(c, true)}</div>
     ${(c.direccion || c.poblacion) || c.telefono ? `<div class="ag-acciones" style="justify-content:flex-start;gap:26px">
       ${accionLlamar(c.telefono)}
       ${accionComoLlegar([c.direccion, c.poblacion].filter(Boolean).join(', '))}

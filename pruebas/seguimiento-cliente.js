@@ -23,4 +23,28 @@ igual('esperando respuesta', por.esperando, 'Dani');
 igual('resueltos sin cita', por.sin_cita_ok, 'Eva');
 igual('diez columnas siempre', cols.length, 10);
 
+titulo('el camino del cliente (V20.9)');
+var camino = function (c) { return caminoCliente(c).map(function (x) { return x.k + ':' + x.estado; }).join(' '); };
+var sinTocar = { id: 'k1', nombre: 'Nuevo', citas: [], visitas: [] };
+igual('recién llegado: toca el contacto', camino(sinTocar), 'contacto:ahora cita:pendiente visita:pendiente presupuesto:pendiente enviado:pendiente respuesta:pendiente obra:pendiente');
+igual('contactado: toca la cita', caminoCliente({ id: 'k2', nombre: 'B', contacto_estado: 'contactado', citas: [], visitas: [] })[1].estado, 'ahora');
+var conPresu = { id: 'k3', nombre: 'C', citas: [], visitas: [], presupuestos: [{ id: 'q', created_at: '2026-10-01', respuesta_cliente: 'pendiente' }] };
+igual('con presupuesto sin visita: contacto, cita y visita quedan cubiertos (saltados), toca enviarlo',
+  camino(conPresu), 'contacto:saltado cita:saltado visita:saltado presupuesto:hecho enviado:ahora respuesta:pendiente obra:pendiente');
+var enviado = { id: 'k4', nombre: 'D', citas: [{ id: 'x' }], visitas: [{ id: 'v' }], presupuestos: [{ id: 'q', created_at: '2026-10-01', enviado_cliente_at: '2026-10-02', respuesta_cliente: 'pendiente' }] };
+comprueba('enviado: espera respuesta', caminoCliente(enviado)[4].estado === 'hecho' && caminoCliente(enviado)[5].estado === 'ahora');
+var aceptado = { id: 'k5', nombre: 'E', citas: [], visitas: [], presupuestos: [{ id: 'q', created_at: '2026-10-01', enviado_cliente_at: '2026-10-02', respuesta_cliente: 'aceptado', obra_id: 'o1' }] };
+comprueba('aceptado con obra: todo hecho', caminoCliente(aceptado).every(function (x) { return x.estado === 'hecho' || x.estado === 'saltado'; }));
+var rechazado = { id: 'k6', nombre: 'F', citas: [], visitas: [], presupuestos: [{ id: 'q', created_at: '2026-10-01', enviado_cliente_at: '2026-10-02', respuesta_cliente: 'rechazado' }] };
+comprueba('rechazado: se para en la respuesta y la obra no queda pendiente', caminoCliente(rechazado)[5].estado === 'parado' && caminoCliente(rechazado)[6].estado === 'pendiente' && !caminoCliente(rechazado).some(function (x) { return x.estado === 'ahora'; }));
+var aplazado = { id: 'k7', nombre: 'G', contacto_estado: 'contactado', aplazado_hasta: '2099-01-15', citas: [], visitas: [] };
+comprueba('aplazado: el paso que tocaba se marca parado y dice Aplazado', caminoCliente(aplazado)[1].estado === 'parado' && caminoCliente(aplazado)[1].titulo === 'Aplazado');
+comprueba('sin cita resuelto cuenta la cita como hecha', caminoCliente({ id: 'k8', nombre: 'H', sin_cita_motivo: 'ya tiene obra', citas: [], visitas: [] })[1].estado === 'hecho');
+var html = caminoHTML(conPresu);
+comprueba('se pinta con los siete pasos', (html.match(/class="p /g) || []).length === 7 && html.indexOf('Presup.') >= 0);
+V.bitacora['k2'] = [{ tipo: 'llamada', texto: 'Pide que le llamemos mañana', at: '2026-10-07T10:00:00Z', por: null }];
+var res = seguimientoResumenHTML({ id: 'k2', nombre: 'B', proxima_accion: 'Llamar', proxima_accion_at: '2026-10-08', citas: [], visitas: [] });
+comprueba('el resumen lleva la próxima acción y lo último que se habló', res.indexOf('→ Llamar') >= 0 && res.indexOf('Pide que le llamemos') >= 0);
+igual('sin nada que contar, nada', seguimientoResumenHTML({ id: 'k9', citas: [], visitas: [] }), '');
+
 resultado();
