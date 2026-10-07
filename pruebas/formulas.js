@@ -53,6 +53,12 @@ function revienta(f, etiqueta) {
   try { evaluar(f, ambito, ayudas); comprueba(etiqueta + ' — NO dio error', false); }
   catch (e) { comprueba(etiqueta, true); }
 }
+titulo('contiene');
+igual('en una lista', evaluar("contiene(cargas, 'vehiculo_electrico')", { cargas: ['piscina', 'vehiculo_electrico'] }), 1);
+igual('no está', evaluar("contiene(cargas, 'aerotermia')", { cargas: ['piscina'] }), 0);
+igual('con un texto suelto', evaluar("contiene(x, 'a')", { x: 'a' }), 1);
+igual('con nada', evaluar("contiene(nada_de_nada, 'a')", {}, { faltante: function () {} }), 0);
+
 revienta("constructor('return 1')()", 'llamar a constructor');
 revienta("estancias.length", 'leer propiedades con punto');
 revienta("fetch('http://x')", 'llamar a fetch');

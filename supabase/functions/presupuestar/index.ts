@@ -38,7 +38,7 @@
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
 import { calcular, MOTOR_VERSION } from './motor.js';
-import { cadenaPrecios } from './cadena.js';
+import { cadenaPrecios, totalCoste } from './cadena.js';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -80,20 +80,21 @@ Deno.serve(async (req) => {
     const { data: pre } = await sb.from('presupuestos').select('id, dto_global_pct').eq('id', id).maybeSingle();
     if (!pre) return json({ error: 'Ese presupuesto no existe.' }, 404);
     const { data: ls } = await sb.from('presupuesto_lineas')
-      .select('id, cantidad, precio_tarifa, dto_linea_pct').eq('presupuesto_id', id).order('orden');
+      .select('id, cantidad, precio_tarifa, precio_coste, dto_linea_pct').eq('presupuesto_id', id).order('orden');
     const dto = b.dto_global_pct != null ? Number(b.dto_global_pct) : Number(pre.dto_global_pct || 0);
     const t = cadenaPrecios(ls || [], dto);
+    const coste = totalCoste(ls || []);
     // El precio de venta de cada línea se guarda ya con el descuento al pie
     // repartido, que es como se imprime y como lo hace Teamleader.
     await Promise.all((ls || []).map((l, i) =>
       sb.from('presupuesto_lineas').update({ precio_venta: t.lineas[i].total }).eq('id', l.id)));
     await sb.from('presupuestos').update({
       total_bruto: t.total_bruto, total_dto_linea: t.total_dto_linea,
-      dto_global_pct: dto, total_venta: t.total, updated_at: new Date().toISOString(),
+      dto_global_pct: dto, total_venta: t.total, total_coste: coste.total, updated_at: new Date().toISOString(),
     }).eq('id', id);
     return json({ ok: true, presupuesto_id: id, dto_global_pct: dto, totales: {
       bruto: t.total_bruto, dto_linea: t.total_dto_linea, subtotal: t.subtotal,
-      dto_global: t.total_dto_global, total: t.total } });
+      dto_global: t.total_dto_global, total: t.total, coste: coste.total, lineas_sin_coste: coste.lineas_sin_coste } });
   }
   const uuid = (v: unknown) => (/^[0-9a-f-]{36}$/i.test(String(v || '')) ? String(v) : null);
   const visitaId = uuid(b.visita_id);
@@ -163,7 +164,7 @@ Deno.serve(async (req) => {
   let tarifaId: string | null = null;
   if (refs.length) {
     const { data: prods } = await sb.from('productos')
-      .select('referencia, nombre, familia, unidad, precio_tarifa, detalle_tecnico, especificaciones, iva, tarifa_id, activo')
+      .select('referencia, nombre, familia, unidad, precio_tarifa, descuento_proveedor, detalle_tecnico, especificaciones, iva, atributos, tarifa_id, activo')
       .in('referencia', [...new Set(refs)]).eq('activo', true);
     (prods || []).forEach((p) => {
       // Si una referencia está en dos tarifas, manda la primera que llegue: el
@@ -197,6 +198,8 @@ Deno.serve(async (req) => {
     cantidad: Number(l.cantidad) || 1,
     unidad: l.unidad || 'ud',
     precio_tarifa: Number(l.precio_tarifa) || 0,
+    // Lo que escribe la persona es precio de venta; su coste no se sabe.
+    precio_coste: l.precio_coste == null || l.precio_coste === '' ? null : Number(l.precio_coste),
     dto_linea_pct: Number(l.dto_linea_pct) || 0,
     iva: l.iva == null ? 21 : Number(l.iva),
     seccion: l.seccion || 'Equipos',
@@ -209,6 +212,7 @@ Deno.serve(async (req) => {
   res.lineas.forEach((l, i) => { l.orden = i + 1; });
 
   const totales = cadenaPrecios(res.lineas, dtoGlobal);
+  const coste = totalCoste(res.lineas);
 
   const incidenciasUtiles = extra.length
     ? res.incidencias.filter((i) => i.codigo !== 'sin_lineas')
@@ -230,7 +234,11 @@ Deno.serve(async (req) => {
       subtotal: totales.subtotal,
       dto_global: totales.total_dto_global,
       total: totales.total,
+      // Versión interna: lo que cuesta y cuántas líneas van sin coste conocido.
+      coste: coste.total,
+      lineas_sin_coste: coste.lineas_sin_coste,
     },
+    recargo_sobre_coste: res.recargo_sobre_coste,
     lineas: res.lineas.map((l, i) => Object.assign({}, l, {
       importe: totales.lineas[i].total,
       importe_bruto: totales.lineas[i].bruto,
@@ -253,6 +261,7 @@ Deno.serve(async (req) => {
     total_dto_linea: totales.total_dto_linea,
     dto_global_pct: dtoGlobal,
     total_venta: totales.total,
+    total_coste: coste.total,
     estado: res.incidencias.some((i) => i.nivel === 'error') ? 'revisar' : 'generado',
     confianza: res.incidencias.length ? (res.incidencias.some((i) => i.nivel === 'error') ? 'baja' : 'media') : 'alta',
   }).select().single();
@@ -270,6 +279,7 @@ Deno.serve(async (req) => {
       cantidad: l.cantidad,
       unidad: l.unidad || 'ud',
       precio_tarifa: l.precio_tarifa,
+      precio_coste: l.precio_coste == null ? null : l.precio_coste,
       dto_linea_pct: l.dto_linea_pct || 0,
       precio_venta: totales.lineas[i].total,
       iva: l.iva == null ? 21 : l.iva,

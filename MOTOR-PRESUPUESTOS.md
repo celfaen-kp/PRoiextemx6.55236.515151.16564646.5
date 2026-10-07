@@ -26,6 +26,42 @@ analizar nada.
   céntimos enteros; un descuento global se aplica línea a línea redondeando
   cada línea (así cuadra el 2026/596: 17.599,06 y no 17.599,05).
 
+### 0b · Fotovoltaica por capítulos (07-10-2026) · `sql/etapa72` (generada)
+
+Sigue el documento «Sysefen · Desglose de costes y estructura de presupuesto
+FV particulares» (5 oct 2026). Lo que cambia respecto a lo de abajo, SOLO en
+fotovoltaica:
+
+- **Venta = coste × 1,30, una vez por línea.** El 1,30 está en `tablas_lookup`
+  (`solar`, `recargo_sobre_coste`) y lo aplica el motor 1.2: el precio del
+  catálogo y el fijo de las partidas se toman como COSTE. Cada línea guarda
+  `precio_coste` y el presupuesto `total_coste`; la app enseña «Interno ·
+  coste · margen» a presupuestos y Administración. Los trámites (FV-13-…)
+  llevan `atributos.sin_recargo`: ya vienen como venta declarada.
+  Las otras categorías no tienen ese coeficiente y siguen a PVP de tarifa.
+- **14 capítulos fijos** como `seccion` («01 · Generador fotovoltaico» …
+  «14 · Opcionales»). El PDF al cliente los imprime como dice el documento:
+  equipos y trámites detallados; estructura, medida, obra civil y medios en
+  una línea; 06+07+08 y 11+12 agrupados; opcionales en su bloque.
+- **Dos tarifas:** la del distribuidor (`fotovoltaica-2026.csv`) y la de
+  partidas Sysefen (`fotovoltaica-partidas-2026.csv`, códigos FV-CC-NNN =
+  código de producto en Teamleader). Una partida sin coste sale a 0,
+  «pendiente de confirmar», sin confirmar y con incidencia: no se inventa.
+- **Cantidades** (§3 y §4 del documento): filas de paneles → raíles a barras,
+  uniones, ganchos ⌈L/sep⌉+1 por raíl, grapas 2(n−1) y 4, triángulos n+1,
+  lastre o anclaje químico (varilla + taco químico + malla); cables
+  2·L·S·1,10 y L·1,10; tubo/bandeja/zanja; protecciones; días de obra = base
+  por nº de paneles + extras × 330 €/día de coste; trámites por caso.
+- **Fuera** las partidas antiguas (PANEL 110 €, KIT_BASE, KIT_10, INV_6,
+  INV_10, MANO_OBRA por vatio): sus reglas quedan inactivas.
+- **Todo lo «por confirmar»** vive en `tablas_lookup` con esa palabra en
+  `notas` (días base y extras, separación de ganchos, barra comercial,
+  paneles por string y por fila, ancho de panel, producción específica,
+  % nocturno…). Se cambia ahí, sin tocar la app.
+- Generador: `herramientas/reglas-fotovoltaica.py` → `subir-a-supabase/
+  etapa72_fotovoltaica_capitulos.sql` (no va al repo: lleva precios) y
+  `fotovoltaica-reglas.json` para `pruebas/motor-solar.js`.
+
 ---
 
 ## 1 · Qué se quiere conseguir

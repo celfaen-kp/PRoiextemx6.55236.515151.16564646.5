@@ -83,6 +83,7 @@ a:hover{color:var(--tinta)}
 .pill-rojo{background:var(--rojo-cl);color:var(--rojo)}
 .chip{font:500 13px/1 var(--sans);padding:10px 13px;border-radius:99px;cursor:pointer;background:#fff;color:var(--t2);border:1px solid var(--l2)}
 .chip.on{background:var(--tinta);color:#fff;border-color:var(--tinta)}
+.chip.sel{background:var(--tinta);color:#fff;border-color:var(--tinta)} /* el elegido en el presupuesto suelto */
 .chip.alerta{background:var(--rojo);color:#fff;border-color:var(--rojo)}
 .chip.ok{background:var(--verde);color:#fff;border-color:var(--verde)}
 .wrap{display:flex;flex-wrap:wrap;gap:7px}
@@ -389,7 +390,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '20.3'; // versión visible de la app (única fuente)
+const APP_VERSION = '20.4'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -7192,6 +7193,22 @@ function presupuestoHTML(v, fichas) {
   </div>`;
 }
 
+/**
+ * Versión interna del presupuesto: lo que cuesta y el margen. Solo para
+ * quien ve costes (presupuestos y Administración); el cliente nunca lo ve
+ * (el PDF no lo lleva). Si hay líneas sin coste conocido se dice, para que
+ * el margen no se lea como exacto.
+ */
+function costeMargenHTML(coste, venta, sinCoste) {
+  if (!veCostes() || coste == null || !(Number(venta) > 0)) return '';
+  const c = Number(coste) || 0, v = Number(venta) || 0, m = v - c;
+  const pct = v ? Math.round((m / v) * 1000) / 10 : 0;
+  return `<div class="row" style="justify-content:space-between;margin-top:10px;padding:9px 11px;border-radius:12px;background:rgba(20,23,15,.045)">
+    <span class="tiny" style="font-size:12px">Interno · coste ${eur(c)}${sinCoste ? ' · ' + sinCoste + ' línea' + (sinCoste === 1 ? '' : 's') + ' sin coste' : ''}</span>
+    <span class="tiny" style="font-size:12px;color:${m >= 0 ? 'var(--verde-o)' : 'var(--rojo)'}">margen ${eur(m)} · ${String(pct).replace('.', ',')} %</span>
+  </div>`;
+}
+
 /** De "Calcular" para abajo: incidencias, líneas, totales, catálogo y guardar.
  *  Lo comparten la tarjeta de la visita y la pantalla de presupuesto suelto. */
 function presuPanelHTML() {
@@ -7212,7 +7229,7 @@ function presuPanelHTML() {
         ${s.lineas.map((l) => `<div style="padding:9px 0;border-bottom:1px solid var(--l1)">
           <div class="row" style="align-items:baseline;justify-content:space-between;gap:12px">
             <div class="grow" style="font:500 14px/1.3 var(--sans)">${esc(l.descripcion)}</div>
-            <div class="num" style="font-size:14px;flex:none">${eur(l.importe)}</div>
+            <div class="num" style="font-size:14px;flex:none${l.confirmada === false ? ';color:var(--ambar-o);font-size:12px' : ''}">${l.confirmada === false ? 'Pendiente de confirmar' : eur(l.importe)}</div>
           </div>
           ${l.detalle_tecnico ? `<div class="tiny" style="margin-top:3px;font-size:12px;line-height:1.35;color:var(--t2)">${esc(l.detalle_tecnico)}</div>` : ''}
           <div class="tiny" style="margin-top:3px;opacity:.75">${esc(String(l.cantidad))} ${esc(l.unidad || 'ud')} × ${eur(l.precio_tarifa)}${l.dto_linea_pct ? ' · −' + l.dto_linea_pct + '%' : ''}${l.origen === 'manual' ? ' · añadida a mano' : ''}</div>
@@ -7232,6 +7249,7 @@ function presuPanelHTML() {
           <span style="font:600 16px var(--sans)">Total sin IVA</span>
           <span class="num" style="font-size:22px">${eur(d.totales.total)}</span>
         </div>
+        ${costeMargenHTML(d.totales.coste, d.totales.total, d.totales.lineas_sin_coste)}
       </div>
 
       <div style="margin-top:18px;padding-top:12px;border-top:1px solid var(--l1)">
@@ -7404,6 +7422,11 @@ const presuNuevoVacio = () => ({
   // fotovoltaica: los kWp salen de los paneles, no se preguntan.
   paneles: '', wp: 510, bateria: '',
   inversor: 'fronius', fases: 'monofasico', bateria_marca: '', backup: false,
+  // montaje FV (desglose oct 2026): con esto salen estructura, cables,
+  // protecciones, medios, mano de obra y trámites.
+  cubierta: 'teja_arabe', anclaje: 'lastre', por_fila: '', dist_dc: '', dist_ac: '', dist_meter: '',
+  recorrido: 'fachada', zanja: '', plantas: 1, medio: 'escalera', wifi: 'buena', cuadro_estado: 'bien',
+  tierra: 'existe', excedentes: 'con_excedentes', subvencion: false, cargador: false, backup_tipo: 'parcial',
 });
 
 // Con qué baterías va cada inversor (sql/etapa47). La primera es la que pone
@@ -7422,8 +7445,14 @@ function datosDelSuelto(f) {
   const num = (v) => Number(String(v == null ? '' : v).replace(',', '.')) || 0;
   if (f.cat === 'solar') {
     const conBateria = num(f.bateria) > 0;
+    const n = Math.max(0, Math.min(400, Number(f.paneles) || 0));
+    // Las filas: tantas de «por fila» como quepan y una con el resto. Sin
+    // dato, no se mandan y el motor reparte con su valor por defecto.
+    const porFila = Math.max(0, Math.floor(num(f.por_fila)));
+    const filas = [];
+    if (n && porFila) { let q = n; while (q > 0) { filas.push({ paneles: Math.min(porFila, q) }); q -= porFila; } }
     return {
-      paneles_manual: Math.max(0, Math.min(400, Number(f.paneles) || 0)),
+      paneles_manual: n,
       wp_manual: num(f.wp),
       inversor_marca: f.inversor === 'enphase' ? 'enphase' : 'fronius',
       suministro: f.fases === 'trifasico' ? 'trifasico' : 'monofasico',
@@ -7431,6 +7460,23 @@ function datosDelSuelto(f) {
       baterias_kwh: num(f.bateria),
       bateria_marca: conBateria ? (f.bateria_marca || '') : '',
       backup: conBateria && !!f.backup,
+      backup_tipo: f.backup_tipo || 'parcial',
+      tipo_cubierta: f.cubierta || 'teja_arabe',
+      plana_anclaje: f.anclaje || 'lastre',
+      filas_paneles: filas,
+      distancia_cubierta_inversor_m: num(f.dist_dc),
+      distancia_inversor_cuadro_m: num(f.dist_ac),
+      distancia_cuadro_contador_m: num(f.dist_meter),
+      recorrido_cableado: f.recorrido || 'fachada',
+      zanja_m: f.recorrido === 'tubo_enterrado' ? num(f.zanja) : 0,
+      plantas: Math.max(1, Number(f.plantas) || 1),
+      medio_elevacion: f.medio || 'escalera',
+      wifi_inversor: f.wifi || 'buena',
+      estado_cuadro: f.cuadro_estado || 'bien',
+      toma_tierra: f.tierra || 'existe',
+      excedentes: f.excedentes || 'con_excedentes',
+      subvencion: !!f.subvencion,
+      cargador_ve: !!f.cargador,
     };
   }
   if (f.cat === 'aerotermia') {
@@ -7488,7 +7534,7 @@ A.presuSueltoChip = (k, v) => {
   if (!V.suelto) return;
   // Los chips de sí/no mandan '' para apagarse y '1' para encenderse.
   V.suelto[k] = v === '' ? false : (/^\d+$/.test(String(v)) && k !== 'cat' ? Number(v) : v);
-  if (['sustituye', 'apoyo', 'limpieza', 'backup', 'recuperar'].includes(k)) V.suelto[k] = v !== '';
+  if (['sustituye', 'apoyo', 'limpieza', 'backup', 'recuperar', 'subvencion', 'cargador'].includes(k)) V.suelto[k] = v !== '';
   // Si se cambia de inversor, una batería que no va con él se quita.
   if (k === 'inversor' && !(BATERIAS_DE[v] || []).some(([m]) => m === V.suelto.bateria_marca)) V.suelto.bateria_marca = '';
   render();
@@ -8073,6 +8119,8 @@ function camposAeroHTML(f) {
 /** Fotovoltaica: paneles, inversor, fases y batería. Los kWp salen solos. */
 function camposSolarHTML(f) {
   const n = Number(f.paneles) || 0, wp = Number(f.wp) || 510;
+  const num = (v) => Number(String(v == null ? '' : v).replace(',', '.')) || 0;
+  const esPlana = ['plana_transitable', 'plana_no_transitable', 'suelo'].includes(f.cubierta);
   const marcas = BATERIAS_DE[f.inversor === 'enphase' ? 'enphase' : 'fronius'];
   const chip = (k, v, t, actual) => `<div class="chip ${String(actual != null ? actual : f[k]) === v ? 'sel' : ''}" data-a="presuSueltoChip" data-k="${k}" data-v="${v}">${t}</div>`;
   const kwp = Math.round(n * wp) / 1000;
@@ -8102,7 +8150,40 @@ function camposSolarHTML(f) {
       <div class="wrap">${chip('backup', '', 'Sin backup', f.backup ? '1' : '')}${chip('backup', '1', 'Con backup', f.backup ? '1' : '')}</div>
       <div class="tiny" style="margin-top:8px">Con backup la casa sigue con luz si se va la red. ${
         (f.bateria_marca || marcas[0][0]) === 'tesla' ? 'Con Tesla: Backup Gateway 2.'
-        : f.inversor === 'enphase' ? 'Con Enphase: IQ System Controller.' : 'Con Fronius: Backup Switch.'}</div>`;
+        : f.inversor === 'enphase' ? 'Con Enphase: IQ System Controller.' : 'Con Fronius: Backup Switch.'}</div>
+      ${f.backup && num(f.bateria) > 0 ? `<div class="wrap" style="margin-top:8px">${chip('backup_tipo', 'parcial', 'Cargas críticas')}${chip('backup_tipo', 'total', 'Toda la vivienda')}</div>` : ''}
+
+      <div class="h2" style="margin-top:26px">Montaje</div>
+      <div class="tiny" style="margin-top:4px">Con esto salen la estructura, los cables, las protecciones, los medios y los días de trabajo.</div>
+      <div class="lbl" style="margin:14px 0 8px">Cubierta</div>
+      <div class="wrap">${chip('cubierta', 'teja_arabe', 'Teja')}${chip('cubierta', 'chapa_sandwich', 'Chapa / sándwich')}${chip('cubierta', 'plana_transitable', 'Plana')}${chip('cubierta', 'suelo', 'Suelo')}${chip('cubierta', 'pergola', 'Pérgola')}</div>
+      ${esPlana ? `<div class="wrap" style="margin-top:8px">${chip('anclaje', 'lastre', 'Con lastre')}${chip('anclaje', 'anclaje_quimico', 'Anclaje químico')}</div>` : ''}
+      <div class="row g8" style="margin-top:14px">
+        <div class="grow"><div class="lbl">Paneles por fila</div>
+          <input class="inp" data-f="presuCampo" data-k="por_fila" value="${esc(String(f.por_fila ?? ''))}" inputmode="numeric" placeholder="10" style="margin-top:8px"></div>
+        <div class="grow"><div class="lbl">Plantas</div>
+          <input class="inp" data-f="presuCampo" data-k="plantas" value="${esc(String(f.plantas ?? 1))}" inputmode="numeric" style="margin-top:8px"></div>
+      </div>
+      <div class="lbl" style="margin:14px 0 8px">Metros de cable</div>
+      <div class="row g8">
+        <div class="grow"><input class="inp" data-f="presuCampo" data-k="dist_dc" value="${esc(String(f.dist_dc ?? ''))}" inputmode="decimal" placeholder="Paneles → inversor"></div>
+        <div class="grow"><input class="inp" data-f="presuCampo" data-k="dist_ac" value="${esc(String(f.dist_ac ?? ''))}" inputmode="decimal" placeholder="Inversor → cuadro"></div>
+        <div class="grow"><input class="inp" data-f="presuCampo" data-k="dist_meter" value="${esc(String(f.dist_meter ?? ''))}" inputmode="decimal" placeholder="Cuadro → contador"></div>
+      </div>
+      <div class="lbl" style="margin:14px 0 8px">Por dónde va</div>
+      <div class="wrap">${chip('recorrido', 'fachada', 'Fachada')}${chip('recorrido', 'patinillo', 'Patinillo')}${chip('recorrido', 'interior', 'Interior')}${chip('recorrido', 'tubo_enterrado', 'Enterrado')}</div>
+      ${f.recorrido === 'tubo_enterrado' ? `<input class="inp" data-f="presuCampo" data-k="zanja" value="${esc(String(f.zanja ?? ''))}" inputmode="decimal" placeholder="Metros de zanja" style="margin-top:8px">` : ''}
+      <div class="lbl" style="margin:14px 0 8px">Cómo se sube el material</div>
+      <div class="wrap">${chip('medio', 'escalera', 'Escalera')}${chip('medio', 'andamio', 'Andamio')}${chip('medio', 'plataforma', 'Plataforma')}${chip('medio', 'grua', 'Grúa')}</div>
+      <div class="lbl" style="margin:14px 0 8px">Cuadro general</div>
+      <div class="wrap">${chip('cuadro_estado', 'bien', 'Bien')}${chip('cuadro_estado', 'sin_espacio', 'Sin espacio')}${chip('cuadro_estado', 'antiguo', 'Antiguo')}</div>
+      <div class="lbl" style="margin:14px 0 8px">Toma de tierra</div>
+      <div class="wrap">${chip('tierra', 'existe', 'Existe')}${chip('tierra', 'no_existe', 'No existe')}${chip('tierra', 'valor_alto', 'Valor alto')}</div>
+      <div class="lbl" style="margin:14px 0 8px">WiFi donde va el inversor</div>
+      <div class="wrap">${chip('wifi', 'buena', 'Buena')}${chip('wifi', 'mala', 'Mala · repetidor')}</div>
+      <div class="lbl" style="margin:14px 0 8px">Excedentes y trámites</div>
+      <div class="wrap">${chip('excedentes', 'con_excedentes', 'Con excedentes')}${chip('excedentes', 'sin_excedentes', 'Sin excedentes')}</div>
+      <div class="wrap" style="margin-top:8px">${chip('subvencion', f.subvencion ? '' : '1', 'Pide subvención', f.subvencion ? '1' : '')}${chip('cargador', f.cargador ? '' : '1', 'Cargador de coche', f.cargador ? '1' : '')}</div>`;
 }
 
 
@@ -8256,6 +8337,54 @@ function presuLineasEditHTML(d) {
  * líneas con su precio y el total, y debajo de cada artículo su detalle
  * técnico, que se escribe una vez por producto y sale igual en todos.
  * ------------------------------------------------------------------------- */
+/**
+ * Cómo se enseña cada capítulo al cliente (desglose FV, oct 2026, §2): los
+ * equipos detallados; estructura, cableado, protecciones, medios y mano de
+ * obra en UNA línea con su importe (lo que lleva dentro, en letra pequeña);
+ * pequeño material junto con cableado y protecciones; transporte junto con
+ * la mano de obra; los opcionales en su propio bloque. Los capítulos se
+ * reconocen por el «NN · » con que empieza la sección. Las otras categorías
+ * (y las secciones sin número) se imprimen como siempre, línea a línea.
+ */
+const FV_IMPRESION = {
+  '02': 'una', '05': 'una', '09': 'una', '10': 'una',
+  '06': 'agrupa:0608', '07': 'agrupa:0608', '08': 'agrupa:0608',
+  '11': 'agrupa:1112', '12': 'agrupa:1112',
+  '14': 'opcional',
+};
+const FV_GRUPOS = {
+  '0608': 'Cableado, canalizaciones, protecciones y pequeño material',
+  '1112': 'Mano de obra de instalación, transporte y gestión de residuos',
+};
+function bloquesImpresion(categoria, secciones) {
+  if (categoria !== 'solar') return secciones;
+  const suma = (ls) => Math.round(ls.reduce((t, l) => t + Number(l.precio_venta || 0), 0) * 100) / 100;
+  const unaLinea = (titulo, ls) => ({
+    descripcion: titulo, resumen: true, precio_venta: suma(ls),
+    detalle_tecnico: ls.map((l) => l.descripcion).filter((x, i, a) => a.indexOf(x) === i).join(' · '),
+  });
+  const salida = [];
+  const grupos = {};
+  let opcionales = null;
+  secciones.forEach((s) => {
+    const m = /^(\d\d) · (.+)$/.exec(s.nombre || '');
+    const modo = m ? FV_IMPRESION[m[1]] : null;
+    if (!modo) { salida.push(s); return; }
+    if (modo === 'una') { salida.push({ nombre: s.nombre, lineas: [unaLinea(m[2], s.lineas)] }); return; }
+    if (modo === 'opcional') {
+      if (!opcionales) { opcionales = { nombre: 'Opcionales incluidos en el total', lineas: [] }; }
+      opcionales.lineas = opcionales.lineas.concat(s.lineas);
+      return;
+    }
+    const g = modo.split(':')[1];
+    if (!grupos[g]) { grupos[g] = { nombre: g.slice(0, 2) + ' · ' + FV_GRUPOS[g], lineas: [], fuente: [] }; salida.push(grupos[g]); }
+    grupos[g].fuente = grupos[g].fuente.concat(s.lineas);
+  });
+  Object.keys(grupos).forEach((g) => { grupos[g].lineas = [unaLinea(FV_GRUPOS[g], grupos[g].fuente)]; });
+  if (opcionales) salida.push(opcionales);
+  return salida;
+}
+
 function imprimirPresupuestoHTML(d) {
   const lineas = (d.lineas || []).slice().sort((a, b) => (a.orden || 0) - (b.orden || 0));
   const cli = d.cliente || null;
@@ -8285,14 +8414,14 @@ function imprimirPresupuestoHTML(d) {
       ${d.visita && d.visita.codigo ? `<tr><td style="padding:3px 0;color:#666">Visita</td><td>${esc(d.visita.codigo)}</td></tr>` : ''}
     </table>
 
-    ${secciones.map((s) => `<div style="margin-top:18px">
+    ${bloquesImpresion(d.categoria, secciones).map((s) => `<div style="margin-top:18px">
       <div style="font:600 10px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:#666;margin-bottom:5px">${esc(s.nombre)}</div>
       <table style="width:100%;font:400 12px var(--sans);border-collapse:collapse">
         ${s.lineas.map((l) => `<tr>
           <td style="padding:6px 0;border-bottom:1px solid #eee;vertical-align:top">
             <div style="font-weight:600">${esc(l.descripcion)}</div>
             ${l.detalle_tecnico ? `<div style="font:400 10px/1.4 var(--sans);color:#666;margin-top:2px">${esc(l.detalle_tecnico)}</div>` : ''}
-            <div style="font:400 10px var(--mono);color:#666;margin-top:2px">${esc(String(l.cantidad))} ${esc(l.unidad || 'ud')} × ${eur(l.precio_tarifa)}${l.dto_linea_pct ? ' · −' + l.dto_linea_pct + '%' : ''}</div>
+            ${l.resumen ? '' : `<div style="font:400 10px var(--mono);color:#666;margin-top:2px">${esc(String(l.cantidad))} ${esc(l.unidad || 'ud')} × ${eur(l.precio_tarifa)}${l.dto_linea_pct ? ' · −' + l.dto_linea_pct + '%' : ''}</div>`}
           </td>
           <td style="padding:6px 0;border-bottom:1px solid #eee;text-align:right;white-space:nowrap;vertical-align:top;font-family:var(--cond);font-weight:600">${eur(l.precio_venta)}</td>
         </tr>`).join('')}
@@ -8418,7 +8547,7 @@ function vPresupuestoVer() {
       ${lineas.map((l) => `<div style="padding:9px 0;border-bottom:1px solid var(--l1)">
         <div class="row" style="align-items:baseline;justify-content:space-between;gap:12px">
           <div class="grow" style="font:500 14px/1.3 var(--sans)">${esc(l.descripcion)}</div>
-          <div class="num" style="font-size:14px;flex:none">${eur(l.precio_venta)}</div>
+          <div class="num" style="font-size:14px;flex:none${l.confirmada === false ? ';color:var(--ambar-o);font-size:12px' : ''}">${l.confirmada === false ? 'Pendiente de confirmar' : eur(l.precio_venta)}</div>
         </div>
         ${l.detalle_tecnico ? `<div class="tiny" style="margin-top:3px;font-size:12px;line-height:1.35;color:var(--t2)">${esc(l.detalle_tecnico)}</div>` : ''}
         <div class="tiny" style="margin-top:3px;opacity:.75">${esc(String(l.cantidad))} ${esc(l.unidad || 'ud')} × ${eur(l.precio_tarifa)}${l.dto_linea_pct ? ' · −' + l.dto_linea_pct + '%' : ''}</div>
@@ -8428,6 +8557,7 @@ function vPresupuestoVer() {
         <span class="num" style="font-size:22px">${eur(d.total_venta)}</span>
       </div>
       ${d.dto_global_pct ? `<div class="tiny" style="margin-top:6px;text-align:right">Incluye −${d.dto_global_pct} % al pie</div>` : ''}
+      ${costeMargenHTML(d.total_coste, d.total_venta, lineas.filter((l) => l.precio_coste == null).length)}
       <div class="tiny" style="margin-top:12px">Calculado con las reglas ${esc(d.motor_version || '')}. Queda congelado con la tarifa de ese día.</div>
       <div class="row g8" style="margin-top:14px">
         <button class="btn btn-gris" data-a="presuPdf" style="border-radius:99px">PDF</button>

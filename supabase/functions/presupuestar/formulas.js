@@ -15,7 +15,7 @@
 //   aritmética        + - * /   y paréntesis
 //   comparaciones     =  !=  <  <=  >  >=
 //   lógica            y   o   no
-//   funciones         min max techo piso redondea si lookup cuenta suma
+//   funciones         min max techo piso redondea si lookup cuenta suma contiene
 //
 // No hay acceso a nada más: ni objetos, ni propiedades, ni llamadas fuera de esa
 // lista. Una fórmula que intente otra cosa no se ejecuta, da error.
@@ -41,6 +41,13 @@ const FUNCIONES = {
     const n = Number(String(v == null ? 0 : v).replace(',', '.'));
     return t + (Number.isFinite(n) ? n : 0);
   }, 0),
+  // contiene(lista, 'valor') → 1 si ese valor está en la lista (los campos
+  // de elegir varios, como cargas_previstas); también vale con un texto suelto.
+  contiene: (l, v) => {
+    const buscado = String(v == null ? '' : v);
+    if (Array.isArray(l)) return l.some((x) => String(x == null ? '' : x) === buscado) ? 1 : 0;
+    return String(l == null ? '' : l) === buscado ? 1 : 0;
+  },
 };
 
 function numero(v) {

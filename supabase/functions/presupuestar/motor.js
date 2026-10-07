@@ -21,7 +21,7 @@
 
 import { evaluar, evaluarNumero, numero, verdad } from './formulas.js';
 
-const MOTOR_VERSION = '1.1';
+const MOTOR_VERSION = '1.2';
 
 /** ¿Se cumple una condición {campo: valor} contra el ámbito? */
 function cumple(condicion, ambito) {
@@ -54,7 +54,19 @@ function mismo(a, b) {
  *                concepto_libre, detalle_tecnico, precio_fijo, formula_cantidad, orden}] } },
  *   manoObra:  [{concepto, formula_horas, precio_fijo, precio_hora, condicion}],
  *   productos: { <referencia>: {referencia, nombre, familia, unidad, precio_tarifa,
- *                detalle_tecnico, especificaciones, iva} },
+ *                descuento_proveedor, detalle_tecnico, especificaciones, iva, atributos} },
+ *
+ *   PRECIOS (desde la 1.2): cada línea sale con `precio_coste` (lo que le cuesta
+ *   a Sysefen) y `precio_tarifa` (lo que ve el cliente, antes de descuentos).
+ *   · Si la categoría tiene el coeficiente `recargo_sobre_coste` en sus tablas
+ *     (fotovoltaica: 1,30), el precio del catálogo y el fijo de las partidas se
+ *     toman como COSTE y el de venta es coste × recargo, redondeado al céntimo,
+ *     UNA vez por línea. Un producto con atributos.sin_recargo (los trámites,
+ *     que ya vienen como precio de venta) se queda como está.
+ *   · Sin ese coeficiente (aerotermia, aire) todo sigue como antes: el precio
+ *     del catálogo es PVP y el coste es PVP × (1 − descuento de proveedor).
+ *   · Un producto a 0 € no es gratis: es un precio PENDIENTE. La línea sale sin
+ *     confirmar y con su incidencia, y no se inventa nada.
  *   dtoLinea:  [{familia, descuento_pct}]      (puede ir vacío: sin descuentos)
  * }
  */
@@ -85,6 +97,19 @@ export function calcular(categoria, datos, config) {
       avisar('error', 'coeficiente_ausente', 'Falta el coeficiente ' + clave + ' / ' + entrada + '.');
       return 0;
     },
+  };
+
+  // El recargo sobre coste de esta categoría, si lo tiene (ver cabecera).
+  const recargoFila = (cfg.lookup || []).find((x) => x.clave === 'recargo_sobre_coste' && x.entrada === 'defecto');
+  const recargo = recargoFila && numero(recargoFila.valor) > 0 ? numero(recargoFila.valor) : 1;
+  const alCentimo = (n) => Math.round(numero(n) * 100 + 1e-7) / 100;
+  // De un precio base (catálogo o fijo) a {coste, venta} según el modelo de la categoría.
+  const precios = (base, dtoProveedor, sinRecargo) => {
+    if (recargo !== 1 && !sinRecargo) {
+      const coste = alCentimo(numero(base) * (1 - numero(dtoProveedor) / 100));
+      return { coste, venta: alCentimo(coste * recargo) };
+    }
+    return { coste: alCentimo(numero(base) * (1 - numero(dtoProveedor) / 100)), venta: alCentimo(base) };
   };
 
   /* --- 1 · variables derivadas, en su orden ------------------------------- */
@@ -134,10 +159,18 @@ export function calcular(categoria, datos, config) {
       avisar('error', 'producto_desconocido', 'No está en el catálogo la referencia ' + ref + '.');
       return Object.assign({
         producto_ref: ref, descripcion: conDonde(ref + ' (no está en la tarifa)'), cantidad,
-        unidad: 'ud', precio_tarifa: 0, dto_linea_pct: 0, iva: 21, confirmada: false,
+        unidad: 'ud', precio_tarifa: 0, precio_coste: 0, dto_linea_pct: 0, iva: 21, confirmada: false,
       }, extra);
     }
     const dto = (cfg.dtoLinea || []).find((d) => d.familia === p.familia);
+    const atr = p.atributos && typeof p.atributos === 'object' ? p.atributos : {};
+    const pr = precios(p.precio_tarifa, p.descuento_proveedor, verdad(atr.sin_recargo));
+    // Sin precio no hay precio: la línea sale, con su cantidad, pero sin
+    // confirmar y avisando. Así el presupuesto enseña lo que falta por cotizar.
+    const pendiente = !(numero(p.precio_tarifa) > 0);
+    if (pendiente) {
+      avisar('aviso', 'precio_pendiente', 'Falta el precio de ' + p.referencia + ' · ' + p.nombre + ': pendiente de confirmar.');
+    }
     return Object.assign({
       producto_ref: p.referencia,
       descripcion: conDonde(p.nombre),
@@ -145,10 +178,11 @@ export function calcular(categoria, datos, config) {
       especificaciones: p.especificaciones || [],
       cantidad,
       unidad: p.unidad || 'ud',
-      precio_tarifa: numero(p.precio_tarifa),
+      precio_tarifa: pr.venta,
+      precio_coste: pr.coste,
       dto_linea_pct: dto ? numero(dto.descuento_pct) : 0,
       iva: p.iva == null ? 21 : numero(p.iva),
-      confirmada: true,
+      confirmada: !pendiente,
     }, extra);
   };
 
@@ -181,7 +215,8 @@ export function calcular(categoria, datos, config) {
         cantidad,
         // La unidad de la partida (etapa 51): m para la tubería, kg para el gas.
         unidad: item.unidad || 'ud',
-        precio_tarifa: numero(item.precio_fijo),
+        precio_tarifa: precios(item.precio_fijo, 0, false).venta,
+        precio_coste: precios(item.precio_fijo, 0, false).coste,
         dto_linea_pct: 0,
         iva: 21,
         confirmada: true,
@@ -265,7 +300,8 @@ export function calcular(categoria, datos, config) {
     mete({
       producto_ref: null, descripcion: m.concepto, detalle_tecnico: null, especificaciones: [],
       cantidad, unidad: m.formula_horas ? 'h' : 'ud',
-      precio_tarifa: precio, dto_linea_pct: 0, iva: 21,
+      precio_tarifa: precios(precio, 0, false).venta, precio_coste: precios(precio, 0, false).coste,
+      dto_linea_pct: 0, iva: 21,
       seccion: 'Mano de obra', origen: 'mano_obra', origen_regla_id: null,
       origen_inputs: { formula: m.formula_horas || null },
       confirmada: true,
@@ -281,7 +317,7 @@ export function calcular(categoria, datos, config) {
   }
 
   lineas.forEach((l, i) => { l.orden = i + 1; });
-  return { lineas, incidencias, variables, motor_version: MOTOR_VERSION };
+  return { lineas, incidencias, variables, recargo_sobre_coste: recargo, motor_version: MOTOR_VERSION };
 }
 
 export { MOTOR_VERSION };

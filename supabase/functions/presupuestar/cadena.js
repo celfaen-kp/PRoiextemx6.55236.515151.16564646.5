@@ -91,3 +91,18 @@ export function cadenaPrecios(lineas, dtoGlobalPct) {
     total: (bruto - dtoLinea - dtoGlobal) / 100,
   };
 }
+
+/**
+ * Lo que cuesta el presupuesto a Sysefen: suma de cantidad × precio_coste de
+ * cada línea, al céntimo. Una línea sin coste conocido (precio_coste nulo:
+ * la puso la persona a mano) no suma y se dice cuántas hay, para que el margen
+ * que salga no se lea como exacto.
+ */
+export function totalCoste(lineas) {
+  let c = 0, sinCoste = 0;
+  (lineas || []).forEach((l) => {
+    if (l.precio_coste == null || l.precio_coste === '') { sinCoste++; return; }
+    c += importeBruto(l.cantidad == null ? 1 : l.cantidad, aCentimos(l.precio_coste));
+  });
+  return { total: c / 100, lineas_sin_coste: sinCoste };
+}
