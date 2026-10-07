@@ -390,7 +390,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '20.4'; // versión visible de la app (única fuente)
+const APP_VERSION = '20.5'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -2425,6 +2425,25 @@ A.editarObra = (id) => {
   V.crmBuscar = { texto: '', busy: false, hecho: false, error: null, filas: [] };
   V.view = 'alta'; render();
 };
+/**
+ * Al cambiar lo que lleva una obra (se marcó aerotermia y era fotovoltaica),
+ * el proyecto tiene que seguirla: las fases de las categorías que ya no van
+ * se quitan, salvo las que tengan avance apuntado (esas se dejan y se avisa,
+ * que borrar trabajo hecho no es cosa de un despiste al marcar); y las de las
+ * categorías nuevas se generan de la plantilla. Lo común (pedido, replanteo,
+ * cobro) no se toca.
+ */
+async function ajustarFasesAlCambiarCategorias(obraId, categorias) {
+  try {
+    const fases = (S.fases || []).filter((f) => f.obra_id === obraId && f.categoria);
+    const sobran = fases.filter((f) => !categorias.includes(f.categoria));
+    const conAvance = sobran.filter((f) => (f.pct || 0) > 0 || f.hecha_en);
+    await Promise.all(sobran.filter((f) => !conAvance.includes(f)).map((f) => Sysefen.db.borrarFase(f.id)));
+    await Sysefen.db.generarFasesObra(obraId);
+    await sincronizarFases();
+    if (conAvance.length) avisar('Se han quitado las fases que no llevaban avance. ' + conAvance.length + (conAvance.length === 1 ? ' fase tenía' : ' fases tenían') + ' avance apuntado y se han dejado: quítalas a mano si sobran.');
+  } catch (e) { /* sin la etapa 63 no hay fases que ajustar */ }
+}
 A.guardarObra = async () => {
   const d = V.draft;
   if (!(d.nombre || '').trim() && !(d.cliente || '').trim()) { avisar('Pon al menos el cliente o el nombre de la obra.'); return; }
@@ -2447,6 +2466,7 @@ A.guardarObra = async () => {
     let fila;
     if (d.id) {
       fila = await Sysefen.db.actualizarObra(d.id, campos);
+      if (campos.categorias) await ajustarFasesAlCambiarCategorias(d.id, campos.categorias);
     } else {
       fila = await Sysefen.db.crearObra(campos);
     }

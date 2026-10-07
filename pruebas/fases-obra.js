@@ -43,4 +43,28 @@ igual('jefe: solo el grupo de la categoría', fasesAgrupadas('o1').map((x) => x.
 igual('jefe: el avance se calcula con esas', avanceObra('o1').pct, Math.round((100 + 75 + 0) / 3));
 comprueba('jefe: en el parte no sale el material', avanceParteHTML({ obraId: 'o1', avance: {} }).indexOf('Recepción de material') === -1);
 
-resultado();
+titulo('al desmarcar una categoría se van sus fases (V20.5)');
+S.users = [{ id: 'u0', nombre: 'Enzo', rol: 'admin', activo: true }]; V.user = { id: 'u0' };
+S.fases = [
+  { id: 'c1', obra_id: 'o2', categoria: null, orden: 10, nombre: 'Pedido de material', pct: 0 },
+  { id: 'a1', obra_id: 'o2', categoria: 'AE', orden: 210, nombre: 'Unidad exterior', pct: 0 },
+  { id: 'a2', obra_id: 'o2', categoria: 'AE', orden: 220, nombre: 'Sala de máquinas', pct: 40 },
+  { id: 'v1', obra_id: 'o2', categoria: 'FV', orden: 110, nombre: 'Estructura', pct: 0 },
+];
+var borradas = [], generada = null, avisos = [];
+var dbAntes = window.Sysefen.db;
+window.Sysefen.db = Object.assign({}, dbAntes, {
+  borrarFase: function (id) { borradas.push(id); return Promise.resolve(); },
+  generarFasesObra: function (id) { generada = id; return Promise.resolve(1); },
+  listarFases: function () { return Promise.resolve(S.fases.filter(function (f) { return borradas.indexOf(f.id) < 0; })); },
+});
+var avisarAntes = avisar; avisar = function (t) { avisos.push(t); };
+ajustarFasesAlCambiarCategorias('o2', ['FV']).then(function () {
+  igual('se quita la de aerotermia sin avance', borradas.join(','), 'a1');
+  comprueba('la que tenía avance se deja', S.fases.some(function (f) { return f.id === 'a2'; }));
+  comprueba('y se avisa de ello', avisos.length === 1 && avisos[0].indexOf('1 fase tenía') >= 0);
+  comprueba('las comunes y las de FV no se tocan', S.fases.some(function (f) { return f.id === 'c1'; }) && S.fases.some(function (f) { return f.id === 'v1'; }));
+  igual('y se generan las que falten de las categorías nuevas', generada, 'o2');
+  window.Sysefen.db = dbAntes; avisar = avisarAntes;
+  resultado();
+});
