@@ -88,7 +88,7 @@ PARTIDAS = [
     ('FV-02-007', 'Triángulo / estructura inclinada para cubierta plana', 'ud', {}, ''),
     ('FV-02-008', 'Lastre (bloque de hormigón o bandeja)', 'ud', {}, 'Cantidad orientativa: el cálculo de viento del fabricante manda'),
     ('FV-02-009', 'Anclaje químico (varilla roscada, taco químico y malla)', 'ud', {}, 'Un kit por anclaje'),
-    ('FV-02-010', 'Tornillería inoxidable', 'lote', {}, ''),
+    ('FV-02-010', 'Fijación de raíl a gancho / soporte (tornillo martillo M8 + tuerca inox)', 'ud', {}, 'Una por gancho, soporte de chapa o anclaje'),
     ('FV-02-011', 'Sellador / impermeabilización de perforaciones', 'ud', {}, 'Cartucho; anclajes por cartucho en tablas_lookup'),
     ('FV-02-012', 'Teja de reposición', 'ud', {}, ''),
     ('FV-02-013', 'Pinza / puente de tierra de estructura', 'ud', {}, ''),
@@ -222,7 +222,7 @@ LOOKUP = [
     ('wp_panel', 'defecto', 510, 'Vatios del panel si no se dicen.'),
     ('paneles_por_fila', 'defecto', 10, 'Paneles por fila si la visita no apunta las filas. POR CONFIRMAR.'),
     ('ancho_panel_m', 'defecto', 1.134, 'Ancho del panel en vertical (m). POR CONFIRMAR con la ficha del panel que se use.'),
-    ('largo_barra_m', 'defecto', 4.2, 'Largo de la barra comercial de raíl (m). POR CONFIRMAR con el fabricante de estructura.'),
+    ('largo_barra_m', 'defecto', 2.35, 'Largo de la barra comercial de raíl (m). 2,35 m es el perfil G1 Sunfer de Obramat; cambiar si se compra otro. POR CONFIRMAR.'),
     ('separacion_ganchos_m', 'defecto', 1.0, 'Separación máxima entre ganchos de teja (m). POR CONFIRMAR según fabricante.'),
     ('soportes_chapa_por_panel', 'defecto', 4, 'Soportes por panel en chapa / sándwich. Habitual 4; POR CONFIRMAR.'),
     ('anclajes_por_triangulo', 'defecto', 2, 'Anclajes químicos por triángulo en plana anclada. POR CONFIRMAR.'),
@@ -357,7 +357,7 @@ regla('FV-02-006', E, '4 * n_filas', '02', sub=7, notas='4 por fila.')
 regla('FV-02-007', {'tipo_estructura': 'plana'}, 'n_triangulos', '02', sub=8, notas='Paneles de la fila + 1, por fila.')
 regla('FV-02-008', {'tipo_estructura': 'plana'}, "con_lastre * n_triangulos * lookup('lastres_por_triangulo', 'defecto')", '02', sub=6, notas='Orientativo: manda el cálculo de viento del fabricante.')
 regla('FV-02-009', {'tipo_estructura': 'plana'}, 'n_anclajes', '02', sub=6, notas='Varilla, taco químico y malla por anclaje.')
-regla('FV-02-010', E, HAY, '02', sub=4, notas='Un lote.')
+regla('FV-02-010', E, "n_ganchos + n_anclajes + si(tipo_estructura = 'chapa', n_paneles * lookup('soportes_chapa_por_panel', 'defecto'), 0)", '02', sub=4, notas='Una fijación por gancho, soporte o anclaje.')
 regla('FV-02-011', E, "techo((n_anclajes + si(tipo_estructura = 'chapa', n_paneles * lookup('soportes_chapa_por_panel', 'defecto'), 0)) / lookup('anclajes_por_cartucho', 'defecto'))", '02', sub=4,
       notas='Un cartucho cada X perforaciones (anclajes químicos y soportes de chapa).')
 regla('FV-02-012', {'tipo_estructura': 'teja'}, 'tejas_reposicion', '02', sub=3, notas='Las que se apuntaron en la visita.')
