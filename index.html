@@ -92,7 +92,7 @@ a:hover{color:var(--tinta)}
 .camino .p.ahora i{background:var(--ambar)}
 .camino .p.saltado i{background:rgba(61,143,74,.35)}
 .camino .p.parado i{background:var(--rojo)}
-.camino .p b{display:block;font:500 9.5px/1.2 var(--mono);letter-spacing:.04em;text-transform:uppercase;color:var(--t3);margin-top:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.camino .p b{display:block;font:500 9px/1.2 var(--mono);letter-spacing:0;text-transform:uppercase;color:var(--t3);margin-top:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .camino .p.ahora b{color:var(--ambar-o);font-weight:600}
 .camino .p.hecho b{color:var(--t2)}
 .camino.oscuro .p i{background:rgba(255,255,255,.14)}
@@ -407,7 +407,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '20.9'; // versión visible de la app (única fuente)
+const APP_VERSION = '20.10'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -8840,7 +8840,19 @@ async function anotar(clienteId, tipo, texto) {
     if (V.view === 'clienteVer' && V.clienteVerId === clienteId) render();
   } catch (e) { /* sin la etapa 71 no hay bitácora */ }
 }
-const ultimaNota = (c) => ((V.bitacora[c.id] || []).find((b) => ['llamada', 'whatsapp', 'email', 'nota'].includes(b.tipo)) || (V.bitacora[c.id] || [])[0] || null);
+// Lo último que se habló con el cliente. El formulario de la web (lo que pidió
+// por Meta o por la web) no cuenta: ya tiene su sitio en la ficha y en la lista
+// solo hace ruido.
+const esNotaWeb = (c, b) => {
+  const t = String(b.texto || '');
+  if (/lead meta ads|formulario (instant[aá]neo|web)|^sysefen:/i.test(t)) return true;
+  const m = String(c.motivo_web || '').trim();
+  return m.length > 20 && t.slice(0, 40) === m.slice(0, 40);
+};
+const ultimaNota = (c) => {
+  const bs = (V.bitacora[c.id] || []).filter((b) => !esNotaWeb(c, b));
+  return bs.find((b) => ['llamada', 'whatsapp', 'email', 'nota'].includes(b.tipo)) || bs[0] || null;
+};
 // Próxima acción: «llamar el jueves», con fecha y quién.
 A.segAccionAbrir = (id) => { const c = agCliente(id); if (!c) return; V.sheet = { tipo: 'segAccion', id, texto: c.proxima_accion || '', fecha: c.proxima_accion_at || siguienteLaborable(hoyISO()), quien: c.proxima_accion_por || miEmpId() || null, busy: false }; render(); };
 A.segAccionGuardar = async () => {
@@ -8961,7 +8973,7 @@ function tableroHTML() {
     ${col.clientes.map(({ c, e }) => { const un = ultimaNota(c); const vencida = c.proxima_accion_at && c.proxima_accion_at < hoy; return `<div class="tb-card" data-a="ag_abrirCliente" data-id="${c.id}" style="border-left-color:${e.color}">
       <div class="row" style="justify-content:space-between;align-items:baseline;gap:8px"><div class="n">${esc(c.nombre)}</div>${importe(c) ? `<span class="num" style="font-size:13px;white-space:nowrap">${importe(c)}</span>` : ''}</div>
       <div class="s">${esc([agTipoNombre(c), c.poblacion].filter(Boolean).join(' · '))}${c.contacto_estado ? ' · ' + esc(agContactadoTxt(c)) : ''}</div>
-      <div style="margin-top:7px">${caminoHTML(c)}</div>
+      <div style="margin-top:7px">${caminoHTML(c, false, true)}</div>
       ${c.proxima_accion ? `<div class="a ${vencida ? 'vence' : ''}">${esc(c.proxima_accion)}${c.proxima_accion_at ? ' · ' + esc(fechaCorta(c.proxima_accion_at + 'T12:00')) : ''}${c.proxima_accion_por ? ' · ' + esc(agNombreEmp(c.proxima_accion_por)) : ''}</div>` : ''}
       ${un ? `<div class="s" style="margin-top:5px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">${esc(BIT_TIPOS[un.tipo] || '')}: ${esc(un.texto)}</div>` : ''}
     </div>`; }).join('') || '<div class="tiny" style="padding:6px 2px">Nadie</div>'}
@@ -9004,7 +9016,7 @@ function presuQueManda(c) {
  * rechazado, el camino se para ahí. Así, en la lista, de un vistazo se ve en
  * qué punto está cada uno sin entrar en la ficha.
  * ------------------------------------------- */
-const CAMINO_PASOS = [['contacto', 'Contacto'], ['cita', 'Cita'], ['visita', 'Visita'], ['presupuesto', 'Presup.'], ['enviado', 'Enviado'], ['respuesta', 'Respuesta'], ['obra', 'Obra']];
+const CAMINO_PASOS = [['contacto', 'Contacto'], ['cita', 'Cita'], ['visita', 'Visita'], ['presupuesto', 'Presup.'], ['enviado', 'Enviado'], ['respuesta', 'Resp.'], ['obra', 'Obra']];
 function caminoCliente(c) {
   const pm = presuQueManda(c);
   const sg = pm ? seguimientoPresu(pm) : null;
@@ -9034,8 +9046,10 @@ function caminoCliente(c) {
   if (parado) pasos.forEach((x) => { if (x.estado === 'ahora') x.estado = 'pendiente'; });
   return pasos;
 }
-function caminoHTML(c, oscuro) {
-  return `<div class="camino ${oscuro ? 'oscuro' : ''}">${caminoCliente(c).map((x) => `<div class="p ${x.estado}" title="${esc(x.titulo)}"><i></i><b>${esc(x.titulo)}</b></div>`).join('')}</div>`;
+// compacto: solo las barras (tarjetas estrechas, como las del tablero); el
+// nombre del paso queda en el title.
+function caminoHTML(c, oscuro, compacto) {
+  return `<div class="camino ${oscuro ? 'oscuro' : ''}">${caminoCliente(c).map((x) => `<div class="p ${x.estado}" title="${esc(x.titulo)}"><i></i>${compacto ? '' : `<b>${esc(x.titulo)}</b>`}</div>`).join('')}</div>`;
 }
 // Lo que hay que saber de un cliente sin entrar: la próxima acción y lo último que se habló.
 function seguimientoResumenHTML(c, oscuro) {
@@ -9859,10 +9873,10 @@ function vClientes() {
       </div>
     </div>
     <input class="inp" id="ag-buscar" data-f="ag_buscar" value="${esc(ag.buscar || '')}" placeholder="Nombre, teléfono o población" autocomplete="off" style="margin-top:14px">
-    <div class="wrap" style="margin-top:12px">${filtros.map(([k, l]) => {
+    ${ag.vista === 'tablero' ? '' : `<div class="wrap" style="margin-top:12px">${filtros.map(([k, l]) => {
       const n = k === 'todos' ? 0 : cuenta(k);
       return `<span class="chip ${ag.filtroCli === k ? 'on' : ''}" data-a="ag_filtroCli" data-f="${k}" style="cursor:pointer">${l}${n ? ' · ' + n : ''}</span>`;
-    }).join('')}</div>
+    }).join('')}</div>`}
   </div>
   <div class="scroll pad pb-nav">
     ${agAvisoHTML()}

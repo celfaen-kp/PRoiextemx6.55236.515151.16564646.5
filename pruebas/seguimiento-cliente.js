@@ -46,5 +46,7 @@ V.bitacora['k2'] = [{ tipo: 'llamada', texto: 'Pide que le llamemos mañana', at
 var res = seguimientoResumenHTML({ id: 'k2', nombre: 'B', proxima_accion: 'Llamar', proxima_accion_at: '2026-10-08', citas: [], visitas: [] });
 comprueba('el resumen lleva la próxima acción y lo último que se habló', res.indexOf('→ Llamar') >= 0 && res.indexOf('Pide que le llamemos') >= 0);
 igual('sin nada que contar, nada', seguimientoResumenHTML({ id: 'k9', citas: [], visitas: [] }), '');
+V.bitacora['k10'] = [{ tipo: 'nota', texto: 'Sysefen: Lead Meta Ads – Formulario FV_BATERIA: ¿Eres propietario? Sí…', at: '2026-10-07T12:00:00Z' }, { tipo: 'llamada', texto: 'Llamar el jueves', at: '2026-10-07T10:00:00Z' }];
+igual('el formulario de la web no cuenta como última nota', ultimaNota({ id: 'k10', motivo_web: 'Sysefen: Lead Meta Ads – Formulario FV_BATERIA: ¿Eres propietario? Sí…' }).texto, 'Llamar el jueves');
 
 resultado();
