@@ -407,7 +407,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '20.10'; // versión visible de la app (única fuente)
+const APP_VERSION = '20.11'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -7607,7 +7607,9 @@ A.presuSueltoChip = (k, v) => {
   if (!V.suelto) return;
   // Los chips de sí/no mandan '' para apagarse y '1' para encenderse.
   V.suelto[k] = v === '' ? false : (/^\d+$/.test(String(v)) && k !== 'cat' ? Number(v) : v);
-  if (['sustituye', 'apoyo', 'limpieza', 'backup', 'recuperar', 'subvencion', 'cargador'].includes(k)) V.suelto[k] = v !== '';
+  if (['sustituye', 'apoyo', 'limpieza', 'backup', 'recuperar'].includes(k)) V.suelto[k] = v !== '';
+  // Interruptores: un toque enciende, otro apaga.
+  if (['subvencion', 'cargador'].includes(k)) V.suelto[k] = !V.suelto[k];
   // Si se cambia de inversor, una batería que no va con él se quita.
   if (k === 'inversor' && !(BATERIAS_DE[v] || []).some(([m]) => m === V.suelto.bateria_marca)) V.suelto.bateria_marca = '';
   render();
@@ -8256,7 +8258,7 @@ function camposSolarHTML(f) {
       <div class="wrap">${chip('wifi', 'buena', 'Buena')}${chip('wifi', 'mala', 'Mala · repetidor')}</div>
       <div class="lbl" style="margin:14px 0 8px">Excedentes y trámites</div>
       <div class="wrap">${chip('excedentes', 'con_excedentes', 'Con excedentes')}${chip('excedentes', 'sin_excedentes', 'Sin excedentes')}</div>
-      <div class="wrap" style="margin-top:8px">${chip('subvencion', f.subvencion ? '' : '1', 'Pide subvención', f.subvencion ? '1' : '')}${chip('cargador', f.cargador ? '' : '1', 'Cargador de coche', f.cargador ? '1' : '')}</div>`;
+      <div class="wrap" style="margin-top:8px">${chip('subvencion', '1', 'Pide subvención', f.subvencion ? '1' : '')}${chip('cargador', '1', 'Cargador de coche', f.cargador ? '1' : '')}</div>`;
 }
 
 
