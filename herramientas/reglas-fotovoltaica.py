@@ -551,7 +551,8 @@ w(f'''-- =======================================================================
 --     INV_10, MANO_OBRA por vatio): sus reglas quedan inactivas, no se borran.
 --
 -- REQUIERE: la función `presupuestar` 1.2 (precio_coste, recargo, contiene).
--- Idempotente: se puede volver a ejecutar; las reglas FV se rehacen.
+-- Idempotente: se puede volver a ejecutar; las reglas FV se rehacen (las que
+-- usó algún presupuesto guardado quedan inactivas en vez de borrarse).
 -- =============================================================================
 
 begin;
@@ -629,10 +630,19 @@ update public.reglas r set activa = false
    and p.codigo in ('PANEL', 'KIT_BASE', 'KIT_10', 'INV_6', 'INV_10', 'MANO_OBRA');
 
 -- 7 · Las reglas ---------------------------------------------------------------------------
--- Se rehacen enteras: las de producto FV-… y los avisos de fotovoltaica.
+-- Se rehacen enteras: las de producto FV-… y los avisos de fotovoltaica. Las que
+-- ya usó algún presupuesto guardado (presupuesto_lineas.origen_regla_id) no se
+-- pueden borrar, y tampoco conviene: explican de dónde salió cada línea. Esas
+-- se desactivan; las que nadie usó se borran.
+update public.reglas r set activa = false
+  from public.conjuntos_reglas c
+ where r.conjunto_id = c.id and c.categoria = 'solar'
+   and (r.producto_ref like 'FV-%' or r.tipo = 'aviso')
+   and exists (select 1 from public.presupuesto_lineas l where l.origen_regla_id = r.id);
 delete from public.reglas r using public.conjuntos_reglas c
  where r.conjunto_id = c.id and c.categoria = 'solar'
-   and (r.producto_ref like 'FV-%' or r.tipo = 'aviso');
+   and (r.producto_ref like 'FV-%' or r.tipo = 'aviso')
+   and not exists (select 1 from public.presupuesto_lineas l where l.origen_regla_id = r.id);
 
 insert into public.reglas (conjunto_id, tipo, variable, minimo, maximo, condicion, producto_ref, formula_cantidad, seccion, prioridad, notas)
 select c.id, v.tipo, v.variable, v.minimo, v.maximo, v.condicion::jsonb, v.producto_ref, v.formula, v.seccion, v.prioridad, v.notas
