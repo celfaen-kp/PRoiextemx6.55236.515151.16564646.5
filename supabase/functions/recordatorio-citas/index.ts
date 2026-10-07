@@ -537,11 +537,25 @@ Deno.serve(async (req) => {
         }),
       });
     }
-    // El repaso de los comerciales.
+    // El repaso de los comerciales: planificación, y los clientes que tocan
+    // (próxima acción vencida o de mañana, aplazados que vuelven esta semana).
+    const enSiete = fechaEnZona(new Date(Date.now() + 8 * 24 * 3600 * 1000));
+    let segLineas: string[] = [];
+    try {
+      const { data: segs } = await sb.from('clientes_cache')
+        .select('nombre, proxima_accion, proxima_accion_at, aplazado_hasta, aplazado_motivo')
+        .or(`proxima_accion_at.lte.${dia},and(aplazado_hasta.gte.${dia},aplazado_hasta.lte.${enSiete})`)
+        .order('proxima_accion_at', { nullsFirst: false }).limit(40);
+      // deno-lint-ignore no-explicit-any
+      for (const c of (segs || []) as any[]) {
+        if (c.proxima_accion && c.proxima_accion_at && c.proxima_accion_at <= dia) segLineas.push(`· ${c.nombre}: ${c.proxima_accion} (${c.proxima_accion_at <= fechaEnZona(new Date()) ? 'vencida' : 'mañana'}, ${c.proxima_accion_at})`);
+        else if (c.aplazado_hasta) segLineas.push(`· ${c.nombre}: aplazado hasta ${c.aplazado_hasta}${c.aplazado_motivo ? ' · ' + c.aplazado_motivo : ''}: toca retomarlo`);
+      }
+    } catch { /* sin la etapa 71, sin repaso de seguimientos */ }
     const sinObra = (gente || []).filter((g: any) => ['operario', 'jefe'].includes(g.rol) && !porPersona.has(g.id)).map((g: any) => g.nombre);
     const obrasSolas = (sinNadie || []) as any[];
     const comerciales = (gente || []).filter((g: any) => ['presupuestos', 'admin'].includes(g.rol) && esEmail(g.email_avisos));
-    if (comerciales.length && (filas.length || sinObra.length || obrasSolas.length)) {
+    if (comerciales.length && (filas.length || sinObra.length || obrasSolas.length || segLineas.length)) {
       const lineas = [
         `Planificación de mañana, ${diaTxt}:`,
         '',
@@ -549,6 +563,7 @@ Deno.serve(async (req) => {
         '',
         sinObra.length ? `Sin obra mañana: ${sinObra.join(', ')}.` : 'Todo el mundo tiene obra.',
         obrasSolas.length ? `Obras en marcha sin nadie: ${obrasSolas.map((o) => o.codigo + ' · ' + (o.cliente || '')).join(' / ')}.` : 'Todas las obras en marcha tienen a alguien.',
+        ...(segLineas.length ? ['', 'Clientes que tocan:', ...segLineas] : []),
         '',
         `Tablero: ${APP_URL}`,
       ];
@@ -559,9 +574,10 @@ Deno.serve(async (req) => {
           ...filas.map((f) => ({ etiqueta: 'Mañana', dia: f.codigo, hora: horaTxt(f.hora_prevista) || '—', duracion: '', cliente: `${f.empleado} → ${f.cliente || f.obra}`, direccion: donde(f), motivo: f.nota || '' })),
           { etiqueta: 'Repaso', dia: diaTxt, hora: String(sinObra.length), duracion: 'sin obra', cliente: sinObra.length ? sinObra.join(', ') : 'Todo el mundo tiene obra', direccion: '', motivo: '' },
           { etiqueta: 'Repaso', dia: diaTxt, hora: String(obrasSolas.length), duracion: 'obras sin nadie', cliente: obrasSolas.length ? obrasSolas.map((o) => o.codigo + ' · ' + (o.cliente || '')).join(' / ') : 'Todas tienen a alguien', direccion: '', motivo: '' },
+          ...segLineas.map((l) => ({ etiqueta: 'Cliente', dia: diaTxt, hora: '—', duracion: '', cliente: l.replace(/^· /, ''), direccion: '', motivo: '' })),
         ],
       });
-      for (const c of comerciales) correos.push({ para: String(c.email_avisos).trim(), asunto: `Planificación de mañana · ${sinObra.length} sin obra · ${obrasSolas.length} obras sin nadie`, texto, html });
+      for (const c of comerciales) correos.push({ para: String(c.email_avisos).trim(), asunto: `Planificación de mañana · ${sinObra.length} sin obra · ${obrasSolas.length} obras sin nadie${segLineas.length ? ' · ' + segLineas.length + ' clientes que tocan' : ''}`, texto, html });
     }
     if (soloVer) return json({ modo: 'planificacion', dia, filas: filas.length, sin_obra: sinObra, obras_sin_nadie: obrasSolas.map((o) => o.codigo), correos: correos.map((m) => ({ para: m.para, asunto: m.asunto })) });
     const fallosP: string[] = [];

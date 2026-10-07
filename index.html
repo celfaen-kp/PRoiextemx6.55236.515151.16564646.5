@@ -261,6 +261,17 @@ body.con-captcha #captcha{display:block}
 .pl-chip.plan{background:#f8efdc;color:var(--ambar-o)}
 .pl-mas{font:400 18px/1 var(--sans);color:var(--t3);text-align:center;margin:auto}
 
+/* Tablero de clientes por fases (sql/etapa71): columnas con scroll lateral. */
+.tb-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;margin:0 -16px;padding:4px 16px 10px}
+.tb-cols{display:flex;gap:10px;align-items:flex-start;min-width:max-content}
+.tb-col{width:252px;flex:none;background:rgba(20,23,15,.04);border-radius:16px;padding:10px}
+.tb-col .lbl{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px}
+.tb-card{background:#fff;border-radius:12px;padding:10px 12px;margin-bottom:8px;box-shadow:var(--sh);cursor:pointer;border-left:3px solid var(--l2)}
+.tb-card .n{font:600 14px/1.25 var(--sans)}
+.tb-card .s{font:400 12px/1.35 var(--sans);color:var(--t2);margin-top:3px}
+.tb-card .a{font:500 12px/1.3 var(--sans);margin-top:6px;padding:5px 8px;border-radius:8px;background:rgba(20,23,15,.05)}
+.tb-card .a.vence{background:var(--rojo-cl);color:var(--rojo)}
+
 /* Agenda de presupuestos */
 .ag-cita{display:grid;grid-template-columns:58px minmax(0,1fr);gap:12px;align-items:start}
 .ag-hora{font:700 22px/1 var(--cond);letter-spacing:-.01em}
@@ -368,7 +379,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '20.1'; // versión visible de la app (única fuente)
+const APP_VERSION = '20.2'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -2768,6 +2779,7 @@ A.ag_sinCitaGuardar = async () => {
     await visitasDB.guardarCliente(Object.assign({ id: s.id }, cambios));
     const c = agCliente(s.id); if (c) Object.assign(c, cambios);
     V.sheet = null; toast('Resuelto sin cita.'); render();
+    anotar(s.id, 'sistema', 'Sin cita: ' + motivo);
   } catch (e) { s.busy = false; avisar(/sin_cita_motivo|schema cache/i.test(msgError(e)) ? 'Falta ejecutar sql/etapa69 en Supabase.' : 'No se pudo guardar: ' + msgError(e)); render(); }
 };
 A.ag_sinCitaQuitar = async (id) => {
@@ -7298,6 +7310,7 @@ A.presuGuardar = async () => {
     p.datos = r; p.guardado = r.presupuesto_id || null; p.enTL = false; p.errTL = null;
     toast('Presupuesto guardado. Subiéndolo a Teamleader…');
     V.presuLista.cargado = false; A.cargarPresupuestos();
+    anotar(suelto ? V.suelto.clienteId : (vv.visita && vv.visita.cliente_id), 'presupuesto', 'Presupuesto de ' + nombreCat(p.cat) + ' creado' + (r && r.total_venta != null ? ' · ' + eur(r.total_venta) : ''));
   } catch (e) { avisar('No se pudo guardar: ' + msgError(e)); p.guardando = false; render(); return; }
   p.guardando = false; render();
   // Guardado = a Teamleader, sin más botones.
@@ -8456,21 +8469,21 @@ function seguimientoHTML(d) {
 A.presuRevisado = async () => {
   const d = V.presuVer && V.presuVer.datos; if (!d || V.presuSegBusy) return;
   V.presuSegBusy = true; render();
-  try { Object.assign(d, await visitasDB.seguimientoPresupuesto(d.id, { revisado_at: new Date().toISOString(), revisado_por: miEmpId() || null, estado: d.estado === 'revisar' || d.estado === 'generado' ? 'aprobado' : d.estado })); toast('Apuntado: revisado.'); if (V.agenda.cargado) A.cargarAgenda(); }
+  try { Object.assign(d, await visitasDB.seguimientoPresupuesto(d.id, { revisado_at: new Date().toISOString(), revisado_por: miEmpId() || null, estado: d.estado === 'revisar' || d.estado === 'generado' ? 'aprobado' : d.estado })); toast('Apuntado: revisado.'); if (V.agenda.cargado) A.cargarAgenda(); anotar(d.cliente && d.cliente.id, 'presupuesto', 'Presupuesto de ' + nombreCat(d.categoria) + ' revisado'); }
   catch (e) { avisar(/revisado_at/i.test(msgError(e)) ? 'Falta ejecutar sql/etapa65 en Supabase.' : 'No se pudo guardar: ' + msgError(e)); }
   V.presuSegBusy = false; render();
 };
 A.presuEnviadoCliente = async () => {
   const d = V.presuVer && V.presuVer.datos; if (!d || V.presuSegBusy) return;
   V.presuSegBusy = true; render();
-  try { Object.assign(d, await visitasDB.seguimientoPresupuesto(d.id, { estado: 'enviado', enviado_cliente_at: new Date().toISOString(), enviado_cliente_por: miEmpId() || null, revisado_at: d.revisado_at || new Date().toISOString(), revisado_por: d.revisado_por || miEmpId() || null })); toast('Apuntado: enviado al cliente.'); if (V.agenda.cargado) A.cargarAgenda(); }
+  try { Object.assign(d, await visitasDB.seguimientoPresupuesto(d.id, { estado: 'enviado', enviado_cliente_at: new Date().toISOString(), enviado_cliente_por: miEmpId() || null, revisado_at: d.revisado_at || new Date().toISOString(), revisado_por: d.revisado_por || miEmpId() || null })); toast('Apuntado: enviado al cliente.'); if (V.agenda.cargado) A.cargarAgenda(); anotar(d.cliente && d.cliente.id, 'presupuesto', 'Presupuesto de ' + nombreCat(d.categoria) + ' enviado al cliente · ' + eur(d.total_venta)); }
   catch (e) { avisar(/enviado_cliente/i.test(msgError(e)) ? 'Falta ejecutar sql/etapa64 en Supabase.' : 'No se pudo guardar: ' + msgError(e)); }
   V.presuSegBusy = false; render();
 };
 A.presuRespuesta = async (r) => {
   const d = V.presuVer && V.presuVer.datos; if (!d || V.presuSegBusy) return;
   V.presuSegBusy = true; render();
-  try { Object.assign(d, await visitasDB.seguimientoPresupuesto(d.id, { respuesta_cliente: r, respondido_at: r === 'pendiente' ? null : new Date().toISOString() })); if (V.agenda.cargado) A.cargarAgenda(); }
+  try { Object.assign(d, await visitasDB.seguimientoPresupuesto(d.id, { respuesta_cliente: r, respondido_at: r === 'pendiente' ? null : new Date().toISOString() })); if (V.agenda.cargado) A.cargarAgenda(); if (r !== 'pendiente') anotar(d.cliente && d.cliente.id, 'presupuesto', 'El cliente ' + ({ aceptado: 'aceptó', rechazado: 'rechazó', caducado: 'dejó caducar' })[r] + ' el presupuesto de ' + nombreCat(d.categoria)); }
   catch (e) { avisar('No se pudo guardar: ' + msgError(e)); }
   V.presuSegBusy = false; render();
 };
@@ -8495,6 +8508,7 @@ A.presuCrearObra = async () => {
     d.obra_id = obra.id;
     await sincronizarObras(); await sincronizarFases();
     toast('Obra creada: ' + (obra.numero != null ? codigoObra({ numero: obra.numero }) : campos.nombre));
+    anotar(cli.id, 'sistema', 'Obra creada ' + (obra.numero != null ? codigoObra({ numero: obra.numero }) : ''));
     V.presuSegBusy = false; A.verObra(obra.id);
   } catch (e) { V.presuSegBusy = false; avisar('No se pudo crear la obra: ' + msgError(e)); render(); }
 };
@@ -8578,8 +8592,167 @@ A.agContactado = async (id, estado) => {
     Object.assign(c, cambios);
     toast(estado === 'contactado' ? 'Apuntado: contactado por ti.' : estado === 'no_contesta' ? 'Apuntado: no cogió el teléfono.' : 'Quitado.');
     render();
+    if (estado !== 'quitar') anotar(id, 'llamada', estado === 'contactado' ? 'Contactado por teléfono' : 'Llamada sin respuesta (no cogió)');
   } catch (e) { avisar(/contacto_|schema cache/i.test(msgError(e)) ? 'Falta ejecutar sql/etapa56 en Supabase.' : 'No se pudo guardar: ' + msgError(e)); }
 };
+
+/* ---------- seguimiento por cliente: bitácora, próxima acción, aplazar (sql/etapa71) ----------
+ * La bitácora la escribe la app sola en cada paso (llamada, cita, presupuesto…)
+ * y a mano con «+ Nota». Así cualquiera ve qué se le dijo al cliente y quién.
+ * ------------------------------------------------------------------------------------------- */
+Object.assign(V, { bitacora: {} });
+const BIT_TIPOS = { llamada: 'Llamada', whatsapp: 'WhatsApp', email: 'Email', nota: 'Nota', cita: 'Cita', visita: 'Visita', presupuesto: 'Presupuesto', aplazado: 'Aplazado', accion: 'Acción', sistema: 'App' };
+const faltaEtapa71 = (e) => /cliente_bitacora|proxima_accion|aplazado_hasta|schema cache|PGRST205/i.test(typeof e === 'string' ? e : msgError(e));
+async function cargarBitacoraTodos() {
+  if (!navigator.onLine) return;
+  try {
+    const filas = await visitasDB.listarBitacoraReciente();
+    const porCliente = {};
+    filas.forEach((b) => { (porCliente[b.cliente_id] = porCliente[b.cliente_id] || []).push(b); });
+    Object.keys(porCliente).forEach((k) => { V.bitacora[k] = porCliente[k]; });
+    if (V.view === 'clientes') render();
+  } catch (e) { /* sin la etapa 71 */ }
+}
+async function cargarBitacora(id) {
+  if (!id || !navigator.onLine) return;
+  try { V.bitacora[id] = await visitasDB.listarBitacora(id); if (V.view === 'clienteVer' && V.clienteVerId === id) render(); }
+  catch (e) { /* sin la etapa 71 */ }
+}
+// Apuntar algo en la bitácora. No molesta si falla: el dato principal ya se guardó.
+async function anotar(clienteId, tipo, texto) {
+  if (!clienteId || !texto) return;
+  try {
+    const f = await visitasDB.anotarBitacora({ cliente_id: clienteId, tipo, texto, por: miEmpId() || null });
+    V.bitacora[clienteId] = [f, ...(V.bitacora[clienteId] || [])];
+    if (V.view === 'clienteVer' && V.clienteVerId === clienteId) render();
+  } catch (e) { /* sin la etapa 71 no hay bitácora */ }
+}
+const ultimaNota = (c) => ((V.bitacora[c.id] || []).find((b) => ['llamada', 'whatsapp', 'email', 'nota'].includes(b.tipo)) || (V.bitacora[c.id] || [])[0] || null);
+// Próxima acción: «llamar el jueves», con fecha y quién.
+A.segAccionAbrir = (id) => { const c = agCliente(id); if (!c) return; V.sheet = { tipo: 'segAccion', id, texto: c.proxima_accion || '', fecha: c.proxima_accion_at || siguienteLaborable(hoyISO()), quien: c.proxima_accion_por || miEmpId() || null, busy: false }; render(); };
+A.segAccionGuardar = async () => {
+  const s = V.sheet; if (!s || s.tipo !== 'segAccion' || s.busy) return;
+  const texto = (s.texto || '').trim(); if (!texto) { avisar('Di qué hay que hacer.'); return; }
+  s.busy = true; render();
+  try {
+    const cambios = { proxima_accion: texto, proxima_accion_at: s.fecha || null, proxima_accion_por: s.quien || null };
+    await visitasDB.guardarCliente(Object.assign({ id: s.id }, cambios));
+    const c = agCliente(s.id); if (c) Object.assign(c, cambios);
+    V.sheet = null; render();
+    anotar(s.id, 'accion', 'Próxima acción: ' + texto + (s.fecha ? ' · ' + fechaCorta(s.fecha + 'T12:00') : '') + (s.quien ? ' · ' + agNombreEmp(s.quien) : ''));
+  } catch (e) { s.busy = false; avisar(faltaEtapa71(e) ? 'Falta ejecutar sql/etapa71 en Supabase.' : 'No se pudo guardar: ' + msgError(e)); render(); }
+};
+A.segAccionHecha = async (id) => {
+  const c = agCliente(id); if (!c) return;
+  const hecha = c.proxima_accion;
+  try {
+    const cambios = { proxima_accion: null, proxima_accion_at: null, proxima_accion_por: null };
+    await visitasDB.guardarCliente(Object.assign({ id }, cambios)); Object.assign(c, cambios); render();
+    if (hecha) anotar(id, 'accion', 'Hecho: ' + hecha);
+  } catch (e) { avisar('No se pudo: ' + msgError(e)); }
+};
+// Aplazar: subvención de enero, espera a la obra, lo pide el cliente…
+const APLAZAR_MOTIVOS = ['Subvención de enero', 'Subvención de febrero', 'Espera a acabar la obra', 'Lo pide el cliente', 'Sin decidir todavía'];
+A.segAplazarAbrir = (id) => { const c = agCliente(id); if (!c) return; const d = new Date(); d.setMonth(d.getMonth() + 3); V.sheet = { tipo: 'segAplazar', id, fecha: c.aplazado_hasta || fechaLocal(d), motivo: c.aplazado_motivo || '', otro: '', busy: false }; render(); };
+A.segAplazarGuardar = async () => {
+  const s = V.sheet; if (!s || s.tipo !== 'segAplazar' || s.busy) return;
+  const motivo = (s.motivo === 'otro' ? s.otro : s.motivo || '').trim();
+  if (!s.fecha) { avisar('Pon hasta cuándo.'); return; }
+  s.busy = true; render();
+  try {
+    const cambios = { aplazado_hasta: s.fecha, aplazado_motivo: motivo || null };
+    await visitasDB.guardarCliente(Object.assign({ id: s.id }, cambios));
+    const c = agCliente(s.id); if (c) Object.assign(c, cambios);
+    V.sheet = null; toast('Aplazado hasta ' + fechaCorta(s.fecha + 'T12:00') + '. Volverá a la agenda una semana antes.'); render();
+    anotar(s.id, 'aplazado', 'Aplazado hasta ' + fechaCorta(s.fecha + 'T12:00') + (motivo ? ' · ' + motivo : ''));
+  } catch (e) { s.busy = false; avisar(faltaEtapa71(e) ? 'Falta ejecutar sql/etapa71 en Supabase.' : 'No se pudo guardar: ' + msgError(e)); render(); }
+};
+A.segRetomar = async (id) => {
+  const c = agCliente(id); if (!c) return;
+  try { const cambios = { aplazado_hasta: null, aplazado_motivo: null }; await visitasDB.guardarCliente(Object.assign({ id }, cambios)); Object.assign(c, cambios); render(); anotar(id, 'aplazado', 'Retomado'); }
+  catch (e) { avisar('No se pudo: ' + msgError(e)); }
+};
+// Una nota a mano: llamada, WhatsApp, email o nota.
+A.segNotaAbrir = (id) => { V.sheet = { tipo: 'segNota', id, bitTipo: 'llamada', texto: '', busy: false }; render(); };
+A.segNotaGuardar = async () => {
+  const s = V.sheet; if (!s || s.tipo !== 'segNota' || s.busy) return;
+  const texto = (s.texto || '').trim(); if (!texto) { avisar('Escribe qué se habló.'); return; }
+  s.busy = true; render();
+  try {
+    const f = await visitasDB.anotarBitacora({ cliente_id: s.id, tipo: s.bitTipo, texto, por: miEmpId() || null });
+    V.bitacora[s.id] = [f, ...(V.bitacora[s.id] || [])];
+    // Una llamada apuntada a mano también cuenta como contacto.
+    const c = agCliente(s.id);
+    if (c && ['llamada', 'whatsapp', 'email'].includes(s.bitTipo) && c.contacto_estado !== 'contactado') {
+      const cambios = { contacto_estado: 'contactado', contacto_at: new Date().toISOString(), contacto_por: miEmpId() || null, contacto_intentos: (c.contacto_intentos || 0) + 1 };
+      try { await visitasDB.guardarCliente(Object.assign({ id: s.id }, cambios)); Object.assign(c, cambios); } catch (_) {}
+    }
+    V.sheet = null; render();
+  } catch (e) { s.busy = false; avisar(faltaEtapa71(e) ? 'Falta ejecutar sql/etapa71 en Supabase.' : 'No se pudo guardar: ' + msgError(e)); render(); }
+};
+A.segNotaBorrar = async (id, clienteId) => {
+  try { await visitasDB.borrarBitacora(id); V.bitacora[clienteId] = (V.bitacora[clienteId] || []).filter((b) => b.id !== id); render(); }
+  catch (e) { avisar('No se pudo borrar: ' + msgError(e)); }
+};
+// El bloque de seguimiento de la ficha.
+function seguimientoClienteHTML(c) {
+  const e = agEstadoCliente(c);
+  const hoy = hoyISO();
+  const bit = V.bitacora[c.id];
+  const vencida = c.proxima_accion_at && c.proxima_accion_at < hoy;
+  return `<div class="card" style="padding:12px 15px;margin-bottom:18px">
+    <div class="row g8" style="align-items:center"><span class="dot" style="width:10px;height:10px;background:${e.color}"></span><span style="font:600 15px var(--sans)">${esc(e.txt)}</span></div>
+    ${c.aplazado_hasta && c.aplazado_hasta >= hoy ? `<div class="row g8" style="margin-top:10px;align-items:center;padding:8px 10px;border-radius:10px;background:#f8efdc"><span class="grow" style="font:500 13px/1.4 var(--sans);color:var(--ambar-o)">Aparcado hasta el ${esc(fechaCorta(c.aplazado_hasta + 'T12:00'))}${c.aplazado_motivo ? ' · ' + esc(c.aplazado_motivo) : ''}. Vuelve a la agenda una semana antes.</span><button class="pill" data-a="segRetomar" data-id="${c.id}" style="padding:6px 10px;font-size:11px;background:#fff;color:var(--tinta)">Retomar</button></div>` : ''}
+    <div class="row g8" style="margin-top:10px;align-items:center;padding:8px 10px;border-radius:10px;background:${c.proxima_accion ? (vencida ? 'var(--rojo-cl)' : 'rgba(20,23,15,.05)') : 'transparent'};border:${c.proxima_accion ? 'none' : '1px dashed var(--l2)'}">
+      <div class="grow">
+        <div class="lbl" style="color:${vencida ? 'var(--rojo)' : 'var(--t2)'}">Próxima acción${c.proxima_accion_at ? ' · ' + esc(fechaCorta(c.proxima_accion_at + 'T12:00')) + (vencida ? ' · vencida' : c.proxima_accion_at === hoy ? ' · hoy' : '') : ''}${c.proxima_accion_por ? ' · ' + esc(agNombreEmp(c.proxima_accion_por)) : ''}</div>
+        <div style="font:500 14px/1.35 var(--sans);margin-top:3px">${c.proxima_accion ? esc(c.proxima_accion) : '<span class="sub">Nada pendiente. ¿Qué toca hacer con este cliente?</span>'}</div>
+      </div>
+      ${c.proxima_accion ? `<button class="pill pill-verde" data-a="segAccionHecha" data-id="${c.id}" style="padding:7px 10px;font-size:11px">Hecho</button>` : ''}
+      <button class="pill" data-a="segAccionAbrir" data-id="${c.id}" style="padding:7px 10px;font-size:11px;background:var(--l1);color:var(--tinta)">${c.proxima_accion ? 'Cambiar' : 'Poner'}</button>
+    </div>
+    <div class="row g8" style="margin-top:10px">
+      <button class="pill grow" data-a="segNotaAbrir" data-id="${c.id}" style="padding:9px;text-align:center">+ Apuntar llamada o nota</button>
+      ${!(c.aplazado_hasta && c.aplazado_hasta >= hoy) ? `<button class="pill" data-a="segAplazarAbrir" data-id="${c.id}" style="padding:9px 12px;background:var(--l1);color:var(--tinta)">Aplazar</button>` : ''}
+    </div>
+    <div class="lbl" style="margin:14px 0 6px">Bitácora</div>
+    ${!bit ? '<div class="sub">Cargando…</div>' : !bit.length ? '<div class="sub">Todavía no hay nada apuntado.</div>'
+      : bit.slice(0, V.bitTodo === c.id ? 200 : 8).map((b) => `<div class="row g8" style="align-items:flex-start;padding:7px 0;border-top:1px solid var(--l1)">
+        <span class="badge" style="background:${['llamada', 'whatsapp', 'email', 'nota'].includes(b.tipo) ? '#e3efe5' : 'rgba(20,23,15,.06)'};color:${['llamada', 'whatsapp', 'email', 'nota'].includes(b.tipo) ? 'var(--verde-o)' : 'var(--t2)'};margin-top:2px">${esc(BIT_TIPOS[b.tipo] || b.tipo)}</span>
+        <div class="grow"><div style="font:400 13.5px/1.4 var(--sans);white-space:pre-wrap">${esc(b.texto)}</div><div class="tiny" style="margin-top:2px">${esc(fechaCorta(b.at))} ${esc(hhmm(b.at))}${b.por ? ' · ' + esc(agNombreEmp(b.por)) : ''}</div></div>
+        ${['llamada', 'whatsapp', 'email', 'nota'].includes(b.tipo) ? `<span data-a="segNotaBorrar" data-id="${b.id}" data-c="${c.id}" style="cursor:pointer;color:var(--t3);font-size:16px;line-height:1">×</span>` : ''}
+      </div>`).join('') + (bit.length > 8 && V.bitTodo !== c.id ? `<div class="tiny" data-a="segBitTodo" data-id="${c.id}" style="margin-top:8px;cursor:pointer;text-decoration:underline">Ver las ${bit.length} anotaciones</div>` : '')}
+  </div>`;
+}
+// El tablero por fases, como el de Teamleader pero con lo que la app ya sabe.
+const TABLERO_COLS = [
+  ['sin_cita', 'Nuevos · sin cita', 'var(--rojo)'], ['citado', 'Citados', 'var(--ambar)'], ['visitado', 'Visitados', 'var(--tinta)'], ['teamleader', 'Visita en Teamleader', 'var(--verde)'],
+  ['presupuestado', 'Presupuesto por revisar o enviar', 'var(--tinta)'], ['esperando', 'Enviado · esperando', 'var(--ambar)'], ['aplazado', 'Aplazados', 'var(--ambar-o)'],
+  ['aceptado', 'Aceptados · obra', 'var(--verde)'], ['rechazado', 'Rechazados', 'var(--rojo)'], ['sin_cita_ok', 'Resueltos sin cita', 'var(--t3)'],
+];
+function tableroColumnas(clientes) {
+  const cols = TABLERO_COLS.map(([k, titulo, color]) => ({ k, titulo, color, clientes: [] }));
+  (clientes || []).forEach((c) => { const e = agEstadoCliente(c); const col = cols.find((x) => x.k === e.k) || cols[0]; col.clientes.push({ c, e }); });
+  cols.forEach((col) => col.clientes.sort((a, b) => String(a.c.proxima_accion_at || '9').localeCompare(String(b.c.proxima_accion_at || '9')) || String(a.c.nombre).localeCompare(String(b.c.nombre), 'es')));
+  return cols;
+}
+function tableroHTML() {
+  const ag = V.agenda, q = String(ag.buscar || '').trim().toLowerCase();
+  const hoy = hoyISO();
+  let lista = ag.clientes;
+  if (q) lista = lista.filter((c) => [c.nombre, c.telefono, c.poblacion, c.email].some((v) => String(v || '').toLowerCase().includes(q)));
+  const cols = tableroColumnas(lista).filter((col) => col.clientes.length || !['teamleader', 'sin_cita_ok', 'rechazado'].includes(col.k));
+  const importe = (c) => { const p = presuQueManda(c); return p && p.total_venta != null ? eur(p.total_venta) : ''; };
+  return `<div class="tb-wrap"><div class="tb-cols">${cols.map((col) => `<div class="tb-col">
+    <div class="lbl"><span style="color:${col.color}">${esc(col.titulo)} (${col.clientes.length})</span><span class="tiny">${(() => { const t = col.clientes.reduce((s, x) => { const p = presuQueManda(x.c); return s + (p && p.total_venta ? Number(p.total_venta) : 0); }, 0); return t ? eur(t) : ''; })()}</span></div>
+    ${col.clientes.map(({ c, e }) => { const un = ultimaNota(c); const vencida = c.proxima_accion_at && c.proxima_accion_at < hoy; return `<div class="tb-card" data-a="ag_abrirCliente" data-id="${c.id}" style="border-left-color:${e.color}">
+      <div class="row" style="justify-content:space-between;align-items:baseline;gap:8px"><div class="n">${esc(c.nombre)}</div>${importe(c) ? `<span class="num" style="font-size:13px;white-space:nowrap">${importe(c)}</span>` : ''}</div>
+      <div class="s">${esc([agTipoNombre(c), c.poblacion].filter(Boolean).join(' · '))}${c.contacto_estado ? ' · ' + esc(agContactadoTxt(c)) : ''}</div>
+      ${c.proxima_accion ? `<div class="a ${vencida ? 'vence' : ''}">${esc(c.proxima_accion)}${c.proxima_accion_at ? ' · ' + esc(fechaCorta(c.proxima_accion_at + 'T12:00')) : ''}${c.proxima_accion_por ? ' · ' + esc(agNombreEmp(c.proxima_accion_por)) : ''}</div>` : ''}
+      ${un ? `<div class="s" style="margin-top:5px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">${esc(BIT_TIPOS[un.tipo] || '')}: ${esc(un.texto)}</div>` : ''}
+    </div>`; }).join('') || '<div class="tiny" style="padding:6px 2px">Nadie</div>'}
+  </div>`).join('')}</div></div>`;
+}
 
 // Los presupuestos de un cliente: los suyos directos y los de sus visitas.
 const presupuestosDeCliente = (c) => {
@@ -8612,9 +8785,14 @@ function presuQueManda(c) {
 function agEstadoCliente(c) {
   const vis = c.visitas || [];
   const pend = (c.citas || []).filter((x) => x.estado === 'pendiente');
-  // Con presupuesto, manda el presupuesto: es lo último que ha pasado.
+  // Con presupuesto, manda el presupuesto: es lo último que ha pasado. Salvo
+  // que esté aplazado (subvención de enero…): entonces manda el aplazamiento,
+  // a no ser que ya haya aceptado.
   const pm = presuQueManda(c);
-  if (pm) { const sg = seguimientoPresu(pm); return { k: sg.k, color: sg.color, txt: 'Presupuesto · ' + sg.txt.toLowerCase() }; }
+  const sgm = pm ? seguimientoPresu(pm) : null;
+  if (sgm && sgm.k === 'aceptado') return { k: 'aceptado', color: sgm.color, txt: 'Presupuesto · aceptado' };
+  if (c.aplazado_hasta && c.aplazado_hasta >= hoyISO()) return { k: 'aplazado', color: 'var(--ambar-o)', txt: 'Aplazado hasta ' + fechaCorta(c.aplazado_hasta + 'T12:00') + (c.aplazado_motivo ? ' · ' + c.aplazado_motivo : '') };
+  if (pm) return { k: sgm.k, color: sgm.color, txt: 'Presupuesto · ' + sgm.txt.toLowerCase() };
   if (vis.some((v) => v.sync_estado === 'sincronizada')) return { k: 'teamleader', color: 'var(--verde)', txt: 'En Teamleader' };
   const prox = pend.filter((x) => x.inicio).sort((a, b) => a.inicio.localeCompare(b.inicio))[0];
   if (prox) return { k: 'citado', color: 'var(--ambar)', txt: 'Citado · ' + (agDiaDe(prox.inicio) === agHoy() ? 'hoy' : fechaCorta(prox.inicio)) + ' ' + agHora(prox.inicio) };
@@ -8636,6 +8814,7 @@ async function cargarVisitasCliente(id) {
     V.agenda.visitasCliente = Object.assign({}, V.agenda.visitasCliente || {}, { [id]: vis });
     if (V.view === 'clienteVer' && V.clienteVerId === id) render();
   } catch (e) { /* se quedan las de la agenda */ }
+  cargarBitacora(id);
 }
 
 A.cargarAgenda = async () => {
@@ -8703,6 +8882,7 @@ A.ag = (a, d, e) => {
     case 'ag_estado': return agCambiarEstado(d.id, d.e);
     case 'ag_contactado': if (e) e.stopPropagation(); return A.agContactado(d.id, d.e);
     case 'ag_sinCitaAbrir': if (e) e.stopPropagation(); return A.ag_sinCitaAbrir(d.id);
+    case 'ag_vista': V.agenda.vista = V.agenda.vista === 'tablero' ? 'lista' : 'tablero'; if (V.agenda.vista === 'tablero') { V.agenda.clientes.forEach((c) => { if (!V.bitacora[c.id]) V.bitacora[c.id] = []; }); cargarBitacoraTodos(); } return render();
     case 'ag_sinCitaMotivo': if (V.sheet) V.sheet.motivo = d.m; return render();
     case 'ag_sinCitaGuardar': return A.ag_sinCitaGuardar();
     case 'ag_sinCitaQuitar': if (e) e.stopPropagation(); return A.ag_sinCitaQuitar(d.id);
@@ -8970,6 +9150,7 @@ async function agGuardarCita() {
     V.agBusy = false; V.citaDraft = null;
     avisarDeCita(g.id);
     toast(inicio ? 'Cita guardada: ' + fechaCorta(inicio) + ' a las ' + hhmm(inicio) + '.' : 'Guardado como pendiente de fecha.');
+    anotar(fila.cliente_id, 'cita', (d.id ? 'Cita cambiada' : 'Cita puesta') + (inicio ? ': ' + fechaCorta(inicio) + ' a las ' + hhmm(inicio) : ', pendiente de fecha') + (fila.empleado_id ? ' · va ' + agNombreEmp(fila.empleado_id) : ''));
     await A.cargarAgenda();
     V.citaVerId = g.id; V.view = 'citaVer'; render();
   } catch (e) {
@@ -9302,6 +9483,14 @@ function vAgenda() {
     } else if (!pl.cargando) { A.cargarPresupuestos(); }
   }
   if (sinCita) tarea('var(--rojo)', sinCita === 1 ? '1 cliente sin cita' : sinCita + ' clientes sin cita', 'Falta ponerles día', 'Ver', 'data-a="ag_sinCita"');
+  // Seguimiento (etapa 71): acciones de hoy o vencidas, y aplazados que vuelven esta semana.
+  const enSiete = agSumaDias(hoy, 7);
+  ag.clientes.filter((c) => c.proxima_accion && c.proxima_accion_at && c.proxima_accion_at <= hoy)
+    .sort((a, b) => String(a.proxima_accion_at).localeCompare(String(b.proxima_accion_at))).slice(0, 6)
+    .forEach((c) => tarea(c.proxima_accion_at < hoy ? 'var(--rojo)' : 'var(--ambar)', esc(c.nombre) + ' · ' + esc(c.proxima_accion),
+      (c.proxima_accion_at < hoy ? 'Vencida el ' + fechaCorta(c.proxima_accion_at + 'T12:00') : 'Para hoy') + (c.proxima_accion_por ? ' · ' + esc(agNombreEmp(c.proxima_accion_por)) : ''), 'Abrir', `data-a="ag_abrirCliente" data-id="${c.id}"`));
+  ag.clientes.filter((c) => c.aplazado_hasta && c.aplazado_hasta >= hoy && c.aplazado_hasta <= enSiete).slice(0, 4)
+    .forEach((c) => tarea('var(--ambar-o)', esc(c.nombre) + ' · aplazado', 'Toca retomarlo: ' + fechaCorta(c.aplazado_hasta + 'T12:00') + (c.aplazado_motivo ? ' · ' + esc(c.aplazado_motivo) : ''), 'Abrir', `data-a="ag_abrirCliente" data-id="${c.id}"`));
 
   const tarjeta = (x) => {
     const c = x.cliente || agCliente(x.cliente_id) || {};
@@ -9391,11 +9580,14 @@ function clientesListaHTML() {
 function vClientes() {
   const ag = V.agenda;
   const cuenta = (k) => ag.clientes.filter((c) => k === 'sin_contactar' ? (agEstadoCliente(c).k === 'sin_cita' && c.contacto_estado !== 'contactado') : agEstadoCliente(c).k === k).length;
-  const filtros = [['todos', 'Todos'], ['sin_contactar', 'Sin contactar'], ['sin_cita', 'Sin cita'], ['citado', 'Citados'], ['visitado', 'Visitados'], ['teamleader', 'En Teamleader'], ['sin_cita_ok', 'Sin cita · resueltos'], ['presupuestado', 'Presup. por revisar o enviar'], ['esperando', 'Esperando respuesta'], ['aceptado', 'Aceptados'], ['rechazado', 'Rechazados']];
+  const filtros = [['todos', 'Todos'], ['sin_contactar', 'Sin contactar'], ['sin_cita', 'Sin cita'], ['citado', 'Citados'], ['visitado', 'Visitados'], ['teamleader', 'En Teamleader'], ['aplazado', 'Aplazados'], ['sin_cita_ok', 'Sin cita · resueltos'], ['presupuestado', 'Presup. por revisar o enviar'], ['esperando', 'Esperando respuesta'], ['aceptado', 'Aceptados'], ['rechazado', 'Rechazados']];
   return `<div class="hdr">
-    <div class="row" style="justify-content:space-between">
+    <div class="row" style="justify-content:space-between;align-items:center">
       <div class="h1">Clientes</div>
-      ${puedeCitar() ? '<button class="pill" data-a="ag_nuevoCliente" style="background:var(--tinta);color:#fff">+ Cliente</button>' : ''}
+      <div class="row g8">
+        ${puedeCitar() ? `<button class="pill" data-a="ag_vista" style="padding:8px 12px;background:${ag.vista === 'tablero' ? 'var(--verde)' : 'var(--l1)'};color:${ag.vista === 'tablero' ? '#fff' : 'var(--tinta)'}">${ag.vista === 'tablero' ? 'Lista' : 'Tablero'}</button>` : ''}
+        ${puedeCitar() ? '<button class="pill" data-a="ag_nuevoCliente" style="background:var(--tinta);color:#fff">+ Cliente</button>' : ''}
+      </div>
     </div>
     <input class="inp" id="ag-buscar" data-f="ag_buscar" value="${esc(ag.buscar || '')}" placeholder="Nombre, teléfono o población" autocomplete="off" style="margin-top:14px">
     <div class="wrap" style="margin-top:12px">${filtros.map(([k, l]) => {
@@ -9405,8 +9597,8 @@ function vClientes() {
   </div>
   <div class="scroll pad pb-nav">
     ${agAvisoHTML()}
-    ${webListaHTML()}
-    <div id="clientes-lista">${clientesListaHTML()}</div>
+    ${ag.vista === 'tablero' ? `<div class="tiny" style="margin-bottom:8px">Cada columna es una fase. Toca una tarjeta para abrir al cliente; desde su ficha se apunta la llamada, la próxima acción o el aplazamiento.</div>${tableroHTML()}`
+      : `${webListaHTML()}<div id="clientes-lista">${clientesListaHTML()}</div>`}
   </div>`;
 }
 
@@ -9795,6 +9987,7 @@ function vClienteVer() {
       ${obs.map((o) => `<div class="row g8" data-a="verObra" data-id="${o.id}" style="align-items:center;padding:8px 0;border-top:1px solid var(--l1);cursor:pointer">
         <span style="font:600 16px/1 var(--cond)">${esc(codigoObra(o) || o.titulo)}</span><span class="grow" style="font:500 14px var(--sans)">${esc(o.cliente || o.titulo)}${direccionObra(o) ? ' · ' + esc(direccionObra(o)) : ''}</span><span class="tiny">${esc(estadoObraTxt(o))}</span></div>`).join('')}
     </div>` : ''; })()}
+    ${puedeCitar() ? seguimientoClienteHTML(c) : ''}
     ${c.motivo_web ? `<div class="card" style="padding:12px 15px;margin-bottom:18px;box-shadow:0 0 0 1.5px var(--ambar),var(--sh)">
       <div class="lbl" style="color:var(--ambar-o)">Qué pidió por la web</div>
       <div style="font:500 14px/1.45 var(--sans);margin-top:6px;white-space:pre-wrap">${esc(c.motivo_web)}</div>
@@ -10369,6 +10562,48 @@ function sheet() {
       <button class="btn btn-gris" data-a="cerrarSheet" style="border-radius:99px;margin-top:12px">Cancelar</button>
     </div></div>`;
   }
+  if (s.tipo === 'segAccion') {
+    const gente = agPresupuestos();
+    return `<div class="sheet"><div>
+      <div style="font:600 23px/1.15 var(--cond)">Próxima acción</div>
+      <div class="sub" style="margin-top:6px">${esc((agCliente(s.id) || {}).nombre || '')}. Qué hay que hacer, cuándo y quién. Saldrá en la agenda ese día.</div>
+      <input class="inp" data-f="segTexto" value="${esc(s.texto)}" placeholder="Llamar para cerrar la cita, mandar el presupuesto…" style="margin-top:12px">
+      <div class="row g8" style="margin-top:10px">
+        <div style="width:150px"><div class="lbl" style="margin-bottom:6px">Cuándo</div><input class="inp" type="date" data-f="segFecha" value="${esc(s.fecha || '')}"></div>
+        <div class="grow"><div class="lbl" style="margin-bottom:6px">Quién</div><div class="wrap">${gente.map((u) => `<span class="chip ${s.quien === u.empId ? 'on' : ''}" data-a="segQuien" data-id="${u.empId}" style="cursor:pointer">${esc(u.nombre)}</span>`).join('')}</div></div>
+      </div>
+      <div class="row g8" style="margin-top:18px">
+        <button class="btn btn-gris" data-a="cerrarSheet" style="border-radius:99px">Cancelar</button>
+        <button class="btn btn-verde" data-a="segAccionGuardar" ${s.busy ? 'disabled' : ''}>${s.busy ? 'Guardando…' : 'Guardar'}</button>
+      </div>
+    </div></div>`;
+  }
+  if (s.tipo === 'segAplazar') {
+    return `<div class="sheet"><div>
+      <div style="font:600 23px/1.15 var(--cond)">Aplazar</div>
+      <div class="sub" style="margin-top:6px">${esc((agCliente(s.id) || {}).nombre || '')} deja de salir como pendiente hasta la fecha. Una semana antes vuelve a la agenda y al correo de la oficina.</div>
+      <div class="lbl" style="margin:12px 0 6px">Hasta</div><input class="inp" type="date" data-f="segFecha" value="${esc(s.fecha || '')}">
+      <div class="lbl" style="margin:12px 0 6px">Por qué</div>
+      <div class="wrap">${APLAZAR_MOTIVOS.map((m) => `<span class="chip ${s.motivo === m ? 'on' : ''}" data-a="segMotivo" data-m="${esc(m)}" style="cursor:pointer">${esc(m)}</span>`).join('')}<span class="chip ${s.motivo === 'otro' ? 'on' : ''}" data-a="segMotivo" data-m="otro" style="cursor:pointer">Otro…</span></div>
+      ${s.motivo === 'otro' ? `<input class="inp" data-f="segOtro" value="${esc(s.otro)}" placeholder="Por qué" style="margin-top:10px">` : ''}
+      <div class="row g8" style="margin-top:18px">
+        <button class="btn btn-gris" data-a="cerrarSheet" style="border-radius:99px">Cancelar</button>
+        <button class="btn btn-verde" data-a="segAplazarGuardar" ${s.busy ? 'disabled' : ''}>${s.busy ? 'Guardando…' : 'Aplazar'}</button>
+      </div>
+    </div></div>`;
+  }
+  if (s.tipo === 'segNota') {
+    return `<div class="sheet"><div>
+      <div style="font:600 23px/1.15 var(--cond)">Apuntar en la bitácora</div>
+      <div class="sub" style="margin-top:6px">${esc((agCliente(s.id) || {}).nombre || '')}. Qué se habló, qué se le dijo, qué pidió. Lo ve todo el equipo de presupuestos.</div>
+      <div class="wrap" style="margin-top:12px">${[['llamada', 'Llamada'], ['whatsapp', 'WhatsApp'], ['email', 'Email'], ['nota', 'Nota']].map(([k, l]) => `<span class="chip ${s.bitTipo === k ? 'on' : ''}" data-a="segBitTipo" data-t="${k}" style="cursor:pointer">${l}</span>`).join('')}</div>
+      <textarea class="inp" data-f="segTexto" rows="4" placeholder="Hablé con él: quiere esperar a la subvención, le mando el presupuesto por correo…" style="margin-top:10px">${esc(s.texto)}</textarea>
+      <div class="row g8" style="margin-top:18px">
+        <button class="btn btn-gris" data-a="cerrarSheet" style="border-radius:99px">Cancelar</button>
+        <button class="btn btn-verde" data-a="segNotaGuardar" ${s.busy ? 'disabled' : ''}>${s.busy ? 'Guardando…' : 'Guardar'}</button>
+      </div>
+    </div></div>`;
+  }
   if (s.tipo === 'sinCita') {
     const c = agCliente(s.id) || {};
     const obs = c.id ? obrasDeCliente(c) : [];
@@ -10840,6 +11075,19 @@ document.addEventListener('click', (e) => {
   if (a === 'confirmarEnvioParte') return A.confirmarEnvioParte();
   if (a === 'borrarParte') { e.stopPropagation(); return A.borrarParte(d.id); }
   if (a === 'moverParte') { e.stopPropagation(); return A.moverParte(d.id); }
+  if (a === 'segAccionAbrir') return A.segAccionAbrir(d.id);
+  if (a === 'segAccionGuardar') return A.segAccionGuardar();
+  if (a === 'segAccionHecha') return A.segAccionHecha(d.id);
+  if (a === 'segQuien') { if (V.sheet) V.sheet.quien = V.sheet.quien === d.id ? null : d.id; return render(); }
+  if (a === 'segAplazarAbrir') return A.segAplazarAbrir(d.id);
+  if (a === 'segAplazarGuardar') return A.segAplazarGuardar();
+  if (a === 'segMotivo') { if (V.sheet) V.sheet.motivo = d.m; return render(); }
+  if (a === 'segRetomar') return A.segRetomar(d.id);
+  if (a === 'segNotaAbrir') return A.segNotaAbrir(d.id);
+  if (a === 'segNotaGuardar') return A.segNotaGuardar();
+  if (a === 'segBitTipo') { if (V.sheet) V.sheet.bitTipo = d.t; return render(); }
+  if (a === 'segNotaBorrar') { e.stopPropagation(); return A.segNotaBorrar(d.id, d.c); }
+  if (a === 'segBitTodo') { V.bitTodo = d.id; return render(); }
   if (a === 'moverPartesObra') return A.moverPartesObra(d.id);
   if (a === 'moverParteA') return A.moverParteA(d.id);
   if (a === 'confirmarBorrarParte') return A.confirmarBorrarParte();
@@ -10980,6 +11228,9 @@ document.addEventListener('input', (e) => {
   if (!f) return;
   if (f.startsWith('vf')) return A.vf(f, t.dataset, t.value);
   if (f === 'presuMotivoRechazo') { clearTimeout(V._tRech); V._tRech = setTimeout(() => A.presuMotivoRechazo(t.value), 800); return; }
+  if (f === 'segTexto') { if (V.sheet) V.sheet.texto = t.value; return; }
+  if (f === 'segFecha') { if (V.sheet) V.sheet.fecha = t.value; return; }
+  if (f === 'segOtro') { if (V.sheet) V.sheet.otro = t.value; return; }
   if (f === 'moverBuscar') { if (V.sheet) { V.sheet.buscar = t.value; const box = document.getElementById('mover-obras'); if (box) box.innerHTML = moverParteListaHTML(V.sheet); } return; }
   if (f === 'sinCitaOtro') { if (V.sheet) V.sheet.otro = t.value; return; }
   if (f === 'categoriaOtra') { if (V.draft) V.draft.categoriaOtra = t.value; return; }
@@ -10994,7 +11245,7 @@ document.addEventListener('input', (e) => {
   if (f === 'costeDesde') { if (V.sheet) V.sheet.desde = t.value; return; }
   if (f === 'presuBuscar') { V.presuBuscar = t.value; const box = document.getElementById('presu-lista'); if (box && V.sheet) box.innerHTML = presuListaHTML(V.sheet); return; }
   if (f === 'obrasBuscar') { V.obrasBuscar = t.value; const box = document.getElementById('obras-lista'); if (box) box.innerHTML = obrasListaHTML(); return; }
-  if (f === 'ag_buscar') { V.agenda.buscar = t.value; const box = document.getElementById('clientes-lista'); if (box) box.innerHTML = clientesListaHTML(); return; }
+  if (f === 'ag_buscar') { V.agenda.buscar = t.value; const box = document.getElementById('clientes-lista'); if (box) box.innerHTML = clientesListaHTML(); else if (V.agenda.vista === 'tablero') { const tb = document.querySelector('.tb-wrap'); if (tb) tb.outerHTML = tableroHTML(); } return; }
   if (f === 'ag_cli') { if (V.clienteDraft) V.clienteDraft[t.dataset.k] = t.value; return; }
   if (f === 'ag_cita') { if (V.citaDraft) V.citaDraft[t.dataset.k] = t.value; return; }
   if (f === 'ag_citaFecha') { if (V.citaDraft) { sincronizarRuedas(); V.citaDraft.dia = t.value || null; render(); } return; }

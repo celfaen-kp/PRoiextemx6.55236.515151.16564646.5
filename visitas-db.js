@@ -468,6 +468,21 @@ export async function borrarPresupuesto(id) {
   return true;
 }
 
+/* ---------------- bitácora del cliente (sql/etapa71) ---------------- */
+export async function listarBitacora(clienteId) {
+  return unwrap(await supabase.from('cliente_bitacora').select('*').eq('cliente_id', clienteId).order('at', { ascending: false }).limit(200)) || [];
+}
+/** Lo último apuntado de todos los clientes (para el tablero): hasta 600 anotaciones. */
+export async function listarBitacoraReciente() {
+  return unwrap(await supabase.from('cliente_bitacora').select('*').order('at', { ascending: false }).limit(600)) || [];
+}
+export async function anotarBitacora(fila) {
+  return unwrap(await supabase.from('cliente_bitacora').insert(fila).select().single());
+}
+export async function borrarBitacora(id) {
+  return unwrap(await supabase.from('cliente_bitacora').delete().eq('id', id).select('id'));
+}
+
 /**
  * El seguimiento del presupuesto (sql/etapa64): enviado al cliente, respuesta,
  * obra enlazada. `cambios` lleva solo lo que cambia.
