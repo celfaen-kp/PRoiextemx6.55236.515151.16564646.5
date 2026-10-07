@@ -19,7 +19,7 @@ igual('manda el vivo más avanzado, no el rechazado', presuQueManda(c).id, 'b');
 igual('estado del cliente: esperando', agEstadoCliente(Object.assign({ citas: [] }, c)).k, 'esperando');
 c.visitas[0].presupuestos[0].respuesta_cliente = 'aceptado';
 igual('aceptado manda', agEstadoCliente(Object.assign({ citas: [] }, c)).txt, 'Presupuesto · aceptado');
-igual('sin presupuestos: lo de siempre', agEstadoCliente({ citas: [], visitas: [{ id: 'v', sync_estado: 'sincronizada' }] }).k, 'teamleader');
+igual('sin presupuestos: visitado, aunque esté en Teamleader', agEstadoCliente({ citas: [], visitas: [{ id: 'v', sync_estado: 'sincronizada' }] }).txt, 'Visitado · por presupuestar');
 igual('duplicados por id no se repiten', presupuestosDeCliente({ presupuestos: [{ id: 'x', created_at: '1' }], visitas: [{ presupuestos: [{ id: 'x', created_at: '1' }] }] }).length, 1);
 
 resultado();

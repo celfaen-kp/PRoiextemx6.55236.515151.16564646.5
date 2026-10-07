@@ -297,6 +297,9 @@ body.con-captcha #captcha{display:block}
 .tb-card{background:#fff;border-radius:12px;padding:10px 12px;margin-bottom:8px;box-shadow:var(--sh);cursor:pointer;border-left:3px solid var(--l2)}
 .tb-card .n{font:600 14px/1.25 var(--sans)}
 .tb-card .s{font:400 12px/1.35 var(--sans);color:var(--t2);margin-top:3px}
+.tb-card .tb-mas{flex:none;font:700 15px/1 var(--sans);color:var(--t3);padding:0 2px 0 6px;cursor:pointer}
+.tb-card.arrastrando{opacity:.4}
+.tb-col.sobre{outline:2px dashed var(--verde);outline-offset:-2px;background:rgba(61,143,74,.08)}
 .tb-card .a{font:500 12px/1.3 var(--sans);margin-top:6px;padding:5px 8px;border-radius:8px;background:rgba(20,23,15,.05)}
 .tb-card .a.vence{background:var(--rojo-cl);color:var(--rojo)}
 
@@ -407,7 +410,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '20.12'; // versión visible de la app (única fuente)
+const APP_VERSION = '20.13'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -2851,7 +2854,8 @@ A.planRepetir = async (empId) => {
 // Las obras de un cliente: por el enlace (cliente_id) o, si no lo hay, por el nombre.
 const obrasDeCliente = (c) => S.obras.filter((o) => (o.clienteId && o.clienteId === c.id) || (o.cliente && c.nombre && sinTildes(o.cliente) === sinTildes(c.nombre))).sort(porNumeroDesc);
 // «No hace falta cita»: el cliente se da por resuelto, con el porqué.
-const SIN_CITA_MOTIVOS = ['Ya tiene obra', 'Presupuesto hecho fuera de la app', 'Solo era una consulta', 'No le interesa', 'Repetido'];
+const SIN_VISITA = 'Se presupuesta sin visita';
+const SIN_CITA_MOTIVOS = [SIN_VISITA, 'Ya tiene obra', 'Presupuesto hecho fuera de la app', 'Solo era una consulta', 'No le interesa', 'Repetido'];
 A.ag_sinCitaAbrir = (id) => { V.sheet = { tipo: 'sinCita', id, motivo: '', otro: '', busy: false }; render(); };
 A.ag_sinCitaGuardar = async () => {
   const s = V.sheet; if (!s || s.tipo !== 'sinCita' || s.busy) return;
@@ -8860,6 +8864,49 @@ const ultimaNota = (c) => {
   return bs.find((b) => ['llamada', 'whatsapp', 'email', 'nota'].includes(b.tipo)) || bs[0] || null;
 };
 // Próxima acción: «llamar el jueves», con fecha y quién.
+/* ---------- mover una tarjeta del tablero a otra fase ----------
+ * Las columnas son fases que se deducen de lo que ha pasado; mover una tarjeta
+ * es hacer lo que esa fase pide: a «resueltos» se dice por qué, a «aplazados»
+ * hasta cuándo, a «por presupuestar» se marca que se presupuesta sin visita, a
+ * «nuevos» se deshace lo anterior. Las demás (citado, presupuesto, enviado,
+ * respuesta) se alcanzan con su acción y se dice cuál.
+ * -------------------------------------------------------------- */
+const TB_DESTINOS = [
+  ['sin_cita', 'Nuevos · sin cita', 'Vuelve a la cola de llamar y citar'],
+  ['citado', 'Citados', 'Abre una cita nueva'],
+  ['visitado', 'Visitados · por presupuestar', 'Se presupuesta sin ir a verlo'],
+  ['aplazado', 'Aplazados', 'Hasta una fecha y por qué'],
+  ['sin_cita_ok', 'Resueltos sin cita', 'Ya tiene obra, presupuesto fuera, no interesa…'],
+  ['rechazado', 'Rechazados', 'El presupuesto se marca rechazado'],
+  ['aceptado', 'Aceptados · obra', 'El presupuesto se marca aceptado'],
+];
+A.tbMoverAbrir = (id) => { const c = agCliente(id); if (!c || !puedeCitar()) return; V.sheet = { tipo: 'tbMover', id, actual: agEstadoCliente(c).k }; render(); };
+A.tbMover = async (id, k) => {
+  const c = agCliente(id); if (!c || !puedeCitar()) return;
+  const actual = agEstadoCliente(c).k;
+  V.sheet = null;
+  if (k === actual) { render(); return; }
+  if (k === 'sin_cita_ok') return A.ag_sinCitaAbrir(id);
+  if (k === 'aplazado') return A.segAplazarAbrir(id);
+  if (k === 'citado') return A.ag_nuevaCita(id);
+  if (k === 'visitado') { V.sheet = { tipo: 'sinCita', id, motivo: SIN_VISITA, otro: '', busy: false }; render(); return; }
+  if (k === 'sin_cita') {
+    if (c.aplazado_hasta) return A.segRetomar(id);
+    if (c.sin_cita_motivo) return A.ag_sinCitaQuitar(id);
+    avisar('Ya está en nuevos, o tiene citas o visitas: esas se quitan desde su ficha.'); render(); return;
+  }
+  if (k === 'aceptado' || k === 'rechazado') {
+    const p = presuQueManda(c);
+    if (!p) { avisar('Para marcarlo ' + k + ' primero hace falta un presupuesto.'); render(); return; }
+    try {
+      Object.assign(p, await visitasDB.seguimientoPresupuesto(p.id, { respuesta_cliente: k, respondido_at: new Date().toISOString() }));
+      anotar(id, 'presupuesto', 'Presupuesto ' + k + ' (movido en el tablero)');
+      toast('Presupuesto ' + k + '.'); render();
+    } catch (e) { avisar('No se pudo: ' + msgError(e)); render(); }
+    return;
+  }
+  avisar('A esa fase se llega con su acción: crear el presupuesto o enviarlo al cliente.'); render();
+};
 A.segAccionAbrir = (id) => { const c = agCliente(id); if (!c) return; V.sheet = { tipo: 'segAccion', id, texto: c.proxima_accion || '', fecha: c.proxima_accion_at || siguienteLaborable(hoyISO()), quien: c.proxima_accion_por || miEmpId() || null, busy: false }; render(); };
 A.segAccionGuardar = async () => {
   const s = V.sheet; if (!s || s.tipo !== 'segAccion' || s.busy) return;
@@ -8957,7 +9004,7 @@ function seguimientoClienteHTML(c) {
 }
 // El tablero por fases, como el de Teamleader pero con lo que la app ya sabe.
 const TABLERO_COLS = [
-  ['sin_cita', 'Nuevos · sin cita', 'var(--rojo)'], ['citado', 'Citados', 'var(--ambar)'], ['visitado', 'Visitados', 'var(--tinta)'], ['teamleader', 'Visita en Teamleader', 'var(--verde)'],
+  ['sin_cita', 'Nuevos · sin cita', 'var(--rojo)'], ['citado', 'Citados', 'var(--ambar)'], ['visitado', 'Visitados · por presupuestar', 'var(--tinta)'],
   ['presupuestado', 'Presupuesto por revisar o enviar', 'var(--tinta)'], ['esperando', 'Enviado · esperando', 'var(--ambar)'], ['aplazado', 'Aplazados', 'var(--ambar-o)'],
   ['aceptado', 'Aceptados · obra', 'var(--verde)'], ['rechazado', 'Rechazados', 'var(--rojo)'], ['sin_cita_ok', 'Resueltos sin cita', 'var(--t3)'],
 ];
@@ -8972,12 +9019,12 @@ function tableroHTML() {
   const hoy = hoyISO();
   let lista = ag.clientes;
   if (q) lista = lista.filter((c) => [c.nombre, c.telefono, c.poblacion, c.email].some((v) => String(v || '').toLowerCase().includes(q)));
-  const cols = tableroColumnas(lista).filter((col) => col.clientes.length || !['teamleader', 'sin_cita_ok', 'rechazado'].includes(col.k));
+  const cols = tableroColumnas(lista).filter((col) => col.clientes.length || !['sin_cita_ok', 'rechazado'].includes(col.k));
   const importe = (c) => { const p = presuQueManda(c); return p && p.total_venta != null ? eur(p.total_venta) : ''; };
-  return `<div class="tb-wrap"><div class="tb-cols">${cols.map((col) => `<div class="tb-col">
+  return `<div class="tb-wrap"><div class="tb-cols">${cols.map((col) => `<div class="tb-col" data-col="${col.k}">
     <div class="lbl"><span style="color:${col.color}">${esc(col.titulo)} (${col.clientes.length})</span><span class="tiny">${(() => { const t = col.clientes.reduce((s, x) => { const p = presuQueManda(x.c); return s + (p && p.total_venta ? Number(p.total_venta) : 0); }, 0); return t ? eur(t) : ''; })()}</span></div>
-    ${col.clientes.map(({ c, e }) => { const un = ultimaNota(c); const vencida = c.proxima_accion_at && c.proxima_accion_at < hoy; return `<div class="tb-card" data-a="ag_abrirCliente" data-id="${c.id}" style="border-left-color:${e.color}">
-      <div class="row" style="justify-content:space-between;align-items:baseline;gap:8px"><div class="n">${esc(c.nombre)}</div>${importe(c) ? `<span class="num" style="font-size:13px;white-space:nowrap">${importe(c)}</span>` : ''}</div>
+    ${col.clientes.map(({ c, e }) => { const un = ultimaNota(c); const vencida = c.proxima_accion_at && c.proxima_accion_at < hoy; return `<div class="tb-card" data-a="ag_abrirCliente" data-id="${c.id}" draggable="true" data-cli="${c.id}" style="border-left-color:${e.color}">
+      <div class="row" style="justify-content:space-between;align-items:baseline;gap:8px"><div class="n">${esc(c.nombre)}</div>${importe(c) ? `<span class="num" style="font-size:13px;white-space:nowrap">${importe(c)}</span>` : ''}<span class="tb-mas" data-a="tbMoverAbrir" data-id="${c.id}" title="Mover a otra fase">⋯</span></div>
       <div class="s">${esc([agTipoNombre(c), c.poblacion].filter(Boolean).join(' · '))}${c.contacto_estado ? ' · ' + esc(agContactadoTxt(c)) : ''}</div>
       <div style="margin-top:7px">${caminoHTML(c, false, true)}</div>
       ${c.proxima_accion ? `<div class="a ${vencida ? 'vence' : ''}">${esc(c.proxima_accion)}${c.proxima_accion_at ? ' · ' + esc(fechaCorta(c.proxima_accion_at + 'T12:00')) : ''}${c.proxima_accion_por ? ' · ' + esc(agNombreEmp(c.proxima_accion_por)) : ''}</div>` : ''}
@@ -9078,10 +9125,18 @@ function agEstadoCliente(c) {
   if (sgm && sgm.k === 'aceptado') return { k: 'aceptado', color: sgm.color, txt: 'Presupuesto · aceptado' };
   if (c.aplazado_hasta && c.aplazado_hasta >= hoyISO()) return { k: 'aplazado', color: 'var(--ambar-o)', txt: 'Aplazado hasta ' + fechaCorta(c.aplazado_hasta + 'T12:00') + (c.aplazado_motivo ? ' · ' + c.aplazado_motivo : '') };
   if (pm) return { k: sgm.k, color: sgm.color, txt: 'Presupuesto · ' + sgm.txt.toLowerCase() };
-  if (vis.some((v) => v.sync_estado === 'sincronizada')) return { k: 'teamleader', color: 'var(--verde)', txt: 'En Teamleader' };
+  // Visitado manda sobre una cita posterior: lo que toca es el presupuesto.
+  // Que la visita esté o no en Teamleader es un detalle, no una fase.
+  if (vis.length) {
+    const txt = vis.some((v) => v.sync_estado === 'sincronizada') ? 'Visitado · por presupuestar'
+      : vis.some((v) => v.estado === 'completada') ? 'Visitado · visita por enviar' : 'Visitado · visita sin cerrar';
+    return { k: 'visitado', color: 'var(--tinta)', txt };
+  }
   const prox = pend.filter((x) => x.inicio).sort((a, b) => a.inicio.localeCompare(b.inicio))[0];
   if (prox) return { k: 'citado', color: 'var(--ambar)', txt: 'Citado · ' + (agDiaDe(prox.inicio) === agHoy() ? 'hoy' : fechaCorta(prox.inicio)) + ' ' + agHora(prox.inicio) };
-  if (vis.length) return { k: 'visitado', color: 'var(--tinta)', txt: vis.some((v) => v.estado === 'completada') ? 'Visitado · por enviar' : 'Visitado · sin cerrar' };
+  // Se presupuesta sin ir a verlo (cliente de siempre, datos por teléfono):
+  // va con los visitados, que es la cola de presupuestar.
+  if (c.sin_cita_motivo === SIN_VISITA && !pend.length) return { k: 'visitado', color: 'var(--tinta)', txt: 'Por presupuestar · sin visita' };
   // Resuelto sin cita (ya tiene obra, presupuesto hecho fuera, solo consulta…).
   if (c.sin_cita_motivo && !pend.length) return { k: 'sin_cita_ok', color: 'var(--t3)', txt: 'Sin cita · ' + c.sin_cita_motivo };
   // Sin cita: rojo si nadie le ha llamado; ámbar si ya se habló con él.
@@ -9869,7 +9924,7 @@ function clientesListaHTML() {
 function vClientes() {
   const ag = V.agenda;
   const cuenta = (k) => ag.clientes.filter((c) => k === 'sin_contactar' ? (agEstadoCliente(c).k === 'sin_cita' && c.contacto_estado !== 'contactado') : agEstadoCliente(c).k === k).length;
-  const filtros = [['todos', 'Todos'], ['sin_contactar', 'Sin contactar'], ['sin_cita', 'Sin cita'], ['citado', 'Citados'], ['visitado', 'Visitados'], ['teamleader', 'En Teamleader'], ['aplazado', 'Aplazados'], ['sin_cita_ok', 'Sin cita · resueltos'], ['presupuestado', 'Presup. por revisar o enviar'], ['esperando', 'Esperando respuesta'], ['aceptado', 'Aceptados'], ['rechazado', 'Rechazados']];
+  const filtros = [['todos', 'Todos'], ['sin_contactar', 'Sin contactar'], ['sin_cita', 'Sin cita'], ['citado', 'Citados'], ['visitado', 'Visitados'], ['aplazado', 'Aplazados'], ['sin_cita_ok', 'Sin cita · resueltos'], ['presupuestado', 'Presup. por revisar o enviar'], ['esperando', 'Esperando respuesta'], ['aceptado', 'Aceptados'], ['rechazado', 'Rechazados']];
   return `<div class="hdr">
     <div class="row" style="justify-content:space-between;align-items:center">
       <div class="h1">Clientes</div>
@@ -10109,7 +10164,7 @@ function vCitaVer() {
       </div>
     </div>`;
   } else if (x.visita_id) {
-    pie = `<div class="pie"><button class="btn btn-gris" data-a="abrirVisita" data-id="${x.visita_id}">Ver la visita</button></div>`;
+    pie = `<div class="pie"><button class="btn btn-gris" data-a="verVisita" data-id="${x.visita_id}">Ver la visita</button></div>`;
   } else if (puedeCitar()) {
     pie = `<div class="pie"><button class="btn btn-verde" data-a="ag_nuevaCita" data-id="${x.cliente_id}">Nueva cita</button></div>`;
   }
@@ -10235,7 +10290,7 @@ function vClienteVer() {
     }
     const v = it.v;
     const est = v.sync_estado === 'sincronizada' ? ['var(--verde)', 'En Teamleader'] : v.estado === 'completada' ? ['var(--tinta)', 'Cerrada · por enviar'] : ['var(--ambar)', 'Borrador'];
-    return `<div class="ag-hito hecho"><div class="card" data-a="abrirVisita" data-id="${v.id}" style="cursor:pointer">
+    return `<div class="ag-hito hecho"><div class="card" data-a="verVisita" data-id="${v.id}" style="cursor:pointer">
       <div class="row g8"><span class="dot" style="width:8px;height:8px;background:${est[0]}"></span><span class="lbl">${est[1]}${v.codigo ? ' · ' + esc(v.codigo) : ''}</span></div>
       <div style="font:600 15px/1.25 var(--sans);margin-top:7px">Visita${v.fecha_visita ? ' del ' + fechaCorta(v.fecha_visita + 'T12:00') : ''}</div>
       ${v.direccion ? `<div class="sub" style="font-size:12.5px;margin-top:3px">${esc([v.direccion, v.poblacion].filter(Boolean).join(' · '))}</div>` : ''}
@@ -10941,6 +10996,15 @@ function sheet() {
       </div>
     </div></div>`;
   }
+  if (s.tipo === 'tbMover') {
+    const c = agCliente(s.id) || {};
+    return `<div class="sheet"><div>
+      <div style="font:600 23px/1.15 var(--cond)">Mover a otra fase</div>
+      <div class="sub" style="margin-top:6px">${esc(c.nombre || '')}. También se puede arrastrar la tarjeta a la columna.</div>
+      <div class="col g8" style="margin-top:14px">${TB_DESTINOS.filter(([k]) => k !== s.actual).map(([k, t, d]) => `<button class="btn btn-gris" data-a="tbMover" data-id="${s.id}" data-k="${k}" style="border-radius:14px;text-align:left;padding:12px 14px"><div style="font:600 15px var(--sans)">${esc(t)}</div><div class="tiny" style="margin-top:3px">${esc(d)}</div></button>`).join('')}</div>
+      <button class="btn btn-gris" data-a="cerrarSheet" style="margin-top:14px;border-radius:99px">Cancelar</button>
+    </div></div>`;
+  }
   if (s.tipo === 'parteOtraObra') {
     const o = obraById(s.obraId) || {};
     return `<div class="sheet"><div>
@@ -11284,6 +11348,9 @@ document.addEventListener('click', (e) => {
   if (a === 'visitaFoto') return A.visitaFoto(d.c, d.k);
   if (a === 'guardarVisita') return A.guardarVisita(d.completar === '1');
   if (a === 'abrirVisita') return A.abrirVisita(d.id);
+  if (a === 'verVisita') return A.verVisita(d.id);
+  if (a === 'tbMoverAbrir') { e.stopPropagation(); return A.tbMoverAbrir(d.id); }
+  if (a === 'tbMover') return A.tbMover(d.id, d.k);
   if (a === 'editarVisita') return A.editarVisita(d.id);
   if (a === 'enviarVisita') return A.enviarVisita();
   if (a === 'visitaPdf') return A.visitaPdf();
@@ -11541,6 +11608,31 @@ document.addEventListener('click', (e) => {
   if (a === 'importarConfirmar') return A.importarConfirmar();
   if (a === 'salir') return A.salir();
   if (a === 'instalar') return A.instalar();
+});
+// Arrastrar tarjetas del tablero de clientes de una columna a otra (ratón y
+// tableta con puntero; en el móvil está el «⋯» de la tarjeta).
+let tbArrastre = null;
+document.addEventListener('dragstart', (e) => {
+  const card = e.target.closest && e.target.closest('.tb-card[data-cli]');
+  if (!card) return;
+  tbArrastre = card.dataset.cli; card.classList.add('arrastrando');
+  try { e.dataTransfer.setData('text/plain', tbArrastre); e.dataTransfer.effectAllowed = 'move'; } catch (_) { /* da igual */ }
+});
+document.addEventListener('dragend', () => { tbArrastre = null; document.querySelectorAll('.tb-card.arrastrando, .tb-col.sobre').forEach((x) => x.classList.remove('arrastrando', 'sobre')); });
+document.addEventListener('dragover', (e) => {
+  const col = tbArrastre && e.target.closest && e.target.closest('.tb-col[data-col]');
+  if (!col) return;
+  e.preventDefault();
+  document.querySelectorAll('.tb-col.sobre').forEach((x) => { if (x !== col) x.classList.remove('sobre'); });
+  col.classList.add('sobre');
+});
+document.addEventListener('drop', (e) => {
+  const col = tbArrastre && e.target.closest && e.target.closest('.tb-col[data-col]');
+  if (!col) return;
+  e.preventDefault();
+  const id = tbArrastre; tbArrastre = null;
+  document.querySelectorAll('.tb-card.arrastrando, .tb-col.sobre').forEach((x) => x.classList.remove('arrastrando', 'sobre'));
+  A.tbMover(id, col.dataset.col);
 });
 document.addEventListener('input', (e) => {
   const t = e.target;

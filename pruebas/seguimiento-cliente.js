@@ -21,7 +21,12 @@ igual('citados', por.citado, 'Bea');
 igual('aplazados', por.aplazado, 'Cai');
 igual('esperando respuesta', por.esperando, 'Dani');
 igual('resueltos sin cita', por.sin_cita_ok, 'Eva');
-igual('diez columnas siempre', cols.length, 10);
+igual('nueve columnas siempre', cols.length, 9);
+comprueba('ya no hay columna «En Teamleader»', !cols.some(function (c) { return c.k === 'teamleader'; }));
+igual('«se presupuesta sin visita» va con los visitados', agEstadoCliente({ citas: [], visitas: [], sin_cita_motivo: SIN_VISITA }).k, 'visitado');
+igual('y lo dice', agEstadoCliente({ citas: [], visitas: [], sin_cita_motivo: SIN_VISITA }).txt, 'Por presupuestar · sin visita');
+igual('visitado manda sobre una cita posterior', agEstadoCliente({ citas: [{ estado: 'pendiente', inicio: new Date(Date.now() + 86400000).toISOString() }], visitas: [{ id: 'v', estado: 'completada' }] }).k, 'visitado');
+comprueba('las tarjetas del tablero se pueden arrastrar y tienen «⋯»', (function () { V.agenda.clientes = [{ id: 'a', nombre: 'Ana', citas: [], visitas: [] }]; V.agenda.buscar = ''; var h = tableroHTML(); return h.indexOf('draggable="true"') >= 0 && h.indexOf('data-a="tbMoverAbrir"') >= 0 && h.indexOf('data-col="sin_cita"') >= 0; })());
 
 titulo('el camino del cliente (V20.9)');
 var camino = function (c) { return caminoCliente(c).map(function (x) { return x.k + ':' + x.estado; }).join(' '); };
