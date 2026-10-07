@@ -390,7 +390,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '20.5'; // versión visible de la app (única fuente)
+const APP_VERSION = '20.6'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -4412,9 +4412,9 @@ function cabeceraObraHTML(o) {
       <span class="grow"></span>
       <span class="row g8" style="align-items:center"><span class="dot" style="width:8px;height:8px;background:${obraCerrada(o) ? 'rgba(20,23,15,.22)' : o.estado === 'planificada' ? 'var(--ambar)' : 'var(--verde)'}"></span><span class="lbl">${esc(estadoObraTxt(o))}</span></span>
     </div>
-    <div style="font:600 16px/1.3 var(--sans);margin-top:${cod ? '9px' : '6px'}">${esc(o.cliente || (cod ? o.titulo : '') || 'Sin cliente')}</div>
-    ${direccionObra(o) ? `<div style="font:400 15px/1.35 var(--sans);color:var(--t2);margin-top:3px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">${esc(direccionObra(o))}</div>` : ''}
-    ${cod && descr ? `<div class="sub" style="margin-top:3px">${esc(descr)}</div>` : ''}`;
+    <div style="font:600 16px/1.3 var(--sans);margin-top:${cod ? '9px' : '6px'}">${esc(descr || o.cliente || (cod ? o.titulo : '') || 'Sin cliente')}</div>
+    ${descr && o.cliente ? `<div class="sub" style="margin-top:2px">${esc(o.cliente)}</div>` : ''}
+    ${direccionObra(o) ? `<div style="font:400 15px/1.35 var(--sans);color:var(--t2);margin-top:3px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">${esc(direccionObra(o))}</div>` : ''}`;
 }
 
 // La lista de obras de la pestaña elegida, filtrada por lo que se ha escrito.
@@ -4463,7 +4463,7 @@ function vObra() {
   return `<div class="hdr-dark">
     <div class="back" data-a="ir" data-v="obras">‹ Obras</div>
     <div class="row g8" style="align-items:center;flex-wrap:wrap"><span style="font:600 27px/1.1 var(--cond)">${esc(codigoObra(o) || o.titulo)}</span>${chipsCategorias(o, true)}<span class="grow"></span><span class="tiny" style="color:rgba(255,255,255,.55)">${esc(estadoObraTxt(o))}</span></div>
-    ${codigoObra(o) ? `<div style="font:600 17px/1.3 var(--sans);margin-top:8px">${esc(o.cliente || o.titulo)}</div>${o.nombre && o.nombre !== o.cliente ? `<div class="sub" style="color:rgba(255,255,255,.55);margin-top:2px">${esc(o.nombre)}</div>` : ''}` : (o.cliente ? `<div style="font:600 17px/1.3 var(--sans);margin-top:8px">${esc(o.cliente)}</div>` : '')}
+    ${codigoObra(o) ? `<div style="font:600 17px/1.3 var(--sans);margin-top:8px">${esc((o.nombre && o.nombre !== o.cliente ? o.nombre : '') || o.cliente || o.titulo)}</div>${o.nombre && o.nombre !== o.cliente && o.cliente ? `<div class="sub" style="color:rgba(255,255,255,.55);margin-top:2px">${esc(o.cliente)}</div>` : ''}` : (o.cliente ? `<div style="font:600 17px/1.3 var(--sans);margin-top:8px">${esc(o.cliente)}</div>` : '')}
     <div style="font:400 15px/1.35 var(--sans);color:rgba(255,255,255,.7);margin-top:4px">${esc(direccionObra(o) || 'Sin dirección')}</div>
     ${o.tlId ? '<div class="tiny" style="color:var(--verde-c);margin-top:6px">✓ Cliente enlazado con Teamleader</div>' : ''}
     ${o.dir ? `<div class="ag-acciones" style="justify-content:flex-start;gap:26px">${accionComoLlegar(o.dir)}</div>` : ''}
