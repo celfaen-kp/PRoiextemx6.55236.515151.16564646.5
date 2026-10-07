@@ -140,6 +140,7 @@ async function novedades(token: string, metodo: string, desde: string) {
 // deno-lint-ignore no-explicit-any
 async function motivoDe(token: string, x: any, esEmpresa: boolean) {
   const trozos: string[] = [];
+  const idsDeals: string[] = [];
   try {
     const info = await crm(token, esEmpresa ? 'companies.info' : 'contacts.info', { id: x.id });
     const d = info?.data || {};
@@ -157,13 +158,37 @@ async function motivoDe(token: string, x: any, esEmpresa: boolean) {
     });
     // deno-lint-ignore no-explicit-any
     for (const dl of (deals?.data || []) as any[]) {
+      if (dl?.id) idsDeals.push(String(dl.id));
       const titulo = limpio(dl.title), resumen = limpio(dl.summary);
       if (titulo && !trozos.some((z) => z.includes(titulo))) trozos.push(titulo);
       if (resumen && !trozos.some((z) => z.includes(resumen))) trozos.push(resumen);
     }
   } catch { /* igual */ }
+  // Las NOTAS: ahí es donde Make deja el formulario entero de los leads de
+  // Meta («Lead Meta Ads – Formulario FV_BATERIA…: ¿Eres propietario?…»).
+  // Se miran las del contacto y las de sus oportunidades. Van después del
+  // título, con sus saltos de línea, que es como se leen.
+  try {
+    const sujetos: { type: string; id: string }[] = [{ type: esEmpresa ? 'company' : 'contact', id: x.id }];
+    for (const id of idsDeals) sujetos.push({ type: 'deal', id });
+    for (const sujeto of sujetos) {
+      const notas = await crm(token, 'notes.list', { filter: { subject: sujeto }, page: { size: 10, number: 1 } });
+      // deno-lint-ignore no-explicit-any
+      for (const nt of (notas?.data || []) as any[]) {
+        const texto = sinHTML(nt?.content || nt?.body || nt?.text || '');
+        if (texto.length > 3 && !trozos.some((z) => z.includes(texto))) trozos.push(texto);
+      }
+    }
+  } catch { /* sin notas: con el título vale */ }
   // Sin repetir y sin pasarse de largo.
-  return [...new Set(trozos)].join(' · ').slice(0, 1200);
+  return [...new Set(trozos)].join('\n').slice(0, 3000);
+}
+/** Una nota de Teamleader viene en HTML: fuera etiquetas, dentro los saltos. */
+function sinHTML(html: string) {
+  return String(html || '')
+    .replace(/<br\s*\/?>/gi, '\n').replace(/<\/(p|div|li|h\d)>/gi, '\n').replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'")
+    .split('\n').map((l) => l.trim()).filter((l, i, a) => l || (i > 0 && a[i - 1])).join('\n').trim();
 }
 
 // deno-lint-ignore no-explicit-any
@@ -274,8 +299,31 @@ Deno.serve(async (req) => {
       // Los del formulario web llevan «Alta desde el formulario web» en las
       // observaciones. Los demás los creó alguien a mano en el CRM: también
       // hay que mirarlos, pero no son «de la web».
-      n.origen = /formulario web/i.test(motivo) ? 'web' : 'crm';
+      n.origen = /formulario web|lead meta|meta ads|formulario/i.test(motivo) ? 'web' : 'crm';
     }
+
+    // Los que entraron hace poco y aún no tienen el formulario: la nota de
+    // Meta llega un minuto después del contacto, así que la primera pasada
+    // solo vio el título. Se vuelve a mirar durante unos días.
+    const refrescados: string[] = [];
+    if (!soloVer) try {
+      const hace7 = new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString();
+      const { data: recientes } = await sb.from('clientes_cache')
+        .select('id, nombre, tl_id, tl_tipo, motivo_web')
+        .not('tl_id', 'is', null).gte('lead_at', hace7).limit(40);
+      // deno-lint-ignore no-explicit-any
+      for (const c of (recientes || []) as any[]) {
+        if (String(c.motivo_web || '').includes('\n')) continue;   // ya tiene la nota
+        if (nuevas.some((n) => n.tl_id === c.tl_id)) continue;      // acaba de entrar: ya hecho
+        const motivo = await motivoDe(token, { id: c.tl_id }, c.tl_tipo === 'company');
+        if (motivo && motivo !== (c.motivo_web || '')) {
+          const cambios: Record<string, unknown> = { motivo_web: motivo };
+          if (/formulario web|lead meta|meta ads|formulario/i.test(motivo)) cambios.origen = 'web';
+          await sb.from('clientes_cache').update(cambios).eq('id', c.id);
+          refrescados.push(c.nombre);
+        }
+      }
+    } catch { /* sin la etapa 64 no hay motivo_web; se sigue */ }
 
     // La marca de agua se mueve al más nuevo que hemos visto, no a "ahora": si
     // entra uno mientras corremos, la próxima pasada lo pilla igual.
@@ -316,7 +364,7 @@ Deno.serve(async (req) => {
     }
 
     return json({ ok: true, desde, mirados: contactos.length + empresas.length, nuevos: guardados,
-      nombres: nuevas.map((n) => n.nombre), hoja });
+      nombres: nuevas.map((n) => n.nombre), motivos_refrescados: refrescados, hoja });
   } catch (e) {
     return json({ error: (e as Error).message }, 502);
   }
