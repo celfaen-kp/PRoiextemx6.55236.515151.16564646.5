@@ -20,4 +20,28 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
   },
 });
 
+// Las Edge Functions comprueban la sesión con el servidor de Auth, que es más
+// estricto que la base: un token caducado o de una sesión cerrada en otro
+// sitio pasa en la base (RLS mira firma y fecha) pero ahí da «Sesión no
+// válida». Se vio en el móvil de David: la planilla se guardaba y la copia a
+// Drive no. Aquí, si una función devuelve 401, se renueva la sesión y se
+// reintenta una vez; si sigue mal, se dice claro que hay que volver a entrar.
+const invocarOriginal = supabase.functions.invoke.bind(supabase.functions);
+supabase.functions.invoke = async (nombre, opciones) => {
+  const r = await invocarOriginal(nombre, opciones);
+  const estado = r.error && r.error.context && r.error.context.status;
+  if (estado !== 401) return r;
+  try {
+    const { data, error } = await supabase.auth.refreshSession();
+    if (error || !data || !data.session) throw error || new Error('sin sesión');
+  } catch (_) {
+    return { data: null, error: Object.assign(new Error('Tu sesión ha caducado: sal y vuelve a entrar con tu PIN.'), { name: 'SesionCaducada' }) };
+  }
+  const r2 = await invocarOriginal(nombre, opciones);
+  if (r2.error && r2.error.context && r2.error.context.status === 401) {
+    return { data: null, error: Object.assign(new Error('Tu sesión ha caducado: sal y vuelve a entrar con tu PIN.'), { name: 'SesionCaducada' }) };
+  }
+  return r2;
+};
+
 export default supabase;

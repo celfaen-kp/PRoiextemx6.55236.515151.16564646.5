@@ -574,7 +574,7 @@ export async function subirParteADrive(parteId, pdfBlob) {
   if (error) {
     let msg = error.message || 'error';
     const nombre = error.name || '';
-    if (nombre === 'FunctionsFetchError' || nombre === 'FunctionsRelayError' || /failed to (send|fetch)/i.test(msg)) {
+    if (nombre === 'SesionCaducada') { /* el mensaje ya es claro */ } else if (nombre === 'FunctionsFetchError' || nombre === 'FunctionsRelayError' || /failed to (send|fetch)/i.test(msg)) {
       msg = 'la función parte-drive no está subida todavía';
     } else {
       try {
@@ -701,7 +701,7 @@ export async function subirPlanillaADrive(documentoId) {
   if (error) {
     let msg = error.message || 'error';
     const nombre = error.name || '';
-    if (nombre === 'FunctionsFetchError' || nombre === 'FunctionsRelayError' || /failed to (send|fetch)/i.test(msg)) {
+    if (nombre === 'SesionCaducada') { /* el mensaje ya es claro */ } else if (nombre === 'FunctionsFetchError' || nombre === 'FunctionsRelayError' || /failed to (send|fetch)/i.test(msg)) {
       msg = 'la función planilla-drive no está subida todavía';
     } else {
       // La función explica el motivo en su respuesta: se prefiere ese texto.

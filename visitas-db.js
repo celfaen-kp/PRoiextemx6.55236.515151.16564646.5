@@ -260,7 +260,7 @@ async function invocar(nombre, cuerpo) {
   if (error) {
     let msg = error.message || 'error';
     const clase = error.name || '';
-    if (clase === 'FunctionsFetchError' || clase === 'FunctionsRelayError' || /failed to (send|fetch)/i.test(msg)) {
+    if (clase === 'SesionCaducada') { /* el mensaje ya es claro */ } else if (clase === 'FunctionsFetchError' || clase === 'FunctionsRelayError' || /failed to (send|fetch)/i.test(msg)) {
       // El navegador no llegó a la función: o no está subida, o está subida
       // una versión sin CORS, o no hay red. No se puede distinguir desde aquí.
       msg = 'no se pudo llamar a la función ' + nombre + ' (no está subida, o está subida una versión antigua)';
