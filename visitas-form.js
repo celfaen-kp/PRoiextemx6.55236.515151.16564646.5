@@ -117,8 +117,8 @@ function subcampoHTML(s, valor, listaKey, i) {
  * Una sección y una ficha entera
  * ------------------------------------------------------------------------- */
 export function seccionHTML(sec, datos, tocados = {}) {
-  return `<div style="margin-top:26px">
-    <div class="h2" style="margin-bottom:2px">${esc(sec.titulo)}</div>
+  return `<div class="vf-sec">
+    <div class="h2">${esc(sec.titulo)}</div>
     ${sec.campos.map((c) => campoHTML(c, datos?.[c.key], tocados[c.key])).join('')}
   </div>`;
 }

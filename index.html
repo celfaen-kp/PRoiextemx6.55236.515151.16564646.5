@@ -44,6 +44,16 @@ a:hover{color:var(--tinta)}
 
 .mono{font-family:var(--mono)}
 .lbl{font:400 10px/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:rgba(20,23,15,.45)}
+/* Ficha de visita (visitas-form.js): un campo = etiqueta + control + ayuda, con aire entre ellos */
+.campo{margin-top:20px}
+.campo:first-of-type{margin-top:14px}
+.campo>.lbl{font-size:11px;line-height:1.3;margin-bottom:9px;color:rgba(20,23,15,.6)}
+.campo>.tiny{font:400 12px/1.4 var(--sans);color:var(--t3);margin-top:7px}
+.campo .row.g8{gap:9px}
+.campo .chip{padding:11px 15px;font-size:14px}
+.vf-sec{margin-top:34px;padding-top:22px;border-top:1px solid var(--l1)}
+.vf-sec:first-child{margin-top:8px;padding-top:0;border-top:0}
+.vf-sec>.h2{margin-bottom:4px}
 .h1{font:700 30px/1.05 var(--cond);letter-spacing:-.01em}
 .h2{font:600 19px/1.15 var(--sans)}
 .num{font-family:var(--cond);font-weight:600}
@@ -379,7 +389,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '20.2'; // versión visible de la app (única fuente)
+const APP_VERSION = '20.3'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);

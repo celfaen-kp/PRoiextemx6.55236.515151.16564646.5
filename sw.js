@@ -1,4 +1,4 @@
-const CACHE = 'ch-v20-2';
+const CACHE = 'ch-v20-3';
 const ASSETS = ['./', './index.html', './manifest.webmanifest', './supabase-client.js', './supabase-auth.js', './supabase-db.js', './visitas-schemas.js', './visitas-form.js', './visitas-db.js', './icon-192.png?v=2', './icon-512.png?v=2', './icon-maskable.png?v=2', './logo-trans.png?v=3', './logo-blanco.png?v=3', './logo-s-blanco.png?v=2', './fondo-login.jpg'];
 
 // Al instalarse una versión nueva NO se activa sola: se queda esperando y la
