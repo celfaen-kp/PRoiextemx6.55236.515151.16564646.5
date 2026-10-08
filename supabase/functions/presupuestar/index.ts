@@ -146,9 +146,11 @@ Deno.serve(async (req) => {
   // deno-lint-ignore no-explicit-any
   const partidas: Record<string, any> = {};
   if (partidaIds.length) {
-    const { data: ps } = await sb.from('partidas').select('id, codigo, nombre').in('id', partidaIds);
+    // agrupada y detalle_tecnico (etapa 72b); si la base aún no los tiene, se piden sin ellos.
+    let ps = (await sb.from('partidas').select('id, codigo, nombre, agrupada, detalle_tecnico').in('id', partidaIds)).data;
+    if (!ps) ps = (await sb.from('partidas').select('id, codigo, nombre').in('id', partidaIds)).data;
     const { data: items } = await sb.from('partidas_items').select('*').in('partida_id', partidaIds).order('orden');
-    (ps || []).forEach((p) => { partidas[p.id] = { codigo: p.codigo, nombre: p.nombre, items: [] }; });
+    (ps || []).forEach((p) => { partidas[p.id] = { codigo: p.codigo, nombre: p.nombre, agrupada: !!p.agrupada, detalle_tecnico: p.detalle_tecnico || null, items: [] }; });
     (items || []).forEach((it) => { if (partidas[it.partida_id]) partidas[it.partida_id].items.push(it); });
   }
 

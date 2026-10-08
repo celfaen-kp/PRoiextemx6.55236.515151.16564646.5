@@ -410,7 +410,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '21.8'; // versión visible de la app (única fuente)
+const APP_VERSION = '21.9'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -7277,13 +7277,31 @@ function presupuestoHTML(v, fichas) {
  * el margen no se lea como exacto.
  */
 function costeMargenHTML(coste, venta, sinCoste) {
-  if (!veCostes() || coste == null || !(Number(venta) > 0)) return '';
+  if (!esAdmin() || coste == null || !(Number(venta) > 0)) return '';
   const c = Number(coste) || 0, v = Number(venta) || 0, m = v - c;
   const pct = v ? Math.round((m / v) * 1000) / 10 : 0;
   return `<div class="row" style="justify-content:space-between;margin-top:10px;padding:9px 11px;border-radius:12px;background:rgba(20,23,15,.045)">
     <span class="tiny" style="font-size:12px">Interno · coste ${eur(c)}${sinCoste ? ' · ' + sinCoste + ' línea' + (sinCoste === 1 ? '' : 's') + ' sin coste' : ''}</span>
     <span class="tiny" style="font-size:12px;color:${m >= 0 ? 'var(--verde-o)' : 'var(--rojo)'}">margen ${eur(m)} · ${String(pct).replace('.', ',')} %</span>
   </div>`;
+}
+
+/**
+ * El beneficio de UNA línea, para Administración: coste, margen y, si la línea
+ * es una partida agrupada, qué lleva dentro y cuánto. Ni en el PDF ni en
+ * Teamleader: solo aquí.
+ */
+function margenLineaHTML(l) {
+  if (!esAdmin() || l.precio_coste == null || l.precio_coste === '') return '';
+  const cant = Number(l.cantidad) || 0;
+  const coste = Math.round(Number(l.precio_coste) * cant * 100) / 100;
+  const venta = Number(l.importe != null ? l.importe : l.precio_venta) || 0;
+  const m = Math.round((venta - coste) * 100) / 100;
+  const pct = venta ? Math.round((m / venta) * 1000) / 10 : 0;
+  const oi = l.origen_inputs && typeof l.origen_inputs === 'object' ? l.origen_inputs : null;
+  const desglose = oi && Array.isArray(oi.desglose) ? oi.desglose : [];
+  return `<div class="tiny" style="margin-top:4px;color:${m >= 0 ? 'var(--verde-o)' : 'var(--rojo)'}">Interno · coste ${eur(coste)} · margen ${eur(m)} (${String(pct).replace('.', ',')} %)</div>
+    ${desglose.length ? `<div class="tiny" style="margin-top:3px;color:var(--t3)">${desglose.map((x) => esc(x.nombre) + ' ' + esc(String(x.cantidad)) + ' ' + esc(x.unidad || 'ud') + ' · ' + eur(x.coste)).join(' · ')}</div>` : ''}`;
 }
 
 /** De "Calcular" para abajo: incidencias, líneas, totales, catálogo y guardar.
@@ -7309,6 +7327,7 @@ function presuPanelHTML() {
             <div class="num" style="font-size:14px;flex:none${l.confirmada === false ? ';color:var(--ambar-o);font-size:12px' : ''}">${l.confirmada === false ? 'Pendiente de confirmar' : eur(l.importe)}</div>
           </div>
           ${l.detalle_tecnico ? `<div class="tiny" style="margin-top:3px;font-size:12px;line-height:1.35;color:var(--t2)">${esc(l.detalle_tecnico)}</div>` : ''}
+          ${margenLineaHTML(l)}
           <div class="tiny" style="margin-top:3px;opacity:.75">${esc(String(l.cantidad))} ${esc(l.unidad || 'ud')} × ${eur(l.precio_tarifa)}${l.dto_linea_pct ? ' · −' + l.dto_linea_pct + '%' : ''}${l.origen === 'manual' ? ' · añadida a mano' : ''}</div>
         </div>`).join('')}
       </div>`).join('')}
@@ -8638,6 +8657,7 @@ function vPresupuestoVer() {
           <div class="num" style="font-size:14px;flex:none${l.confirmada === false ? ';color:var(--ambar-o);font-size:12px' : ''}">${l.confirmada === false ? 'Pendiente de confirmar' : eur(l.precio_venta)}</div>
         </div>
         ${l.detalle_tecnico ? `<div class="tiny" style="margin-top:3px;font-size:12px;line-height:1.35;color:var(--t2)">${esc(l.detalle_tecnico)}</div>` : ''}
+        ${margenLineaHTML(l)}
         <div class="tiny" style="margin-top:3px;opacity:.75">${esc(String(l.cantidad))} ${esc(l.unidad || 'ud')} × ${eur(l.precio_tarifa)}${l.dto_linea_pct ? ' · −' + l.dto_linea_pct + '%' : ''}</div>
       </div>`).join('')}
       <div class="row" style="justify-content:space-between;margin-top:14px;padding-top:12px;border-top:2px solid var(--tinta)">

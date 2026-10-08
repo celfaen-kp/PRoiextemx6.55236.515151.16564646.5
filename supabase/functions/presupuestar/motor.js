@@ -21,7 +21,7 @@
 
 import { evaluar, evaluarNumero, numero, verdad } from './formulas.js';
 
-const MOTOR_VERSION = '1.2';
+const MOTOR_VERSION = '1.3';
 
 /** ¿Se cumple una condición {campo: valor} contra el ámbito? */
 function cumple(condicion, ambito) {
@@ -67,6 +67,14 @@ function mismo(a, b) {
  *     del catálogo es PVP y el coste es PVP × (1 − descuento de proveedor).
  *   · Un producto a 0 € no es gratis: es un precio PENDIENTE. La línea sale sin
  *     confirmar y con su incidencia, y no se inventa nada.
+ *   · `costes_complementarios_pct` (1.3): al coste del MATERIAL se le suma ese
+ *     % (consumibles, mermas, pequeño material) antes del recargo. No se aplica
+ *     a mano de obra, trámites, transporte ni medios.
+ *
+ *   PARTIDAS AGRUPADAS (1.3): una partida con `agrupada: true` sale como UNA
+ *   línea (su nombre × la cantidad de la regla) cuyo coste unitario es la suma
+ *   de sus renglones entre esa cantidad. El desglose (qué lleva y cuánto) va en
+ *   origen_inputs.desglose, para la versión interna; el cliente ve una línea.
  *   dtoLinea:  [{familia, descuento_pct}]      (puede ir vacío: sin descuentos)
  * }
  */
@@ -103,10 +111,16 @@ export function calcular(categoria, datos, config) {
   const recargoFila = (cfg.lookup || []).find((x) => x.clave === 'recargo_sobre_coste' && x.entrada === 'defecto');
   const recargo = recargoFila && numero(recargoFila.valor) > 0 ? numero(recargoFila.valor) : 1;
   const alCentimo = (n) => Math.round(numero(n) * 100 + 1e-7) / 100;
-  // De un precio base (catálogo o fijo) a {coste, venta} según el modelo de la categoría.
-  const precios = (base, dtoProveedor, sinRecargo) => {
+  const cdcFila = (cfg.lookup || []).find((x) => x.clave === 'costes_complementarios_pct' && x.entrada === 'defecto');
+  const cdc = cdcFila ? numero(cdcFila.valor) : 0;
+  const SIN_CDC = ['mano_obra', 'tramite', 'transporte', 'medios', 'servicio'];
+  // De un precio base (catálogo o fijo) a {coste, venta} según el modelo de la
+  // categoría. `familia` decide si lleva los costes complementarios (material sí).
+  const precios = (base, dtoProveedor, sinRecargo, familia) => {
     if (recargo !== 1 && !sinRecargo) {
-      const coste = alCentimo(numero(base) * (1 - numero(dtoProveedor) / 100));
+      let coste = numero(base) * (1 - numero(dtoProveedor) / 100);
+      if (cdc && !SIN_CDC.includes(String(familia || ''))) coste *= 1 + cdc / 100;
+      coste = alCentimo(coste);
       return { coste, venta: alCentimo(coste * recargo) };
     }
     return { coste: alCentimo(numero(base) * (1 - numero(dtoProveedor) / 100)), venta: alCentimo(base) };
@@ -164,7 +178,7 @@ export function calcular(categoria, datos, config) {
     }
     const dto = (cfg.dtoLinea || []).find((d) => d.familia === p.familia);
     const atr = p.atributos && typeof p.atributos === 'object' ? p.atributos : {};
-    const pr = precios(p.precio_tarifa, p.descuento_proveedor, verdad(atr.sin_recargo));
+    const pr = precios(p.precio_tarifa, p.descuento_proveedor, verdad(atr.sin_recargo), p.familia);
     // Sin precio no hay precio: la línea sale, con su cantidad, pero sin
     // confirmar y avisando. Así el presupuesto enseña lo que falta por cotizar.
     const pendiente = !(numero(p.precio_tarifa) > 0);
@@ -192,7 +206,38 @@ export function calcular(categoria, datos, config) {
       avisar('error', 'partida_desconocida', 'Una regla apunta a una partida que no existe.');
       return;
     }
-    (partida.items || []).slice().sort((a, b) => (a.orden || 0) - (b.orden || 0)).forEach((item) => {
+    const items = (partida.items || []).slice().sort((a, b) => (a.orden || 0) - (b.orden || 0));
+    if (partida.agrupada) {
+      // Una sola línea: el nombre de la partida × veces, al coste de lo que lleva.
+      const desglose = [];
+      let costeTotal = 0, pendiente = false;
+      items.forEach((item) => {
+        let cantidad;
+        try { cantidad = evaluarNumero(item.formula_cantidad || '1', ambito, ayudas); }
+        catch (e) { avisar('error', 'formula_rota', 'La partida ' + partida.codigo + ' tiene una fórmula que falla: ' + e.message); return; }
+        if (cantidad <= 0) return;
+        const p = item.producto_ref ? (cfg.productos || {})[item.producto_ref] : null;
+        if (item.producto_ref && !p) { avisar('error', 'producto_desconocido', 'No está en el catálogo la referencia ' + item.producto_ref + '.'); pendiente = true; return; }
+        const atr = p && p.atributos && typeof p.atributos === 'object' ? p.atributos : {};
+        const base = p ? p.precio_tarifa : item.precio_fijo;
+        if (!(numero(base) > 0)) { pendiente = true; avisar('aviso', 'precio_pendiente', 'Falta el precio de ' + (item.producto_ref || item.concepto_libre) + ' (dentro de ' + partida.nombre + '): pendiente de confirmar.'); }
+        const pr = precios(base, p ? p.descuento_proveedor : 0, p ? verdad(atr.sin_recargo) : false, p ? p.familia : 'material');
+        costeTotal += pr.coste * cantidad;
+        desglose.push({ ref: item.producto_ref || null, nombre: p ? p.nombre : item.concepto_libre, cantidad: Math.round(cantidad * 1000) / 1000, unidad: item.unidad || (p && p.unidad) || 'ud', coste_ud: pr.coste, coste: alCentimo(pr.coste * cantidad) });
+      });
+      if (!desglose.length) return;
+      const costeUd = alCentimo(costeTotal / veces);
+      mete({
+        producto_ref: partida.codigo, descripcion: partida.nombre, detalle_tecnico: partida.detalle_tecnico || null, especificaciones: [],
+        cantidad: veces, unidad: 'ud',
+        precio_tarifa: alCentimo(costeUd * (recargo !== 1 ? recargo : 1)), precio_coste: costeUd,
+        dto_linea_pct: 0, iva: 21, confirmada: !pendiente,
+        seccion: (regla && regla.seccion) || partida.nombre, origen: 'partida', origen_regla_id: (regla && regla.id) || null,
+        origen_inputs: { partida: partida.codigo, veces, desglose, coste_total: alCentimo(costeTotal) },
+      });
+      return;
+    }
+    items.forEach((item) => {
       let cantidad;
       try { cantidad = evaluarNumero(item.formula_cantidad || '1', ambito, ayudas); }
       catch (e) {
@@ -215,8 +260,8 @@ export function calcular(categoria, datos, config) {
         cantidad,
         // La unidad de la partida (etapa 51): m para la tubería, kg para el gas.
         unidad: item.unidad || 'ud',
-        precio_tarifa: precios(item.precio_fijo, 0, false).venta,
-        precio_coste: precios(item.precio_fijo, 0, false).coste,
+        precio_tarifa: precios(item.precio_fijo, 0, false, 'material').venta,
+        precio_coste: precios(item.precio_fijo, 0, false, 'material').coste,
         dto_linea_pct: 0,
         iva: 21,
         confirmada: true,
@@ -300,7 +345,7 @@ export function calcular(categoria, datos, config) {
     mete({
       producto_ref: null, descripcion: m.concepto, detalle_tecnico: null, especificaciones: [],
       cantidad, unidad: m.formula_horas ? 'h' : 'ud',
-      precio_tarifa: precios(precio, 0, false).venta, precio_coste: precios(precio, 0, false).coste,
+      precio_tarifa: precios(precio, 0, false, 'mano_obra').venta, precio_coste: precios(precio, 0, false, 'mano_obra').coste,
       dto_linea_pct: 0, iva: 21,
       seccion: 'Mano de obra', origen: 'mano_obra', origen_regla_id: null,
       origen_inputs: { formula: m.formula_horas || null },

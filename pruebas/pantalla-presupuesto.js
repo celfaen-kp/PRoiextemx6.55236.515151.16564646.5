@@ -70,15 +70,27 @@ setTimeout(function () {
   comprueba('si no hay nada, lo explica', presuResultadosHTML().indexOf('tarifa de esa marca') >= 0);
 
   titulo('versión interna: coste y margen (etapa 72)');
-  V.user = { id: 'u9' };
+  V.user = { id: 'u0' };
   var interno = costeMargenHTML(2260.4, 2848.52, 0);
-  comprueba('presupuestos ve el coste', interno.indexOf('coste') >= 0 && interno.indexOf('2260,40') >= 0);
+  comprueba('Administración ve el coste', interno.indexOf('coste') >= 0 && interno.indexOf('2260,40') >= 0);
+  V.user = { id: 'u9' };
+  igual('presupuestos no (solo Enzo lo ve)', costeMargenHTML(2260.4, 2848.52, 0), '');
+  V.user = { id: 'u0' };
+  var ml = margenLineaHTML({ cantidad: 10, precio_coste: 20, importe: 260, origen_inputs: { desglose: [{ nombre: 'Perfil G1', cantidad: 24, unidad: 'm', coste: 229.92 }] } });
+  comprueba('margen por línea para Administración, con el desglose de la partida', ml.indexOf('margen 60,00') >= 0 && ml.indexOf('Perfil G1 24 m') >= 0);
+  V.user = { id: 'u9' };
+  igual('y nadie más', margenLineaHTML({ cantidad: 10, precio_coste: 20, importe: 260 }), '');
+  V.user = { id: 'u0' };
+  comprueba('el PDF no lleva nada interno', (function () { var secciones = [{ nombre: '02 · Estructura y fijaciones', lineas: [{ descripcion: 'Estructura', precio_venta: 260, precio_coste: 20, origen_inputs: { desglose: [{ nombre: 'Perfil G1' }] } }] }]; var b = bloquesImpresion('solar', secciones); return JSON.stringify(b).indexOf('Perfil G1') < 0 && JSON.stringify(b).indexOf('precio_coste') < 0; })());
+  V.user = { id: 'u9' };
   comprueba('y el margen sobre venta (20,6 %)', interno.indexOf('588,12') >= 0 && interno.indexOf('20,6 %') >= 0);
+  V.user = { id: 'u0' };
   comprueba('dice cuántas líneas van sin coste', costeMargenHTML(100, 200, 2).indexOf('2 líneas sin coste') >= 0);
   V.user = { id: 'u1' };
   igual('un jefe de obra no lo ve', costeMargenHTML(2260.4, 2848.52, 0), '');
-  V.user = { id: 'u9' };
+  V.user = { id: 'u0' };
   igual('sin coste calculado no sale nada', costeMargenHTML(null, 2848.52, 0), '');
+  V.user = { id: 'u9' };
 
   titulo('pendiente de confirmar y por capítulos');
   V.presu.datos = { incidencias: [], totales: { bruto: 0, total: 0 }, lineas: [

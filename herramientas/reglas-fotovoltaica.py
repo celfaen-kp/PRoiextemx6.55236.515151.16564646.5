@@ -222,7 +222,8 @@ LOOKUP = [
     ('wp_panel', 'defecto', 510, 'Vatios del panel si no se dicen.'),
     ('paneles_por_fila', 'defecto', 10, 'Paneles por fila si la visita no apunta las filas. POR CONFIRMAR.'),
     ('ancho_panel_m', 'defecto', 1.134, 'Ancho del panel en vertical (m). POR CONFIRMAR con la ficha del panel que se use.'),
-    ('largo_barra_m', 'defecto', 2.35, 'Largo de la barra comercial de raíl (m). 2,35 m es el perfil G1 Sunfer de Obramat; cambiar si se compra otro. POR CONFIRMAR.'),
+    ('largo_barra_m', 'defecto', 4.8, 'Largo de la barra comercial de raíl (m). 4,8 m es el perfil G1 Sunfer 4800 de la base de precios de Sysefen.'),
+    ('costes_complementarios_pct', 'defecto', 10, 'Costes directos complementarios: % que se suma al coste del MATERIAL (consumibles, mermas) antes del recargo. No a mano de obra, trámites, transporte ni medios. Pedido por Enzo, 8 oct 2026.'),
     ('separacion_ganchos_m', 'defecto', 1.0, 'Separación máxima entre ganchos de teja (m). POR CONFIRMAR según fabricante.'),
     ('soportes_chapa_por_panel', 'defecto', 4, 'Soportes por panel en chapa / sándwich. Habitual 4; POR CONFIRMAR.'),
     ('anclajes_por_triangulo', 'defecto', 2, 'Anclajes químicos por triángulo en plana anclada. POR CONFIRMAR.'),
@@ -318,14 +319,15 @@ VARIABLES = [
 # =============================================================================
 # 5 · Las reglas
 # =============================================================================
-reglas = []  # (tipo, variable, min, max, condicion, producto, formula, seccion, prioridad, notas)
+reglas = []  # (tipo, variable, min, max, condicion, producto, formula, seccion, prioridad, notas, partida)
+PARTIDAS_AGRUPADAS = []  # (codigo, nombre, detalle, [(producto_ref, formula, unidad)])
 def pr(cap, sub=5):
     return 200 - int(cap) * 10 + sub
-def regla(prod, cond, formula='1', cap='03', prio=None, notas=None, tipo='cantidad', var=None, mn=None, mx=None, sub=5):
+def regla(prod, cond, formula='1', cap='03', prio=None, notas=None, tipo='cantidad', var=None, mn=None, mx=None, sub=5, partida=None):
     if prod: assert prod in P or prod in S, prod
-    reglas.append((tipo, var, mn, mx, cond or {}, prod, formula, CAP[cap] if tipo != 'aviso' else None, prio if prio is not None else pr(cap, sub), notas))
+    reglas.append((tipo, var, mn, mx, cond or {}, prod, formula, CAP[cap] if tipo != 'aviso' else None, prio if prio is not None else pr(cap, sub), notas, partida))
 def aviso(cond, notas, var=None, mn=None, mx=None, prio=190):
-    reglas.append(('aviso', var, mn, mx, cond or {}, None, '1', None, prio, notas))
+    reglas.append(('aviso', var, mn, mx, cond or {}, None, '1', None, prio, notas, None))
 
 HAY = 'si(n_paneles > 0, 1, 0)'
 ESTR = ['teja', 'chapa', 'plana']
@@ -347,17 +349,26 @@ else:
     regla('FV-01-001', {}, formula='n_paneles', cap='01', sub=9, notas='Un módulo por panel. Precio por modelo: añade los paneles reales a fotovoltaica-partidas-2026.csv.')
 
 # --- 02 · Estructura (desglose FV §3 y §4)
-E = {'tipo_estructura': ESTR}
+# En TEJA (cubierta inclinada) la estructura va en UNA partida agrupada por
+# panel, como en la base de precios de Sysefen (IEF003): el cliente ve una
+# línea «Estructura soporte… × n paneles»; por dentro lleva perfil, uniones,
+# clips de teja, presores y fijaciones con sus cantidades calculadas.
+E = {'tipo_estructura': ['chapa', 'plana']}
+PARTIDAS_AGRUPADAS.append(('ESTR_TEJA', 'Estructura soporte para módulo fotovoltaico sobre cubierta inclinada',
+  'Estructura de aluminio Sunfer coplanar: perfil G1, uniones, clips salvateja, presores centrales y laterales y fijaciones, con tornillería inoxidable',
+  [('FV-02-001', 'm_rail', 'm'), ('FV-02-002', 'n_uniones', 'ud'), ('FV-02-003', 'n_ganchos', 'ud'), ('FV-02-010', 'n_ganchos', 'ud'),
+   ('FV-02-005', '2 * (n_paneles - n_filas)', 'ud'), ('FV-02-006', '4 * n_filas', 'ud'), ('FV-02-013', 'n_filas + n_uniones', 'ud'),
+   ('FV-02-014', "techo(n_paneles / lookup('paneles_por_bolsa_clips', 'defecto'))", 'bolsa')]))
+regla(None, {'tipo_estructura': 'teja'}, 'n_paneles', '02', sub=9, partida='ESTR_TEJA', notas='Una por panel; por dentro, perfil, uniones, clips, presores y fijaciones calculados por filas.')
 regla('FV-02-001', E, 'm_rail', '02', sub=9, notas='Dos raíles por fila, redondeados a barras comerciales.')
 regla('FV-02-002', E, 'n_uniones', '02', sub=8, notas='Una unión por empalme de barra.')
-regla('FV-02-003', {'tipo_estructura': 'teja'}, 'n_ganchos', '02', sub=8, notas='Por raíl: ⌈largo / separación⌉ + 1.')
 regla('FV-02-004', {'tipo_estructura': 'chapa'}, "n_paneles * lookup('soportes_chapa_por_panel', 'defecto')", '02', sub=8, notas='Soportes de chapa, 4 por panel por defecto.')
 regla('FV-02-005', E, '2 * (n_paneles - n_filas)', '02', sub=7, notas='2 × (paneles de la fila − 1), por fila.')
 regla('FV-02-006', E, '4 * n_filas', '02', sub=7, notas='4 por fila.')
 regla('FV-02-007', {'tipo_estructura': 'plana'}, 'n_triangulos', '02', sub=8, notas='Paneles de la fila + 1, por fila.')
 regla('FV-02-008', {'tipo_estructura': 'plana'}, "con_lastre * n_triangulos * lookup('lastres_por_triangulo', 'defecto')", '02', sub=6, notas='Orientativo: manda el cálculo de viento del fabricante.')
 regla('FV-02-009', {'tipo_estructura': 'plana'}, 'n_anclajes', '02', sub=6, notas='Varilla, taco químico y malla por anclaje.')
-regla('FV-02-010', E, "n_ganchos + n_anclajes + si(tipo_estructura = 'chapa', n_paneles * lookup('soportes_chapa_por_panel', 'defecto'), 0)", '02', sub=4, notas='Una fijación por gancho, soporte o anclaje.')
+regla('FV-02-010', E, "n_anclajes + si(tipo_estructura = 'chapa', n_paneles * lookup('soportes_chapa_por_panel', 'defecto'), 0)", '02', sub=4, notas='Una fijación por soporte o anclaje.')
 regla('FV-02-011', E, "techo((n_anclajes + si(tipo_estructura = 'chapa', n_paneles * lookup('soportes_chapa_por_panel', 'defecto'), 0)) / lookup('anclajes_por_cartucho', 'defecto'))", '02', sub=4,
       notas='Un cartucho cada X perforaciones (anclajes químicos y soportes de chapa).')
 regla('FV-02-012', {'tipo_estructura': 'teja'}, 'tejas_reposicion', '02', sub=3, notas='Las que se apuntaron en la visita.')
@@ -622,6 +633,23 @@ on conflict (categoria, codigo) do update
   set formula = excluded.formula, orden = excluded.orden, por_cada = excluded.por_cada,
       etiqueta = excluded.etiqueta, unidad = excluded.unidad, descripcion = excluded.descripcion;
 
+""")
+# 5b · Partidas agrupadas: una línea para el cliente, el desglose por dentro
+w("""-- 5b · Partidas agrupadas: una línea para el cliente, el desglose por dentro ----------
+alter table public.partidas add column if not exists agrupada boolean not null default false;
+alter table public.partidas add column if not exists detalle_tecnico text;
+comment on column public.partidas.agrupada is 'Sale como UNA línea (nombre × cantidad) al coste de la suma de sus renglones; el desglose queda en origen_inputs.';
+""")
+for (c_, n_, d_, items_) in PARTIDAS_AGRUPADAS:
+    w(f"""insert into public.partidas (categoria, codigo, nombre, agrupada, detalle_tecnico) values ('solar', {q(c_)}, {q(n_)}, true, {q(d_)})
+on conflict (categoria, codigo) do update set nombre = excluded.nombre, agrupada = true, detalle_tecnico = excluded.detalle_tecnico;
+delete from public.partidas_items pi using public.partidas p where pi.partida_id = p.id and p.categoria = 'solar' and p.codigo = {q(c_)};
+insert into public.partidas_items (partida_id, producto_ref, formula_cantidad, unidad, orden)
+select p.id, v.ref, v.formula, v.unidad, v.orden from public.partidas p
+  join (values {", ".join(f"({q(r)}, {q(fm)}, {q(u)}, {i + 1})" for i, (r, fm, u) in enumerate(items_))}) as v(ref, formula, unidad, orden) on true
+ where p.categoria = 'solar' and p.codigo = {q(c_)};
+""")
+w("""
 -- 6 · Fuera las partidas antiguas -----------------------------------------------------
 update public.reglas r set activa = false
   from public.partidas p, public.conjuntos_reglas c
@@ -637,24 +665,25 @@ update public.reglas r set activa = false
 update public.reglas r set activa = false
   from public.conjuntos_reglas c
  where r.conjunto_id = c.id and c.categoria = 'solar'
-   and (r.producto_ref like 'FV-%' or r.tipo = 'aviso')
+   and (r.producto_ref like 'FV-%' or r.tipo = 'aviso' or r.partida_id in (select id from public.partidas where categoria = 'solar' and agrupada))
    and exists (select 1 from public.presupuesto_lineas l where l.origen_regla_id = r.id);
 delete from public.reglas r using public.conjuntos_reglas c
  where r.conjunto_id = c.id and c.categoria = 'solar'
-   and (r.producto_ref like 'FV-%' or r.tipo = 'aviso')
+   and (r.producto_ref like 'FV-%' or r.tipo = 'aviso' or r.partida_id in (select id from public.partidas where categoria = 'solar' and agrupada))
    and not exists (select 1 from public.presupuesto_lineas l where l.origen_regla_id = r.id);
 
-insert into public.reglas (conjunto_id, tipo, variable, minimo, maximo, condicion, producto_ref, formula_cantidad, seccion, prioridad, notas)
-select c.id, v.tipo, v.variable, v.minimo, v.maximo, v.condicion::jsonb, v.producto_ref, v.formula, v.seccion, v.prioridad, v.notas
+insert into public.reglas (conjunto_id, tipo, variable, minimo, maximo, condicion, producto_ref, partida_id, formula_cantidad, seccion, prioridad, notas)
+select c.id, v.tipo, v.variable, v.minimo, v.maximo, v.condicion::jsonb, v.producto_ref,
+       (select id from public.partidas p where p.categoria = 'solar' and p.codigo = v.partida), v.formula, v.seccion, v.prioridad, v.notas
   from public.conjuntos_reglas c
   join (values
 """)
 vals = []
-for (tipo, var, mn, mx, cond, prod, formula, seccion, prio, notas) in reglas:
-    vals.append(f"    ({q(tipo)}, {lit(var, 'text')}, {lit(mn, 'numeric')}, {lit(mx, 'numeric')}, {q(json.dumps(cond, ensure_ascii=False))}, {lit(prod, 'text')}, {q(formula)}, {lit(seccion, 'text')}, {prio}, {lit(notas, 'text')})")
+for (tipo, var, mn, mx, cond, prod, formula, seccion, prio, notas, partida) in reglas:
+    vals.append(f"    ({q(tipo)}, {lit(var, 'text')}, {lit(mn, 'numeric')}, {lit(mx, 'numeric')}, {q(json.dumps(cond, ensure_ascii=False))}, {lit(prod, 'text')}, {lit(partida, 'text')}, {q(formula)}, {lit(seccion, 'text')}, {prio}, {lit(notas, 'text')})")
 w(",\n".join(vals))
 w("""
-  ) as v(tipo, variable, minimo, maximo, condicion, producto_ref, formula, seccion, prioridad, notas) on true
+  ) as v(tipo, variable, minimo, maximo, condicion, producto_ref, partida, formula, seccion, prioridad, notas) on true
  where c.categoria = 'solar' and c.vigente_hasta is null;
 
 commit;
@@ -691,8 +720,10 @@ json.dump({
     'productos': productos,
     'lookup': [dict(clave=c, entrada=e, valor=v) for c, e, v, _ in LOOKUP],
     'variables': [dict(codigo=c, formula=f, orden=o, por_cada=pc) for c, _, _, f, o, _, pc in VARIABLES],
-    'reglas': [dict(id='fv%d' % i, tipo=t, variable=v, minimo=a, maximo=b, condicion=c, producto_ref=p, formula_cantidad=f, seccion=s, prioridad=pr_, notas=n)
-               for i, (t, v, a, b, c, p, f, s, pr_, n) in enumerate(reglas)],
+    'reglas': [dict(id='fv%d' % i, tipo=t, variable=v, minimo=a, maximo=b, condicion=c, producto_ref=p, partida_id=pa, formula_cantidad=f, seccion=s, prioridad=pr_, notas=n)
+               for i, (t, v, a, b, c, p, f, s, pr_, n, pa) in enumerate(reglas)],
+    'partidas': {c: dict(codigo=c, nombre=n, agrupada=True, detalle_tecnico=d, items=[dict(producto_ref=r, formula_cantidad=fm, unidad=u, orden=i + 1) for i, (r, fm, u) in enumerate(items)])
+                 for c, n, d, items in PARTIDAS_AGRUPADAS},
 }, open(os.path.join(CARPETA, 'fotovoltaica-reglas.json'), 'w', encoding='utf-8'), ensure_ascii=False, indent=0)
 
 sin_precio = [x['referencia'] for x in sysefen if not x['precio']]
