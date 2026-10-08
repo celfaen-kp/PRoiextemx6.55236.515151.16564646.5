@@ -259,6 +259,16 @@ setTimeout(function () {
     // Aquí no hay html2canvas: el PDF no se puede hacer y la oferta sube igual.
     igual('sin PDF posible, sube la oferta sola', conPdf, null);
     comprueba('y luego dice que ya está en el CRM', vPresupuestoVer().indexOf('Está en Teamleader') > -1);
+
+    titulo('los interruptores del FV suelto (V22.0)');
+    V.suelto = presuNuevoVacio(); V.suelto.cat = 'solar';
+    A.presuSueltoChip('subvencion', '1');
+    comprueba('un toque enciende la subvención', V.suelto.subvencion === true);
+    A.presuSueltoChip('subvencion', '1');
+    comprueba('otro la apaga', V.suelto.subvencion === false);
+    A.presuSueltoChip('cargador', '1');
+    comprueba('el cargador igual', V.suelto.cargador === true);
+    comprueba('y se pinta marcado', camposSolarHTML(V.suelto).indexOf('chip sel" data-a="presuSueltoChip" data-k="cargador"') >= 0);
     resultado();
   }).catch(function (e) { print('ERROR: ' + e + '\n' + (e.stack || '')); });
 }, 1600);
