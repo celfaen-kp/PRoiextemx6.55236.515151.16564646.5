@@ -183,7 +183,7 @@ a:hover{color:var(--tinta)}
 @keyframes toastIn{from{opacity:0;transform:translateY(-10px)}}
 .offline{flex:none;background:var(--ambar);color:var(--tinta);font:500 12px/1 var(--sans);text-align:center;padding:7px}
 
-#firma{width:100%;height:190px;display:block;border-radius:10px;touch-action:none}
+#firma,#firmaPlan{width:100%;height:190px;display:block;border-radius:10px;touch-action:none}
 .firma-box{background:#fff;border:1.5px solid var(--l2);border-radius:18px;padding:10px;position:relative;box-shadow:var(--sh)}
 .firma-box .ph{position:absolute;left:0;right:0;bottom:44px;text-align:center;pointer-events:none;font:400 13px var(--sans);color:rgba(20,23,15,.3)}
 .firma-box .linea{position:absolute;left:34px;right:34px;bottom:38px;height:1px;background:var(--l2);pointer-events:none}
@@ -410,7 +410,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '21.4'; // versión visible de la app (única fuente)
+const APP_VERSION = '21.5'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
