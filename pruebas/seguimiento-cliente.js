@@ -37,6 +37,17 @@ comprueba('teléfono sin espacios', clienteCasa(rous, '6418500'));
 comprueba('teléfono con espacios tal cual', clienteCasa(rous, '641 85'));
 comprueba('lo que no está, no', !clienteCasa(rous, 'manacor'));
 
+titulo('hacer la visita desde la ficha, sin cita (V21.10)');
+S.users = [{ id: 'u5', nombre: 'Ramon', rol: 'presupuestos', activo: true }]; V.user = { id: 'u5' };
+V.agenda.clientes = [{ id: 'cv', nombre: 'Marga Salom', telefono: '600 1', direccion: 'Major 3', poblacion: 'Manacor', citas: [], visitas: [] }];
+try { localStorage.removeItem('visita_borrador'); } catch (e) { /* sin localStorage */ }
+agEmpezarVisitaCliente('cv');
+comprueba('se abre la visita nueva en el paso 2 (el cliente ya viene puesto)', V.view === 'visitaNueva' && V.visitaPaso === 2);
+comprueba('con el cliente y su dirección', V.visitaDraft && V.visitaDraft._cliente && V.visitaDraft._cliente.id === 'cv' && V.visitaDraft.direccion === 'Major 3' && V.visitaDraft.poblacion === 'Manacor');
+comprueba('y sin cita colgando', !V.visitaDraft.cita_id);
+V.visitaDraft = null; try { localStorage.removeItem('visita_borrador'); } catch (e) { /* nada */ }
+V.view = 'clientes';
+
 titulo('el camino del cliente (V20.9)');
 var camino = function (c) { return caminoCliente(c).map(function (x) { return x.k + ':' + x.estado; }).join(' '); };
 var sinTocar = { id: 'k1', nombre: 'Nuevo', citas: [], visitas: [] };
