@@ -410,7 +410,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '21.6'; // versión visible de la app (única fuente)
+const APP_VERSION = '21.7'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -9949,7 +9949,7 @@ function vClientes() {
   <div class="scroll pad pb-nav">
     ${agAvisoHTML()}
     ${ag.vista === 'tablero' ? `<div class="tiny" style="margin-bottom:8px">Cada columna es una fase. Toca una tarjeta para abrir al cliente; desde su ficha se apunta la llamada, la próxima acción o el aplazamiento.</div>${tableroHTML()}`
-      : `${webListaHTML()}<div id="clientes-lista">${clientesListaHTML()}</div>`}
+      : `<div id="clientes-web">${webListaHTML()}</div><div id="clientes-lista">${clientesListaHTML()}</div>`}
   </div>`;
 }
 
@@ -11670,7 +11670,15 @@ document.addEventListener('input', (e) => {
   if (f === 'costeDesde') { if (V.sheet) V.sheet.desde = t.value; return; }
   if (f === 'presuBuscar') { V.presuBuscar = t.value; const box = document.getElementById('presu-lista'); if (box && V.sheet) box.innerHTML = presuListaHTML(V.sheet); return; }
   if (f === 'obrasBuscar') { V.obrasBuscar = t.value; const box = document.getElementById('obras-lista'); if (box) box.innerHTML = obrasListaHTML(); return; }
-  if (f === 'ag_buscar') { V.agenda.buscar = t.value; const box = document.getElementById('clientes-lista'); if (box) box.innerHTML = clientesListaHTML(); else if (V.agenda.vista === 'tablero') { const tb = document.querySelector('.tb-wrap'); if (tb) tb.outerHTML = tableroHTML(); } return; }
+  if (f === 'ag_buscar') {
+    V.agenda.buscar = t.value;
+    // Se refrescan las dos partes de la lista sin volver a pintar la pantalla
+    // (si no, el teclado pierde el foco a cada letra).
+    const web = document.getElementById('clientes-web'); if (web) web.innerHTML = webListaHTML();
+    const box = document.getElementById('clientes-lista'); if (box) box.innerHTML = clientesListaHTML();
+    if (!box && V.agenda.vista === 'tablero') { const tb = document.querySelector('.tb-wrap'); if (tb) tb.outerHTML = tableroHTML(); }
+    return;
+  }
   if (f === 'ag_cli') { if (V.clienteDraft) V.clienteDraft[t.dataset.k] = t.value; return; }
   if (f === 'ag_cita') { if (V.citaDraft) V.citaDraft[t.dataset.k] = t.value; return; }
   if (f === 'ag_citaFecha') { if (V.citaDraft) { sincronizarRuedas(); V.citaDraft.dia = t.value || null; render(); } return; }
