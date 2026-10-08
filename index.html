@@ -410,7 +410,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '21.7'; // versión visible de la app (única fuente)
+const APP_VERSION = '21.8'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -8107,11 +8107,18 @@ function vPresupuestos() {
   </div>`;
 }
 
-function vPresuNuevo() {
-  const f = V.suelto || presuNuevoVacio(), p = V.presu;
+// Las sugerencias de cliente del presupuesto suelto, aparte: se refrescan al
+// teclear sin volver a pintar la pantalla (si no, el teclado pierde el foco).
+function presuSugerenciasHTML(f) {
   const q = String(f.cliente || '').trim().toLowerCase();
   const clientes = q.length >= 2 && !f.clienteId
     ? V.agenda.clientes.filter((c) => clienteCasa(c, q)).slice(0, 6) : [];
+  return `${clientes.length ? `<div style="margin-top:8px">${clientes.map((c) => `<div class="row" data-a="presuSueltoCliente" data-id="${c.id}" style="padding:9px 0;border-bottom:1px solid var(--l1);cursor:pointer">
+        <div class="grow" style="font:500 14px var(--sans)">${esc(c.nombre)}</div><span class="tiny">del CRM</span></div>`).join('')}</div>` : ''}
+      ${f.clienteId ? '<div class="tiny" style="margin-top:7px;color:var(--verde-o)">✓ Enganchado a su ficha del CRM</div>' : ''}`;
+}
+function vPresuNuevo() {
+  const f = V.suelto || presuNuevoVacio(), p = V.presu;
   return `<div class="hdr-dark">
     <div class="back" data-a="ir" data-v="presupuestos">‹ Presupuestos</div>
     <div style="font:600 27px/1.1 var(--cond)">Presupuesto nuevo</div>
@@ -8121,9 +8128,7 @@ function vPresuNuevo() {
     <div class="card">
       <div class="lbl">Para quién (opcional)</div>
       <input class="inp" data-f="presuCliente" value="${esc(f.cliente)}" placeholder="Nombre del cliente" autocomplete="off" style="margin-top:8px">
-      ${clientes.length ? `<div style="margin-top:8px">${clientes.map((c) => `<div class="row" data-a="presuSueltoCliente" data-id="${c.id}" style="padding:9px 0;border-bottom:1px solid var(--l1);cursor:pointer">
-        <div class="grow" style="font:500 14px var(--sans)">${esc(c.nombre)}</div><span class="tiny">del CRM</span></div>`).join('')}</div>` : ''}
-      ${f.clienteId ? '<div class="tiny" style="margin-top:7px;color:var(--verde-o)">✓ Enganchado a su ficha del CRM</div>' : ''}
+      <div id="presu-sugerencias">${presuSugerenciasHTML(f)}</div>
 
       <div class="lbl" style="margin:16px 0 8px">Qué se presupuesta</div>
       <div class="wrap">${vSchemas.CATEGORIAS.map((c) => `<div class="chip ${f.cat === c.key ? 'sel' : ''}" data-a="presuSueltoChip" data-k="cat" data-v="${c.key}">${esc(c.nombre)}</div>`).join('')}</div>
@@ -11683,7 +11688,7 @@ document.addEventListener('input', (e) => {
   if (f === 'ag_cita') { if (V.citaDraft) V.citaDraft[t.dataset.k] = t.value; return; }
   if (f === 'ag_citaFecha') { if (V.citaDraft) { sincronizarRuedas(); V.citaDraft.dia = t.value || null; render(); } return; }
   if (f === 'loginNombre') { V.loginNombre = t.value; return; }
-  if (f === 'presuCliente') { if (V.suelto) { V.suelto.cliente = t.value; V.suelto.clienteId = null; render(); } return; }
+  if (f === 'presuCliente') { if (V.suelto) { V.suelto.cliente = t.value; V.suelto.clienteId = null; const box = document.getElementById('presu-sugerencias'); if (box) box.innerHTML = presuSugerenciasHTML(V.suelto); else render(); } return; }
   if (f === 'presuLinea') { A.presuLineaCampo(t.dataset.id, t.dataset.k, t.value); return; }
   if (f === 'presuNueva') { A.presuNuevaCampo(t.dataset.k, t.value); return; }
   if (f === 'presuEditDto') { A.presuEditDto(t.value); return; }
