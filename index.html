@@ -410,7 +410,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '21.5'; // versión visible de la app (única fuente)
+const APP_VERSION = '21.6'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -8111,7 +8111,7 @@ function vPresuNuevo() {
   const f = V.suelto || presuNuevoVacio(), p = V.presu;
   const q = String(f.cliente || '').trim().toLowerCase();
   const clientes = q.length >= 2 && !f.clienteId
-    ? V.agenda.clientes.filter((c) => String(c.nombre || '').toLowerCase().includes(q)).slice(0, 6) : [];
+    ? V.agenda.clientes.filter((c) => clienteCasa(c, q)).slice(0, 6) : [];
   return `<div class="hdr-dark">
     <div class="back" data-a="ir" data-v="presupuestos">‹ Presupuestos</div>
     <div style="font:600 27px/1.1 var(--cond)">Presupuesto nuevo</div>
@@ -9018,7 +9018,7 @@ function tableroHTML() {
   const ag = V.agenda, q = String(ag.buscar || '').trim().toLowerCase();
   const hoy = hoyISO();
   let lista = ag.clientes;
-  if (q) lista = lista.filter((c) => [c.nombre, c.telefono, c.poblacion, c.email].some((v) => String(v || '').toLowerCase().includes(q)));
+  if (q) lista = lista.filter((c) => clienteCasa(c, q));
   const cols = tableroColumnas(lista).filter((col) => col.clientes.length || !['sin_cita_ok', 'rechazado'].includes(col.k));
   const importe = (c) => { const p = presuQueManda(c); return p && p.total_venta != null ? eur(p.total_venta) : ''; };
   return `<div class="tb-wrap"><div class="tb-cols">${cols.map((col) => `<div class="tb-col" data-col="${col.k}">
@@ -9113,6 +9113,13 @@ function seguimientoResumenHTML(c, oscuro) {
   if (!c.proxima_accion && !un) return '';
   return `${c.proxima_accion ? `<div style="font:500 13px/1.35 var(--sans);color:${colorA};margin-top:8px">→ ${esc(c.proxima_accion)}${c.proxima_accion_at ? ' · ' + esc(fechaCorta(c.proxima_accion_at + 'T12:00')) : ''}${c.proxima_accion_por ? ' · ' + esc(agNombreEmp(c.proxima_accion_por)) : ''}${vencida ? ' · vencida' : ''}</div>` : ''}
     ${un ? `<div style="font:400 13px/1.35 var(--sans);color:${colorN};margin-top:${c.proxima_accion ? 4 : 8}px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">${esc(BIT_TIPOS[un.tipo] || '')} · ${esc(fechaCorta(un.at))}${un.por ? ' · ' + esc(agNombreEmp(un.por)) : ''}: ${esc(un.texto)}</div>` : ''}`;
+}
+// El buscador de clientes: sin tildes ni mayúsculas, por palabras sueltas en
+// cualquier orden («rousova pollença»), y el teléfono con o sin espacios.
+function clienteCasa(c, q) {
+  const texto = sinTildes([c.nombre, c.poblacion, c.direccion, c.email, c.telefono, c.motivo_web, c.nota].filter(Boolean).join(' '));
+  const telefono = String(c.telefono || '').replace(/\D/g, '');
+  return sinTildes(q).split(/\s+/).filter(Boolean).every((palabra) => texto.includes(palabra) || (/^\d+$/.test(palabra) && telefono.includes(palabra)));
 }
 function agEstadoCliente(c) {
   const vis = c.visitas || [];
@@ -9897,7 +9904,7 @@ function clientesListaHTML() {
   let lista = ag.clientes.map((c) => ({ c, e: agEstadoCliente(c) }));
   if (ag.filtroCli === 'sin_contactar') lista = lista.filter((x) => x.e.k === 'sin_cita' && x.c.contacto_estado !== 'contactado');
   else if (ag.filtroCli !== 'todos') lista = lista.filter((x) => x.e.k === ag.filtroCli);
-  if (q) lista = lista.filter(({ c }) => [c.nombre, c.telefono, c.poblacion, c.email].some((v) => String(v || '').toLowerCase().includes(q)));
+  if (q) lista = lista.filter(({ c }) => clienteCasa(c, q));
   // Los avisos de la web ya están arriba con sus botones: aquí no se repiten.
   if (!q && ['todos', 'sin_contactar'].includes(ag.filtroCli) && puedeCitar()) {
     const esWeb = (c) => c.lead_at && !c.sin_cita_motivo && !(c.citas || []).length && !(c.visitas || []).length;
@@ -9933,7 +9940,7 @@ function vClientes() {
         ${puedeCitar() ? '<button class="pill" data-a="ag_nuevoCliente" style="background:var(--tinta);color:#fff">+ Cliente</button>' : ''}
       </div>
     </div>
-    <input class="inp" id="ag-buscar" data-f="ag_buscar" value="${esc(ag.buscar || '')}" placeholder="Nombre, teléfono o población" autocomplete="off" style="margin-top:14px">
+    <input class="inp" id="ag-buscar" data-f="ag_buscar" type="search" value="${esc(ag.buscar || '')}" placeholder="Buscar: nombre, teléfono, población, dirección…" autocomplete="off" style="margin-top:14px">
     ${ag.vista === 'tablero' ? '' : `<div class="wrap" style="margin-top:12px">${filtros.map(([k, l]) => {
       const n = k === 'todos' ? 0 : cuenta(k);
       return `<span class="chip ${ag.filtroCli === k ? 'on' : ''}" data-a="ag_filtroCli" data-f="${k}" style="cursor:pointer">${l}${n ? ' · ' + n : ''}</span>`;

@@ -28,6 +28,15 @@ igual('y lo dice', agEstadoCliente({ citas: [], visitas: [], sin_cita_motivo: SI
 igual('visitado manda sobre una cita posterior', agEstadoCliente({ citas: [{ estado: 'pendiente', inicio: new Date(Date.now() + 86400000).toISOString() }], visitas: [{ id: 'v', estado: 'completada' }] }).k, 'visitado');
 comprueba('las tarjetas del tablero se pueden arrastrar y tienen «⋯»', (function () { V.agenda.clientes = [{ id: 'a', nombre: 'Ana', citas: [], visitas: [] }]; V.agenda.buscar = ''; var h = tableroHTML(); return h.indexOf('draggable="true"') >= 0 && h.indexOf('data-a="tbMoverAbrir"') >= 0 && h.indexOf('data-col="sin_cita"') >= 0; })());
 
+titulo('el buscador de clientes (V21.6)');
+var rous = { nombre: 'Rostislava Rousová', telefono: '+34 641 85 00 25', poblacion: 'Sant Llorenç', email: 'r@post.cz' };
+comprueba('sin tildes', clienteCasa(rous, 'rousova'));
+comprueba('mayúsculas y población con ç', clienteCasa(rous, 'LLORENC'));
+comprueba('palabras en cualquier orden', clienteCasa(rous, 'llorenc rostislava'));
+comprueba('teléfono sin espacios', clienteCasa(rous, '6418500'));
+comprueba('teléfono con espacios tal cual', clienteCasa(rous, '641 85'));
+comprueba('lo que no está, no', !clienteCasa(rous, 'manacor'));
+
 titulo('el camino del cliente (V20.9)');
 var camino = function (c) { return caminoCliente(c).map(function (x) { return x.k + ':' + x.estado; }).join(' '); };
 var sinTocar = { id: 'k1', nombre: 'Nuevo', citas: [], visitas: [] };
