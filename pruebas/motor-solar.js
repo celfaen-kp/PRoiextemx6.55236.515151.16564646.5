@@ -298,6 +298,35 @@ comprueba('cubierta mala: reparación a 0 y aviso', cant(r, 'FV-09-004') === 1 &
 comprueba('fibrocemento: aviso', aviso(r, 'fibrocemento'));
 comprueba('sombras: aviso de optimizadores', aviso(r, 'optimizadores'));
 
+titulo('Tesla: el Powerwall es la batería Y el inversor (09-10-2026)');
+r = calcular('solar', con({ baterias: 'si', baterias_kwh: 13.5, bateria_marca: 'tesla' }), config);
+igual('el inversor va en la batería', r.variables.inversor_en_bateria, 1);
+comprueba('Powerwall 3 en el 04, uno', porNombre(r, 'Powerwall 3 | 13.5').cantidad === 1 && porNombre(r, 'Powerwall 3 | 13.5').seccion === '04 · Almacenamiento');
+comprueba('ni rastro de Fronius: sin inversor ni Smart Meter', !tiene(r, 'Fronius') && !tiene(r, 'FRONIUS'));
+comprueba('y lo explica', aviso(r, 'lleva el inversor dentro'));
+comprueba('sin backup no hay Gateway', !tiene(r, 'Backup Gateway'));
+comprueba('los paneles van en continua al Powerwall: cable DC, MC4 y caja DC siguen', cant(r, 'FV-06-001') === 33 && cant(r, 'FV-06-002') === 4 && desgDe(r, 'CUADRO_PROT', 'FV-07-001') === 1);
+igual('coste confirmado 7.218,50', porNombre(r, 'Powerwall 3 | 13.5').precio_coste, 7218.5);
+igual('venta × 1,20 = 8.662,20', porNombre(r, 'Powerwall 3 | 13.5').precio_tarifa, 8662.2);
+igual('medio día más por la batería', r.variables.dias_obra, 2.5);
+r = calcular('solar', con({ baterias: 'si', baterias_kwh: 13.5, bateria_marca: 'tesla', backup: true, backup_tipo: 'parcial' }), config);
+comprueba('con backup: Backup Gateway 2 y cuadro de cargas críticas', tiene(r, 'Backup Gateway 2') && cant(r, 'FV-04-006') === 1);
+comprueba('y sigue sin Fronius', !tiene(r, 'Fronius') && !tiene(r, 'FRONIUS'));
+r = calcular('solar', con({ baterias: 'si', baterias_kwh: 27, bateria_marca: 'tesla', suministro: 'trifasico' }), config);
+comprueba('trifásico: Powerwall 3P', tiene(r, 'Powerwall 3P') && !tiene(r, 'Powerwall 3 | 13.5'));
+igual('27 kWh: una expansión', porNombre(r, 'Expansión Powerwall 3').cantidad, 1);
+comprueba('sin Symo ni Smart Meter trifásico', !tiene(r, 'Symo') && !tiene(r, 'Smart Meter'));
+r = calcular('solar', con({ baterias: 'si', baterias_kwh: 13.5, bateria_marca: 'tesla', inversor_marca: 'enphase' }), config);
+comprueba('con micros Enphase el inversor son los micros: Powerwall acoplado en alterna, Gateway de Enphase sigue', r.variables.inversor_en_bateria === 0 && tiene(r, 'IQ 8HC') && tiene(r, 'Powerwall 3 | 13.5') && tiene(r, 'IQ Gateway'));
+r = calcular('solar', con({ paneles_manual: 45, wp_manual: 540, baterias: 'si', baterias_kwh: 13.5, bateria_marca: 'tesla' }), config);
+comprueba('24,3 kWp con un Powerwall: avisa de la entrada solar', aviso(r, 'admite un Powerwall 3'));
+r = calcular('solar', con({ baterias: 'si', baterias_kwh: 13.5, bateria_marca: 'tesla', paneles_manual: 10 }), config);
+comprueba('5,1 kWp: sin ese aviso', !aviso(r, 'admite un Powerwall 3'));
+r = calcular('solar', con({ baterias: 'si', baterias_kwh: 10, bateria_marca: 'byd' }), config);
+comprueba('BYD sigue con su Fronius Plus y su Smart Meter', tiene(r, 'GEN24 SC 4.6 Plus') && tiene(r, 'Smart Meter') && r.variables.inversor_en_bateria === 0);
+igual('módulo HVS 2,56 a 1.007,54 de coste', porNombre(r, 'BYD Premium HVS 2.56').precio_coste, 1007.54);
+igual('y 1.209,05 de venta', porNombre(r, 'BYD Premium HVS 2.56').precio_tarifa, 1209.05);
+
 titulo('combinaciones que no van');
 r = calcular('solar', con({ inversor_marca: 'enphase', baterias: 'si', bateria_marca: 'byd' }), config);
 comprueba('Enphase con BYD: no pone batería y avisa', !tiene(r, 'BYD') && aviso(r, 'Enphase solo va con'));

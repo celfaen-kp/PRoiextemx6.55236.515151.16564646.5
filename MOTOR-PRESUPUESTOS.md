@@ -199,6 +199,25 @@ además del SQL.
   «beneficio», «margen», «origen_inputs» y «resumen» en el HTML del PDF y
   exige que no estén.
 
+#### Baterías: costes confirmados y Tesla sin inversor Fronius (09-10-2026)
+
+- **La tarifa del distribuidor traía precios de promoción en baterías** («Desde»,
+  «PROMOCIÓN»): el Powerwall 3 a 4.539,67 y el módulo BYD HVS 2,56 a 678,92,
+  que no cuadraban con lo vendido en 2025 (Powerwall 3 a 8.437). Sysefen
+  confirmó sus costes de distribuidor: **Powerwall 3 7.218,50** (venta × 1,20 =
+  8.662,20) y **BYD HVS 2,56 1.007,54** (1.209,05). Quedan POR CONTRASTAR con
+  la misma pinta: Powerwall 3P, expansión Tesla, módulos y BMS de Fronius
+  Reserva, Enphase IQ Battery 5P y la BCU de BYD.
+- **Tesla no vende inversor: el Powerwall 3 lo lleva dentro.** Nueva variable
+  `inversor_en_bateria` (batería Tesla con Fronius como marca de inversor): con
+  ella a 1 no entra ningún Fronius ni Smart Meter, y un aviso lo explica. Los
+  paneles van en continua al Powerwall, así que cable DC, MC4 y caja DC siguen.
+  El Backup Gateway 2 y el cuadro de cargas críticas solo si se pide backup.
+  Con micros Enphase el inversor son los micros y el Powerwall va acoplado en
+  alterna, como antes. Coeficiente `tesla_pv_max_kwp` = 20, POR CONFIRMAR con
+  la ficha técnica: por encima, aviso. Coincide con el 2025/479 (Tesla sin
+  línea de inversor).
+
 #### Pendiente de decisión (las fija Sysefen; no se ha resuelto nada por cuenta propia)
 
 1. **Chapa:** ¿espárrago / soporte trapezoidal + raíl largo (modelo actual) o

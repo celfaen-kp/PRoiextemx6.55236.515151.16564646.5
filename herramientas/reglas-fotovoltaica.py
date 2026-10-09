@@ -249,6 +249,7 @@ LOOKUP = [
     ('paneles_por_bolsa_clips', 'defecto', 20, 'Paneles por bolsa de clips de cable.'),
     ('paneles_por_string', 'defecto', 12, 'Paneles por string. POR CONFIRMAR con Voc/Vmp del panel y tensiones del inversor.'),
     ('mppt', 'defecto', 2, 'MPPT del inversor (un protector DC por cada uno).'),
+    ('tesla_pv_max_kwp', 'defecto', 20, 'kWp de paneles que admite un Powerwall 3 en continua. POR CONFIRMAR con la ficha técnica de Tesla; por encima, aviso.'),
     ('m_por_caja_registro', 'defecto', 15, 'Metros de recorrido por caja de registro.'),
     ('dias_base', 'hasta_10', 2, 'Días de pareja hasta 10 paneles. POR CONFIRMAR (referencia: FV habitual 2–3 días).'),
     ('dias_base', 'hasta_20', 3, 'Días de pareja de 11 a 20 paneles. POR CONFIRMAR.'),
@@ -294,6 +295,10 @@ VARIABLES = [
     ('backup_total', 'Backup total', '', "si(con_backup = 1 y backup_tipo = 'total', 1, 0)", 17, 'Toda la vivienda.', None),
     ('bateria_dc', 'Batería en continua', '', "si((con_bateria = 1 y marca_bateria != 'tesla') o baterias = 'dejar_preparado', 1, 0)", 18, '', None),
     ('kw_inversor', 'Inversor mínimo', 'kW', "redondea(kwp / lookup('ratio_dc_ac', 'defecto'), 2)", 19, '', None),
+    # Tesla no vende inversor: el Powerwall 3 lo lleva dentro. Con batería Tesla
+    # (y sin micros Enphase, que entonces el inversor son ellos) no se pone
+    # Fronius ni Smart Meter: los paneles van en continua al Powerwall.
+    ('inversor_en_bateria', 'El inversor va en la batería', '', "si(con_bateria = 1 y marca_bateria = 'tesla' y marca_inversor = 'fronius', 1, 0)", 19, 'Powerwall 3: inversor híbrido integrado; sin Fronius ni Smart Meter.', None),
     ('ramas_enphase', 'Ramas Enphase', 'ud', "techo(n_paneles / lookup('micros_por_rama', 'defecto'))", 20, '', None),
     # estructura
     ('tipo_estructura', 'Estructura', '',
@@ -432,11 +437,11 @@ fr = {
 for (fases, dc), lista in fr.items():
     prev = 0
     for kw, nombre in lista:
-        regla(ref(nombre), {'marca_inversor': 'fronius', 'fases': fases, 'bateria_dc': dc}, tipo='seleccion', var='kw_inversor',
+        regla(ref(nombre), {'marca_inversor': 'fronius', 'fases': fases, 'bateria_dc': dc, 'inversor_en_bateria': 0}, tipo='seleccion', var='kw_inversor',
               mn=round(prev + 0.001, 3) if prev else 0.001, mx=kw, cap='03', sub=9,
               notas=f"Fronius {'trifásico' if fases == 3 else 'monofásico'}{' con batería en continua (Plus)' if dc else ''}: hasta {kw} kW de alterna.")
         prev = kw
-    aviso({'marca_inversor': 'fronius', 'fases': fases, 'bateria_dc': dc}, var='kw_inversor', mn=round(prev + 0.001, 3), mx=None,
+    aviso({'marca_inversor': 'fronius', 'fases': fases, 'bateria_dc': dc, 'inversor_en_bateria': 0}, var='kw_inversor', mn=round(prev + 0.001, 3), mx=None,
           notas=f"Hace falta un inversor de más de {prev} kW: por encima de eso el inversor Fronius (Verto) se elige a mano.")
 # Enphase: un micro por panel, con su cableado por rama
 regla(ref('ENPHASE IQ 8HC microinversor con conectores MC4 integrados'), {'marca_inversor': 'enphase'}, tipo='seleccion', var='wp_panel', mn=0.001, mx=540,
@@ -458,7 +463,9 @@ regla(ref('ENPHASE IQ Battery 5P'), {'con_bateria': 1, 'marca_bateria': 'enphase
 regla(ref('TESLA Powerwall 3 | 13.5 kWh/11 kW'), {'con_bateria': 1, 'marca_bateria': 'tesla', 'fases': 1}, cap='04', sub=9, notas='Powerwall 3 (13,5 kWh), monofásico.')
 regla(ref('TESLA Powerwall 3P | 13.5 kWh/15.4 kW'), {'con_bateria': 1, 'marca_bateria': 'tesla', 'fases': 3}, cap='04', sub=9, notas='Powerwall 3P (13,5 kWh), trifásico.')
 regla(ref('TESLA Expansión Powerwall 3 13.5 kWh'), {'con_bateria': 1, 'marca_bateria': 'tesla'}, 'max(0, techo(bat_kwh / 13.5) - 1)', '04', sub=8,
-      notas='Una expansión por cada 13,5 kWh más.')
+      notas='Una expansión por cada 13,5 kWh más (solo capacidad: no suma inversor).')
+aviso({'inversor_en_bateria': 1}, 'Más paneles de los que admite un Powerwall 3 en continua (tablas_lookup tesla_pv_max_kwp): revisar con la ficha técnica de Tesla o repartir en más de un Powerwall.',
+      var="si(kwp > lookup('tesla_pv_max_kwp', 'defecto'), 1, 0)", mn=1, mx=1)
 regla(ref('BYD Premium HVS 2.56'), {'con_bateria': 1, 'marca_bateria': 'byd', 'marca_inversor': 'fronius'}, tipo='seleccion', var='bat_kwh', mn=0.001, mx=12.8,
       formula='max(2, techo(bat_kwh / 2.56))', cap='04', sub=9, notas='BYD HVS: módulos de 2,56 kWh, de 2 a 5 (hasta 12,8 kWh).')
 regla(ref('BYD Premium HVM 2.76'), {'con_bateria': 1, 'marca_bateria': 'byd', 'marca_inversor': 'fronius'}, tipo='seleccion', var='bat_kwh', mn=12.801, mx=None,
@@ -480,8 +487,9 @@ aviso({'con_bateria': 1, 'marca_inversor': 'fronius', 'marca_bateria': 'enphase'
 aviso({'con_bateria': 0}, 'El backup necesita batería: no se ha puesto.', var='si(backup, 1, 0)', mn=1, mx=1)
 
 # --- 05 · Monitorización y medida
-regla(ref('FRONIUS Smart Meter TS 100A-1'), {'marca_inversor': 'fronius', 'fases': 1}, HAY, '05', sub=9, notas='Fronius necesita su Smart Meter (monofásico).')
-regla(ref('FRONIUS Smart Meter TS 65A-3'), {'marca_inversor': 'fronius', 'fases': 3}, HAY, '05', sub=9, notas='Fronius necesita su Smart Meter (trifásico).')
+regla(ref('FRONIUS Smart Meter TS 100A-1'), {'marca_inversor': 'fronius', 'fases': 1, 'inversor_en_bateria': 0}, HAY, '05', sub=9, notas='Fronius necesita su Smart Meter (monofásico).')
+regla(ref('FRONIUS Smart Meter TS 65A-3'), {'marca_inversor': 'fronius', 'fases': 3, 'inversor_en_bateria': 0}, HAY, '05', sub=9, notas='Fronius necesita su Smart Meter (trifásico).')
+aviso({'inversor_en_bateria': 1}, 'Batería Tesla: el Powerwall 3 lleva el inversor dentro, así que no se pone Fronius ni Smart Meter. La medida la hace el Powerwall (o el Backup Gateway 2 si lleva backup).')
 regla(ref('ENPHASE IQ Gateway Metered NUEVA VERSION'), {'marca_inversor': 'enphase'}, HAY, '05', sub=9, notas='El controlador de Enphase, con medida.')
 regla(ref('ENPHASE CT Transformador de núcleo partido 200A/80mA'), {'marca_inversor': 'enphase'}, 'si(n_paneles > 0, 2 * fases, 0)', '05', sub=8,
       notas='Toroidales del Gateway: uno de producción y uno de consumo por fase.')
