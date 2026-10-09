@@ -21,7 +21,7 @@
 
 import { evaluar, evaluarNumero, numero, verdad } from './formulas.js';
 
-const MOTOR_VERSION = '1.3';
+const MOTOR_VERSION = '1.4';
 
 /** ¿Se cumple una condición {campo: valor} contra el ámbito? */
 function cumple(condicion, ambito) {
@@ -77,6 +77,17 @@ function mismo(a, b) {
  *   origen_inputs.desglose, para la versión interna; el cliente ve una línea.
  *   dtoLinea:  [{familia, descuento_pct}]      (puede ir vacío: sin descuentos)
  * }
+ *
+ *   MARGEN POR PRODUCTO (1.4): un producto puede traer su propio `recargo`
+ *   (multiplicador sobre coste; null = el de la categoría) y `aplica_cdc`
+ *   (false = sin costes complementarios aunque sea material). Así el panel
+ *   va a 80 → 115 (×1,4375, sin CDC), los equipos del distribuidor a coste
+ *   ×1,20 sin CDC y el resto sigue a coste ×1,10 ×1,30. Una partida agrupada
+ *   suma coste y venta renglón a renglón, así que hereda el margen de cada uno.
+ *   Cada línea sale con `beneficio_ud` y `margen_pct` (sobre venta), y el
+ *   resultado con `resumen` (coste, venta, beneficio, margen y el descuento
+ *   máximo que aguanta cada margen). TODO ESO ES INTERNO: la app lo enseña por
+ *   dentro y el PDF del cliente no lo lleva jamás.
  */
 export function calcular(categoria, datos, config) {
   const cfg = config || {};
@@ -114,16 +125,25 @@ export function calcular(categoria, datos, config) {
   const cdcFila = (cfg.lookup || []).find((x) => x.clave === 'costes_complementarios_pct' && x.entrada === 'defecto');
   const cdc = cdcFila ? numero(cdcFila.valor) : 0;
   const SIN_CDC = ['mano_obra', 'tramite', 'transporte', 'medios', 'servicio'];
-  // De un precio base (catálogo o fijo) a {coste, venta} según el modelo de la
-  // categoría. `familia` decide si lleva los costes complementarios (material sí).
-  const precios = (base, dtoProveedor, sinRecargo, familia) => {
-    if (recargo !== 1 && !sinRecargo) {
-      let coste = numero(base) * (1 - numero(dtoProveedor) / 100);
-      if (cdc && !SIN_CDC.includes(String(familia || ''))) coste *= 1 + cdc / 100;
+  // De un precio base (catálogo o fijo) a {coste, venta}. `p` es el producto
+  // (o un sucedáneo {familia} para los precios fijos): su familia decide si
+  // lleva costes complementarios (material sí, salvo aplica_cdc = false) y su
+  // `recargo`, si lo trae, manda sobre el de la categoría. Con sin_recargo, o
+  // sin recargo ninguno (aerotermia, aire), el precio base es PVP: venta = base.
+  const preciosDe = (base, p) => {
+    const atr = p && p.atributos && typeof p.atributos === 'object' ? p.atributos : {};
+    const propio = p && p.recargo != null && p.recargo !== '' && numero(p.recargo) > 0 ? numero(p.recargo) : null;
+    const rec = verdad(atr.sin_recargo) ? 1 : (propio != null ? propio : recargo);
+    let coste = numero(base) * (1 - numero(p && p.descuento_proveedor) / 100);
+    if (rec !== 1) {
+      const familia = String((p && p.familia) || '');
+      if (cdc && !SIN_CDC.includes(familia) && !(p && p.aplica_cdc === false)) coste *= 1 + cdc / 100;
       coste = alCentimo(coste);
-      return { coste, venta: alCentimo(coste * recargo) };
+      // venta_exacta: sin redondear, para que una partida agrupada sume sus
+      // renglones sin perder céntimos en los de precio pequeño (0,28 €/m × 22).
+      return { coste, venta: alCentimo(coste * rec), venta_exacta: coste * rec };
     }
-    return { coste: alCentimo(numero(base) * (1 - numero(dtoProveedor) / 100)), venta: alCentimo(base) };
+    return { coste: alCentimo(coste), venta: alCentimo(base), venta_exacta: numero(base) };
   };
 
   /* --- 1 · variables derivadas, en su orden ------------------------------- */
@@ -177,8 +197,7 @@ export function calcular(categoria, datos, config) {
       }, extra);
     }
     const dto = (cfg.dtoLinea || []).find((d) => d.familia === p.familia);
-    const atr = p.atributos && typeof p.atributos === 'object' ? p.atributos : {};
-    const pr = precios(p.precio_tarifa, p.descuento_proveedor, verdad(atr.sin_recargo), p.familia);
+    const pr = preciosDe(p.precio_tarifa, p);
     // Sin precio no hay precio: la línea sale, con su cantidad, pero sin
     // confirmar y avisando. Así el presupuesto enseña lo que falta por cotizar.
     const pendiente = !(numero(p.precio_tarifa) > 0);
@@ -208,9 +227,10 @@ export function calcular(categoria, datos, config) {
     }
     const items = (partida.items || []).slice().sort((a, b) => (a.orden || 0) - (b.orden || 0));
     if (partida.agrupada) {
-      // Una sola línea: el nombre de la partida × veces, al coste de lo que lleva.
+      // Una sola línea: el nombre de la partida × veces, al coste y la venta de
+      // lo que lleva (renglón a renglón: cada uno con su margen).
       const desglose = [];
-      let costeTotal = 0, pendiente = false;
+      let costeTotal = 0, ventaTotal = 0, pendiente = false;
       items.forEach((item) => {
         let cantidad;
         try { cantidad = evaluarNumero(item.formula_cantidad || '1', ambito, ayudas); }
@@ -218,22 +238,23 @@ export function calcular(categoria, datos, config) {
         if (cantidad <= 0) return;
         const p = item.producto_ref ? (cfg.productos || {})[item.producto_ref] : null;
         if (item.producto_ref && !p) { avisar('error', 'producto_desconocido', 'No está en el catálogo la referencia ' + item.producto_ref + '.'); pendiente = true; return; }
-        const atr = p && p.atributos && typeof p.atributos === 'object' ? p.atributos : {};
         const base = p ? p.precio_tarifa : item.precio_fijo;
         if (!(numero(base) > 0)) { pendiente = true; avisar('aviso', 'precio_pendiente', 'Falta el precio de ' + (item.producto_ref || item.concepto_libre) + ' (dentro de ' + partida.nombre + '): pendiente de confirmar.'); }
-        const pr = precios(base, p ? p.descuento_proveedor : 0, p ? verdad(atr.sin_recargo) : false, p ? p.familia : 'material');
+        const pr = preciosDe(base, p || { familia: 'material' });
         costeTotal += pr.coste * cantidad;
-        desglose.push({ ref: item.producto_ref || null, nombre: p ? p.nombre : item.concepto_libre, cantidad: Math.round(cantidad * 1000) / 1000, unidad: item.unidad || (p && p.unidad) || 'ud', coste_ud: pr.coste, coste: alCentimo(pr.coste * cantidad) });
+        ventaTotal += pr.venta_exacta * cantidad;
+        desglose.push({ ref: item.producto_ref || null, nombre: p ? p.nombre : item.concepto_libre, cantidad: Math.round(cantidad * 1000) / 1000, unidad: item.unidad || (p && p.unidad) || 'ud', coste_ud: pr.coste, coste: alCentimo(pr.coste * cantidad), venta_ud: pr.venta, venta: alCentimo(pr.venta * cantidad) });
       });
       if (!desglose.length) return;
       const costeUd = alCentimo(costeTotal / veces);
+      const ventaUd = alCentimo(ventaTotal / veces);
       mete({
         producto_ref: partida.codigo, descripcion: partida.nombre, detalle_tecnico: partida.detalle_tecnico || null, especificaciones: [],
         cantidad: veces, unidad: 'ud',
-        precio_tarifa: alCentimo(costeUd * (recargo !== 1 ? recargo : 1)), precio_coste: costeUd,
+        precio_tarifa: ventaUd, precio_coste: costeUd,
         dto_linea_pct: 0, iva: 21, confirmada: !pendiente,
         seccion: (regla && regla.seccion) || partida.nombre, origen: 'partida', origen_regla_id: (regla && regla.id) || null,
-        origen_inputs: { partida: partida.codigo, veces, desglose, coste_total: alCentimo(costeTotal) },
+        origen_inputs: { partida: partida.codigo, veces, desglose, coste_total: alCentimo(costeTotal), venta_total: alCentimo(ventaTotal) },
       });
       return;
     }
@@ -260,8 +281,8 @@ export function calcular(categoria, datos, config) {
         cantidad,
         // La unidad de la partida (etapa 51): m para la tubería, kg para el gas.
         unidad: item.unidad || 'ud',
-        precio_tarifa: precios(item.precio_fijo, 0, false, 'material').venta,
-        precio_coste: precios(item.precio_fijo, 0, false, 'material').coste,
+        precio_tarifa: preciosDe(item.precio_fijo, { familia: 'material' }).venta,
+        precio_coste: preciosDe(item.precio_fijo, { familia: 'material' }).coste,
         dto_linea_pct: 0,
         iva: 21,
         confirmada: true,
@@ -345,7 +366,7 @@ export function calcular(categoria, datos, config) {
     mete({
       producto_ref: null, descripcion: m.concepto, detalle_tecnico: null, especificaciones: [],
       cantidad, unidad: m.formula_horas ? 'h' : 'ud',
-      precio_tarifa: precios(precio, 0, false, 'mano_obra').venta, precio_coste: precios(precio, 0, false, 'mano_obra').coste,
+      precio_tarifa: preciosDe(precio, { familia: 'mano_obra' }).venta, precio_coste: preciosDe(precio, { familia: 'mano_obra' }).coste,
       dto_linea_pct: 0, iva: 21,
       seccion: 'Mano de obra', origen: 'mano_obra', origen_regla_id: null,
       origen_inputs: { formula: m.formula_horas || null },
@@ -361,8 +382,47 @@ export function calcular(categoria, datos, config) {
       'Con estos datos no se ha disparado ninguna regla. Revisa la ficha o las reglas de ' + categoria + '.');
   }
 
-  lineas.forEach((l, i) => { l.orden = i + 1; });
-  return { lineas, incidencias, variables, recargo_sobre_coste: recargo, motor_version: MOTOR_VERSION };
+  lineas.forEach((l, i) => { l.orden = i + 1; beneficioEnLinea(l); });
+  return { lineas, incidencias, variables, recargo_sobre_coste: recargo, motor_version: MOTOR_VERSION, resumen: resumenDe(lineas) };
+}
+
+/* --- El beneficio, por dentro (1.4) ---------------------------------------
+ * Lo que gana Sysefen en cada línea y en el presupuesto entero, y cuánto
+ * descuento sobre la venta cabe sin bajar de un margen dado:
+ *   descuento_max(m) = 1 − coste / (venta × (1 − m))
+ * Todo sobre venta, que es sobre lo que se descuenta. Una línea sin coste
+ * conocido (la puso la persona a mano) no cuenta y se dice cuántas hay.
+ * NADA de esto va al cliente: ni al PDF ni a Teamleader. */
+const alCent = (n) => Math.round(numero(n) * 100 + 1e-7) / 100;
+const fraccion = (n) => Math.round(numero(n) * 10000) / 10000;
+export function beneficioEnLinea(l) {
+  if (l.precio_coste == null || l.precio_coste === '') { l.beneficio_ud = null; l.margen_pct = null; return l; }
+  const venta = numero(l.precio_tarifa), coste = numero(l.precio_coste);
+  l.beneficio_ud = alCent(venta - coste);
+  l.margen_pct = venta > 0 ? fraccion((venta - coste) / venta) : null;
+  return l;
+}
+export function resumenDe(lineas) {
+  let coste = 0, venta = 0, sinCoste = 0;
+  (lineas || []).forEach((l) => {
+    const c = numero(l.cantidad == null ? 1 : l.cantidad);
+    venta += numero(l.precio_tarifa) * c;
+    if (l.precio_coste == null || l.precio_coste === '') { sinCoste++; return; }
+    coste += numero(l.precio_coste) * c;
+  });
+  coste = alCent(coste); venta = alCent(venta);
+  const beneficio = alCent(venta - coste);
+  const descuentoMax = {};
+  [20, 15, 10].forEach((m) => {
+    const d = venta > 0 ? 1 - coste / (venta * (1 - m / 100)) : 0;
+    descuentoMax[String(m)] = fraccion(Math.max(0, d));
+  });
+  return {
+    coste, venta, beneficio,
+    margen_pct: venta > 0 ? fraccion(beneficio / venta) : null,
+    descuento_max_pct_para_margen: descuentoMax,
+    lineas_sin_coste: sinCoste,
+  };
 }
 
 export { MOTOR_VERSION };

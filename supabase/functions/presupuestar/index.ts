@@ -37,7 +37,7 @@
 // =============================================================================
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
-import { calcular, MOTOR_VERSION } from './motor.js';
+import { calcular, resumenDe, MOTOR_VERSION } from './motor.js';
 import { cadenaPrecios, totalCoste } from './cadena.js';
 
 const CORS = {
@@ -94,7 +94,9 @@ Deno.serve(async (req) => {
     }).eq('id', id);
     return json({ ok: true, presupuesto_id: id, dto_global_pct: dto, totales: {
       bruto: t.total_bruto, dto_linea: t.total_dto_linea, subtotal: t.subtotal,
-      dto_global: t.total_dto_global, total: t.total, coste: coste.total, lineas_sin_coste: coste.lineas_sin_coste } });
+      dto_global: t.total_dto_global, total: t.total, coste: coste.total, lineas_sin_coste: coste.lineas_sin_coste },
+      // Interno (1.4): lo que gana Sysefen y el descuento que aguanta. Nunca al cliente.
+      resumen: resumenDe(ls || []) });
   }
   const uuid = (v: unknown) => (/^[0-9a-f-]{36}$/i.test(String(v || '')) ? String(v) : null);
   const visitaId = uuid(b.visita_id);
@@ -165,9 +167,11 @@ Deno.serve(async (req) => {
   const productos: Record<string, any> = {};
   let tarifaId: string | null = null;
   if (refs.length) {
-    const { data: prods } = await sb.from('productos')
-      .select('referencia, nombre, familia, unidad, precio_tarifa, descuento_proveedor, detalle_tecnico, especificaciones, iva, atributos, tarifa_id, activo')
-      .in('referencia', [...new Set(refs)]).eq('activo', true);
+    // recargo y aplica_cdc (1.4, etapa 72 del 09-10-2026): el margen propio del
+    // producto. Si la base aún no tiene las columnas, se piden sin ellas.
+    const columnas = 'referencia, nombre, familia, unidad, precio_tarifa, descuento_proveedor, detalle_tecnico, especificaciones, iva, atributos, tarifa_id, activo';
+    let prods = (await sb.from('productos').select(columnas + ', recargo, aplica_cdc').in('referencia', [...new Set(refs)]).eq('activo', true)).data;
+    if (!prods) prods = (await sb.from('productos').select(columnas).in('referencia', [...new Set(refs)]).eq('activo', true)).data;
     (prods || []).forEach((p) => {
       // Si una referencia está en dos tarifas, manda la primera que llegue: el
       // catálogo las tiene separadas por proveedor y no se mezclan.
@@ -212,6 +216,8 @@ Deno.serve(async (req) => {
   }));
   res.lineas = res.lineas.concat(extra);
   res.lineas.forEach((l, i) => { l.orden = i + 1; });
+  // El resumen interno cuenta también lo añadido a mano (sin coste conocido).
+  res.resumen = resumenDe(res.lineas);
 
   const totales = cadenaPrecios(res.lineas, dtoGlobal);
   const coste = totalCoste(res.lineas);
@@ -241,6 +247,9 @@ Deno.serve(async (req) => {
       lineas_sin_coste: coste.lineas_sin_coste,
     },
     recargo_sobre_coste: res.recargo_sobre_coste,
+    // Interno: coste, venta, beneficio, margen y descuento máximo por margen.
+    // La app lo enseña solo por dentro; el PDF y Teamleader no lo reciben.
+    resumen: res.resumen,
     lineas: res.lineas.map((l, i) => Object.assign({}, l, {
       importe: totales.lineas[i].total,
       importe_bruto: totales.lineas[i].bruto,

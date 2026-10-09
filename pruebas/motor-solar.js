@@ -73,7 +73,9 @@ igual('desglose: una bolsa de clips de cable', desg(r, 'FV-02-014'), 1);
 var costeDesglose = est.origen_inputs.desglose.reduce(function (t, x) { return t + x.coste; }, 0);
 comprueba('el coste por panel es la suma del desglose entre los paneles', Math.abs(est.precio_coste - costeDesglose / 10) < 0.011);
 comprueba('con el 10 % de costes complementarios sobre el perfil (8,708 × 1,10)', Math.abs(est.origen_inputs.desglose[0].coste_ud - 9.58) < 0.006);
-comprueba('y venta = coste × 1,30', Math.abs(est.precio_tarifa - Math.round(est.precio_coste * 130 + 1e-7) / 100) < 0.005);
+var ventaDesglose = est.origen_inputs.desglose.reduce(function (t, x) { return t + x.venta; }, 0);
+comprueba('y la venta por panel es la suma de las ventas del desglose (cada renglón × 1,30) entre los paneles', Math.abs(est.precio_tarifa - ventaDesglose / 10) < 0.011);
+comprueba('que viene a ser coste × 1,30', Math.abs(est.precio_tarifa - est.precio_coste * 1.3) < 0.02);
 comprueba('en teja no hay triángulos, lastre, anclajes ni soportes de chapa', !linea(r, 'FV-02-007') && !linea(r, 'FV-02-008') && !linea(r, 'FV-02-009') && !linea(r, 'FV-02-004'));
 comprueba('ni sellador (los clips no perforan)', !linea(r, 'FV-02-011'));
 
@@ -121,19 +123,40 @@ comprueba('sin subvención ni IBI', !linea(r, 'FV-13-006') && !linea(r, 'FV-13-0
 comprueba('avisa de las tasas municipales', aviso(r, 'tasas e ICIO'));
 comprueba('el lote de pequeño material va dentro de PEQ_MAT, no suelto', !linea(r, 'FV-08-001') && desgDe(r, 'PEQ_MAT', 'FV-08-001') === 1);
 
-titulo('el modelo de precios: venta = coste × 1,30 una vez por línea');
+titulo('el modelo de precios (motor 1.4): un margen por familia, una vez por línea');
+igual('motor 1.4', r.motor_version, '1.4');
 var inv = porNombre(r, 'GEN24 SC 4.6');
-igual('coste del inversor = tarifa del distribuidor + 10 % de complementarios', inv.precio_coste, Math.round(P('Fronius Primo GEN24 SC 4.6') * 110 + 1e-7) / 100);
-igual('venta = coste × 1,30 al céntimo', inv.precio_tarifa, Math.round(inv.precio_coste * 130 + 1e-7) / 100);
+igual('equipo del distribuidor: coste = la factura, sin complementarios', inv.precio_coste, P('Fronius Primo GEN24 SC 4.6'));
+igual('y venta = coste × 1,20 al céntimo', inv.precio_tarifa, Math.round(inv.precio_coste * 120 + 1e-7) / 100);
+igual('el panel genérico a 80 de coste', linea(r, 'FV-01-001').precio_coste, 80);
+igual('y 115 de venta (× 1,4375, sin complementarios)', linea(r, 'FV-01-001').precio_tarifa, 115);
 igual('la mano de obra no lleva complementarios: 330 de coste', linea(r, 'FV-11-001').precio_coste, 330);
-comprueba('todas las líneas con precio cumplen venta = coste × 1,30 (salvo trámites)', r.lineas.every(function (l) {
-  if (!l.precio_coste) return true;
-  if (/^FV-13-/.test(l.producto_ref)) return l.precio_tarifa === l.precio_coste;
-  return Math.abs(l.precio_tarifa - Math.round(l.precio_coste * 130 + 1e-7) / 100) < 0.005;
+igual('y sigue al 30 %', linea(r, 'FV-11-001').precio_tarifa, 429);
+var malMargen = r.lineas.filter(function (l) {
+  if (!l.precio_coste) return false;
+  var ref = String(l.producto_ref);
+  if (/^FV-13-/.test(ref)) return l.precio_tarifa !== l.precio_coste;
+  var f = /^FV-01-/.test(ref) ? 1.4375 : /^FV-(FRONIUS|ENPHASE|BYD|TESLA)-/.test(ref) ? 1.2 : 1.3;
+  // una partida agrupada suma renglones con el coste ya al céntimo: un céntimo de holgura
+  if (l.origen === 'partida') return Math.abs(l.precio_tarifa - l.precio_coste * f) >= 0.011;
+  return l.precio_tarifa !== Math.round(l.precio_coste * f * 100 + 1e-7) / 100;
+}).map(function (l) { return l.producto_ref + ' ' + l.precio_coste + '→' + l.precio_tarifa; });
+igual('todas las líneas con precio cumplen su margen: trámites igual, panel × 1,4375, equipos × 1,20, el resto × 1,30', malMargen.join(', '), '');
+comprueba('cada línea trae su beneficio y su margen sobre venta', r.lineas.every(function (l) {
+  if (l.precio_coste == null) return l.beneficio_ud === null;
+  return Math.abs(l.beneficio_ud - (l.precio_tarifa - l.precio_coste)) < 0.005 && (l.precio_tarifa ? Math.abs(l.margen_pct - l.beneficio_ud / l.precio_tarifa) < 0.0001 : true);
 }));
-var conPrecio = r.lineas.filter(function (l) { return l.precio_coste > 0 && !/^FV-13-/.test(l.producto_ref); });
+igual('el panel: 35 de beneficio por unidad', linea(r, 'FV-01-001').beneficio_ud, 35);
+comprueba('el resumen interno: coste, venta, beneficio', r.resumen && Math.abs(r.resumen.venta - r.resumen.coste - r.resumen.beneficio) < 0.011 && r.resumen.lineas_sin_coste === 0);
+var conPrecio = r.lineas.filter(function (l) { return l.precio_coste > 0; });
 var tc = totalCoste(conPrecio), tv = cadenaPrecios(conPrecio, 0);
-comprueba('el margen sobre venta de lo recargado ronda el 23 %', Math.abs((tv.total - tc.total) / tv.total - 0.2308) < 0.002);
+comprueba('y cuadra con la cadena de precios', Math.abs(r.resumen.coste - tc.total) < 0.011 && Math.abs(r.resumen.venta - tv.total) < 0.011);
+comprueba('margen ponderado entre el 20 y el 30 % (salió ' + r.resumen.margen_pct + ')', r.resumen.margen_pct > 0.2 && r.resumen.margen_pct < 0.3);
+var dm = r.resumen.descuento_max_pct_para_margen;
+comprueba('descuento máximo decreciente con el margen pedido: 10 % > 15 % > 20 %', dm['10'] > dm['15'] && dm['15'] > dm['20'] && dm['20'] >= 0);
+comprueba('y es 1 − coste / (venta × (1 − m))', Math.abs(dm['15'] - (1 - r.resumen.coste / (r.resumen.venta * 0.85))) < 0.0001);
+igual('una línea a mano sin coste no cuenta y se dice', resumenDe([{ cantidad: 1, precio_tarifa: 100, precio_coste: null }, { cantidad: 2, precio_tarifa: 50, precio_coste: 30 }]).lineas_sin_coste, 1);
+igual('si el margen no da, el descuento máximo es 0, no negativo', resumenDe([{ cantidad: 1, precio_tarifa: 100, precio_coste: 95 }]).descuento_max_pct_para_margen['20'], 0);
 igual('totalCoste no cuenta líneas sin coste', totalCoste([{ cantidad: 2, precio_coste: 10 }, { cantidad: 1, precio_coste: null }]).lineas_sin_coste, 1);
 igual('y suma las que lo tienen', totalCoste([{ cantidad: 2, precio_coste: 10.5 }, { cantidad: 1, precio_coste: null }]).total, 21);
 
@@ -308,6 +331,14 @@ comprueba('coste ≈ 39,7 €/ud (salió ' + et.precio_coste + ')', Math.abs(et.
 comprueba('venta ≈ 51,7 €/ud (salió ' + et.precio_tarifa + ')', Math.abs(et.precio_tarifa - 51.7) <= 0.06);
 comprueba('con su desglose', et.origen_inputs.desglose.length === 8);
 igual('ninguna FV-02 suelta', sueltasEstr(r).join(','), '');
+var ja = linea(r, 'FV-01-001-JA540');
+comprueba('TAREA 4 · paneles: 10 × 80 coste, 10 × 115 venta, 350 de beneficio', ja.precio_coste === 80 && ja.precio_tarifa === 115 && ja.beneficio_ud * ja.cantidad === 350);
+var symo = linea(r, 'FV-FRONIUS-SYMO-GEN24-SC-5.0');
+comprueba('Symo 5.0: 1.256,49 → 1.507,79, beneficio 251,30', symo.precio_coste === 1256.49 && symo.precio_tarifa === 1507.79 && symo.beneficio_ud === 251.3);
+var sm = porNombre(r, 'Smart Meter TS 65A-3');
+comprueba('Smart Meter TS 65A-3: tarifa × 1,20 (salió ' + sm.precio_coste + ' → ' + sm.precio_tarifa + ')', sm.precio_coste === P('FRONIUS Smart Meter TS 65A-3') && sm.precio_tarifa === Math.round(sm.precio_coste * 120 + 1e-7) / 100);
+comprueba('resumen.margen_pct entre 0,20 y 0,30 (salió ' + r.resumen.margen_pct + ')', r.resumen.margen_pct >= 0.2 && r.resumen.margen_pct <= 0.3);
+comprueba('descuento máximo para mantener el 15 % > 0 (salió ' + r.resumen.descuento_max_pct_para_margen['15'] + ')', r.resumen.descuento_max_pct_para_margen['15'] > 0);
 comprueba('06 suelto: DC 33 · MC4 4 · AC 6 · comunicación 4 · tierra 20', cant(r, 'FV-06-001') === 33 && cant(r, 'FV-06-002') === 4 && cant(r, 'FV-06-003') === 6 && cant(r, 'FV-06-005') === 4 && cant(r, 'FV-06-006') === 20);
 cp = linea(r, 'CUADRO_PROT');
 comprueba('07: Cuadro de protecciones × 1, confirmada', !!cp && cp.cantidad === 1 && cp.confirmada === true);

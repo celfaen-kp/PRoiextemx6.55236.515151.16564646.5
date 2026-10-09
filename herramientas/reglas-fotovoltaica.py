@@ -39,6 +39,13 @@ CÓMO SE USA:
   (y después pegar subir-a-supabase/etapa72_fotovoltaica_capitulos.sql en el SQL Editor)
 
 PARA CAMBIAR UN PRECIO: se cambia en el CSV y se vuelve a ejecutar esto.
+
+EL MARGEN POR FAMILIA (decisión Sysefen 09-10-2026, motor 1.4):
+  · panel: coste 80 → venta 115 (productos.recargo 1,4375, sin CDC)
+  · equipos del distribuidor (Fronius, Enphase, BYD, Tesla): coste × 1,20, sin CDC
+  · el resto: coste × 1,10 (CDC) × 1,30 (recargo de la categoría)
+  Lo que manda es productos.recargo / productos.aplica_cdc (margen_de()); los
+  lookups recargo_equipos y recargo_paneles son solo documentación.
 PARA CAMBIAR UN COEFICIENTE (días base, separación de ganchos…): en
   tablas_lookup, categoría 'solar'; no hace falta volver a ejecutar nada.
 """
@@ -206,6 +213,14 @@ for cod, fila in precios_csv.items():
     if cod in conocidos or not cod.startswith('FV-'): continue
     producto_sysefen(cod, fila['descripcion'], fila['unidad'] or 'ud', {}, fila)
 S = {x['referencia']: x for x in sysefen}
+
+# El margen propio de cada producto (tarea 4, 09-10-2026): (recargo, aplica_cdc).
+# None = el recargo de la categoría (1,30) con sus costes complementarios.
+RECARGO_PANELES, RECARGO_EQUIPOS = 1.4375, 1.20
+def margen_de(ref):
+    if ref.startswith('FV-01-'): return (RECARGO_PANELES, False)                       # panel: 80 → 115
+    if ref.startswith(('FV-FRONIUS-', 'FV-ENPHASE-', 'FV-BYD-', 'FV-TESLA-')): return (RECARGO_EQUIPOS, False)  # equipos: +20 % sobre factura
+    return (None, True)
 paneles = sorted([x for x in sysefen if x['referencia'].startswith('FV-01-001-') and num(x['atributos'].get('wp'))],
                  key=lambda x: num(x['atributos']['wp']))
 
@@ -214,7 +229,9 @@ paneles = sorted([x for x in sysefen if x['referencia'].startswith('FV-01-001-')
 #     cambia en la tabla sin tocar nada más.
 # =============================================================================
 LOOKUP = [
-    ('recargo_sobre_coste', 'defecto', 1.30, 'Precio de venta = coste × 1,30, una vez por línea. CONFIRMADO (desglose FV, oct 2026).'),
+    ('recargo_sobre_coste', 'defecto', 1.30, 'Precio de venta = coste × 1,30, una vez por línea, para lo que no trae recargo propio. CONFIRMADO (desglose FV, oct 2026).'),
+    ('recargo_equipos', 'defecto', 1.20, 'Equipos del distribuidor (Fronius, Enphase, BYD, Tesla): venta = coste × 1,20, sin CDC. Informativo: el valor que manda es productos.recargo (09-10-2026).'),
+    ('recargo_paneles', 'defecto', 1.4375, 'Panel: coste 80 → venta 115, sin CDC. Informativo: el valor que manda es productos.recargo (09-10-2026).'),
     ('ratio_dc_ac', 'defecto', 1.2, 'kWp de paneles por kW de inversor. Por confirmar según ficha técnica de cada marca.'),
     ('micros_por_rama', 'defecto', 11, 'Microinversores Enphase por rama de Q Cable.'),
     ('bateria_kwh', 'defecto', 5, 'kWh de batería si se pide batería sin decir cuántos ni haber consumo.'),
@@ -588,8 +605,10 @@ w(f'''-- =======================================================================
 -- se cambia el CSV o el script y se vuelve a generar.
 --
 -- QUÉ SE MONTA (desglose de costes FV particulares, 5 oct 2026):
---   · El modelo de precios: venta = coste × 1,30, UNA vez por línea
---     (tablas_lookup recargo_sobre_coste; lo aplica el motor 1.2).
+--   · El modelo de precios: venta = coste × recargo, UNA vez por línea. El
+--     panel a 80 → 115 (×1,4375), los equipos del distribuidor ×1,20 (ambos
+--     sin CDC, productos.recargo / aplica_cdc) y el resto ×1,10 ×1,30
+--     (tablas_lookup recargo_sobre_coste). Decisión Sysefen 09-10-2026.
 --   · La tarifa «Fotovoltaica 2026» del distribuidor (Fronius, Enphase, BYD,
 --     Tesla): precios como coste.
 --   · La tarifa «Fotovoltaica partidas 2026» de Sysefen: {len(sysefen)} partidas con
@@ -612,7 +631,9 @@ w(f'''-- =======================================================================
 --   · Fuera FV-06-004 (bus de micros): el tramo de Enphase al cuadro va con
 --     manguera AC (FV-06-003). El producto queda inactivo (09-10-2026).
 --
--- REQUIERE: la función `presupuestar` 1.2 (precio_coste, recargo, contiene).
+-- REQUIERE: la función `presupuestar` 1.4 (recargo y aplica_cdc por producto,
+-- beneficio y resumen internos). Con la 1.2/1.3 el SQL entra igual, pero los
+-- paneles y los equipos saldrían al 30 % de la categoría, no a su margen.
 -- Idempotente: se puede volver a ejecutar; las reglas FV se rehacen (las que
 -- usó algún presupuesto guardado quedan inactivas en vez de borrarse).
 -- =============================================================================
@@ -624,6 +645,14 @@ alter table public.reglas drop constraint if exists reglas_tipo_check;
 alter table public.reglas add constraint reglas_tipo_check
   check (tipo in ('seleccion','cantidad','condicional','aviso'));
 
+-- 1b · El margen propio de cada producto (motor 1.4, tarea 4) ---------------------
+-- recargo: multiplicador sobre coste (null = el recargo_sobre_coste de la categoría).
+-- aplica_cdc: false = sin costes complementarios aunque sea material.
+alter table public.productos add column if not exists recargo numeric;
+alter table public.productos add column if not exists aplica_cdc boolean not null default true;
+comment on column public.productos.recargo is 'Venta = coste × recargo, para este producto; null = el de la categoría (tablas_lookup recargo_sobre_coste).';
+comment on column public.productos.aplica_cdc is 'false: no se suma costes_complementarios_pct a este producto aunque sea material.';
+
 -- 2 · La tarifa del distribuidor ---------------------------------------------------
 insert into public.proveedores (codigo, nombre)
 values ('fotovoltaica', 'Distribuidor fotovoltaica (Fronius, Enphase, BYD, Tesla)')
@@ -632,18 +661,19 @@ insert into public.tarifas (proveedor_id, nombre, vigente_desde)
 select id, 'Fotovoltaica 2026', date '2026-09-23' from public.proveedores where codigo = 'fotovoltaica'
 on conflict (proveedor_id, nombre) do nothing;
 
-insert into public.productos (tarifa_id, referencia, nombre, familia, unidad, precio_tarifa, iva, atributos)
-select t.id, v.referencia, v.nombre, v.familia, 'ud', v.precio, 21, v.atributos::jsonb
+insert into public.productos (tarifa_id, referencia, nombre, familia, unidad, precio_tarifa, iva, atributos, recargo, aplica_cdc)
+select t.id, v.referencia, v.nombre, v.familia, 'ud', v.precio, 21, v.atributos::jsonb, v.recargo, v.aplica_cdc
   from public.tarifas t
   join (values
 ''')
-w(",\n".join(f"    ({q(x['referencia'])}, {q(x['nombre'])}, {q(x['familia'])}, {x['precio_tarifa']}, {q(x['atributos'] or '{}')})" for x in distribuidor))
+w(",\n".join(f"    ({q(x['referencia'])}, {q(x['nombre'])}, {q(x['familia'])}, {x['precio_tarifa']}, {q(x['atributos'] or '{}')}, {lit(margen_de(x['referencia'])[0], 'numeric')}, {lit(margen_de(x['referencia'])[1])})" for x in distribuidor))
 w("""
-  ) as v(referencia, nombre, familia, precio, atributos) on true
+  ) as v(referencia, nombre, familia, precio, atributos, recargo, aplica_cdc) on true
  where t.nombre = 'Fotovoltaica 2026'
 on conflict (tarifa_id, referencia) do update
   set nombre = excluded.nombre, familia = excluded.familia,
-      precio_tarifa = excluded.precio_tarifa, atributos = excluded.atributos;
+      precio_tarifa = excluded.precio_tarifa, atributos = excluded.atributos,
+      recargo = excluded.recargo, aplica_cdc = excluded.aplica_cdc;
 
 -- 3 · Las partidas de Sysefen -------------------------------------------------------
 insert into public.proveedores (codigo, nombre) values ('sysefen', 'Sysefen (partidas propias)')
@@ -652,18 +682,19 @@ insert into public.tarifas (proveedor_id, nombre, vigente_desde)
 select id, 'Fotovoltaica partidas 2026', date '""" + HOY + """' from public.proveedores where codigo = 'sysefen'
 on conflict (proveedor_id, nombre) do nothing;
 
-insert into public.productos (tarifa_id, referencia, nombre, familia, unidad, precio_tarifa, iva, atributos)
-select t.id, v.referencia, v.nombre, v.familia, v.unidad, v.precio, 21, v.atributos::jsonb
+insert into public.productos (tarifa_id, referencia, nombre, familia, unidad, precio_tarifa, iva, atributos, recargo, aplica_cdc)
+select t.id, v.referencia, v.nombre, v.familia, v.unidad, v.precio, 21, v.atributos::jsonb, v.recargo, v.aplica_cdc
   from public.tarifas t
   join (values
 """)
-w(",\n".join(f"    ({q(x['referencia'])}, {q(x['nombre'])}, {q(x['familia'])}, {q(x['unidad'])}, {x['precio']:.2f}, {q(json.dumps(x['atributos'], ensure_ascii=False))})" for x in sysefen))
+w(",\n".join(f"    ({q(x['referencia'])}, {q(x['nombre'])}, {q(x['familia'])}, {q(x['unidad'])}, {x['precio']:.2f}, {q(json.dumps(x['atributos'], ensure_ascii=False))}, {lit(margen_de(x['referencia'])[0], 'numeric')}, {lit(margen_de(x['referencia'])[1])})" for x in sysefen))
 w("""
-  ) as v(referencia, nombre, familia, unidad, precio, atributos) on true
+  ) as v(referencia, nombre, familia, unidad, precio, atributos, recargo, aplica_cdc) on true
  where t.nombre = 'Fotovoltaica partidas 2026'
 on conflict (tarifa_id, referencia) do update
   set nombre = excluded.nombre, familia = excluded.familia, unidad = excluded.unidad,
-      precio_tarifa = excluded.precio_tarifa, atributos = excluded.atributos;
+      precio_tarifa = excluded.precio_tarifa, atributos = excluded.atributos,
+      recargo = excluded.recargo, aplica_cdc = excluded.aplica_cdc;
 -- Retiradas del catálogo (siguen en la tabla para los presupuestos que las usaron).
 update public.productos p set activo = false
   from public.tarifas t where p.tarifa_id = t.id and t.nombre = 'Fotovoltaica partidas 2026'
@@ -771,6 +802,10 @@ commit;
 --      ('FV-07-001','FV-07-002','FV-07-004','FV-07-005','FV-07-006','FV-07-007','FV-07-008','FV-06-007','FV-06-010','FV-06-011','FV-06-012','FV-07-012','FV-08-001',
 --       'FV-13-008','FV-13-004','FV-13-001','FV-12-001','FV-12-004','FV-10-004');
 --
+--   El margen por producto (panel 1,4375 sin CDC; equipos 1,20 sin CDC; resto null = 1,30 con CDC):
+--   select p.referencia, p.precio_tarifa, p.recargo, p.aplica_cdc from public.productos p join public.tarifas t on t.id = p.tarifa_id
+--    where t.nombre in ('Fotovoltaica 2026', 'Fotovoltaica partidas 2026') and p.recargo is not null order by 1;
+--
 --   Los coeficientes por confirmar:
 --   select clave, entrada, valor, notas from public.tablas_lookup where categoria = 'solar' and notas ilike '%confirmar%' order by 1, 2;
 -- =============================================================================
@@ -785,10 +820,12 @@ productos = {}
 for x in distribuidor:
     productos[x['referencia']] = dict(referencia=x['referencia'], nombre=x['nombre'], familia=x['familia'], unidad='ud',
                                       precio_tarifa=float(x['precio_tarifa']), descuento_proveedor=0, iva=21,
-                                      atributos=json.loads(x['atributos'] or '{}'))
+                                      atributos=json.loads(x['atributos'] or '{}'),
+                                      recargo=margen_de(x['referencia'])[0], aplica_cdc=margen_de(x['referencia'])[1])
 for x in sysefen:
     productos[x['referencia']] = dict(referencia=x['referencia'], nombre=x['nombre'], familia=x['familia'], unidad=x['unidad'],
-                                      precio_tarifa=x['precio'], descuento_proveedor=0, iva=21, atributos=x['atributos'])
+                                      precio_tarifa=x['precio'], descuento_proveedor=0, iva=21, atributos=x['atributos'],
+                                      recargo=margen_de(x['referencia'])[0], aplica_cdc=margen_de(x['referencia'])[1])
 json.dump({
     'productos': productos,
     'lookup': [dict(clave=c, entrada=e, valor=v) for c, e, v, _ in LOOKUP],

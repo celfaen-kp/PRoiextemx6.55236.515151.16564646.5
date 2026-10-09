@@ -237,7 +237,9 @@ setTimeout(function () {
     created_at: new Date().toISOString(), total_venta: 780, dto_global_pct: 10, motor_version: '1.0',
     incidencias: [], cliente: { nombre: 'Ana Ferrer' }, tl_quotation_id: null,
     lineas: [{ orden: 1, descripcion: 'C100: Tubería frigorífica', detalle_tecnico: 'Tubería de cobre aislada',
-      cantidad: 3, unidad: 'ud', precio_tarifa: 245, precio_venta: 661.5, dto_linea_pct: 0, iva: 21 }] };
+      cantidad: 3, unidad: 'ud', precio_tarifa: 245, precio_venta: 661.5, dto_linea_pct: 0, iva: 21,
+      // lo interno viaja en la línea; el PDF no debe imprimirlo
+      precio_coste: 180, beneficio_ud: 65, margen_pct: 0.2653, origen_inputs: { desglose: [{ nombre: 'Tubo de cobre' }] } }] };
   V.presuVer = { id: 'p9', cargando: false, error: null, datos: guardado };
 
   // El PDF se dibuja en #print: hay que quedarse con ese nodo, como con #app.
@@ -252,6 +254,7 @@ setTimeout(function () {
   imprimirPresupuestoHTML(guardado);
   var pdf = impreso.innerHTML;
   comprueba('el PDF dice PRESUPUESTO, no toma de datos', pdf.indexOf('PRESUPUESTO') > -1 && pdf.indexOf('TOMA DE DATOS') === -1);
+  comprueba('el PDF no lleva nada interno: ni coste, ni beneficio, ni margen, ni desglose', !/coste|beneficio|margen|origen_inputs|resumen|precio_coste|Interno/i.test(pdf));
   comprueba('lleva el cliente', pdf.indexOf('Ana Ferrer') > -1);
   comprueba('la línea con su detalle técnico', pdf.indexOf('C100') > -1 && pdf.indexOf('cobre aislada') > -1);
   comprueba('el total sin IVA', pdf.indexOf('780,00') > -1);

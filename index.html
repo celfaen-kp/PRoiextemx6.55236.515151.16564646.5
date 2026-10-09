@@ -410,7 +410,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '22.1'; // versión visible de la app (única fuente)
+const APP_VERSION = '22.2'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -7276,13 +7276,20 @@ function presupuestoHTML(v, fichas) {
  * (el PDF no lo lleva). Si hay líneas sin coste conocido se dice, para que
  * el margen no se lea como exacto.
  */
-function costeMargenHTML(coste, venta, sinCoste) {
+function costeMargenHTML(coste, venta, sinCoste, ventaSinDto) {
   if (!esAdmin() || coste == null || !(Number(venta) > 0)) return '';
   const c = Number(coste) || 0, v = Number(venta) || 0, m = v - c;
   const pct = v ? Math.round((m / v) * 1000) / 10 : 0;
-  return `<div class="row" style="justify-content:space-between;margin-top:10px;padding:9px 11px;border-radius:12px;background:rgba(20,23,15,.045)">
-    <span class="tiny" style="font-size:12px">Interno · coste ${eur(c)}${sinCoste ? ' · ' + sinCoste + ' línea' + (sinCoste === 1 ? '' : 's') + ' sin coste' : ''}</span>
-    <span class="tiny" style="font-size:12px;color:${m >= 0 ? 'var(--verde-o)' : 'var(--rojo)'}">margen ${eur(m)} · ${String(pct).replace('.', ',')} %</span>
+  // Cuánto descuento sobre la venta (antes del descuento al pie) cabe sin
+  // bajar de cada margen: 1 − coste / (venta × (1 − margen)). Motor 1.4.
+  const base = Number(ventaSinDto) || 0;
+  const dtoMax = (mg) => Math.max(0, Math.round((1 - c / (base * (1 - mg / 100))) * 1000) / 10);
+  return `<div style="margin-top:10px;padding:9px 11px;border-radius:12px;background:rgba(20,23,15,.045)">
+    <div class="row" style="justify-content:space-between">
+      <span class="tiny" style="font-size:12px">Interno · coste ${eur(c)} · venta ${eur(v)}${sinCoste ? ' · ' + sinCoste + ' línea' + (sinCoste === 1 ? '' : 's') + ' sin coste' : ''}</span>
+      <span class="tiny" style="font-size:12px;color:${m >= 0 ? 'var(--verde-o)' : 'var(--rojo)'}">beneficio ${eur(m)} · margen ${String(pct).replace('.', ',')} %</span>
+    </div>
+    ${base > 0 ? `<div class="tiny" style="margin-top:5px;font-size:12px;color:var(--t3)">Descuento máximo para quedarse en el 20 % · 15 % · 10 % de margen: ${[20, 15, 10].map((mg) => String(dtoMax(mg)).replace('.', ',') + ' %').join(' · ')}</div>` : ''}
   </div>`;
 }
 
@@ -7300,7 +7307,7 @@ function margenLineaHTML(l) {
   const pct = venta ? Math.round((m / venta) * 1000) / 10 : 0;
   const oi = l.origen_inputs && typeof l.origen_inputs === 'object' ? l.origen_inputs : null;
   const desglose = oi && Array.isArray(oi.desglose) ? oi.desglose : [];
-  return `<div class="tiny" style="margin-top:4px;color:${m >= 0 ? 'var(--verde-o)' : 'var(--rojo)'}">Interno · coste ${eur(coste)} · margen ${eur(m)} (${String(pct).replace('.', ',')} %)</div>
+  return `<div class="tiny" style="margin-top:4px;color:${m >= 0 ? 'var(--verde-o)' : 'var(--rojo)'}">Interno · coste ${eur(coste)} · venta ${eur(venta)} · beneficio ${eur(m)} · margen ${String(pct).replace('.', ',')} %</div>
     ${desglose.length ? `<div class="tiny" style="margin-top:3px;color:var(--t3)">${desglose.map((x) => esc(x.nombre) + ' ' + esc(String(x.cantidad)) + ' ' + esc(x.unidad || 'ud') + ' · ' + eur(x.coste)).join(' · ')}</div>` : ''}`;
 }
 
@@ -7345,7 +7352,7 @@ function presuPanelHTML() {
           <span style="font:600 16px var(--sans)">Total sin IVA</span>
           <span class="num" style="font-size:22px">${eur(d.totales.total)}</span>
         </div>
-        ${costeMargenHTML(d.totales.coste, d.totales.total, d.totales.lineas_sin_coste)}
+        ${costeMargenHTML(d.totales.coste, d.totales.total, d.totales.lineas_sin_coste, d.totales.subtotal)}
       </div>
 
       <div style="margin-top:18px;padding-top:12px;border-top:1px solid var(--l1)">
@@ -8681,7 +8688,7 @@ function vPresupuestoVer() {
         <span class="num" style="font-size:22px">${eur(d.total_venta)}</span>
       </div>
       ${d.dto_global_pct ? `<div class="tiny" style="margin-top:6px;text-align:right">Incluye −${d.dto_global_pct} % al pie</div>` : ''}
-      ${costeMargenHTML(d.total_coste, d.total_venta, lineas.filter((l) => l.precio_coste == null).length)}
+      ${costeMargenHTML(d.total_coste, d.total_venta, lineas.filter((l) => l.precio_coste == null).length, Number(d.total_bruto || 0) + Number(d.total_dto_linea || 0))}
       <div class="tiny" style="margin-top:12px">Calculado con las reglas ${esc(d.motor_version || '')}. Queda congelado con la tarifa de ese día.</div>
       <div class="row g8" style="margin-top:14px">
         <button class="btn btn-gris" data-a="presuPdf" style="border-radius:99px">PDF</button>

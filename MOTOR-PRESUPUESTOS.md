@@ -32,7 +32,9 @@ Sigue el documento «Sysefen · Desglose de costes y estructura de presupuesto
 FV particulares» (5 oct 2026). Lo que cambia respecto a lo de abajo, SOLO en
 fotovoltaica:
 
-- **Venta = coste × 1,30, una vez por línea.** El 1,30 está en `tablas_lookup`
+- **Venta = coste × 1,30, una vez por línea** (desde la tarea 4 del 09-10-2026,
+  panel ×1,4375 y equipos ×1,20 con `productos.recargo`; ver más abajo). El
+  1,30 está en `tablas_lookup`
   (`solar`, `recargo_sobre_coste`) y lo aplica el motor 1.2: el precio del
   catálogo y el fijo de las partidas se toman como COSTE. Cada línea guarda
   `precio_coste` y el presupuesto `total_coste`; la app enseña «Interno ·
@@ -154,6 +156,48 @@ Mismo método: generador y CSV, el motor sin tocar, nada de precios nuevos.
   es un cambio de la vista de impresión, no del motor. La vista sigue
   agrupando 06+07+08 y 11+12 en una línea; ya no hace falta y se puede
   quitar cuando Sysefen diga cómo quiere ver el 06.
+
+#### Tarea 4 · Margen por familia y beneficio por dentro (09-10-2026) · motor 1.4
+
+Aplica `TAREA-4-fotovoltaica-margenes-y-beneficio.md`. Es la única tarea que
+toca `motor.js`: hay que volver a pegar la función `presupuestar` (empaquetada)
+además del SQL.
+
+| Familia | Coste | CDC 10 % | Recargo | Venta | Margen sobre venta |
+|---|---|---|---:|---|---:|
+| Panel (FV-01-…) | 80,00 € fijado por Sysefen | no | 1,4375 | 115,00 € | 30,4 % |
+| Equipos del distribuidor (Fronius, Enphase, BYD, Tesla…) | factura | no | 1,20 | coste × 1,20 | 16,7 % |
+| Resto (estructura, cable, protecciones, pequeño material, mano de obra…) | tarifa | material sí | 1,30 | coste × 1,10 × 1,30 | 23,1 % |
+| Trámites (FV-13-…) | venta declarada | no | — | igual | 0 |
+
+- **Dónde manda:** `productos.recargo` (null = el `recargo_sobre_coste` de la
+  categoría) y `productos.aplica_cdc` (false = sin complementarios). Columnas
+  nuevas que crea el propio `etapa72`. Los lookups `recargo_equipos` y
+  `recargo_paneles` son solo documentación. El «+20 %» de los equipos va
+  sobre la factura del distribuidor sin CDC; si Sysefen lo quiere con CDC,
+  `aplica_cdc = true` y el motor no cambia.
+- **Motor 1.4:** `preciosDe(base, producto)` aplica CDC y recargo por producto;
+  una partida agrupada suma coste y venta renglón a renglón y hereda el margen
+  de cada uno. Cada línea sale con `beneficio_ud` y `margen_pct` (fracción,
+  sobre venta) y el resultado con `resumen`: coste, venta, beneficio,
+  `margen_pct` y `descuento_max_pct_para_margen` {20, 15, 10} = 1 − coste /
+  (venta × (1 − m)), a 0 si no da. La función lo devuelve también en
+  `recalcular` y lo recalcula con las líneas añadidas a mano (sin coste
+  conocido: no cuentan y se dice cuántas son).
+- **App:** la versión interna (solo Administración, como hasta ahora) enseña
+  por línea coste · venta · beneficio · margen, y al pie coste, venta,
+  beneficio, margen y el descuento máximo para quedarse en el 20 / 15 / 10 %,
+  calculado sobre la venta antes del descuento al pie.
+- **Caso 10 × JA 540 (teja, Fronius trifásico):** paneles 800 → 1.150 (350 de
+  beneficio); Symo GEN24 SC 5.0 1.256,49 → 1.507,79 (251,30); Smart Meter TS
+  65A-3 173,55 → 208,26 (el brief decía 193,53 → 232,24: no es el precio de la
+  tarifa cargada, se ha respetado la tarifa); estructura teja 39,74 → 51,67 por
+  panel. Margen ponderado y descuento máximo al 15 % en la suite.
+- **Regla de oro: el beneficio existe en el JSON y en la vista interna; jamás
+  en el PDF.** El PDF del cliente y Teamleader solo llevan descripción,
+  cantidad, precio de tarifa e importe; hay una prueba que busca «coste»,
+  «beneficio», «margen», «origen_inputs» y «resumen» en el HTML del PDF y
+  exige que no estén.
 
 #### Pendiente de decisión (las fija Sysefen; no se ha resuelto nada por cuenta propia)
 
