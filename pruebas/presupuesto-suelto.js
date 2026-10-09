@@ -87,6 +87,19 @@ setTimeout(function () {
   A.presuSueltoChip('backup', '');
   igual('el backup se quita', V.suelto.backup, false);
 
+  titulo('arranque por kWp (V22.1)');
+  V.suelto.paneles = ''; V.suelto.kwp = '5'; V.suelto.wp = 540;
+  hs = vPresuNuevo();
+  comprueba('pregunta los kWp', hs.indexOf('data-k="kwp"') > -1);
+  comprueba('y dice cuántos paneles salen: ⌈5000 / 540⌉ = 10', hs.indexOf('10 paneles') > -1);
+  ds = datosDelSuelto(V.suelto);
+  igual('sin paneles a mano', ds.paneles_manual, 0);
+  igual('los kWp pedidos van al motor', ds.kwp_objetivo, 5);
+  igual('con sus vatios', ds.wp_manual, 540);
+  V.suelto.paneles = '12';
+  comprueba('con paneles, mandan los paneles', vPresuNuevo().indexOf('Los paneles mandan') > -1 && datosDelSuelto(V.suelto).paneles_manual === 12);
+  V.suelto.paneles = ''; V.suelto.kwp = '';
+
   A.presuSueltoChip('cat', 'electricidad');
   comprueba('electricidad avisa de que no tiene reglas', vPresuNuevo().indexOf('Todavía no hay reglas') > -1);
   A.presuSueltoChip('cat', 'aire_acondicionado');

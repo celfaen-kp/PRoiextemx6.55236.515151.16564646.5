@@ -42,7 +42,9 @@ fotovoltaica:
 - **14 capítulos fijos** como `seccion` («01 · Generador fotovoltaico» …
   «14 · Opcionales»). El PDF al cliente los imprime como dice el documento:
   equipos y trámites detallados; estructura, medida, obra civil y medios en
-  una línea; 06+07+08 y 11+12 agrupados; opcionales en su bloque.
+  una línea; 06+07+08 y 11+12 agrupados; opcionales en su bloque. (Desde 0c
+  el motor ya saca 07 y 08 como una línea cada uno y 12 no trae nada: la
+  agrupación 06+07+08 de la vista sobra, pero se ha dejado como estaba.)
 - **Dos tarifas:** la del distribuidor (`fotovoltaica-2026.csv`) y la de
   partidas Sysefen (`fotovoltaica-partidas-2026.csv`, códigos FV-CC-NNN =
   código de producto en Teamleader). Una partida sin coste sale a 0,
@@ -61,6 +63,114 @@ fotovoltaica:
 - Generador: `herramientas/reglas-fotovoltaica.py` → `subir-a-supabase/
   etapa72_fotovoltaica_capitulos.sql` (no va al repo: lleva precios) y
   `fotovoltaica-reglas.json` para `pruebas/motor-solar.js`.
+
+### 0c · Montaje agrupado por cubierta, arranque por kWp y precios web (09-10-2026)
+
+Aplica `TAREA-fotovoltaica-montaje-y-precios.md` (en la raíz del repo). Todo
+son datos: el generador y el CSV de partidas; `motor.js`, `formulas.js` y
+`cadena.js` no se han tocado. Hay que volver a pegar `etapa72` en Supabase.
+
+- **Arranque por kWp.** `n_paneles` tiene tres caminos, por este orden: los
+  módulos de la ficha o los paneles a mano; si no, `kwp_objetivo`
+  (⌈kWp × 1000 / Wp⌉); si no, el consumo anual. La app lo pregunta en los dos
+  sitios: en la ficha de la visita («Potencia que pide», sección Consumo) y
+  en el presupuesto suelto («O kWp que pide», junto a los paneles). Ojo: en
+  la visita «Módulos que caben» se propone solo desde la superficie, y manda
+  sobre los kWp; para que cuenten los kWp hay que dejar ese campo vacío.
+- **Estructura: una partida agrupada por tipo de cubierta.** Antes solo teja;
+  ahora `ESTR_TEJA`, `ESTR_CHAPA` (espárrago / soporte de chapa + raíl largo,
+  con sellador) y `ESTR_PLANA` (triángulos n+1 por fila, lastre o anclaje
+  químico según `plana_anclaje`). El cliente ve «Estructura… × n paneles»;
+  el desglose va en `origen_inputs.desglose`. Las reglas sueltas de producto
+  FV-02-001…014 con condición chapa/plana desaparecen (el bloque 7 del SQL
+  las borra, o las desactiva si algún presupuesto guardado las usó). Siguen
+  FV-02-012 (tejas), FV-02-015 (especial) y los dos avisos.
+- **Enphase sin cable bus.** Fuera FV-06-004 (producto inactivo, sin regla):
+  el Q Cable ya va por micro en el capítulo 03 y de ahí al cuadro es manguera
+  AC normal. FV-06-003 tiene dos reglas: Fronius ⌈dist_ac × 1,10⌉; Enphase
+  ⌈(dist_dc + dist_ac) × 1,10⌉.
+- **Precios web cargados** (coste sin IVA, hoja «Sysefen_precios_web_partidas_
+  FV_2026-10-09.xlsx», tiendas web, no proveedor habitual; cada fila lleva en
+  `notas` «Precio web 09/10/2026 (fuente). Contrastar con proveedor habitual»):
+  FV-02-011 sellador 5,95 (Obramat) · FV-02-012 teja 0,91 (Obramat) ·
+  FV-02-014 clips 8,16 bolsa de 60 (Amazon, orientativo; se mantiene
+  `paneles_por_bolsa_clips` = 20) · FV-03-008 tejadillo 29,54 (Amazon,
+  orientativo) · FV-05-006 Cat6 0,53/m (TDTprofesional) · FV-06-008 canaleta
+  1,04/m (Obramat) · FV-06-009 tubo doble capa Ø63 0,66/m (Obramat) ·
+  FV-07-002 fusible gPV + portafusibles 7,56 (Obramat + Autosolar) ·
+  FV-07-012 etiquetas 8,95 (Amazon, orientativo) · FV-14-002 Shelly EM +
+  contactor 70,21 (Solarmat, orientativo). FV-14-001 pasa a «Cargador de
+  vehículo eléctrico (equipo Wallbox Pulsar Plus 7,4 kW)» a 712,86, solo
+  equipo. **Siguen a 0:** FV-07-011 (pica 7,36 + grapa + arqueta POR
+  CONFIRMAR, ≈20–25 €), FV-02-004, 007, 008 y 009 (choque de unidad o de
+  sistema, ver pendientes) y los servicios internos FV-11-003, FV-12-001,
+  FV-13-001, FV-13-007 y FV-13-008 («precio interno POR FIJAR»). Con eso
+  `ESTR_TEJA` ya sale confirmada; `ESTR_CHAPA` y `ESTR_PLANA` salen sin
+  confirmar hasta que tengan precio el soporte de chapa, el triángulo y el
+  lastre.
+- **Coeficientes:** `lastres_por_triangulo` de 1 a 3 (orientativo, 40–80 kg a
+  30º; el SQL lo fija con un `update`, como el recargo) y nuevo
+  `anclajes_por_cartucho_resina` = 10 (distinto del sellador).
+- **Caso de prueba** (`pruebas/motor-solar.js`, «10 × JA 540, trifásico, sin
+  batería»): `kwp_objetivo` 5 y 540 Wp → 10 paneles, 5,40 kWp, Symo GEN24 SC
+  5.0 y Smart Meter TS 65A-3. Teja: `ESTR_TEJA` × 10 confirmada a 39,74 €
+  de coste y 51,66 € de venta por panel (el brief esperaba ≈39,7 / ≈51,7).
+  Chapa y plana: una línea sin confirmar; plana con 11 triángulos, 33
+  lastres y 2,5 días de obra (2 base + 0,5 por lastre). Enphase: FV-06-003
+  = 22 m y nada de FV-06-004.
+
+#### Tarea 2 · Menos líneas: cuadro, pequeño material y lo que sale (09-10-2026)
+
+Aplica `TAREA-2-fotovoltaica-agrupar-protecciones-y-pequeno-material.md`.
+Mismo método: generador y CSV, el motor sin tocar, nada de precios nuevos.
+
+- **Fuera del presupuesto** (regla inactiva con el porqué en `notas`; la
+  partida y el producto siguen): FV-13-008 gestión con la distribuidora,
+  FV-13-004 permiso de obra, FV-13-001 memoria técnica, FV-12-001 portes,
+  FV-12-004 residuos, FV-10-004 línea de vida, y FV-07-012 etiquetado, que
+  pasa al pequeño material. ⚠ Para Sysefen: ese trabajo no desaparece; queda
+  cubierto por FV-13-003 «Legalización e Industria» (300 €) si ese precio lo
+  incluye, y portes y residuos por la mano de obra. Confirmar que sí.
+- **`CUADRO_PROT` «Cuadro de protecciones de la instalación fotovoltaica»**,
+  una por instalación en el capítulo 07: cuadro AC, magnetotérmico,
+  diferencial y SPD AC siempre; caja DC, un SPD por MPPT y fusibles si hay
+  más de dos strings solo con Fronius (con Enphase, nada de DC). Las siete
+  reglas sueltas FV-07-001…008 quedan inactivas. Sueltas siguen FV-07-010
+  (adecuación del cuadro) y FV-07-011 (pica): el cliente debe verlas.
+- **`PEQ_MAT` «Pequeño material eléctrico y canalización»**, una por
+  instalación en el capítulo 08: tubo y cajas por metros de recorrido,
+  abrazaderas por metros de tubo, prensas por pasos de muro, etiquetado y
+  el lote de consumibles. Inactivas las sueltas FV-06-007/010/011/012,
+  FV-07-012 y FV-08-001. En el 06 siguen sueltos cable DC, MC4, manguera
+  AC, comunicación, tierra, bandeja y tubo enterrado.
+- **Efecto en el caso 10 × JA 540 (teja, Fronius trifásico):** 06 con cinco
+  líneas de metros (DC 33, MC4 4, AC 6, comunicación 4, tierra 20); 07 una
+  línea a 227,61 € de coste y 295,89 € de venta; 08 una línea a 76,14 € y
+  98,98 € (el brief estimaba ≈76,4 / ≈99,3 con el tubo a 0,26 en vez de
+  0,259 y sin redondear por renglón); 10 y 12 vacíos; 13 solo legalización.
+  Ambas agrupadas salen confirmadas con los precios de la tarea 1.
+- **Apuntado, no hecho:** «pendiente de confirmar» es el estado de una línea
+  a 0 €, no una partida; si el PDF del cliente no debe imprimir ese texto,
+  es un cambio de la vista de impresión, no del motor. La vista sigue
+  agrupando 06+07+08 y 11+12 en una línea; ya no hace falta y se puede
+  quitar cuando Sysefen diga cómo quiere ver el 06.
+
+#### Pendiente de decisión (las fija Sysefen; no se ha resuelto nada por cuenta propia)
+
+1. **Chapa:** ¿espárrago / soporte trapezoidal + raíl largo (modelo actual) o
+   MiniRail (sin raíl, 4 minirraíles + 4 grapas por panel)? Si es MiniRail,
+   `ESTR_CHAPA` pierde FV-02-001/002 y cambian las grapas.
+2. **Plana:** orientación del panel (vertical = modelo actual, n+1 triángulos
+   por fila con ancho 1,134 m; horizontal = largo 1,762 m y otro reparto).
+   Referencia vertical: Sunfer 09V1, ≈71 € de coste.
+3. **Lastre:** bloque de hormigón 40×20×20 del almacén local (precio
+   pendiente) y nº por triángulo según viento. Solarbloc NO vale: es
+   estructura + lastre.
+4. **FV-02-009** por anclaje: varilla inox M10 3,90 + resina 7,06/10 + malla
+   (pendiente) ≈ 5,6 €/ud. Cargar cuando se confirme la malla.
+5. **FV-14-001** instalación del cargador: cerrado o mano de obra +
+   protecciones.
+6. **FV-14-002** derivador: todo/nada (Shelly) o proporcional (AC·THOR).
 
 ---
 
@@ -180,41 +290,12 @@ de inventarla.
 **Selección de máquina** por rango de kW, con `condicion` extra: el mismo kW
 con suelo radiante o con radiadores puede ser otra máquina.
 
-### Fotovoltaica — 21 presupuestos
+### Fotovoltaica — sustituido
 
-```
-Total = kit fijo (por tramo de kWp)
-      + 110 € × nº de paneles
-      + inversor (por kWp)
-      + batería (si la hay)
-```
-
-**El panel va a 110 €/ud en los 21 presupuestos, sin una sola excepción.**
-
-**Kit fijo — 5.445 €** en 5–6 kWp, idéntico en seis presupuestos:
-
-| Concepto | € |
-|---|--:|
-| Material eléctrico | 1.905 |
-| Mano de obra | 725 |
-| Estructura de soportación | 252 |
-| Trámites D.G. Industria | 300 |
-| Gestiones documentales | 300 |
-| Puesta en marcha y monitorización | 150 |
-| Medidor de energía e interfaz | 110 |
-
-Escalona por tramos, no linealmente: 5–6 kWp → 5.445 · 10 kWp → 8.560 ·
-145 kWp → 56.450 (comercial, otra liga).
-
-**Inversor**: 5–6 kWp → 1.606–1.612 · 10 kWp → 2.100 · 145 kWp → 7.900.
-
-**Nº de paneles** = `ceil(kWp × 1000 / Wp_panel)`. Cuadra: 5 kWp → 10–12
-paneles según el panel sea de 450 o 510 Wp.
-
-**La batería es una magnitud propia, no un extra.** Sin batería el €/kWp es
-estable (1.373–1.675). Con batería se va a 2.835–4.140, porque la batería
-domina el coste y no escala con los kWp. El estimativo necesita **dos
-entradas**: kWp y kWh.
+El modelo de los 21 presupuestos históricos (panel a 110 €, kit fijo por
+tramo de kWp) **ya no está vigente**: lo sustituye la fotovoltaica por
+capítulos de 0b y 0c. Se conserva en el anexo «Histórico» del final para no
+perder lo medido.
 
 ### Aire acondicionado — 14 presupuestos
 
@@ -482,3 +563,46 @@ Por si conviene corregirlas en Teamleader:
 - Erratas de texto: "AEROYERMIA", "INSTLACION Y MATERIALES", "GRUPOD E BOMBEO",
   "LIMPIEZA CIRCUITO EXITENTE", "MATERIAL HIDRULICO".
 - Una línea con `GESTIONES ADMINISTRATIVAS` a cantidad 0.
+
+---
+
+## Anexo · Histórico: el modelo de fotovoltaica antiguo (sustituido el 07-10-2026)
+
+Lo que se midió en los 21 presupuestos cerrados de 2025–2026. Sirve de
+referencia de precios de venta de entonces; las reglas de hoy están en 0b y
+0c, y estas partidas (PANEL, KIT_BASE, KIT_10, INV_6, INV_10, MANO_OBRA) están
+inactivas en Supabase.
+
+```
+Total = kit fijo (por tramo de kWp)
+      + 110 € × nº de paneles
+      + inversor (por kWp)
+      + batería (si la hay)
+```
+
+**El panel va a 110 €/ud en los 21 presupuestos, sin una sola excepción.**
+
+**Kit fijo — 5.445 €** en 5–6 kWp, idéntico en seis presupuestos:
+
+| Concepto | € |
+|---|--:|
+| Material eléctrico | 1.905 |
+| Mano de obra | 725 |
+| Estructura de soportación | 252 |
+| Trámites D.G. Industria | 300 |
+| Gestiones documentales | 300 |
+| Puesta en marcha y monitorización | 150 |
+| Medidor de energía e interfaz | 110 |
+
+Escalona por tramos, no linealmente: 5–6 kWp → 5.445 · 10 kWp → 8.560 ·
+145 kWp → 56.450 (comercial, otra liga).
+
+**Inversor**: 5–6 kWp → 1.606–1.612 · 10 kWp → 2.100 · 145 kWp → 7.900.
+
+**Nº de paneles** = `ceil(kWp × 1000 / Wp_panel)`. Cuadra: 5 kWp → 10–12
+paneles según el panel sea de 450 o 510 Wp.
+
+**La batería es una magnitud propia, no un extra.** Sin batería el €/kWp es
+estable (1.373–1.675). Con batería se va a 2.835–4.140, porque la batería
+domina el coste y no escala con los kWp. El estimativo necesita **dos
+entradas**: kWp y kWh.

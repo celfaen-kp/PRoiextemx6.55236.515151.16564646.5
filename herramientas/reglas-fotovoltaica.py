@@ -102,7 +102,6 @@ PARTIDAS = [
     ('FV-06-001', 'Cable solar DC H1Z2Z2-K 6 mm²', 'm', {}, ''),
     ('FV-06-002', 'Conector MC4 (par)', 'par', {}, ''),
     ('FV-06-003', 'Manguera AC inversor → cuadro', 'm', {}, 'Sección por cálculo; precio medio de la manguera habitual'),
-    ('FV-06-004', 'Cable bus de microinversores cubierta → cuadro', 'm', {}, ''),
     ('FV-06-005', 'Manguera apantallada de comunicación / vatímetro', 'm', {}, ''),
     ('FV-06-006', 'Cable de tierra verde-amarillo', 'm', {}, ''),
     ('FV-06-007', 'Tubo rígido / corrugado / flexible', 'm', {}, ''),
@@ -144,7 +143,7 @@ PARTIDAS = [
     ('FV-13-007', 'Solicitud de bonificación IBI / ICIO', 'ud', {'sin_recargo': True}, 'Precio de venta; confirmar con Xavi'),
     ('FV-13-008', 'Gestión con la distribuidora y compensación de excedentes', 'ud', {'sin_recargo': True}, 'Precio de venta; confirmar con Xavi'),
     ('FV-13-010', 'Certificado energético', 'ud', {'sin_recargo': True}, 'Declarado 300 € venta; confirmar con Xavi'),
-    ('FV-14-001', 'Cargador de vehículo eléctrico, con instalación', 'ud', {}, ''),
+    ('FV-14-001', 'Cargador de vehículo eléctrico (equipo Wallbox Pulsar Plus 7,4 kW)', 'ud', {}, 'Solo equipo; instalación y protecciones aparte, POR DECIDIR'),
     ('FV-14-002', 'Derivador de excedentes a termo eléctrico', 'ud', {}, ''),
     ('FV-14-003', 'Integración con aerotermia (SG Ready / gestión energética)', 'ud', {}, ''),
     ('FV-14-004', 'Ampliación de backup a toda la vivienda', 'ud', {}, ''),
@@ -227,8 +226,9 @@ LOOKUP = [
     ('separacion_ganchos_m', 'defecto', 1.0, 'Separación máxima entre ganchos de teja (m). POR CONFIRMAR según fabricante.'),
     ('soportes_chapa_por_panel', 'defecto', 4, 'Soportes por panel en chapa / sándwich. Habitual 4; POR CONFIRMAR.'),
     ('anclajes_por_triangulo', 'defecto', 2, 'Anclajes químicos por triángulo en plana anclada. POR CONFIRMAR.'),
-    ('lastres_por_triangulo', 'defecto', 1, 'Lastres por triángulo en plana sin anclar. ORIENTATIVO: manda el cálculo de viento del fabricante.'),
+    ('lastres_por_triangulo', 'defecto', 3, 'ORIENTATIVO (40–80 kg por triángulo a 30º): manda el cálculo de viento del fabricante. POR CONFIRMAR.'),
     ('anclajes_por_cartucho', 'defecto', 10, 'Anclajes o soportes que sella un cartucho. POR CONFIRMAR.'),
+    ('anclajes_por_cartucho_resina', 'defecto', 10, 'Anclajes que rinde un cartucho de resina de 300 ml. POR CONFIRMAR.'),
     ('paneles_por_bolsa_clips', 'defecto', 20, 'Paneles por bolsa de clips de cable.'),
     ('paneles_por_string', 'defecto', 12, 'Paneles por string. POR CONFIRMAR con Voc/Vmp del panel y tensiones del inversor.'),
     ('mppt', 'defecto', 2, 'MPPT del inversor (un protector DC por cada uno).'),
@@ -259,8 +259,9 @@ VARIABLES = [
     ('wp_panel', 'Vatios por panel', 'Wp', "si(wp_manual > 0, wp_manual, lookup('wp_panel', 'defecto'))", 1, 'Los que se digan; si no, los de por defecto.', None),
     ('n_paneles', 'Paneles', 'ud',
      "si(max(modulos_estimados, paneles_manual) > 0, max(modulos_estimados, paneles_manual), "
-     "si(consumo_anual_kwh > 0, techo(consumo_anual_kwh * lookup('cobertura_objetivo', 'defecto') / lookup('produccion_especifica', 'defecto') * 1000 / wp_panel), 0))",
-     2, 'Los de la ficha o los que se pongan a mano; si no hay, salen del consumo anual.', None),
+     "si(kwp_objetivo > 0, techo(kwp_objetivo * 1000 / wp_panel), "
+     "si(consumo_anual_kwh > 0, techo(consumo_anual_kwh * lookup('cobertura_objetivo', 'defecto') / lookup('produccion_especifica', 'defecto') * 1000 / wp_panel), 0)))",
+     2, 'Los de la ficha o a mano; si no, los kWp pedidos; si no, el consumo anual.', None),
     ('kwp', 'Potencia pico', 'kWp', 'redondea(n_paneles * wp_panel / 1000, 2)', 3, '', None),
     ('marca_inversor', 'Inversor', '', "si(inversor_marca = 'enphase', 'enphase', 'fronius')", 10, 'Fronius salvo que se diga Enphase.', None),
     ('fases', 'Fases', '', "si(suministro = 'trifasico', 3, 1)", 11, '', None),
@@ -319,15 +320,23 @@ VARIABLES = [
 # =============================================================================
 # 5 · Las reglas
 # =============================================================================
-reglas = []  # (tipo, variable, min, max, condicion, producto, formula, seccion, prioridad, notas, partida)
+reglas = []  # (tipo, variable, min, max, condicion, producto, formula, seccion, prioridad, notas, partida, activa)
 PARTIDAS_AGRUPADAS = []  # (codigo, nombre, detalle, [(producto_ref, formula, unidad)])
 def pr(cap, sub=5):
     return 200 - int(cap) * 10 + sub
-def regla(prod, cond, formula='1', cap='03', prio=None, notas=None, tipo='cantidad', var=None, mn=None, mx=None, sub=5, partida=None):
+def regla(prod, cond, formula='1', cap='03', prio=None, notas=None, tipo='cantidad', var=None, mn=None, mx=None, sub=5, partida=None, activa=True):
     if prod: assert prod in P or prod in S, prod
-    reglas.append((tipo, var, mn, mx, cond or {}, prod, formula, CAP[cap] if tipo != 'aviso' else None, prio if prio is not None else pr(cap, sub), notas, partida))
+    reglas.append((tipo, var, mn, mx, cond or {}, prod, formula, CAP[cap] if tipo != 'aviso' else None, prio if prio is not None else pr(cap, sub), notas, partida, activa))
 def aviso(cond, notas, var=None, mn=None, mx=None, prio=190):
-    reglas.append(('aviso', var, mn, mx, cond or {}, None, '1', None, prio, notas, None))
+    reglas.append(('aviso', var, mn, mx, cond or {}, None, '1', None, prio, notas, None, True))
+# Tarea 2 (09-10-2026): líneas que dejan de salir. La regla se queda, inactiva y
+# con el porqué, para que se vea qué se decidió; ni la partida ni el producto se
+# borran. Y las que pasan a una partida agrupada, igual: inactivas con su destino.
+FUERA = 'Fuera del presupuesto por decisión Sysefen 09-10-2026: se entiende incluido en legalización / mano de obra.'
+def fuera(prod, cond, formula='1', cap='03', notas=None, sub=5, **kw):
+    regla(prod, cond, formula, cap, notas=FUERA + (' ' + notas if notas else ''), sub=sub, activa=False, **kw)
+def dentro(partida, prod, cond, formula='1', cap='03', notas=None, sub=5, **kw):
+    regla(prod, cond, formula, cap, notas='Dentro de ' + partida + ' desde el 09-10-2026.' + (' ' + notas if notas else ''), sub=sub, activa=False, **kw)
 
 HAY = 'si(n_paneles > 0, 1, 0)'
 ESTR = ['teja', 'chapa', 'plana']
@@ -349,31 +358,41 @@ else:
     regla('FV-01-001', {}, formula='n_paneles', cap='01', sub=9, notas='Un módulo por panel. Precio por modelo: añade los paneles reales a fotovoltaica-partidas-2026.csv.')
 
 # --- 02 · Estructura (desglose FV §3 y §4)
-# En TEJA (cubierta inclinada) la estructura va en UNA partida agrupada por
-# panel, como en la base de precios de Sysefen (IEF003): el cliente ve una
-# línea «Estructura soporte… × n paneles»; por dentro lleva perfil, uniones,
-# clips de teja, presores y fijaciones con sus cantidades calculadas.
-E = {'tipo_estructura': ['chapa', 'plana']}
+# La estructura va en UNA partida agrupada por panel, una por tipo de cubierta
+# (09-10-2026; antes solo en teja): el cliente ve una línea «Estructura… × n
+# paneles»; por dentro lleva perfil, uniones, fijaciones, presores y puentes
+# de tierra con sus cantidades calculadas. El desglose queda en
+# origen_inputs.desglose. Un renglón a 0 € deja la línea sin confirmar.
+SCP = "lookup('soportes_chapa_por_panel', 'defecto')"
+CART = "lookup('anclajes_por_cartucho', 'defecto')"
+CLIPS = "techo(n_paneles / lookup('paneles_por_bolsa_clips', 'defecto'))"
 PARTIDAS_AGRUPADAS.append(('ESTR_TEJA', 'Estructura soporte para módulo fotovoltaico sobre cubierta inclinada',
   'Estructura de aluminio Sunfer coplanar: perfil G1, uniones, clips salvateja, presores centrales y laterales y fijaciones, con tornillería inoxidable',
   [('FV-02-001', 'm_rail', 'm'), ('FV-02-002', 'n_uniones', 'ud'), ('FV-02-003', 'n_ganchos', 'ud'), ('FV-02-010', 'n_ganchos', 'ud'),
    ('FV-02-005', '2 * (n_paneles - n_filas)', 'ud'), ('FV-02-006', '4 * n_filas', 'ud'), ('FV-02-013', 'n_filas + n_uniones', 'ud'),
-   ('FV-02-014', "techo(n_paneles / lookup('paneles_por_bolsa_clips', 'defecto'))", 'bolsa')]))
+   ('FV-02-014', CLIPS, 'bolsa')]))
+# Chapa: espárrago / soporte de chapa + raíl largo (si pasa a MiniRail, pierde
+# FV-02-001/002 y cambian las grapas: MOTOR-PRESUPUESTOS.md 0c, pendiente 1).
+PARTIDAS_AGRUPADAS.append(('ESTR_CHAPA', 'Estructura soporte para módulo fotovoltaico sobre cubierta de chapa / sándwich',
+  'Estructura coplanar de aluminio: perfil, uniones, soportes de chapa con sellado, presores centrales y laterales y tornillería inoxidable',
+  [('FV-02-001', 'm_rail', 'm'), ('FV-02-002', 'n_uniones', 'ud'),
+   ('FV-02-004', 'n_paneles * ' + SCP, 'ud'), ('FV-02-010', 'n_paneles * ' + SCP, 'ud'),
+   ('FV-02-011', 'techo(n_paneles * ' + SCP + ' / ' + CART + ')', 'ud'),
+   ('FV-02-005', '2 * (n_paneles - n_filas)', 'ud'), ('FV-02-006', '4 * n_filas', 'ud'), ('FV-02-013', 'n_filas + n_uniones', 'ud'),
+   ('FV-02-014', CLIPS, 'bolsa')]))
+# Plana: panel vertical, n+1 triángulos por fila; lastre o anclaje químico
+# según plana_anclaje (con_lastre / n_anclajes).
+PARTIDAS_AGRUPADAS.append(('ESTR_PLANA', 'Estructura inclinada para módulo fotovoltaico sobre cubierta plana',
+  'Estructura de aluminio con triángulos de inclinación, perfil, uniones, presores, lastre o anclaje químico según cálculo de viento, y tornillería inoxidable',
+  [('FV-02-001', 'm_rail', 'm'), ('FV-02-002', 'n_uniones', 'ud'), ('FV-02-007', 'n_triangulos', 'ud'),
+   ('FV-02-008', "con_lastre * n_triangulos * lookup('lastres_por_triangulo', 'defecto')", 'ud'),
+   ('FV-02-009', 'n_anclajes', 'ud'), ('FV-02-010', 'n_anclajes', 'ud'), ('FV-02-011', 'techo(n_anclajes / ' + CART + ')', 'ud'),
+   ('FV-02-005', '2 * (n_paneles - n_filas)', 'ud'), ('FV-02-006', '4 * n_filas', 'ud'), ('FV-02-013', 'n_filas + n_uniones', 'ud'),
+   ('FV-02-014', CLIPS, 'bolsa')]))
 regla(None, {'tipo_estructura': 'teja'}, 'n_paneles', '02', sub=9, partida='ESTR_TEJA', notas='Una por panel; por dentro, perfil, uniones, clips, presores y fijaciones calculados por filas.')
-regla('FV-02-001', E, 'm_rail', '02', sub=9, notas='Dos raíles por fila, redondeados a barras comerciales.')
-regla('FV-02-002', E, 'n_uniones', '02', sub=8, notas='Una unión por empalme de barra.')
-regla('FV-02-004', {'tipo_estructura': 'chapa'}, "n_paneles * lookup('soportes_chapa_por_panel', 'defecto')", '02', sub=8, notas='Soportes de chapa, 4 por panel por defecto.')
-regla('FV-02-005', E, '2 * (n_paneles - n_filas)', '02', sub=7, notas='2 × (paneles de la fila − 1), por fila.')
-regla('FV-02-006', E, '4 * n_filas', '02', sub=7, notas='4 por fila.')
-regla('FV-02-007', {'tipo_estructura': 'plana'}, 'n_triangulos', '02', sub=8, notas='Paneles de la fila + 1, por fila.')
-regla('FV-02-008', {'tipo_estructura': 'plana'}, "con_lastre * n_triangulos * lookup('lastres_por_triangulo', 'defecto')", '02', sub=6, notas='Orientativo: manda el cálculo de viento del fabricante.')
-regla('FV-02-009', {'tipo_estructura': 'plana'}, 'n_anclajes', '02', sub=6, notas='Varilla, taco químico y malla por anclaje.')
-regla('FV-02-010', E, "n_anclajes + si(tipo_estructura = 'chapa', n_paneles * lookup('soportes_chapa_por_panel', 'defecto'), 0)", '02', sub=4, notas='Una fijación por soporte o anclaje.')
-regla('FV-02-011', E, "techo((n_anclajes + si(tipo_estructura = 'chapa', n_paneles * lookup('soportes_chapa_por_panel', 'defecto'), 0)) / lookup('anclajes_por_cartucho', 'defecto'))", '02', sub=4,
-      notas='Un cartucho cada X perforaciones (anclajes químicos y soportes de chapa).')
+regla(None, {'tipo_estructura': 'chapa'}, 'n_paneles', '02', sub=9, partida='ESTR_CHAPA', notas='Una por panel; dentro, perfil, soportes, sellado, presores y fijaciones por filas.')
+regla(None, {'tipo_estructura': 'plana'}, 'n_paneles', '02', sub=9, partida='ESTR_PLANA', notas='Una por panel; dentro, triángulos, perfil, lastre o anclaje, presores y fijaciones por filas.')
 regla('FV-02-012', {'tipo_estructura': 'teja'}, 'tejas_reposicion', '02', sub=3, notas='Las que se apuntaron en la visita.')
-regla('FV-02-013', E, 'n_filas + n_uniones', '02', sub=3, notas='Una por fila y una por empalme.')
-regla('FV-02-014', E, "techo(n_paneles / lookup('paneles_por_bolsa_clips', 'defecto'))", '02', sub=2, notas='Una bolsa cada 20 paneles.')
 regla('FV-02-015', {'tipo_estructura': 'especial'}, HAY, '02', sub=9, notas='Pérgola o marquesina: estructura con presupuesto aparte.')
 aviso({'tipo_estructura': 'especial'}, 'Pérgola, marquesina o estructura elevada: la estructura va con presupuesto aparte (FV-02-015 sale a 0).')
 aviso({'tipo_estructura': 'plana'}, 'Cubierta plana con lastre: la cantidad de lastre es orientativa, hay que comprobarla con el cálculo de viento del fabricante.', var='con_lastre', mn=1, mx=1)
@@ -456,34 +475,57 @@ aviso({'excedentes': 'sin_excedentes'}, 'Sin excedentes: configurar límite de i
 # --- 06 · Cableado y canalizaciones
 regla('FV-06-001', {'marca_inversor': 'fronius'}, 'techo(2 * dist_dc * n_strings * 1.10)', '06', sub=9, notas='2 × distancia × strings × 1,10.')
 regla('FV-06-002', {'marca_inversor': 'fronius'}, 'si(n_paneles > 0, 2 * n_strings + 2, 0)', '06', sub=8, notas='Dos pares por string y dos de reserva.')
-regla('FV-06-003', {}, 'techo(dist_ac * 1.10)', '06', sub=8, notas='Distancia inversor → cuadro × 1,10.')
-regla('FV-06-004', {'marca_inversor': 'enphase'}, 'techo(dist_dc * 1.10)', '06', sub=9, notas='Bus de micros de la cubierta al cuadro × 1,10.')
+regla('FV-06-003', {'marca_inversor': 'fronius'}, 'techo(dist_ac * 1.10)', '06', sub=8, notas='Distancia inversor → cuadro × 1,10.')
+# Enphase: del final del Q Cable (ya contado por micro en el capítulo 03) al
+# cuadro va manguera AC normal: cubierta → sitio del inversor → cuadro.
+regla('FV-06-003', {'marca_inversor': 'enphase'}, 'techo((dist_dc + dist_ac) * 1.10)', '06', sub=8, notas='Con micros: de la cubierta al cuadro (continua + alterna) × 1,10. Sin cable bus aparte (FV-06-004 retirada el 09-10-2026).')
 regla('FV-06-005', {}, 'con_meter * techo(dist_meter * 1.10)', '06', sub=7, notas='Del cuadro al contador, para el medidor, × 1,10.')
 regla('FV-06-006', {}, 'techo(dist_dc + dist_ac)', '06', sub=7, notas='Tierra: continua + alterna.')
-regla('FV-06-007', {}, 'm_tubo', '06', sub=6, notas='Recorrido × 1,10, menos lo enterrado; nada si va todo en bandeja.')
+dentro('PEQ_MAT', 'FV-06-007', {}, 'm_tubo', '06', sub=6, notas='Recorrido × 1,10, menos lo enterrado; nada si va todo en bandeja.')
 regla('FV-06-008', {'recorrido_cableado': 'interior'}, 'm_bandeja', '06', sub=6, notas='Recorrido interior visto.')
 regla('FV-06-009', {}, 'zanja_m', '06', sub=6, notas='Lo que mida la zanja.')
-regla('FV-06-010', {}, "si(dist_dc + dist_ac > 0, techo((dist_dc + dist_ac) / lookup('m_por_caja_registro', 'defecto')) + 1, 0)", '06', sub=5, notas='Una caja cada tramo.')
-regla('FV-06-011', {}, 'techo(m_tubo / 10)', '06', sub=4, notas='Una bolsa cada 10 m de tubo.')
-regla('FV-06-012', {}, 'si(n_paneles > 0, perforaciones + 2, 0)', '06', sub=4, notas='Uno por paso de muro y dos para las cajas.')
+dentro('PEQ_MAT', 'FV-06-010', {}, "si(dist_dc + dist_ac > 0, techo((dist_dc + dist_ac) / lookup('m_por_caja_registro', 'defecto')) + 1, 0)", '06', sub=5, notas='Una caja cada tramo.')
+dentro('PEQ_MAT', 'FV-06-011', {}, 'techo(m_tubo / 10)', '06', sub=4, notas='Una bolsa cada 10 m de tubo.')
+dentro('PEQ_MAT', 'FV-06-012', {}, 'si(n_paneles > 0, perforaciones + 2, 0)', '06', sub=4, notas='Uno por paso de muro y dos para las cajas.')
 aviso({}, 'Faltan los metros de paneles → inversor: sin ellos no hay cable de continua, tubo ni tierra.', var='si(n_paneles > 0 y dist_dc = 0, 1, 0)', mn=1, mx=1)
 aviso({}, 'Faltan los metros de inversor → cuadro: sin ellos no hay cable de alterna.', var='si(n_paneles > 0 y dist_ac = 0, 1, 0)', mn=1, mx=1)
 
 # --- 07 · Protecciones, cuadros y tierra
-regla('FV-07-001', {'marca_inversor': 'fronius'}, HAY, '07', sub=9, notas='Caja DC para el inversor de string.')
-regla('FV-07-002', {'marca_inversor': 'fronius'}, 'si(n_strings > 2, 2 * n_strings, 0)', '07', sub=8, notas='Dos fusibles por string si hay más de dos en paralelo.')
-regla('FV-07-004', {'marca_inversor': 'fronius'}, "si(n_paneles > 0, lookup('mppt', 'defecto'), 0)", '07', sub=8, notas='Un protector DC por MPPT.')
-regla('FV-07-005', {}, HAY, '07', sub=7, notas='Siempre.')
-regla('FV-07-006', {}, HAY, '07', sub=7, notas='Siempre.')
-regla('FV-07-007', {}, HAY, '07', sub=7, notas='Siempre.')
-regla('FV-07-008', {}, HAY, '07', sub=6, notas='Recomendado.')
+# Tarea 2 (09-10-2026): el cuadro y las protecciones salen en UNA línea
+# (CUADRO_PROT); por dentro, AC siempre y DC solo con inversor de string, según
+# MPPT y strings. Sueltas quedan la adecuación del cuadro y la pica: son
+# condicionales y el cliente debe verlas.
+PARTIDAS_AGRUPADAS.append(('CUADRO_PROT', 'Cuadro de protecciones de la instalación fotovoltaica',
+  'Cuadro de protecciones AC con magnetotérmico, diferencial 30 mA y protector de sobretensiones; caja de protecciones DC IP65 con protectores de sobretensión por MPPT y fusibles de string cuando hay más de dos en paralelo',
+  [('FV-07-005', '1', 'ud'), ('FV-07-006', '1', 'ud'), ('FV-07-007', '1', 'ud'), ('FV-07-008', '1', 'ud'),
+   ('FV-07-001', "si(marca_inversor = 'fronius', 1, 0)", 'ud'),
+   ('FV-07-004', "si(marca_inversor = 'fronius', lookup('mppt', 'defecto'), 0)", 'ud'),
+   ('FV-07-002', "si(marca_inversor = 'fronius' y n_strings > 2, 2 * n_strings, 0)", 'ud')]))
+regla(None, {}, HAY, '07', sub=9, partida='CUADRO_PROT', notas='Una por instalación; dentro, AC siempre y DC solo con inversor de string, según MPPT y strings.')
+dentro('CUADRO_PROT', 'FV-07-001', {'marca_inversor': 'fronius'}, HAY, '07', sub=9, notas='Caja DC para el inversor de string.')
+dentro('CUADRO_PROT', 'FV-07-002', {'marca_inversor': 'fronius'}, 'si(n_strings > 2, 2 * n_strings, 0)', '07', sub=8, notas='Dos fusibles por string si hay más de dos en paralelo.')
+dentro('CUADRO_PROT', 'FV-07-004', {'marca_inversor': 'fronius'}, "si(n_paneles > 0, lookup('mppt', 'defecto'), 0)", '07', sub=8, notas='Un protector DC por MPPT.')
+dentro('CUADRO_PROT', 'FV-07-005', {}, HAY, '07', sub=7, notas='Siempre.')
+dentro('CUADRO_PROT', 'FV-07-006', {}, HAY, '07', sub=7, notas='Siempre.')
+dentro('CUADRO_PROT', 'FV-07-007', {}, HAY, '07', sub=7, notas='Siempre.')
+dentro('CUADRO_PROT', 'FV-07-008', {}, HAY, '07', sub=6, notas='Recomendado.')
 regla('FV-07-010', {'estado_cuadro': ['sin_espacio', 'antiguo']}, HAY, '07', sub=5, notas='Cuadro sin espacio o antiguo.')
 regla('FV-07-011', {'toma_tierra': ['no_existe', 'valor_alto']}, HAY, '07', sub=5, notas='Sin tierra o con valor alto.')
-regla('FV-07-012', {}, HAY, '07', sub=4, notas='Siempre.')
+dentro('PEQ_MAT', 'FV-07-012', {}, HAY, '07', sub=4, notas='Siempre.')
 # (FV-07-003 seccionador, FV-07-009 general y FV-07-013 relé de micros: integrados en GEN24 e IQ8, o según esquema; se añaden a mano si hacen falta.)
 
-# --- 08 · Pequeño material
-regla('FV-08-001', {}, HAY, '08', sub=5, notas='Lote fijo o % sobre material: por decidir (Ramón). Hasta entonces, precio pendiente.')
+# --- 08 · Pequeño material y canalización (tarea 2, 09-10-2026): UNA línea.
+# Tubo y cajas van con los metros de recorrido; prensas con los pasos de muro;
+# etiquetado y consumibles son fijos por instalación (si el lote tiene que
+# crecer con los paneles: techo(n_paneles / 10), POR CONFIRMAR).
+PARTIDAS_AGRUPADAS.append(('PEQ_MAT', 'Pequeño material eléctrico y canalización',
+  'Tubo rígido o corrugado, cajas de registro estancas, abrazaderas y grapas, prensaestopas y pasamuros, etiquetado y señalización reglamentaria, consumibles (bridas UV, terminales, punteras, cinta, regletas, silicona, tacos)',
+  [('FV-06-007', 'm_tubo', 'm'),
+   ('FV-06-010', "si(dist_dc + dist_ac > 0, techo((dist_dc + dist_ac) / lookup('m_por_caja_registro', 'defecto')) + 1, 0)", 'ud'),
+   ('FV-06-011', 'techo(m_tubo / 10)', 'bolsa'), ('FV-06-012', 'perforaciones + 2', 'ud'),
+   ('FV-07-012', '1', 'ud'), ('FV-08-001', '1', 'lote')]))
+regla(None, {}, HAY, '08', sub=5, partida='PEQ_MAT', notas='Una por instalación; dentro, tubo y cajas por metros de recorrido, prensas por pasos de muro, etiquetado y consumibles.')
+dentro('PEQ_MAT', 'FV-08-001', {}, HAY, '08', sub=5, notas='Lote fijo o % sobre material: por decidir (Ramón).')
 
 # --- 09 · Obra civil
 regla('FV-09-001', {}, 'zanja_m', '09', sub=9, notas='Metros de zanja.')
@@ -497,7 +539,7 @@ aviso({'fibrocemento': True}, 'Cubierta de fibrocemento: excluida o subcontratad
 regla('FV-10-001', {'medio_elevacion': 'andamio'}, 'dias_obra + 1', '10', sub=9, notas='Días de obra más uno de montaje.')
 regla('FV-10-002', {'medio_elevacion': ['plataforma', 'grua']}, 'dias_obra', '10', sub=9, notas='Los días de obra.')
 regla('FV-10-003', {'medio_elevacion': ['ninguno', 'escalera', '']}, 'si(plantas >= 2, dias_obra, 0)', '10', sub=8, notas='Más de una planta sin otro medio: elevador de paneles.')
-regla('FV-10-004', {'tipo_estructura': ['teja', 'chapa']}, HAY, '10', sub=7, notas='Cubierta inclinada: línea de vida.')
+fuera('FV-10-004', {'tipo_estructura': ['teja', 'chapa']}, HAY, '10', sub=7, notas='Cubierta inclinada: línea de vida.')
 regla('FV-10-005', {'via_publica': True}, '1', '10', sub=6, notas='Grúa o andamio en la calle.')
 
 # --- 11 · Mano de obra
@@ -506,18 +548,18 @@ regla('FV-11-003', {}, HAY, '11', sub=8, notas='Siempre.')
 aviso({}, 'Más de 24 paneles: valorar una jornada de oficial adicional (FV-11-002).', var='n_paneles', mn=25, mx=None)
 
 # --- 12 · Transporte y residuos
-regla('FV-12-001', {}, HAY, '12', sub=9, notas='Portes, si el proveedor los cobra.')
-regla('FV-12-004', {}, HAY, '12', sub=8, notas='Siempre.')
+fuera('FV-12-001', {}, HAY, '12', sub=9, notas='Portes, si el proveedor los cobra.')
+fuera('FV-12-004', {}, HAY, '12', sub=8, notas='Gestión de residuos.')
 
 # --- 13 · Trámites
-regla('FV-13-001', {'proyecto': 0}, HAY, '13', sub=9, notas='Memoria técnica (hasta 10 kWp, fuera de zona protegida).')
+fuera('FV-13-001', {'proyecto': 0}, HAY, '13', sub=9, notas='Memoria técnica (hasta 10 kWp, fuera de zona protegida).')
 regla('FV-13-002', {'proyecto': 1}, HAY, '13', sub=9, notas='Proyecto técnico (más de 10 kWp o zona protegida).')
 regla('FV-13-003', {}, HAY, '13', sub=8, notas='Siempre.')
-regla('FV-13-004', {}, HAY, '13', sub=8, notas='Siempre.')
+fuera('FV-13-004', {}, HAY, '13', sub=8, notas='Permiso de obra / comunicación previa.')
 regla('FV-13-006', {'subvencion': True}, '1', '13', sub=7, notas='Si pide subvención.')
 regla('FV-13-010', {'subvencion': True}, '1', '13', sub=6, notas='Lo pide la ayuda.')
 regla('FV-13-007', {'bonificacion_ibi': True}, '1', '13', sub=7, notas='Si pide bonificación.')
-regla('FV-13-008', {'excedentes': 'con_excedentes'}, HAY, '13', sub=7, notas='Con excedentes: compensación con la distribuidora.')
+fuera('FV-13-008', {'excedentes': 'con_excedentes'}, HAY, '13', sub=7, notas='Con excedentes: compensación con la distribuidora.')
 aviso({}, 'Las tasas e ICIO municipales las paga el cliente aparte (FV-13-005): escribirlo en exclusiones.', var='n_paneles', mn=1, mx=None, prio=100)
 
 # --- 14 · Opcionales
@@ -558,8 +600,17 @@ w(f'''-- =======================================================================
 --     string…), marcados POR CONFIRMAR donde son de arranque.
 --   · {len(VARIABLES)} variables (filas, raíles, ganchos, strings, días de obra…).
 --   · {len(reglas)} reglas, agrupadas en los 14 capítulos («NN · Nombre» en seccion).
+--   · {len(PARTIDAS_AGRUPADAS)} partidas agrupadas: ESTR_TEJA, ESTR_CHAPA y ESTR_PLANA (una línea
+--     por panel), CUADRO_PROT y PEQ_MAT (una por instalación). El cliente ve
+--     una línea; el desglose va por dentro (09-10-2026).
+--   · {sum(1 for r_ in reglas if not r_[11])} reglas quedan INACTIVAS a propósito, con el porqué en notas:
+--     las líneas que Sysefen sacó del presupuesto (memoria, permiso, gestión
+--     con la distribuidora, portes, residuos, línea de vida) y las piezas que
+--     pasaron a CUADRO_PROT y PEQ_MAT (tarea 2, 09-10-2026).
 --   · Fuera las partidas antiguas (PANEL 110 €, KIT_BASE, KIT_10, INV_6,
 --     INV_10, MANO_OBRA por vatio): sus reglas quedan inactivas, no se borran.
+--   · Fuera FV-06-004 (bus de micros): el tramo de Enphase al cuadro va con
+--     manguera AC (FV-06-003). El producto queda inactivo (09-10-2026).
 --
 -- REQUIERE: la función `presupuestar` 1.2 (precio_coste, recargo, contiene).
 -- Idempotente: se puede volver a ejecutar; las reglas FV se rehacen (las que
@@ -613,6 +664,10 @@ w("""
 on conflict (tarifa_id, referencia) do update
   set nombre = excluded.nombre, familia = excluded.familia, unidad = excluded.unidad,
       precio_tarifa = excluded.precio_tarifa, atributos = excluded.atributos;
+-- Retiradas del catálogo (siguen en la tabla para los presupuestos que las usaron).
+update public.productos p set activo = false
+  from public.tarifas t where p.tarifa_id = t.id and t.nombre = 'Fotovoltaica partidas 2026'
+   and p.referencia in ('FV-06-004');
 
 -- 4 · Los coeficientes ----------------------------------------------------------------
 -- Los que ya existan NO se pisan (se habrán ajustado a mano); solo entran los nuevos.
@@ -623,6 +678,9 @@ w("""
 on conflict (categoria, clave, entrada) do update set notas = excluded.notas;
 -- El recargo sí se fija: es el acuerdo.
 update public.tablas_lookup set valor = 1.30 where categoria = 'solar' and clave = 'recargo_sobre_coste' and entrada = 'defecto';
+-- El lastre pasa de 1 a 3 por triángulo (09-10-2026, orientativo): se fija porque
+-- el 1 anterior era un hueco, no un ajuste.
+update public.tablas_lookup set valor = 3 where categoria = 'solar' and clave = 'lastres_por_triangulo' and entrada = 'defecto';
 
 -- 5 · Las variables ---------------------------------------------------------------------
 insert into public.variables_derivadas (categoria, codigo, etiqueta, unidad, formula, orden, descripcion, por_cada) values
@@ -672,18 +730,18 @@ delete from public.reglas r using public.conjuntos_reglas c
    and (r.producto_ref like 'FV-%' or r.tipo = 'aviso' or r.partida_id in (select id from public.partidas where categoria = 'solar' and agrupada))
    and not exists (select 1 from public.presupuesto_lineas l where l.origen_regla_id = r.id);
 
-insert into public.reglas (conjunto_id, tipo, variable, minimo, maximo, condicion, producto_ref, partida_id, formula_cantidad, seccion, prioridad, notas)
+insert into public.reglas (conjunto_id, tipo, variable, minimo, maximo, condicion, producto_ref, partida_id, formula_cantidad, seccion, prioridad, notas, activa)
 select c.id, v.tipo, v.variable, v.minimo, v.maximo, v.condicion::jsonb, v.producto_ref,
-       (select id from public.partidas p where p.categoria = 'solar' and p.codigo = v.partida), v.formula, v.seccion, v.prioridad, v.notas
+       (select id from public.partidas p where p.categoria = 'solar' and p.codigo = v.partida), v.formula, v.seccion, v.prioridad, v.notas, v.activa
   from public.conjuntos_reglas c
   join (values
 """)
 vals = []
-for (tipo, var, mn, mx, cond, prod, formula, seccion, prio, notas, partida) in reglas:
-    vals.append(f"    ({q(tipo)}, {lit(var, 'text')}, {lit(mn, 'numeric')}, {lit(mx, 'numeric')}, {q(json.dumps(cond, ensure_ascii=False))}, {lit(prod, 'text')}, {lit(partida, 'text')}, {q(formula)}, {lit(seccion, 'text')}, {prio}, {lit(notas, 'text')})")
+for (tipo, var, mn, mx, cond, prod, formula, seccion, prio, notas, partida, activa) in reglas:
+    vals.append(f"    ({q(tipo)}, {lit(var, 'text')}, {lit(mn, 'numeric')}, {lit(mx, 'numeric')}, {q(json.dumps(cond, ensure_ascii=False))}, {lit(prod, 'text')}, {lit(partida, 'text')}, {q(formula)}, {lit(seccion, 'text')}, {prio}, {lit(notas, 'text')}, {lit(activa)})")
 w(",\n".join(vals))
 w("""
-  ) as v(tipo, variable, minimo, maximo, condicion, producto_ref, partida, formula, seccion, prioridad, notas) on true
+  ) as v(tipo, variable, minimo, maximo, condicion, producto_ref, partida, formula, seccion, prioridad, notas, activa) on true
  where c.categoria = 'solar' and c.vigente_hasta is null;
 
 commit;
@@ -697,6 +755,21 @@ commit;
 --   Las reglas activas por capítulo:
 --   select r.seccion, count(*) from public.reglas r join public.conjuntos_reglas c on c.id = r.conjunto_id
 --    where c.categoria = 'solar' and r.activa group by 1 order by 1;
+--
+--   Las partidas agrupadas con sus renglones (ESTR_TEJA, ESTR_CHAPA, ESTR_PLANA):
+--   select p.codigo, pi.orden, pi.producto_ref, pi.formula_cantidad, pi.unidad
+--     from public.partidas p join public.partidas_items pi on pi.partida_id = p.id
+--    where p.categoria = 'solar' and p.agrupada order by 1, 2;
+--
+--   Que no quede ninguna regla activa de pieza de estructura suelta (deben ser 0):
+--   select count(*) from public.reglas r join public.conjuntos_reglas c on c.id = r.conjunto_id
+--    where c.categoria = 'solar' and r.activa and r.producto_ref ~ '^FV-02-0(0[1-9]|1[0134])$';
+--
+--   Ni de lo que va dentro de CUADRO_PROT y PEQ_MAT, ni de lo que salió del presupuesto (deben ser 0):
+--   select count(*) from public.reglas r join public.conjuntos_reglas c on c.id = r.conjunto_id
+--    where c.categoria = 'solar' and r.activa and r.producto_ref in
+--      ('FV-07-001','FV-07-002','FV-07-004','FV-07-005','FV-07-006','FV-07-007','FV-07-008','FV-06-007','FV-06-010','FV-06-011','FV-06-012','FV-07-012','FV-08-001',
+--       'FV-13-008','FV-13-004','FV-13-001','FV-12-001','FV-12-004','FV-10-004');
 --
 --   Los coeficientes por confirmar:
 --   select clave, entrada, valor, notas from public.tablas_lookup where categoria = 'solar' and notas ilike '%confirmar%' order by 1, 2;
@@ -720,12 +793,13 @@ json.dump({
     'productos': productos,
     'lookup': [dict(clave=c, entrada=e, valor=v) for c, e, v, _ in LOOKUP],
     'variables': [dict(codigo=c, formula=f, orden=o, por_cada=pc) for c, _, _, f, o, _, pc in VARIABLES],
-    'reglas': [dict(id='fv%d' % i, tipo=t, variable=v, minimo=a, maximo=b, condicion=c, producto_ref=p, partida_id=pa, formula_cantidad=f, seccion=s, prioridad=pr_, notas=n)
-               for i, (t, v, a, b, c, p, f, s, pr_, n, pa) in enumerate(reglas)],
+    'reglas': [dict(id='fv%d' % i, tipo=t, variable=v, minimo=a, maximo=b, condicion=c, producto_ref=p, partida_id=pa, formula_cantidad=f, seccion=s, prioridad=pr_, notas=n, activa=ac)
+               for i, (t, v, a, b, c, p, f, s, pr_, n, pa, ac) in enumerate(reglas)],
     'partidas': {c: dict(codigo=c, nombre=n, agrupada=True, detalle_tecnico=d, items=[dict(producto_ref=r, formula_cantidad=fm, unidad=u, orden=i + 1) for i, (r, fm, u) in enumerate(items)])
                  for c, n, d, items in PARTIDAS_AGRUPADAS},
 }, open(os.path.join(CARPETA, 'fotovoltaica-reglas.json'), 'w', encoding='utf-8'), ensure_ascii=False, indent=0)
 
 sin_precio = [x['referencia'] for x in sysefen if not x['precio']]
 print(len(distribuidor), 'productos del distribuidor ·', len(sysefen), 'partidas Sysefen (', len(sin_precio), 'sin precio ) ·',
-      len(LOOKUP), 'coeficientes ·', len(VARIABLES), 'variables ·', len(reglas), 'reglas')
+      len(LOOKUP), 'coeficientes ·', len(VARIABLES), 'variables ·', len(reglas), 'reglas (', sum(1 for r_ in reglas if not r_[11]), 'inactivas ) ·',
+      len(PARTIDAS_AGRUPADAS), 'partidas agrupadas')

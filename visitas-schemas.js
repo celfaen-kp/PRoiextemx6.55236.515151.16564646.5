@@ -227,6 +227,11 @@ const SOLAR = {
           unidad: 'kW', obligatorio: true, motor: true },
         { key: 'consumo_anual_kwh', etiqueta: 'Consumo anual', tipo: 'numero', unidad: 'kWh',
           obligatorio: true, motor: true, ayuda: 'Suma de los 12 meses' },
+        // Arranque por kWp (09-10-2026): si el cliente pide una potencia, el motor
+        // saca los paneles de ahí. Los módulos que caben mandan sobre esto; esto,
+        // sobre el consumo anual.
+        { key: 'kwp_objetivo', etiqueta: 'Potencia que pide', tipo: 'numero', unidad: 'kWp', motor: true,
+          ayuda: 'Si el cliente pide una potencia concreta. Si se apuntan los módulos que caben, mandan ellos' },
         { key: 'perfil_consumo', etiqueta: 'Cuándo gasta', tipo: 'opcion', motor: true,
           opciones: ['diurno', 'nocturno', 'mixto', 'fin_de_semana'] },
         { key: 'cargas_previstas', etiqueta: 'Lo que va a sumar', tipo: 'multi', motor: true,

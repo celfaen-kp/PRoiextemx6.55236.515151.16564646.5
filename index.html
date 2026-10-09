@@ -410,7 +410,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '22.0'; // versión visible de la app (única fuente)
+const APP_VERSION = '22.1'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -7515,8 +7515,9 @@ const presuNuevoVacio = () => ({
   // aerotermia: la potencia se pone a mano, calcularla desde la casa no está
   // calibrado (MOTOR-PRESUPUESTOS.md §7).
   kw: '', circuitos: 1, acs: 0, sustituye: false, apoyo: false, limpieza: false,
-  // fotovoltaica: los kWp salen de los paneles, no se preguntan.
-  paneles: '', wp: 510, bateria: '',
+  // fotovoltaica: paneles a mano, o los kWp que pide el cliente (el motor saca
+  // los paneles de ahí si no se han puesto).
+  paneles: '', kwp: '', wp: 510, bateria: '',
   inversor: 'fronius', fases: 'monofasico', bateria_marca: '', backup: false,
   // montaje FV (desglose oct 2026): con esto salen estructura, cables,
   // protecciones, medios, mano de obra y trámites.
@@ -7549,6 +7550,8 @@ function datosDelSuelto(f) {
     if (n && porFila) { let q = n; while (q > 0) { filas.push({ paneles: Math.min(porFila, q) }); q -= porFila; } }
     return {
       paneles_manual: n,
+      // Sin paneles a mano, el motor los saca de los kWp pedidos (y si tampoco, del consumo).
+      kwp_objetivo: num(f.kwp),
       wp_manual: num(f.wp),
       inversor_marca: f.inversor === 'enphase' ? 'enphase' : 'fronius',
       suministro: f.fases === 'trifasico' ? 'trifasico' : 'monofasico',
@@ -8231,14 +8234,22 @@ function camposSolarHTML(f) {
   const esPlana = ['plana_transitable', 'plana_no_transitable', 'suelo'].includes(f.cubierta);
   const marcas = BATERIAS_DE[f.inversor === 'enphase' ? 'enphase' : 'fronius'];
   const chip = (k, v, t, actual) => `<div class="chip ${String(actual != null ? actual : f[k]) === v ? 'sel' : ''}" data-a="presuSueltoChip" data-k="${k}" data-v="${v}">${t}</div>`;
-  const kwp = Math.round(n * wp) / 1000;
+  // Se parte de los paneles o de los kWp pedidos: con paneles, los kWp salen de
+  // ellos; sin paneles, el motor saca los paneles de los kWp (⌈kWp × 1000 / Wp⌉).
+  const kwpPedidos = num(f.kwp);
+  const nDeKwp = n ? 0 : (kwpPedidos && wp ? Math.ceil((kwpPedidos * 1000) / wp) : 0);
+  const kwp = n ? Math.round(n * wp) / 1000 : Math.round(nDeKwp * wp) / 1000;
   return `<div class="row g8" style="margin-top:16px">
         <div class="grow"><div class="lbl">Paneles</div>
           <input class="inp" data-f="presuCampo" data-k="paneles" value="${esc(String(f.paneles))}" inputmode="numeric" placeholder="10" style="margin-top:8px"></div>
+        <div class="grow"><div class="lbl">O kWp que pide</div>
+          <input class="inp" data-f="presuCampo" data-k="kwp" value="${esc(String(f.kwp ?? ''))}" inputmode="decimal" placeholder="5" style="margin-top:8px"></div>
         <div class="grow"><div class="lbl">Vatios por panel</div>
           <input class="inp" data-f="presuCampo" data-k="wp" value="${esc(String(f.wp))}" inputmode="numeric" style="margin-top:8px"></div>
       </div>
-      <div class="tiny" style="margin-top:8px">${kwp ? 'Son ' + kwp.toLocaleString('es-ES') + ' kWp.' : 'Los kWp salen de los paneles.'}${kwp > 12 ? ' Por encima de 12 kWp el kit y el inversor van a mano: solo hay un presupuesto de esos y no da para una regla.' : ''}</div>
+      <div class="tiny" style="margin-top:8px">${n ? 'Son ' + kwp.toLocaleString('es-ES') + ' kWp.' + (kwpPedidos ? ' Los paneles mandan sobre los kWp pedidos.' : '')
+        : nDeKwp ? kwpPedidos.toLocaleString('es-ES') + ' kWp a ' + wp + ' Wp: ' + nDeKwp + ' paneles, ' + kwp.toLocaleString('es-ES') + ' kWp.'
+        : 'Pon los paneles o los kWp que pide el cliente: el motor saca lo otro.'}${kwp > 12 ? ' Por encima de 12 kWp el kit y el inversor van a mano: solo hay un presupuesto de esos y no da para una regla.' : ''}</div>
 
       <div class="lbl" style="margin:16px 0 8px">Inversor</div>
       <div class="wrap">${chip('inversor', 'fronius', 'Fronius')}${chip('inversor', 'enphase', 'Enphase (micros)')}</div>
@@ -8450,7 +8461,11 @@ function presuLineasEditHTML(d) {
  * equipos detallados; estructura, cableado, protecciones, medios y mano de
  * obra en UNA línea con su importe (lo que lleva dentro, en letra pequeña);
  * pequeño material junto con cableado y protecciones; transporte junto con
- * la mano de obra; los opcionales en su propio bloque. Los capítulos se
+ * la mano de obra; los opcionales en su propio bloque.
+ * Desde el 09-10-2026 el motor ya saca 07 (CUADRO_PROT) y 08 (PEQ_MAT) como
+ * una línea cada uno y 12 ya no trae nada, así que agrupar 06+07+08 y 11+12
+ * aquí ya no hace falta; se deja como está hasta que Sysefen decida cómo
+ * quiere ver el 06. Los capítulos se
  * reconocen por el «NN · » con que empieza la sección. Las otras categorías
  * (y las secciones sin número) se imprimen como siempre, línea a línea.
  */
