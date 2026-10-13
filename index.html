@@ -410,7 +410,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '22.2'; // versión visible de la app (única fuente)
+const APP_VERSION = '22.3'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -1318,10 +1318,40 @@ A.obraRango = (r) => { V.obraRango = r; render(); };
 // así que preseleccionar una solo hacía creer que las horas se estaban
 // asignando ahí. La obra se decide al imputar o al hacer el parte.)
 A.tabHoras = (t) => { V.tabHoras = t; render(); };
-A.abrirResumenImp = () => { V.resumenRango = 'mes'; V.view = 'resumenImp'; render(); refrescarDatos().then(render); };
+// El resumen por categoría se abre siempre en el mes en curso; desde ahí se
+// puede ir a meses o años anteriores con las flechas (nunca al futuro).
+A.abrirResumenImp = () => {
+  V.resumenRango = 'mes'; V.resumenMes = hoyISO().slice(0, 7); V.resumenAno = hoyISO().slice(0, 4);
+  V.view = 'resumenImp'; render(); refrescarDatos().then(render);
+};
+// Mes ('YYYY-MM') o año ('YYYY') que se está mirando en el resumen, según el rango.
+const resumenRef = (rango) => rango === 'mes' ? (V.resumenMes || hoyISO().slice(0, 7))
+  : rango === 'ano' ? (V.resumenAno || hoyISO().slice(0, 4)) : null;
+// Si el período elegido queda fuera de la ventana cargada, se amplía.
+const resumenAsegurar = () => {
+  const r = rangoFechas(V.resumenRango, resumenRef(V.resumenRango));
+  if (r) asegurarDesde(r.desde);
+};
 A.resumenRango = (r) => {
   V.resumenRango = r; render();
-  if (r === 'ano') asegurarDesde(hoyISO().slice(0, 4) + '-01-01');
+  resumenAsegurar();
+};
+A.resumenNav = (delta) => {
+  const d = Number(delta) || 0;
+  const hoy = hoyISO();
+  if (V.resumenRango === 'mes') {
+    const [y, m] = (V.resumenMes || hoy.slice(0, 7)).split('-').map(Number);
+    const f = new Date(y, m - 1 + d, 1);
+    const mes = f.getFullYear() + '-' + String(f.getMonth() + 1).padStart(2, '0');
+    if (mes > hoy.slice(0, 7)) return;
+    V.resumenMes = mes;
+  } else if (V.resumenRango === 'ano') {
+    const ano = String(Number(V.resumenAno || hoy.slice(0, 4)) + d);
+    if (ano > hoy.slice(0, 4)) return;
+    V.resumenAno = ano;
+  } else return;
+  render();
+  resumenAsegurar();
 };
 
 /* --- imputación de horas --- */
@@ -2234,15 +2264,25 @@ const empleadosDeObra = (obraId) => {
 };
 // Rango de fechas (strings 'YYYY-MM-DD', comparables directo con imputaciones.fecha)
 // para los desgloses "por período" de una obra. null = sin filtro (todo el histórico).
-function rangoFechas(rango) {
+// `ref` (opcional) fija el mes ('YYYY-MM') o el año ('YYYY') que se mira: sin
+// él, el mes/año en curso hasta hoy. Un mes o año ya pasado va completo.
+function rangoFechas(rango, ref) {
   const hoy = hoyISO();
   if (rango === 'hoy') return { desde: hoy, hasta: hoy };
   if (rango === 'semana') {
     const d = new Date(); d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
     return { desde: fechaLocal(d), hasta: hoy };
   }
-  if (rango === 'mes') return { desde: hoy.slice(0, 7) + '-01', hasta: hoy };
-  if (rango === 'ano') return { desde: hoy.slice(0, 4) + '-01-01', hasta: hoy };
+  if (rango === 'mes') {
+    const mes = (ref || hoy).slice(0, 7);
+    if (mes === hoy.slice(0, 7)) return { desde: mes + '-01', hasta: hoy };
+    const [y, m] = mes.split('-').map(Number);
+    return { desde: mes + '-01', hasta: fechaLocal(new Date(y, m, 0)) };
+  }
+  if (rango === 'ano') {
+    const ano = (ref || hoy).slice(0, 4);
+    return { desde: ano + '-01-01', hasta: ano === hoy.slice(0, 4) ? hoy : ano + '-12-31' };
+  }
   return null;
 }
 // Igual que minutosObraImp, pero por período (hoy/semana/mes) en vez de un
@@ -2290,8 +2330,8 @@ function minutosObraRango(obraId, userId, rango) {
 // Otros) en un período, para el gráfico de "Horas" > "Resumen por categoría".
 // admin/jefe ven todo el equipo; un operario solo ve las suyas (mismo criterio
 // que el resto de la sección Horas).
-function resumenCategorias(rango) {
-  const r = rangoFechas(rango);
+function resumenCategorias(rango, ref) {
+  const r = rangoFechas(rango, ref);
   const soloYo = !puedeCrear();
   const base = S.imputaciones.filter((i) =>
     (!r || (i.fecha >= r.desde && i.fecha <= r.hasta)) && (!soloYo || i.userId === V.user.id));
@@ -5199,19 +5239,34 @@ function vRevisarImp() {
 
 function vResumenImp() {
   const rango = V.resumenRango || 'mes';
-  const { filas, totalMin } = resumenCategorias(rango);
+  const ref = resumenRef(rango);
+  const { filas, totalMin } = resumenCategorias(rango, ref);
   const ordenadas = filas.filter((f) => f.min > 0).sort((a, b) => b.min - a.min);
+  const per = rangoFechas(rango, ref);
+  const hoy = hoyISO();
+  // Qué período se está mirando, dicho claro: «Octubre 2026», «Año 2025»…
+  const enCurso = rango === 'mes' ? ref === hoy.slice(0, 7) : rango === 'ano' ? ref === hoy.slice(0, 4) : true;
+  const titulo = rango === 'mes' ? agMayus(mesLargo(ref)) : rango === 'ano' ? 'Año ' + ref : (RANGO_LARGO[rango] || rango);
+  const ddmm = (f) => { const [y, m, d] = f.split('-').map(Number); return new Date(y, m - 1, d).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' }); };
+  const fechas = !per ? '' : per.desde === per.hasta ? ddmm(per.desde) : 'Del ' + ddmm(per.desde) + ' al ' + ddmm(per.hasta);
+  const navegable = rango === 'mes' || rango === 'ano';
   return `<div class="hdr">
     <div class="row" style="justify-content:space-between">
       <div class="h1" style="font-size:24px">Resumen por categoría</div>
       <div data-a="ir" data-v="horas" class="volver der">Cerrar</div>
     </div>
     <div class="wrap" style="margin-top:12px">${RESUMEN_RANGOS.map(([r, l]) => `<div class="chip ${r === rango ? 'on' : ''}" data-a="resumenRango" data-r="${r}">${l}</div>`).join('')}</div>
+    ${navegable ? `<div class="row" style="justify-content:space-between;align-items:center;margin-top:12px">
+      <button class="pill" data-a="resumenNav" data-d="-1" aria-label="${rango === 'mes' ? 'Mes anterior' : 'Año anterior'}">‹</button>
+      <div style="font:600 16px var(--cond)">${esc(titulo)}${enCurso ? ' <span class="tiny" style="font-weight:400">· en curso</span>' : ''}</div>
+      <button class="pill" data-a="resumenNav" data-d="1" aria-label="${rango === 'mes' ? 'Mes siguiente' : 'Año siguiente'}" ${enCurso ? 'disabled style="opacity:.35"' : ''}>›</button>
+    </div>` : ''}
   </div>
   <div class="scroll pad pb-nav">
     <div class="card" style="margin-bottom:14px">
-      <div class="sub">Total ${esc((RANGO_LARGO[rango] || rango).toLowerCase())}</div>
+      <div class="sub">Total · ${esc(titulo)}</div>
       <div class="num" style="font-size:30px;margin-top:4px">${durMin(totalMin)}</div>
+      ${fechas ? `<div class="tiny" style="margin-top:6px">${esc(fechas)}</div>` : ''}
     </div>
     ${ordenadas.length ? `<div class="card">
       ${ordenadas.map((f, i) => `<div style="margin-top:${i ? 16 : 0}px">
@@ -11615,6 +11670,7 @@ document.addEventListener('click', (e) => {
   if (a === 'abrirImputar') return A.abrirImputar();
   if (a === 'abrirResumenImp') return A.abrirResumenImp();
   if (a === 'resumenRango') return A.resumenRango(d.r);
+  if (a === 'resumenNav') return A.resumenNav(d.d);
   if (a === 'abrirImputLista') return A.abrirImputLista();
   if (a === 'abrirImputGrupo') return A.abrirImputGrupo();
   if (a === 'impGrupoToggle') return A.impGrupoToggle(d.id);
