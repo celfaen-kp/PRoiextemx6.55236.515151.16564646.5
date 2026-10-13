@@ -461,7 +461,11 @@ Deno.serve(async (req) => {
     sync_estado: bien ? 'sincronizado' : 'error',
     sync_error: fallos.length ? fallos.join(' · ') : null,
     sync_at: new Date().toISOString(),
-    ...(bien ? { estado: 'enviado' } : {}),
+    // Subirlo a Teamleader NO es mandárselo al cliente: la oferta se crea
+    // allí y se queda sin enviar (quotations.create, nunca quotations.send)
+    // hasta que alguien la revise y la mande desde el CRM. Antes aquí se ponía
+    // estado = 'enviado' y la app lo enseñaba como «Enviado al cliente» sin
+    // serlo (corregido el 13-10-2026; sql/etapa75 arregla los ya guardados).
   }).eq('id', id);
 
   if (!bien) return json({ error: fallos.join(' · ') || 'No se pudo subir nada.' }, 502);

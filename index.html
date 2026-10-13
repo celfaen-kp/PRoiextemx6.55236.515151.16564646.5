@@ -410,7 +410,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '22.3'; // versión visible de la app (única fuente)
+const APP_VERSION = '22.4'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -7362,8 +7362,32 @@ function margenLineaHTML(l) {
   const pct = venta ? Math.round((m / venta) * 1000) / 10 : 0;
   const oi = l.origen_inputs && typeof l.origen_inputs === 'object' ? l.origen_inputs : null;
   const desglose = oi && Array.isArray(oi.desglose) ? oi.desglose : [];
-  return `<div class="tiny" style="margin-top:4px;color:${m >= 0 ? 'var(--verde-o)' : 'var(--rojo)'}">Interno · coste ${eur(coste)} · venta ${eur(venta)} · beneficio ${eur(m)} · margen ${String(pct).replace('.', ',')} %</div>
-    ${desglose.length ? `<div class="tiny" style="margin-top:3px;color:var(--t3)">${desglose.map((x) => esc(x.nombre) + ' ' + esc(String(x.cantidad)) + ' ' + esc(x.unidad || 'ud') + ' · ' + eur(x.coste)).join(' · ')}</div>` : ''}`;
+  const cab = `<div class="tiny" style="margin-top:4px;color:${m >= 0 ? 'var(--verde-o)' : 'var(--rojo)'}">Interno · coste ${eur(coste)} · venta ${eur(venta)} · beneficio ${eur(m)} · margen ${String(pct).replace('.', ',')} %</div>`;
+  if (oi && oi.fv2 && desglose.length) return cab + desgloseFV2HTML(oi);
+  return cab + (desglose.length ? `<div class="tiny" style="margin-top:3px;color:var(--t3)">${desglose.map((x) => esc(x.nombre) + ' ' + esc(String(x.cantidad)) + ' ' + esc(x.unidad || 'ud') + ' · ' + eur(x.coste)).join(' · ')}</div>` : '');
+}
+/** El desglose del presupuestador FV v2 (Ramón): las partidas por bloque con
+ *  su coste, el precio con margen objetivo, los avisos y el pedido por
+ *  proveedor. Solo por dentro: nunca al PDF ni a Teamleader. */
+function desgloseFV2HTML(oi) {
+  const bloques = [];
+  oi.desglose.forEach((x) => {
+    if (!(x.cantidad > 0) && !(x.coste > 0)) return;
+    let b = bloques.find((y) => y.nombre === x.bloque);
+    if (!b) { b = { nombre: x.bloque, items: [], total: 0 }; bloques.push(b); }
+    b.items.push(x); b.total += Number(x.coste) || 0;
+  });
+  const p = oi.precio || {}, dim = oi.dimensionado || {};
+  const pct = (v) => v == null ? '' : String(Math.round(v * 1000) / 10).replace('.', ',') + ' %';
+  return `<details style="margin-top:6px"><summary class="tiny" style="cursor:pointer;color:var(--t2)">Desglose del presupuestador FV v2 · ${bloques.length} bloques · ${esc(String(oi.modelo || ''))}</summary>
+    <div class="tiny" style="margin-top:6px;color:var(--t2)">${esc(String(dim.n_pan))} paneles · ${esc(String(dim.kwp))} kWp · ${esc(String(dim.prod))} kWh/año · ${esc(String(dim.mod_inv || ''))}${dim.cuadro_ac ? ' · ' + esc(dim.cuadro_ac) : ''} · ${esc(String(dim.jornadas))} jornadas</div>
+    ${bloques.map((b) => `<div style="margin-top:8px"><div class="tiny" style="font-weight:600;color:var(--tinta)">${esc(b.nombre)} · ${eur(b.total)}</div>
+      ${b.items.map((x) => `<div class="tiny" style="color:var(--t3);padding-left:8px">${esc(x.nombre)} · ${esc(String(x.cantidad))} ${esc(x.unidad || 'ud')} × ${eur(x.coste_ud)} = ${eur(x.coste)}${x.aviso ? ` <span style="color:var(--ambar-o)">⚠ ${esc(x.aviso)}</span>` : ''}</div>`).join('')}</div>`).join('')}
+    <div class="tiny" style="margin-top:8px;color:var(--tinta)">Coste total ${eur(p.coste_total)} · precio objetivo ${eur(p.precio_objetivo)} (margen ${pct(p.margen_objetivo)} sobre venta, redondeado a 10 €)${p.horas_elev ? ' · elevador ' + esc(String(p.horas_elev)) + ' h = ' + eur(p.elevador) : ''} · margen real sin descuento ${pct(p.margen_real_sin_dto)}</div>
+    ${Array.isArray(oi.avisos) && oi.avisos.length ? `<div style="margin-top:6px">${oi.avisos.map((a) => `<div class="tiny" style="color:var(--ambar-o)">· ${esc(a)}</div>`).join('')}</div>` : ''}
+    ${oi.pedido ? `<div class="tiny" style="margin-top:8px;font-weight:600;color:var(--tinta)">Pedido de material si acepta</div>
+      ${Object.keys(oi.pedido).map((q) => `<div class="tiny" style="color:var(--t3);padding-left:8px">${esc(q)} · ${oi.pedido[q].lineas.length} líneas · ${eur(oi.pedido[q].total)}</div>`).join('')}` : ''}
+  </details>`;
 }
 
 /** De "Calcular" para abajo: incidencias, líneas, totales, catálogo y guardar.
@@ -7581,6 +7605,9 @@ const presuNuevoVacio = () => ({
   // los paneles de ahí si no se han puesto).
   paneles: '', kwp: '', wp: 510, bateria: '',
   inversor: 'fronius', fases: 'monofasico', bateria_marca: '', backup: false,
+  // presupuestador FV v2 (Ramón, 12-10-2026): sin paneles ni kWp, el
+  // dimensionado sale del consumo anual o de la factura mensual.
+  consumo: '', factura: '', factura_rango: '', orientacion: 'vertical', km: '', cee: false, cee_h: '', horas_elev: '',
   // montaje FV (desglose oct 2026): con esto salen estructura, cables,
   // protecciones, medios, mano de obra y trámites.
   cubierta: 'teja_arabe', anclaje: 'lastre', por_fila: '', dist_dc: '', dist_ac: '', dist_meter: '',
@@ -7593,6 +7620,7 @@ const presuNuevoVacio = () => ({
 const BATERIAS_DE = {
   fronius: [['byd', 'BYD'], ['fronius', 'Fronius Reserva'], ['tesla', 'Tesla']],
   enphase: [['enphase', 'Enphase'], ['tesla', 'Tesla']],
+  deye: [],   // híbrido de Rebacas; sus baterías no están en la tarifa todavía
 };
 
 /**
@@ -7615,8 +7643,18 @@ function datosDelSuelto(f) {
       // Sin paneles a mano, el motor los saca de los kWp pedidos (y si tampoco, del consumo).
       kwp_objetivo: num(f.kwp),
       wp_manual: num(f.wp),
-      inversor_marca: f.inversor === 'enphase' ? 'enphase' : 'fronius',
+      inversor_marca: f.inversor === 'enphase' ? 'enphase' : f.inversor === 'deye' ? 'deye' : 'fronius',
       suministro: f.fases === 'trifasico' ? 'trifasico' : 'monofasico',
+      // Presupuestador FV v2: consumo o factura para dimensionar, orientación
+      // del panel, km a la obra, certificado energético y horas de elevador.
+      consumo_anual_kwh: num(f.consumo),
+      factura_mensual_eur: num(f.factura),
+      factura_rango: f.factura_rango || '',
+      orientacion_panel: f.orientacion === 'horizontal' ? 'horizontal' : 'vertical',
+      km_obra: num(f.km),
+      certificado_energetico: !!f.cee,
+      cee_desplaz_h: num(f.cee_h),
+      horas_elevador: num(f.horas_elev),
       baterias: conBateria ? 'si' : 'no',
       baterias_kwh: num(f.bateria),
       bateria_marca: conBateria ? (f.bateria_marca || '') : '',
@@ -7699,7 +7737,7 @@ A.presuSueltoChip = (k, v) => {
   if (!V.suelto) return;
   // Interruptores: un toque enciende, otro apaga (antes de la asignación
   // genérica, que si no los deja siempre apagados).
-  if (['subvencion', 'cargador'].includes(k)) { V.suelto[k] = !V.suelto[k]; render(); return; }
+  if (['subvencion', 'cargador', 'cee'].includes(k)) { V.suelto[k] = !V.suelto[k]; render(); return; }
   // Los chips de sí/no mandan '' para apagarse y '1' para encenderse.
   V.suelto[k] = v === '' ? false : (/^\d+$/.test(String(v)) && k !== 'cat' ? Number(v) : v);
   if (['sustituye', 'apoyo', 'limpieza', 'backup', 'recuperar'].includes(k)) V.suelto[k] = v !== '';
@@ -8294,7 +8332,8 @@ function camposSolarHTML(f) {
   const n = Number(f.paneles) || 0, wp = Number(f.wp) || 510;
   const num = (v) => Number(String(v == null ? '' : v).replace(',', '.')) || 0;
   const esPlana = ['plana_transitable', 'plana_no_transitable', 'suelo'].includes(f.cubierta);
-  const marcas = BATERIAS_DE[f.inversor === 'enphase' ? 'enphase' : 'fronius'];
+  const marcas = BATERIAS_DE[f.inversor] || BATERIAS_DE.fronius;
+  const tramos = [['menos_100', '< 100 €'], ['100_200', '100–200 €'], ['200_350', '200–350 €'], ['350_600', '350–600 €'], ['mas_600', '> 600 €'], ['no_lo_se', 'No lo sé']];
   const chip = (k, v, t, actual) => `<div class="chip ${String(actual != null ? actual : f[k]) === v ? 'sel' : ''}" data-a="presuSueltoChip" data-k="${k}" data-v="${v}">${t}</div>`;
   // Se parte de los paneles o de los kWp pedidos: con paneles, los kWp salen de
   // ellos; sin paneles, el motor saca los paneles de los kWp (⌈kWp × 1000 / Wp⌉).
@@ -8311,22 +8350,32 @@ function camposSolarHTML(f) {
       </div>
       <div class="tiny" style="margin-top:8px">${n ? 'Son ' + kwp.toLocaleString('es-ES') + ' kWp.' + (kwpPedidos ? ' Los paneles mandan sobre los kWp pedidos.' : '')
         : nDeKwp ? kwpPedidos.toLocaleString('es-ES') + ' kWp a ' + wp + ' Wp: ' + nDeKwp + ' paneles, ' + kwp.toLocaleString('es-ES') + ' kWp.'
-        : 'Pon los paneles o los kWp que pide el cliente: el motor saca lo otro.'}${kwp > 12 ? ' Por encima de 12 kWp el kit y el inversor van a mano: solo hay un presupuesto de esos y no da para una regla.' : ''}</div>
+        : 'Pon los paneles o los kWp que pide el cliente; o deja los dos vacíos y el motor dimensiona con el consumo o la factura.'}${(n || nDeKwp) > 22 ? ' Más de 22 paneles: el presupuestador avisa y hay que revisar jornadas y estructura.' : ''}</div>
+      <div class="row g8" style="margin-top:10px">
+        <div class="grow"><div class="lbl">Consumo anual</div>
+          <input class="inp" data-f="presuCampo" data-k="consumo" value="${esc(String(f.consumo ?? ''))}" inputmode="numeric" placeholder="kWh/año" style="margin-top:8px"></div>
+        <div class="grow"><div class="lbl">O factura mensual</div>
+          <input class="inp" data-f="presuCampo" data-k="factura" value="${esc(String(f.factura ?? ''))}" inputmode="decimal" placeholder="€/mes" style="margin-top:8px"></div>
+      </div>
+      ${!n && !nDeKwp && !num(f.consumo) && !num(f.factura) ? `<div class="lbl" style="margin:10px 0 8px">O el tramo de factura</div>
+      <div class="wrap">${tramos.map(([k, t]) => chip('factura_rango', k, t, f.factura_rango || '100_200')).join('')}</div>` : ''}
 
       <div class="lbl" style="margin:16px 0 8px">Inversor</div>
-      <div class="wrap">${chip('inversor', 'fronius', 'Fronius')}${chip('inversor', 'enphase', 'Enphase (micros)')}</div>
+      <div class="wrap">${chip('inversor', 'fronius', 'Fronius')}${chip('inversor', 'deye', 'Deye (híbrido)')}${chip('inversor', 'enphase', 'Enphase (micros)')}</div>
       <div class="tiny" style="margin-top:8px">${f.inversor === 'enphase'
-        ? 'Un microinversor por panel, con su Q Cable, tapones, conectores, IQ Gateway y toroidales.'
-        : 'El GEN24 que toca por potencia, con su Smart Meter.'}</div>
+        ? 'Un microinversor IQ8P por panel, con su Q Cable, tapones, conectores, IQ Gateway, toroidales y Q-Relay.'
+        : f.inversor === 'deye' ? 'El híbrido Deye que toca por potencia (Rebacas), con su medidor antivertido.'
+        : 'El GEN24 SC que toca por potencia, con su Smart Meter. Con batería, el Plus.'}</div>
 
       <div class="lbl" style="margin:16px 0 8px">Suministro</div>
       <div class="wrap">${chip('fases', 'monofasico', 'Monofásico')}${chip('fases', 'trifasico', 'Trifásico')}</div>
 
       <div class="lbl" style="margin:16px 0 8px">Baterías</div>
       <input class="inp" data-f="presuCampo" data-k="bateria" value="${esc(String(f.bateria))}" inputmode="decimal" placeholder="kWh (vacío = sin baterías)">
-      <div class="lbl" style="margin:16px 0 8px">Si lleva batería: de qué marca</div>
+      ${marcas.length ? `<div class="lbl" style="margin:16px 0 8px">Si lleva batería: de qué marca</div>
       <div class="wrap">${marcas.map(([m, t]) => chip('bateria_marca', m, t, f.bateria_marca || marcas[0][0])).join('')}</div>
-      <div class="tiny" style="margin-top:8px">${f.inversor === 'enphase' ? 'Enphase va con baterías Enphase o Tesla.' : 'Fronius va con baterías BYD, Fronius Reserva o Tesla.'}</div>
+      <div class="tiny" style="margin-top:8px">${f.inversor === 'enphase' ? 'Enphase va con baterías Enphase o Tesla.' : 'Fronius va con baterías BYD, Fronius Reserva o Tesla.'}</div>`
+      : `<div class="tiny" style="margin-top:8px;color:var(--ambar-o)">Las baterías de Deye no están en la tarifa: si lleva, se añade a mano.</div>`}
       <div class="lbl" style="margin:16px 0 8px">Si lleva batería: ¿con backup?</div>
       <div class="wrap">${chip('backup', '', 'Sin backup', f.backup ? '1' : '')}${chip('backup', '1', 'Con backup', f.backup ? '1' : '')}</div>
       <div class="tiny" style="margin-top:8px">Con backup la casa sigue con luz si se va la red. ${
@@ -8338,13 +8387,20 @@ function camposSolarHTML(f) {
       <div class="tiny" style="margin-top:4px">Con esto salen la estructura, los cables, las protecciones, los medios y los días de trabajo.</div>
       <div class="lbl" style="margin:14px 0 8px">Cubierta</div>
       <div class="wrap">${chip('cubierta', 'teja_arabe', 'Teja')}${chip('cubierta', 'chapa_sandwich', 'Chapa / sándwich')}${chip('cubierta', 'plana_transitable', 'Plana')}${chip('cubierta', 'suelo', 'Suelo')}${chip('cubierta', 'pergola', 'Pérgola')}</div>
-      ${esPlana ? `<div class="wrap" style="margin-top:8px">${chip('anclaje', 'lastre', 'Con lastre')}${chip('anclaje', 'anclaje_quimico', 'Anclaje químico')}</div>` : ''}
+      ${esPlana ? `<div class="wrap" style="margin-top:8px">${chip('anclaje', 'lastre', 'Con lastre')}${chip('anclaje', 'anclaje_quimico', 'Anclaje químico')}</div>
+      <div class="tiny" style="margin-top:6px">En plana el presupuestador pone lastres Sun Ballast y al menos 4 h de elevador.</div>` : ''}
+      ${f.cubierta === 'chapa_sandwich' || f.cubierta === 'pergola' ? `<div class="tiny" style="margin-top:6px;color:var(--ambar-o)">Chapa y pérgola no están en el presupuestador nuevo: la estructura sale de las reglas antiguas, pendiente de confirmar.</div>` : ''}
+      <div class="lbl" style="margin:14px 0 8px">Panel en</div>
+      <div class="wrap">${chip('orientacion', 'vertical', 'Vertical')}${chip('orientacion', 'horizontal', 'Horizontal')}</div>
       <div class="row g8" style="margin-top:14px">
         <div class="grow"><div class="lbl">Paneles por fila</div>
-          <input class="inp" data-f="presuCampo" data-k="por_fila" value="${esc(String(f.por_fila ?? ''))}" inputmode="numeric" placeholder="10" style="margin-top:8px"></div>
+          <input class="inp" data-f="presuCampo" data-k="por_fila" value="${esc(String(f.por_fila ?? ''))}" inputmode="numeric" placeholder="5" style="margin-top:8px"></div>
         <div class="grow"><div class="lbl">Plantas</div>
           <input class="inp" data-f="presuCampo" data-k="plantas" value="${esc(String(f.plantas ?? 1))}" inputmode="numeric" style="margin-top:8px"></div>
+        <div class="grow"><div class="lbl">Km a la obra</div>
+          <input class="inp" data-f="presuCampo" data-k="km" value="${esc(String(f.km ?? ''))}" inputmode="decimal" placeholder="20" style="margin-top:8px"></div>
       </div>
+      <div class="tiny" style="margin-top:6px">Sin «paneles por fila» se cuentan 2 filas. Los km son solo ida, desde la nave.</div>
       <div class="lbl" style="margin:14px 0 8px">Metros de cable</div>
       <div class="row g8">
         <div class="grow"><input class="inp" data-f="presuCampo" data-k="dist_dc" value="${esc(String(f.dist_dc ?? ''))}" inputmode="decimal" placeholder="Paneles → inversor"></div>
@@ -8356,6 +8412,11 @@ function camposSolarHTML(f) {
       ${f.recorrido === 'tubo_enterrado' ? `<input class="inp" data-f="presuCampo" data-k="zanja" value="${esc(String(f.zanja ?? ''))}" inputmode="decimal" placeholder="Metros de zanja" style="margin-top:8px">` : ''}
       <div class="lbl" style="margin:14px 0 8px">Cómo se sube el material</div>
       <div class="wrap">${chip('medio', 'escalera', 'Escalera')}${chip('medio', 'andamio', 'Andamio')}${chip('medio', 'plataforma', 'Plataforma')}${chip('medio', 'grua', 'Grúa')}</div>
+      <div class="row g8" style="margin-top:10px;align-items:center">
+        <div class="grow"><div class="lbl">Horas de elevador propio</div>
+          <input class="inp" data-f="presuCampo" data-k="horas_elev" value="${esc(String(f.horas_elev ?? ''))}" inputmode="decimal" placeholder="0" style="margin-top:8px"></div>
+        <div class="tiny grow" style="padding-top:22px">Se cobra aparte a 65 €/h.</div>
+      </div>
       <div class="lbl" style="margin:14px 0 8px">Cuadro general</div>
       <div class="wrap">${chip('cuadro_estado', 'bien', 'Bien')}${chip('cuadro_estado', 'sin_espacio', 'Sin espacio')}${chip('cuadro_estado', 'antiguo', 'Antiguo')}</div>
       <div class="lbl" style="margin:14px 0 8px">Toma de tierra</div>
@@ -8364,7 +8425,12 @@ function camposSolarHTML(f) {
       <div class="wrap">${chip('wifi', 'buena', 'Buena')}${chip('wifi', 'mala', 'Mala · repetidor')}</div>
       <div class="lbl" style="margin:14px 0 8px">Excedentes y trámites</div>
       <div class="wrap">${chip('excedentes', 'con_excedentes', 'Con excedentes')}${chip('excedentes', 'sin_excedentes', 'Sin excedentes')}</div>
-      <div class="wrap" style="margin-top:8px">${chip('subvencion', '1', 'Pide subvención', f.subvencion ? '1' : '')}${chip('cargador', '1', 'Cargador de coche', f.cargador ? '1' : '')}</div>`;
+      <div class="wrap" style="margin-top:8px">${chip('subvencion', '1', 'Pide subvención', f.subvencion ? '1' : '')}${chip('cee', '1', 'Certificado energético', f.cee ? '1' : '')}${chip('cargador', '1', 'Cargador de coche', f.cargador ? '1' : '')}</div>
+      ${f.cee ? `<div class="row g8" style="margin-top:10px;align-items:center">
+        <div class="grow"><div class="lbl">Desplazamiento del certificado</div>
+          <input class="inp" data-f="presuCampo" data-k="cee_h" value="${esc(String(f.cee_h ?? ''))}" inputmode="decimal" placeholder="horas" style="margin-top:8px"></div>
+        <div class="tiny grow" style="padding-top:22px">1 h de Xavi + desplazamiento + tasa de 97 €.</div>
+      </div>` : ''}`;
 }
 
 
@@ -8606,12 +8672,17 @@ function imprimirPresupuestoHTML(d) {
           <td style="padding:6px 0;border-bottom:1px solid #eee;vertical-align:top">
             <div style="font-weight:600">${esc(l.descripcion)}</div>
             ${l.detalle_tecnico ? `<div style="font:400 10px/1.4 var(--sans);color:#666;margin-top:2px">${esc(l.detalle_tecnico)}</div>` : ''}
-            ${l.resumen ? '' : `<div style="font:400 10px var(--mono);color:#666;margin-top:2px">${esc(String(l.cantidad))} ${esc(l.unidad || 'ud')} × ${eur(l.precio_tarifa)}${l.dto_linea_pct ? ' · −' + l.dto_linea_pct + '%' : ''}</div>`}
+            ${l.resumen || (l.origen_inputs && l.origen_inputs.fv2 && Number(l.cantidad) === 1) ? '' : `<div style="font:400 10px var(--mono);color:#666;margin-top:2px">${esc(String(l.cantidad))} ${esc(l.unidad || 'ud')} × ${eur(l.precio_tarifa)}${l.dto_linea_pct ? ' · −' + l.dto_linea_pct + '%' : ''}</div>`}
           </td>
           <td style="padding:6px 0;border-bottom:1px solid #eee;text-align:right;white-space:nowrap;vertical-align:top;font-family:var(--cond);font-weight:600">${eur(l.precio_venta)}</td>
         </tr>`).join('')}
       </table>
     </div>`).join('')}
+    ${(() => {
+      // Presupuestador FV v2: la nota y las condiciones del presupuesto de Ramón, en el PDF.
+      const fv2 = lineas.find((l) => l.origen_inputs && l.origen_inputs.fv2 && l.origen_inputs.nota);
+      return fv2 ? `<div style="margin-top:14px;font:400 10px/1.45 var(--sans);color:#444"><div>${esc(fv2.origen_inputs.nota)}</div><div style="margin-top:4px">${esc(fv2.origen_inputs.condiciones || '')}</div></div>` : '';
+    })()}
 
     <div style="margin-top:16px;padding-top:8px;border-top:2px solid #14170f">
       ${d.dto_global_pct ? `<div style="display:flex;justify-content:space-between;font:400 11px var(--sans);color:#666"><span>Incluye descuento de −${d.dto_global_pct} %</span></div>` : ''}
@@ -8770,7 +8841,7 @@ function seguimientoHTML(d) {
     ['Creado', fechaCorta(d.created_at), true],
     ['En Teamleader', d.tl_quotation_id ? 'subido' : 'sin subir', !!d.tl_quotation_id],
     ['Revisado', d.revisado_at ? fechaCorta(d.revisado_at) + (d.revisado_por ? ' · ' + agNombreEmp(d.revisado_por) : '') : 'pendiente de revisar', !!d.revisado_at],
-    ['Enviado al cliente', d.enviado_cliente_at ? fechaCorta(d.enviado_cliente_at) + (d.enviado_cliente_por ? ' · ' + agNombreEmp(d.enviado_cliente_por) : '') : 'pendiente', !!(d.enviado_cliente_at || d.estado === 'enviado')],
+    ['Enviado al cliente', d.enviado_cliente_at ? fechaCorta(d.enviado_cliente_at) + (d.enviado_cliente_por ? ' · ' + agNombreEmp(d.enviado_cliente_por) : '') : 'pendiente', !!d.enviado_cliente_at],
     ['Respuesta del cliente', d.respuesta_cliente && d.respuesta_cliente !== 'pendiente' ? { aceptado: 'Aceptado', rechazado: 'Rechazado', caducado: 'Caducado' }[d.respuesta_cliente] + (d.respondido_at ? ' · ' + fechaCorta(d.respondido_at) : '') : 'esperando', d.respuesta_cliente && d.respuesta_cliente !== 'pendiente'],
   ];
   const busy = V.presuSegBusy;
@@ -8779,9 +8850,9 @@ function seguimientoHTML(d) {
     <div style="margin-top:10px">${pasos.map(([t, sub, ok]) => `<div class="row g10" style="align-items:center;padding:7px 0;border-bottom:1px solid var(--l1)">
       <span class="dot" style="width:9px;height:9px;background:${ok ? 'var(--verde)' : 'rgba(20,23,15,.15)'}"></span>
       <span class="grow" style="font:500 14px var(--sans);${ok ? '' : 'color:var(--t2)'}">${t}</span><span class="tiny">${esc(sub)}</span></div>`).join('')}</div>
-    ${!d.revisado_at && !(d.enviado_cliente_at || d.estado === 'enviado') ? `<button class="btn btn-verde" data-a="presuRevisado" style="margin-top:12px" ${busy ? 'disabled' : ''}>Ya lo revisé</button>
+    ${!d.revisado_at && !d.enviado_cliente_at ? `<button class="btn btn-verde" data-a="presuRevisado" style="margin-top:12px" ${busy ? 'disabled' : ''}>Ya lo revisé</button>
       <div class="tiny" style="margin-top:6px;text-align:center">${d.tl_quotation_id ? 'Repásalo en Teamleader (precios, textos, descuento) y márcalo aquí.' : 'Lo normal: subirlo a Teamleader, repasarlo allí y marcarlo aquí.'}</div>`
-    : !(d.enviado_cliente_at || d.estado === 'enviado') ? `<button class="btn btn-verde" data-a="presuEnviadoCliente" style="margin-top:12px" ${busy ? 'disabled' : ''}>Ya se lo envié al cliente</button>
+    : !d.enviado_cliente_at ? `<button class="btn btn-verde" data-a="presuEnviadoCliente" style="margin-top:12px" ${busy ? 'disabled' : ''}>Ya se lo envié al cliente</button>
       <div class="tiny" style="margin-top:6px;text-align:center">Se lo mandas desde Teamleader; aquí solo se apunta la fecha.</div>`
     : `<div class="lbl" style="margin:12px 0 6px">¿Qué dijo el cliente?</div>
       <div class="row g8" style="flex-wrap:wrap">${[['pendiente', 'Esperando'], ['aceptado', 'Aceptó'], ['rechazado', 'Rechazó'], ['caducado', 'Caducó']].map(([k, l]) => `<span class="chip ${(d.respuesta_cliente || 'pendiente') === k ? 'on' : ''}" data-a="presuRespuesta" data-r="${k}" style="cursor:pointer;${k === 'aceptado' && (d.respuesta_cliente || 'pendiente') === k ? 'background:var(--verde);border-color:var(--verde)' : ''}">${l}</span>`).join('')}</div>
@@ -9148,7 +9219,9 @@ function seguimientoPresu(p) {
   if (p.respuesta_cliente === 'aceptado') return { k: 'aceptado', color: 'var(--verde)', txt: 'Aceptado', paso: 6 };
   if (p.respuesta_cliente === 'rechazado') return { k: 'rechazado', color: 'var(--rojo)', txt: 'Rechazado', paso: 6 };
   if (p.respuesta_cliente === 'caducado') return { k: 'rechazado', color: 'var(--t3)', txt: 'Caducado', paso: 6 };
-  if (p.enviado_cliente_at || p.estado === 'enviado') return { k: 'esperando', color: 'var(--ambar)', txt: 'Enviado al cliente · esperando', paso: 5 };
+  // Solo cuenta la fecha que apunta una persona: subirlo a Teamleader no es
+  // enviarlo (la oferta se queda allí sin mandar hasta que se revisa).
+  if (p.enviado_cliente_at) return { k: 'esperando', color: 'var(--ambar)', txt: 'Enviado al cliente · esperando', paso: 5 };
   if (p.revisado_at) return { k: 'presupuestado', color: 'var(--verde-c)', txt: 'Revisado · por enviar al cliente', paso: 4 };
   if (p.tl_quotation_id) return { k: 'presupuestado', color: 'var(--rojo)', txt: 'En Teamleader · pendiente de revisar', paso: 3 };
   if (p.estado === 'revisar') return { k: 'presupuestado', color: 'var(--rojo)', txt: 'Pendiente de revisar · sin subir', paso: 2 };

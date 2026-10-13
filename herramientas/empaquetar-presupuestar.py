@@ -21,8 +21,8 @@ idx = re.sub(r"^import \{[^}]*\} from '\./[a-z]+\.js';\s*$", '', idx, flags=re.M
 cab = "// EMPAQUETADO por herramientas/empaquetar-presupuestar.py: no editar aquí,\n// editar supabase/functions/presupuestar/ y volver a empaquetar.\n"
 out = os.path.join(RAIZ, 'subir-a-supabase', 'presupuestar')
 os.makedirs(out, exist_ok=True)
-for f in ('motor.js', 'cadena.js', 'formulas.js'):
+for f in ('motor.js', 'cadena.js', 'formulas.js', 'fv.js'):
     p = os.path.join(out, f)
     if os.path.exists(p): os.remove(p)
-open(os.path.join(out, 'index.ts'), 'w', encoding='utf-8').write(cab + modulo('formulas.js') + modulo('cadena.js') + modulo('motor.js') + '\n' + idx)
+open(os.path.join(out, 'index.ts'), 'w', encoding='utf-8').write(cab + modulo('formulas.js') + modulo('cadena.js') + modulo('motor.js') + modulo('fv.js') + '\n' + idx)
 print('subir-a-supabase/presupuestar/index.ts listo')

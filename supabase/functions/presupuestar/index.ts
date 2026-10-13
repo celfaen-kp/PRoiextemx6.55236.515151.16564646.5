@@ -39,6 +39,67 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
 import { calcular, resumenDe, MOTOR_VERSION } from './motor.js';
 import { cadenaPrecios, totalCoste } from './cadena.js';
+import { calcularFV, entradaDesdeDatos, lineasPresupuesto } from './fv.js';
+
+// =============================================================================
+// Fotovoltaica v2 (el presupuestador de Ramón, 12-10-2026): el modelo vigente
+// de public.motor_modelos manda. Lo que ese modelo cubre (paneles, inversor,
+// estructura de teja o plana, cableado, protecciones, mano de obra, trámites e
+// internos) sale en UNA línea «llave en mano» con el 50 % de margen; lo que no
+// cubre lo sigue poniendo el motor por capítulos (etapa 72) con sus precios y
+// su margen: baterías y backup (04), obra civil (09), medios (10), opcionales
+// (14), estructura de chapa o pérgola (02), adecuación del cuadro, pica,
+// repetidor, Cat6, tejadillo, proyecto técnico y bonificación IBI. Con batería
+// y Fronius, el inversor (Plus) y el Smart Meter los pone también el antiguo.
+// Decisión de Enzo (13-10-2026): «mantenemos lo nuevo y lo que no haya usamos
+// lo antiguo».
+// =============================================================================
+const FV_COMPLEMENTO = /^(04|09|10|14) · /;
+const FV_SUELTAS = new Set(['FV-07-010', 'FV-07-011', 'FV-05-005', 'FV-05-006', 'FV-03-008', 'FV-13-002', 'FV-13-007']);
+// deno-lint-ignore no-explicit-any
+function presupuestarFV(datos: any, mod: any, cfg: any) {
+  const modelo = mod.datos;
+  const m = entradaDesdeDatos(datos, modelo);
+  const conBateria = String(datos.baterias || '') === 'si' || Number(datos.baterias_kwh) > 0;
+  const fronius = m.entrada.sis === 'Fronius';
+  const estructuraNueva = m.entrada.cubierta === 'Teja' || m.entrada.cubierta === 'Plana';
+  const inversorFuera = conBateria && fronius;
+  const r = calcularFV(m.entrada, modelo, { chapaAMedida: false, inversorFuera });
+  const avisosEntrada = m.avisos.slice();
+  if (!estructuraNueva) avisosEntrada.push('Cubierta «' + m.cubierta_app + '»: el modelo v2 no la cubre; la estructura sale del motor por capítulos con sus precios (pendientes de confirmar). Revisar.');
+  if (inversorFuera) avisosEntrada.push('Con batería, el inversor Fronius Plus (o ninguno con Tesla), el Smart Meter y la batería salen del motor por capítulos con su margen; el modelo v2 aún no lleva baterías.');
+  if (conBateria && m.entrada.sis === 'Deye') avisosEntrada.push('Batería con Deye: no hay baterías Deye en la tarifa. Añadirla a mano.');
+  if (conBateria && m.entrada.sis === 'Enphase') avisosEntrada.push('Batería con Enphase: la batería sale del motor por capítulos con su margen; el modelo v2 aún no lleva baterías.');
+  const lineas = lineasPresupuesto(r, modelo, { modelo_version: mod.version, avisos: avisosEntrada });
+  // deno-lint-ignore no-explicit-any
+  const incidencias: any[] = [];
+  r.avisos.forEach((a: string) => incidencias.push({ nivel: /A MEDIDA/.test(a) ? 'error' : 'aviso', codigo: 'fv2', mensaje: a, campo: null }));
+  avisosEntrada.forEach((a: string) => incidencias.push({ nivel: 'aviso', codigo: 'fv2_entrada', mensaje: a, campo: null }));
+
+  // deno-lint-ignore no-explicit-any
+  const reglas = (cfg.reglas || []).filter((rg: any) => {
+    const sec = String(rg.seccion || ''), ref = String(rg.producto_ref || '');
+    if (rg.tipo === 'aviso') return true;
+    if (FV_COMPLEMENTO.test(sec) && !(sec.startsWith('04 · ') && m.entrada.sis === 'Deye')) return true;
+    if (FV_SUELTAS.has(ref)) return true;
+    if (!estructuraNueva && sec.startsWith('02 · ')) return true;
+    if (inversorFuera && sec.startsWith('03 · ') && ref.startsWith('FV-FRONIUS-')) return true;
+    if (inversorFuera && sec.startsWith('05 · ') && ref.startsWith('FV-FRONIUS-SMART-METER')) return true;
+    return false;
+  });
+  const viejo = calcular('solar', datos, Object.assign({}, cfg, { reglas }));
+  // deno-lint-ignore no-explicit-any
+  const deViejo = viejo.incidencias.filter((i: any) => i.codigo !== 'sin_lineas' && !/^Faltan los metros/.test(String(i.mensaje || '')));
+  return {
+    lineas: lineas.concat(viejo.lineas),
+    incidencias: incidencias.concat(deViejo),
+    variables: Object.assign({}, viejo.variables, { fv2_n_pan: r.n_pan, fv2_kwp: r.kwp, fv2_prod: r.prod, fv2_mod_inv: r.mod_inv, fv2_jornadas: r.jornadas }),
+    recargo_sobre_coste: viejo.recargo_sobre_coste,
+    motor_version: MOTOR_VERSION + ' · FV v2 ' + String(mod.version),
+    modelo_id: mod.id,
+    resumen: null,
+  };
+}
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -180,7 +241,7 @@ Deno.serve(async (req) => {
   }
 
   // --- calcular -----------------------------------------------------------------
-  const res = calcular(categoria, datos, {
+  const cfg = {
     variables: variables.data || [],
     lookup: lookup.data || [],
     reglas: reglasR.data || [],
@@ -188,7 +249,19 @@ Deno.serve(async (req) => {
     manoObra: manoObra.data || [],
     productos,
     dtoLinea: (dtos.data || []).filter((d) => d.ambito === 'linea'),
-  });
+  };
+  // Fotovoltaica: si hay un modelo v2 vigente (sql/etapa74), manda él. Sin
+  // modelo (todavía no se ha pegado el SQL), todo sigue como antes.
+  // deno-lint-ignore no-explicit-any
+  let modeloFV: any = null;
+  if (categoria === 'solar') {
+    const { data: mod } = await sb.from('motor_modelos').select('id, version, datos')
+      .eq('categoria', 'solar').is('vigente_hasta', null)
+      .order('vigente_desde', { ascending: false }).limit(1).maybeSingle();
+    if (mod && mod.datos) modeloFV = mod;
+  }
+  const res = modeloFV ? presupuestarFV(datos, modeloFV, cfg) : calcular(categoria, datos, cfg);
+  const motorVersion = modeloFV ? res.motor_version : MOTOR_VERSION;
 
   const dtoGlobal = b.dto_global_pct != null
     ? Number(b.dto_global_pct)
@@ -231,7 +304,7 @@ Deno.serve(async (req) => {
     ok: true,
     categoria,
     visita_id: visitaId,
-    motor_version: MOTOR_VERSION,
+    motor_version: motorVersion,
     conjunto_version: conjunto.version,
     variables: res.variables,
     incidencias: res.incidencias,
@@ -267,7 +340,9 @@ Deno.serve(async (req) => {
     categoria,
     conjunto_reglas_id: conjunto.id,
     tarifa_id: tarifaId,
-    motor_version: MOTOR_VERSION,
+    motor_version: motorVersion,
+    // Con qué modelo FV v2 se calculó (columna de la etapa 74; solo cuando lo hay).
+    ...(modeloFV ? { modelo_id: modeloFV.id } : {}),
     total_bruto: totales.total_bruto,
     total_dto_linea: totales.total_dto_linea,
     dto_global_pct: dtoGlobal,

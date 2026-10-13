@@ -26,6 +26,79 @@ analizar nada.
   céntimos enteros; un descuento global se aplica línea a línea redondeando
   cada línea (así cuadra el 2026/596: 17.599,06 y no 17.599,05).
 
+### 0d · Fotovoltaica v2: el presupuestador de Ramón (13-10-2026) · `sql/etapa74`
+
+Manda sobre 0b y 0c en fotovoltaica. Ramón entregó el 12-10-2026 la carpeta
+`Para_Fabrizio` (copiada entera en el Drive, `07-Tarifas para app/fv-v2-ramon-2026-10-12/`):
+`calculo_fv.py` (el cálculo de referencia), `modelo_fv.json` (precios y
+parámetros), `casos_prueba.json` (23 casos del Excel), `teamleader_oferta.py`
+y `generar_pedido.py`. Decisión de Enzo: **«mantenemos lo nuevo y lo que no
+haya usamos lo antiguo».**
+
+- **El motor:** `supabase/functions/presupuestar/fv.js`, traducción fiel del
+  Python con el redondeo de Excel (mitades hacia arriba, sobre el valor escrito
+  con 10 decimales). `pruebas/motor-fv.js` pasa los 23 casos al céntimo
+  (`casos_prueba_fv.json` y `modelo_fv.json` en la carpeta de tarifas del
+  Drive). Si Ramón manda un JSON nuevo: copiarlo ahí, correr la prueba,
+  `python3 herramientas/cargar-modelo-fv.py` y pegar `subir-a-supabase/
+  etapa74b_modelo_fv_datos.sql`.
+- **Los datos en Supabase:** `public.motor_modelos` (categoria, version,
+  vigente_desde/hasta, datos jsonb). El vigente manda; sin fila, fotovoltaica
+  sigue con las reglas de la etapa 72. `presupuestos.modelo_id` guarda con qué
+  versión se calculó.
+- **Qué calcula el v2:** dimensionado (paneles a mano o módulos que caben; si
+  no, kWp pedidos; si no, consumo anual; si no, factura mensual exacta o su
+  tramo), panel Trina 510 Wp, inversor Fronius SC / Deye / micros Enphase,
+  estructura de teja (pinchos, taco químico, malla) o plana (lastres Sun
+  Ballast, con elevador mínimo de 4 h), cableado, cuadros Sölver, mano de obra
+  a 358,56 €/jornada, trámites de Xavi a 40 €/h con sus tasas, y los internos
+  (visita técnica, revisión, furgoneta a 0,23 €/km, recogida, garantía,
+  llamada). 59 partidas. **Precio = coste ÷ 0,5 redondeado hacia arriba a
+  10 €**, elevador aparte a 65 €/h, descuento solo si lo pone la persona (al
+  pie, línea a línea, como siempre).
+- **Cómo sale en la app:** UNA línea «Instalación fotovoltaica llave en mano
+  (N paneles, X kWp, mono/tri)» con coste = coste total y venta = precio
+  objetivo; el desglose de las 59 partidas, el dimensionado, los avisos y el
+  pedido por proveedor van en `origen_inputs` (`fv2: true`), que la vista
+  interna enseña desplegado solo a Administración. El elevador es otra línea
+  (h × 65 €, coste 0). El cliente ve la línea, lo que incluye por bloques sin
+  precios, la nota y las condiciones del presupuesto de Ramón (PDF y
+  Teamleader, `extended_description`). El PDF no imprime «1 ud × precio» en
+  esa línea.
+- **Lo antiguo que sigue (híbrido, en `index.ts` → `presupuestarFV`):** con el
+  modelo v2 vigente, el motor por capítulos corre solo con las reglas de los
+  capítulos 04 (almacenamiento y backup), 09 (obra civil), 10 (medios), 14
+  (opcionales), los avisos, y las sueltas FV-07-010, FV-07-011, FV-05-005,
+  FV-05-006, FV-03-008, FV-13-002 y FV-13-007. Con cubierta de chapa o pérgola,
+  además el capítulo 02 (ESTR_CHAPA / FV-02-015, pendientes de precio) y el v2
+  da precio sin estructura (antes era A MEDIDA). Con batería y Fronius, el
+  inversor Plus y el Smart Meter salen del antiguo (y con Tesla, ninguno); el
+  v2 no los cuenta. Esas líneas llevan su margen por familia (1,4375 / 1,20 /
+  1,10 × 1,30), no el 50 %: se avisa en incidencias. Deye con batería: aviso,
+  a mano.
+- **Campos nuevos** (ficha de la visita y suelto, mismos nombres):
+  `factura_mensual_eur`, `factura_rango` (menos_100 … no_lo_se),
+  `orientacion_panel` (vertical/horizontal), `km_obra`, `horas_elevador`,
+  `certificado_energetico`, `cee_desplaz_h`, e `inversor_marca` admite `deye`.
+  Lo que falta toma el valor por defecto del modelo (20 m, 20 m, 20 km, 2
+  filas) con aviso.
+- **Diferencias de precio** detectadas entre el modelo y las tarifas del Drive
+  (`fotovoltaica-2026.csv` del 23-09): los Fronius van ×1,0204 y los
+  accesorios Enphase ×1,02 o ×1,053 (la hoja de septiembre llevaba descuentos
+  promocionales); el panel pasa de JA 540 a 80 € a Trina 510 a 72 €. Mandan
+  los de Ramón (12-10). Pendientes suyos: diferencial tipo F de Enphase,
+  horas mínimas de elevador en plana (4), precios reales de Deye y portes de
+  Rebacas a Mallorca, precio del panel. Baterías: siguiente fase.
+- **Pedido de material y oferta de Teamleader de una línea:** el pedido ya se
+  calcula y se guarda en `origen_inputs.pedido`; falta la pantalla y el Excel
+  al aceptar. La oferta sale con la línea llave en mano más el elevador, que es
+  lo que pide la sección 12 del estudio.
+- **«Enviado al cliente» (etapa 75):** subir a Teamleader creaba la oferta y
+  dejaba el presupuesto en `estado = 'enviado'`, y la app lo enseñaba como
+  enviado al cliente sin serlo. La función ya no lo pone, la app solo mira
+  `enviado_cliente_at`, y `sql/etapa75` devuelve los ya guardados a
+  `aprobado` (revisados) o `generado`.
+
 ### 0b · Fotovoltaica por capítulos (07-10-2026) · `sql/etapa72` (generada)
 
 Sigue el documento «Sysefen · Desglose de costes y estructura de presupuesto
