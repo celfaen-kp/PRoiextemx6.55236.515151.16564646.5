@@ -63,11 +63,15 @@ function presupuestarFV(datos: any, mod: any, cfg: any) {
   const conBateria = String(datos.baterias || '') === 'si' || Number(datos.baterias_kwh) > 0;
   const fronius = m.entrada.sis === 'Fronius';
   const estructuraNueva = m.entrada.cubierta === 'Teja' || m.entrada.cubierta === 'Plana';
-  const inversorFuera = conBateria && fronius;
+  // Con batería, o «dejar preparado» para ella, Fronius va en Plus (híbrido),
+  // que el modelo v2 no trae: lo elige el motor por capítulos (Ramón, 13-10-2026).
+  const preparado = String(datos.baterias || '') === 'dejar_preparado';
+  const inversorFuera = (conBateria || preparado) && fronius;
   const r = calcularFV(m.entrada, modelo, { chapaAMedida: false, inversorFuera });
   const avisosEntrada = m.avisos.slice();
   if (!estructuraNueva) avisosEntrada.push('Cubierta «' + m.cubierta_app + '»: el modelo v2 no la cubre; la estructura sale del motor por capítulos con sus precios (pendientes de confirmar). Revisar.');
-  if (inversorFuera) avisosEntrada.push('Con batería, el inversor Fronius Plus (o ninguno con Tesla), el Smart Meter y la batería salen del motor por capítulos con su margen; el modelo v2 aún no lleva baterías.');
+  if (inversorFuera && conBateria) avisosEntrada.push('Con batería, el inversor Fronius Plus (o ninguno con Tesla), el Smart Meter y la batería salen del motor por capítulos con su margen; el modelo v2 aún no lleva baterías.');
+  if (inversorFuera && !conBateria) avisosEntrada.push('Preparado para baterías: el inversor Fronius Plus (híbrido) y el Smart Meter salen del motor por capítulos con su margen.');
   if (conBateria && m.entrada.sis === 'Deye') avisosEntrada.push('Batería con Deye: no hay baterías Deye en la tarifa. Añadirla a mano.');
   if (conBateria && m.entrada.sis === 'Enphase') avisosEntrada.push('Batería con Enphase: la batería sale del motor por capítulos con su margen; el modelo v2 aún no lleva baterías.');
   const lineas = lineasPresupuesto(r, modelo, { modelo_version: mod.version, avisos: avisosEntrada });
@@ -80,6 +84,7 @@ function presupuestarFV(datos: any, mod: any, cfg: any) {
   const reglas = (cfg.reglas || []).filter((rg: any) => {
     const sec = String(rg.seccion || ''), ref = String(rg.producto_ref || '');
     if (rg.tipo === 'aviso') return true;
+    if (ref === 'FV-10-003') return false;   // el elevador ya va en el v2 (65 €/h): nada de duplicarlo
     if (FV_COMPLEMENTO.test(sec) && !(sec.startsWith('04 · ') && m.entrada.sis === 'Deye')) return true;
     if (FV_SUELTAS.has(ref)) return true;
     if (!estructuraNueva && sec.startsWith('02 · ')) return true;

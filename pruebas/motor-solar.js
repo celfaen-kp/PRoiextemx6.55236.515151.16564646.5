@@ -258,10 +258,22 @@ r = calcular('solar', con({ medio_elevacion: 'andamio', via_publica: true }), co
 igual('andamio: días de obra + 1', cant(r, 'FV-10-001'), 3);
 igual('vía pública', cant(r, 'FV-10-005'), 1);
 r = calcular('solar', con({ medio_elevacion: 'escalera', plantas: 2 }), config);
-igual('dos plantas con escalera: elevador los días de obra', cant(r, 'FV-10-003'), 2.5);
-igual('y medio día más', r.variables.dias_obra, 2.5);
+comprueba('dos plantas con escalera: el elevador antiguo ya no sale (va en el presupuestador v2 a 65 €/h, Ramón 13-10-2026)', !linea(r, 'FV-10-003'));
+igual('pero sí medio día más', r.variables.dias_obra, 2.5);
 r = calcular('solar', con({ medio_elevacion: 'grua' }), config);
-igual('grúa los días de obra', cant(r, 'FV-10-002'), 2);
+igual('camión grúa los días de obra', cant(r, 'FV-10-002'), 2);
+comprueba('y se llama camión grúa', /Camión grúa/.test(linea(r, 'FV-10-002').descripcion));
+r = calcular('solar', con({ medio_elevacion: 'plataforma' }), config);
+comprueba('la plataforma elevadora no se usa: no sale nada', !linea(r, 'FV-10-002') && !linea(r, 'FV-10-003'));
+
+titulo('backup automático o manual (Ramón, 13-10-2026)');
+r = calcular('solar', con({ baterias: 'si', baterias_kwh: 10, backup: true, backup_modo: 'automatico' }), config);
+comprueba('automático = full backup: Backup Switch, toda la vivienda, sin cuadro de cargas críticas', tiene(r, 'Backup Switch') && !tiene(r, 'Pv Point') && !!linea(r, 'FV-14-004') && !linea(r, 'FV-04-006'));
+r = calcular('solar', con({ baterias: 'si', baterias_kwh: 10, backup: true, backup_modo: 'manual' }), config);
+comprueba('manual: PV Point Comfort y cuadro de cargas críticas, sin Backup Switch', tiene(r, 'Pv Point Comfort') && !tiene(r, 'Backup Switch') && cant(r, 'FV-04-006') === 1 && !linea(r, 'FV-14-004'));
+r = calcular('solar', con({ baterias: 'si', baterias_kwh: 13.5, bateria_marca: 'tesla', backup: true, backup_modo: 'manual' }), config);
+comprueba('Tesla con manual: Gateway 2 igualmente y aviso', tiene(r, 'Backup Gateway 2') && aviso(r, 'siempre automático'));
+comprueba('el repetidor WiFi tiene precio (60 €, Ramón)', P('Repetidor WiFi o kit PLC') === 60);
 
 titulo('cuadro antiguo, sin tierra, WiFi mala, inversor fuera, instalación vieja');
 r = calcular('solar', con({ estado_cuadro: 'antiguo', toma_tierra: 'no_existe', wifi_inversor: 'mala', inversor_exterior: true, instalacion_existente: true, perforaciones: 3 }), config);

@@ -301,7 +301,8 @@ const SOLAR = {
         { key: 'altura_cubierta_m', etiqueta: 'Altura desde la calle', tipo: 'numero', unidad: 'm',
           motor: true },
         { key: 'medio_elevacion', etiqueta: 'Cómo se sube el material', tipo: 'opcion', motor: true,
-          opciones: ['ninguno', 'escalera', 'andamio', 'plataforma', 'grua'] },
+          opciones: ['ninguno', 'escalera', 'andamio', 'grua'],
+          ayuda: 'El elevador propio va aparte por horas. La plataforma elevadora no se usa: si hace falta medio, camión grúa' },
         { key: 'horas_elevador', etiqueta: 'Horas de elevador propio', tipo: 'numero', unidad: 'h', motor: true,
           ayuda: 'Se cobra aparte a 65 €/h. En cubierta plana son al menos 4' },
         { key: 'km_obra', etiqueta: 'Km de la nave a la obra', tipo: 'numero', unidad: 'km', motor: true,
@@ -334,7 +335,8 @@ const SOLAR = {
         { key: 'via_publica', etiqueta: 'Hay que ocupar la calle', tipo: 'bool', motor: true,
           ayuda: 'Grúa o andamio en la vía pública: tasa y vallas' },
         { key: 'baterias', etiqueta: 'Baterías', tipo: 'opcion', motor: true,
-          opciones: ['no', 'si', 'dejar_preparado'] },
+          opciones: ['no', 'si', 'dejar_preparado'],
+          ayuda: 'Fronius: sin batería, GEN24 SC; con batería o «dejar preparado», GEN24 Plus (híbrido). Pasar un SC a Plus después cuesta unos 500 € más' },
         { key: 'baterias_kwh', etiqueta: 'Capacidad', tipo: 'numero', unidad: 'kWh', motor: true },
         // sql/etapa47: con esto el motor elige inversor, batería y backup.
         { key: 'inversor_marca', etiqueta: 'Inversor', tipo: 'opcion', motor: true,
@@ -344,8 +346,12 @@ const SOLAR = {
           ayuda: 'Fronius: BYD, Fronius o Tesla · Enphase: Enphase o Tesla' },
         { key: 'backup', etiqueta: 'Con backup', tipo: 'bool', motor: true,
           ayuda: 'Solo si lleva batería: la casa sigue con luz si se va la red' },
-        { key: 'backup_tipo', etiqueta: 'Backup de', tipo: 'opcion', motor: true,
-          opciones: ['parcial', 'total'], ayuda: 'Parcial: cuadro de cargas críticas. Total: toda la vivienda' },
+        // Ramón (13-10-2026): si quiere backup, automático o manual. Automático
+        // = full backup, la casa conmuta sola (Backup Switch / Gateway) y es de
+        // toda la vivienda. Manual = conmutador manual (PV Point) con cuadro de
+        // cargas críticas.
+        { key: 'backup_modo', etiqueta: 'Backup', tipo: 'opcion', motor: true,
+          opciones: ['automatico', 'manual'], ayuda: 'Automático: full backup, conmuta solo (Backup Switch / Gateway). Manual: conmutador manual (PV Point), cargas críticas' },
       ],
     },
     {
@@ -577,7 +583,8 @@ export const ETIQUETAS = {
   facil: 'Fácil', medio: 'Medio', dificil: 'Difícil',
   monofasico: 'Monofásico', trifasico: 'Trifásico',
   fronius: 'Fronius', enphase: 'Enphase', byd: 'BYD', tesla: 'Tesla', midea: 'Midea',
-  escalera: 'Escalera', andamio: 'Andamio', plataforma: 'Plataforma', grua: 'Grúa',
+  escalera: 'Escalera', andamio: 'Andamio', plataforma: 'Plataforma', grua: 'Camión grúa',
+  automatico: 'Automático (full backup)', manual: 'Manual (conmutador)',
   fachada: 'Fachada', balcon: 'Balcón', terraza: 'Terraza', cubierta: 'Cubierta', patio: 'Patio',
   jardin: 'Jardín', galeria: 'Galería', interior: 'Interior',
   norte: 'Norte', sur: 'Sur', este: 'Este', oeste: 'Oeste',

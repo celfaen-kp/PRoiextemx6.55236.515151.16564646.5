@@ -415,7 +415,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '22.6'; // versión visible de la app (única fuente)
+const APP_VERSION = '22.7'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -7621,7 +7621,10 @@ const presuNuevoVacio = () => ({
   // protecciones, medios, mano de obra y trámites.
   cubierta: 'teja_arabe', anclaje: 'lastre', por_fila: '', dist_dc: '', dist_ac: '', dist_meter: '',
   recorrido: 'fachada', zanja: '', plantas: 1, medio: 'escalera', wifi: 'buena', cuadro_estado: 'bien',
-  tierra: 'existe', excedentes: 'con_excedentes', subvencion: false, cargador: false, backup_tipo: 'parcial',
+  tierra: 'existe', excedentes: 'con_excedentes', subvencion: false, cargador: false,
+  // backup automático (full backup) o manual (conmutador); y «preparado para
+  // baterías» = inversor Plus aunque hoy no lleve (Ramón, 13-10-2026).
+  backup_modo: 'automatico', bateria_futuro: false,
 });
 
 // Con qué baterías va cada inversor (sql/etapa47). La primera es la que pone
@@ -7664,11 +7667,13 @@ function datosDelSuelto(f) {
       certificado_energetico: !!f.cee,
       cee_desplaz_h: num(f.cee_h),
       horas_elevador: num(f.horas_elev),
-      baterias: conBateria ? 'si' : 'no',
+      baterias: conBateria ? 'si' : (f.bateria_futuro ? 'dejar_preparado' : 'no'),
       baterias_kwh: num(f.bateria),
       bateria_marca: conBateria ? (f.bateria_marca || '') : '',
       backup: conBateria && !!f.backup,
-      backup_tipo: f.backup_tipo || 'parcial',
+      backup_modo: f.backup_modo === 'manual' ? 'manual' : 'automatico',
+      // lo antiguo, por si alguna regla aún lo mira: automático = toda la vivienda
+      backup_tipo: f.backup_modo === 'manual' ? 'parcial' : 'total',
       tipo_cubierta: f.cubierta || 'teja_arabe',
       plana_anclaje: f.anclaje || 'lastre',
       filas_paneles: filas,
@@ -7746,7 +7751,7 @@ A.presuSueltoChip = (k, v) => {
   if (!V.suelto) return;
   // Interruptores: un toque enciende, otro apaga (antes de la asignación
   // genérica, que si no los deja siempre apagados).
-  if (['subvencion', 'cargador', 'cee'].includes(k)) { V.suelto[k] = !V.suelto[k]; render(); return; }
+  if (['subvencion', 'cargador', 'cee', 'bateria_futuro'].includes(k)) { V.suelto[k] = !V.suelto[k]; render(); return; }
   // Los chips de sí/no mandan '' para apagarse y '1' para encenderse.
   V.suelto[k] = v === '' ? false : (/^\d+$/.test(String(v)) && k !== 'cat' ? Number(v) : v);
   if (['sustituye', 'apoyo', 'limpieza', 'backup', 'recuperar'].includes(k)) V.suelto[k] = v !== '';
@@ -8374,23 +8379,27 @@ function camposSolarHTML(f) {
       <div class="tiny" style="margin-top:8px">${f.inversor === 'enphase'
         ? 'Un microinversor IQ8P por panel, con su Q Cable, tapones, conectores, IQ Gateway, toroidales y Q-Relay.'
         : f.inversor === 'deye' ? 'El híbrido Deye que toca por potencia (Rebacas), con su medidor antivertido.'
-        : 'El GEN24 SC que toca por potencia, con su Smart Meter. Con batería, el Plus.'}</div>
+        : 'El GEN24 SC que toca por potencia, con su Smart Meter. Con batería, o preparado para ella, el Plus (híbrido): pasar un SC a Plus después cuesta unos 500 € más.'}</div>
 
       <div class="lbl" style="margin:16px 0 8px">Suministro</div>
       <div class="wrap">${chip('fases', 'monofasico', 'Monofásico')}${chip('fases', 'trifasico', 'Trifásico')}</div>
 
       <div class="lbl" style="margin:16px 0 8px">Baterías</div>
       <input class="inp" data-f="presuCampo" data-k="bateria" value="${esc(String(f.bateria))}" inputmode="decimal" placeholder="kWh (vacío = sin baterías)">
+      ${!(num(f.bateria) > 0) && f.inversor === 'fronius' ? `<div class="wrap" style="margin-top:8px">${chip('bateria_futuro', '1', 'Dejar preparado para baterías (Plus)', f.bateria_futuro ? '1' : '')}</div>
+      <div class="tiny" style="margin-top:6px">Sin batería hoy pero la querrá: va el GEN24 Plus en vez del SC.</div>` : ''}
       ${marcas.length ? `<div class="lbl" style="margin:16px 0 8px">Si lleva batería: de qué marca</div>
       <div class="wrap">${marcas.map(([m, t]) => chip('bateria_marca', m, t, f.bateria_marca || marcas[0][0])).join('')}</div>
       <div class="tiny" style="margin-top:8px">${f.inversor === 'enphase' ? 'Enphase va con baterías Enphase o Tesla.' : 'Fronius va con baterías BYD, Fronius Reserva o Tesla.'}</div>`
       : `<div class="tiny" style="margin-top:8px;color:var(--ambar-o)">Las baterías de Deye no están en la tarifa: si lleva, se añade a mano.</div>`}
       <div class="lbl" style="margin:16px 0 8px">Si lleva batería: ¿con backup?</div>
       <div class="wrap">${chip('backup', '', 'Sin backup', f.backup ? '1' : '')}${chip('backup', '1', 'Con backup', f.backup ? '1' : '')}</div>
-      <div class="tiny" style="margin-top:8px">Con backup la casa sigue con luz si se va la red. ${
-        (f.bateria_marca || marcas[0][0]) === 'tesla' ? 'Con Tesla: Backup Gateway 2.'
-        : f.inversor === 'enphase' ? 'Con Enphase: IQ System Controller.' : 'Con Fronius: Backup Switch.'}</div>
-      ${f.backup && num(f.bateria) > 0 ? `<div class="wrap" style="margin-top:8px">${chip('backup_tipo', 'parcial', 'Cargas críticas')}${chip('backup_tipo', 'total', 'Toda la vivienda')}</div>` : ''}
+      <div class="tiny" style="margin-top:8px">Con backup la casa sigue con luz si se va la red.</div>
+      ${f.backup && num(f.bateria) > 0 ? `<div class="lbl" style="margin:12px 0 8px">¿Automático o manual?</div>
+      <div class="wrap">${chip('backup_modo', 'automatico', 'Automático (full backup)')}${chip('backup_modo', 'manual', 'Manual (conmutador)')}</div>
+      <div class="tiny" style="margin-top:8px">${(f.bateria_marca || (marcas[0] || [''])[0]) === 'tesla' ? 'Con Tesla es siempre automático: Backup Gateway 2.'
+        : f.inversor === 'enphase' ? 'Con Enphase es siempre automático: IQ System Controller.'
+        : f.backup_modo === 'manual' ? 'Con Fronius: PV Point, se conmuta a mano y alimenta las cargas críticas.' : 'Con Fronius: Backup Switch, la casa entera conmuta sola.'}</div>` : ''}
 
       <div class="h2" style="margin-top:26px">Montaje</div>
       <div class="tiny" style="margin-top:4px">Con esto salen la estructura, los cables, las protecciones, los medios y los días de trabajo.</div>
@@ -8420,7 +8429,7 @@ function camposSolarHTML(f) {
       <div class="wrap">${chip('recorrido', 'fachada', 'Fachada')}${chip('recorrido', 'patinillo', 'Patinillo')}${chip('recorrido', 'interior', 'Interior')}${chip('recorrido', 'tubo_enterrado', 'Enterrado')}</div>
       ${f.recorrido === 'tubo_enterrado' ? `<input class="inp" data-f="presuCampo" data-k="zanja" value="${esc(String(f.zanja ?? ''))}" inputmode="decimal" placeholder="Metros de zanja" style="margin-top:8px">` : ''}
       <div class="lbl" style="margin:14px 0 8px">Cómo se sube el material</div>
-      <div class="wrap">${chip('medio', 'escalera', 'Escalera')}${chip('medio', 'andamio', 'Andamio')}${chip('medio', 'plataforma', 'Plataforma')}${chip('medio', 'grua', 'Grúa')}</div>
+      <div class="wrap">${chip('medio', 'escalera', 'Escalera')}${chip('medio', 'andamio', 'Andamio')}${chip('medio', 'grua', 'Camión grúa')}</div>
       <div class="row g8" style="margin-top:10px;align-items:center">
         <div class="grow"><div class="lbl">Horas de elevador propio</div>
           <input class="inp" data-f="presuCampo" data-k="horas_elev" value="${esc(String(f.horas_elev ?? ''))}" inputmode="decimal" placeholder="0" style="margin-top:8px"></div>

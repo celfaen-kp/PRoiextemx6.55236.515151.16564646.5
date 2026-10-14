@@ -134,8 +134,8 @@ PARTIDAS = [
     ('FV-09-004', 'Reparación / impermeabilización de cubierta', 'partida', {}, 'm² en visita: sale a 0 y con aviso'),
     ('FV-09-005', 'Desmontaje de instalación existente', 'partida', {}, ''),
     ('FV-10-001', 'Andamio (alquiler, montaje y desmontaje)', 'día', {}, ''),
-    ('FV-10-002', 'Plataforma elevadora / camión grúa', 'día', {}, ''),
-    ('FV-10-003', 'Elevador / montacargas de paneles', 'día', {}, ''),
+    ('FV-10-002', 'Camión grúa (alquiler por día)', 'día', {}, 'La plataforma elevadora no se usa (Ramón, 13-10-2026): si hace falta medio, es camión grúa'),
+    ('FV-10-003', 'Elevador / montacargas de paneles', 'día', {}, 'Sin regla: el elevador propio ya va en el presupuestador v2 a 65 €/h (Ramón, 13-10-2026)'),
     ('FV-10-004', 'Línea de vida / anclajes provisionales', 'ud', {}, ''),
     ('FV-10-005', 'Ocupación de vía pública (tasa y vallas)', 'ud', {}, ''),
     ('FV-11-001', 'Jornada de pareja de instaladores', 'día', {}, 'Coste declarado 2026: 330 €/día (confirmar vigencia)'),
@@ -291,8 +291,14 @@ VARIABLES = [
      13, 'Los kWh pedidos; si no, consumo nocturno diario entre la profundidad de descarga (desglose FV §4); si tampoco, el de por defecto.', None),
     ('marca_bateria', 'Batería de', '', "si(bateria_marca != '', bateria_marca, si(marca_inversor = 'enphase', 'enphase', 'byd'))", 14, '', None),
     ('con_backup', 'Backup', '', 'si(backup y con_bateria = 1, 1, 0)', 15, 'Solo cuenta si lleva batería.', None),
-    ('backup_parcial', 'Backup parcial', '', "si(con_backup = 1 y backup_tipo != 'total', 1, 0)", 16, 'Cuadro de cargas críticas.', None),
-    ('backup_total', 'Backup total', '', "si(con_backup = 1 y backup_tipo = 'total', 1, 0)", 17, 'Toda la vivienda.', None),
+    # Ramón (13-10-2026): se pregunta si quiere backup y, si sí, automático o
+    # manual. Automático = full backup (la casa conmuta sola: Backup Switch,
+    # Backup Gateway 2, IQ System Controller) y es de toda la vivienda. Manual =
+    # conmutador manual (Fronius PV Point) con cuadro de cargas críticas.
+    # backup_tipo ('parcial'/'total') es lo antiguo: se respeta en fichas viejas.
+    ('backup_manual', 'Backup manual', '', "si(con_backup = 1 y backup_modo = 'manual', 1, 0)", 16, 'Conmutador manual (PV Point con Fronius).', None),
+    ('backup_total', 'Backup total', '', "si(con_backup = 1 y (backup_modo = 'automatico' o backup_tipo = 'total'), 1, 0)", 17, 'Full backup automático: toda la vivienda.', None),
+    ('backup_parcial', 'Backup parcial', '', 'si(con_backup = 1 y backup_total = 0, 1, 0)', 18, 'Cuadro de cargas críticas.', None),
     ('bateria_dc', 'Batería en continua', '', "si((con_bateria = 1 y marca_bateria != 'tesla') o baterias = 'dejar_preparado', 1, 0)", 18, '', None),
     ('kw_inversor', 'Inversor mínimo', 'kW', "redondea(kwp / lookup('ratio_dc_ac', 'defecto'), 2)", 19, '', None),
     # Tesla no vende inversor: el Powerwall 3 lo lleva dentro. Con batería Tesla
@@ -477,8 +483,12 @@ regla(ref('FRONIUS Batería Reserva BMS y Base'), {'con_bateria': 1, 'marca_bate
 regla('FV-04-004', {'con_bateria': 1}, '1', '04', sub=6, notas='Soporte, bancada o anclaje de la batería.')
 # backup
 regla(ref('TESLA Backup Gateway 2'), {'con_bateria': 1, 'con_backup': 1, 'marca_bateria': 'tesla'}, cap='04', sub=5, notas='Backup con Powerwall: Backup Gateway 2.')
-regla(ref('FRONIUS Backup Switch 1PN/3PN-63A'), {'con_bateria': 1, 'con_backup': 1, 'marca_inversor': 'fronius', 'marca_bateria': ['byd', 'fronius']}, cap='04', sub=5,
-      notas='Backup con Fronius: Backup Switch (mono y trifásico).')
+regla(ref('FRONIUS Backup Switch 1PN/3PN-63A'), {'con_bateria': 1, 'con_backup': 1, 'marca_inversor': 'fronius', 'marca_bateria': ['byd', 'fronius'], 'backup_manual': 0}, cap='04', sub=5,
+      notas='Backup automático (full backup) con Fronius: Backup Switch (mono y trifásico).')
+regla(ref('FRONIUS Pv Point Comfort'), {'con_bateria': 1, 'con_backup': 1, 'marca_inversor': 'fronius', 'marca_bateria': ['byd', 'fronius'], 'backup_manual': 1}, cap='04', sub=5,
+      notas='Backup manual con Fronius: PV Point Comfort (conmutador manual, sin Backup Switch). Ramón, 13-10-2026.')
+aviso({'con_bateria': 1, 'con_backup': 1, 'backup_manual': 1, 'marca_bateria': ['tesla', 'enphase']},
+      'El backup de Tesla (Backup Gateway 2) y de Enphase (IQ System Controller) es siempre automático: no hay versión manual.')
 regla(ref('Enphase IQ System Controller'), {'con_bateria': 1, 'con_backup': 1, 'marca_inversor': 'enphase', 'marca_bateria': 'enphase'}, cap='04', sub=5,
       notas='Backup con Enphase: IQ System Controller.')
 regla('FV-04-006', {'backup_parcial': 1}, '1', '04', sub=4, notas='Backup parcial: cuadro de cargas críticas.')
@@ -562,8 +572,9 @@ aviso({'fibrocemento': True}, 'Cubierta de fibrocemento: excluida o subcontratad
 
 # --- 10 · Medios auxiliares y seguridad
 regla('FV-10-001', {'medio_elevacion': 'andamio'}, 'dias_obra + 1', '10', sub=9, notas='Días de obra más uno de montaje.')
-regla('FV-10-002', {'medio_elevacion': ['plataforma', 'grua']}, 'dias_obra', '10', sub=9, notas='Los días de obra.')
-regla('FV-10-003', {'medio_elevacion': ['ninguno', 'escalera', '']}, 'si(plantas >= 2, dias_obra, 0)', '10', sub=8, notas='Más de una planta sin otro medio: elevador de paneles.')
+regla('FV-10-002', {'medio_elevacion': 'grua'}, 'dias_obra', '10', sub=9, notas='Camión grúa los días de obra. La plataforma elevadora no se usa (Ramón, 13-10-2026).')
+regla('FV-10-003', {'medio_elevacion': ['ninguno', 'escalera', '']}, 'si(plantas >= 2, dias_obra, 0)', '10', sub=8, activa=False,
+      notas='Inactiva desde el 13-10-2026: el elevador propio ya va en el presupuestador v2 a 65 €/h (Ramón). Antes: más de una planta sin otro medio, elevador de paneles.')
 fuera('FV-10-004', {'tipo_estructura': ['teja', 'chapa']}, HAY, '10', sub=7, notas='Cubierta inclinada: línea de vida.')
 regla('FV-10-005', {'via_publica': True}, '1', '10', sub=6, notas='Grúa o andamio en la calle.')
 

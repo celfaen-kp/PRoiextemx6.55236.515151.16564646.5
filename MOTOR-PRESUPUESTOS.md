@@ -93,6 +93,22 @@ haya usamos lo antiguo».**
   calcula y se guarda en `origen_inputs.pedido`; falta la pantalla y el Excel
   al aceptar. La oferta sale con la línea llave en mano más el elevador, que es
   lo que pide la sección 12 del estudio.
+- **Ajustes de Ramón (13-10-2026, V22.7):** (1) **Backup:** se pregunta si lo
+  quiere y, si sí, `backup_modo` automático o manual. Automático = full backup,
+  la casa conmuta sola (Fronius Backup Switch, Tesla Backup Gateway 2, Enphase
+  IQ System Controller) y es de toda la vivienda (FV-14-004); manual = Fronius
+  PV Point Comfort con cuadro de cargas críticas (FV-04-006). Tesla y Enphase
+  son siempre automáticos: con manual, aviso. `backup_tipo` antiguo se respeta
+  en fichas viejas. (2) **SC o Plus:** sin batería, GEN24 SC; con batería o
+  «dejar preparado» (`baterias = dejar_preparado`, chip «Dejar preparado para
+  baterías» en el suelto), GEN24 Plus del motor por capítulos; cambiar un SC a
+  Plus después cuesta unos 500 € más (texto de ayuda, no se presupuesta).
+  (3) **Repetidor WiFi** FV-05-005 a 60 €, cargado como COSTE (venta 85,80 €):
+  SUPUESTO, si Ramón quería 60 € de venta se cambia en el CSV. (4) **Medios:**
+  la plataforma elevadora no se usa; FV-10-002 pasa a «Camión grúa» (solo con
+  `medio_elevacion = grua`) y FV-10-003 (elevador antiguo) queda inactiva: el
+  elevador propio ya va en el v2 a 65 €/h. Hay que volver a pegar `etapa72` y
+  la función `presupuestar`.
 - **«Enviado al cliente» (etapa 75):** subir a Teamleader creaba la oferta y
   dejaba el presupuesto en `estado = 'enviado'`, y la app lo enseñaba como
   enviado al cliente sin serlo. La función ya no lo pone, la app solo mira
