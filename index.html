@@ -415,7 +415,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '22.7'; // versión visible de la app (única fuente)
+const APP_VERSION = '22.8'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -7340,20 +7340,29 @@ function presupuestoHTML(v, fichas) {
  * (el PDF no lo lleva). Si hay líneas sin coste conocido se dice, para que
  * el margen no se lea como exacto.
  */
-function costeMargenHTML(coste, venta, sinCoste, ventaSinDto) {
-  if (!esAdmin() || coste == null || !(Number(venta) > 0)) return '';
+// Quién ve costes y beneficio: Administración siempre; presupuestos en
+// fotovoltaica, para jugar con el descuento y ver el margen real (Enzo).
+const veMargenPresu = (cat) => esAdmin() || (esPresupuestos() && cat === 'solar');
+// El margen objetivo del presupuestador FV v2 (Ramón): 50 % sobre la venta,
+// en verde si se mantiene y en rojo si el descuento lo baja de ahí.
+const MARGEN_OBJETIVO_FV = 50;
+function costeMargenHTML(coste, venta, sinCoste, ventaSinDto, cat) {
+  if (!veMargenPresu(cat) || coste == null || !(Number(venta) > 0)) return '';
   const c = Number(coste) || 0, v = Number(venta) || 0, m = v - c;
   const pct = v ? Math.round((m / v) * 1000) / 10 : 0;
   // Cuánto descuento sobre la venta (antes del descuento al pie) cabe sin
   // bajar de cada margen: 1 − coste / (venta × (1 − margen)). Motor 1.4.
   const base = Number(ventaSinDto) || 0;
   const dtoMax = (mg) => Math.max(0, Math.round((1 - c / (base * (1 - mg / 100))) * 1000) / 10);
+  const fv = cat === 'solar';
+  const bien = fv ? pct >= MARGEN_OBJETIVO_FV : m >= 0;
   return `<div style="margin-top:10px;padding:9px 11px;border-radius:12px;background:rgba(20,23,15,.045)">
     <div class="row" style="justify-content:space-between">
       <span class="tiny" style="font-size:12px">Interno · coste ${eur(c)} · venta ${eur(v)}${sinCoste ? ' · ' + sinCoste + ' línea' + (sinCoste === 1 ? '' : 's') + ' sin coste' : ''}</span>
-      <span class="tiny" style="font-size:12px;color:${m >= 0 ? 'var(--verde-o)' : 'var(--rojo)'}">beneficio ${eur(m)} · margen ${String(pct).replace('.', ',')} %</span>
+      <span class="tiny" style="font-size:12px;font-weight:600;color:${bien ? 'var(--verde-o)' : 'var(--rojo)'}">beneficio ${eur(m)} · margen ${String(pct).replace('.', ',')} %${fv ? ' (objetivo ' + MARGEN_OBJETIVO_FV + ' %)' : ''}</span>
     </div>
-    ${base > 0 ? `<div class="tiny" style="margin-top:5px;font-size:12px;color:var(--t3)">Descuento máximo para quedarse en el 20 % · 15 % · 10 % de margen: ${[20, 15, 10].map((mg) => String(dtoMax(mg)).replace('.', ',') + ' %').join(' · ')}</div>` : ''}
+    ${base > 0 && fv ? `<div class="tiny" style="margin-top:5px;font-size:12px;color:var(--t2)">Descuento máximo para quedarse en el ${MARGEN_OBJETIVO_FV} %: <b>${String(dtoMax(MARGEN_OBJETIVO_FV)).replace('.', ',')} %</b>${pct < MARGEN_OBJETIVO_FV ? ' · con este descuento el margen baja del objetivo' : ''}</div>` : ''}
+    ${base > 0 ? `<div class="tiny" style="margin-top:5px;font-size:12px;color:var(--t3)">Descuento máximo para quedarse en el ${fv ? '40 % · 30 % · 20 %' : '20 % · 15 % · 10 %'} de margen: ${(fv ? [40, 30, 20] : [20, 15, 10]).map((mg) => String(dtoMax(mg)).replace('.', ',') + ' %').join(' · ')}</div>` : ''}
   </div>`;
 }
 
@@ -7362,8 +7371,8 @@ function costeMargenHTML(coste, venta, sinCoste, ventaSinDto) {
  * es una partida agrupada, qué lleva dentro y cuánto. Ni en el PDF ni en
  * Teamleader: solo aquí.
  */
-function margenLineaHTML(l) {
-  if (!esAdmin() || l.precio_coste == null || l.precio_coste === '') return '';
+function margenLineaHTML(l, cat) {
+  if (!veMargenPresu(cat) || l.precio_coste == null || l.precio_coste === '') return '';
   const cant = Number(l.cantidad) || 0;
   const coste = Math.round(Number(l.precio_coste) * cant * 100) / 100;
   const venta = Number(l.importe != null ? l.importe : l.precio_venta) || 0;
@@ -7422,7 +7431,7 @@ function presuPanelHTML() {
             <div class="num" style="font-size:14px;flex:none${l.confirmada === false ? ';color:var(--ambar-o);font-size:12px' : ''}">${l.confirmada === false ? 'Pendiente de confirmar' : eur(l.importe)}</div>
           </div>
           ${l.detalle_tecnico ? `<div class="tiny" style="margin-top:3px;font-size:12px;line-height:1.35;color:var(--t2)">${esc(l.detalle_tecnico)}</div>` : ''}
-          ${margenLineaHTML(l)}
+          ${margenLineaHTML(l, p.cat)}
           <div class="tiny" style="margin-top:3px;opacity:.75">${esc(String(l.cantidad))} ${esc(l.unidad || 'ud')} × ${eur(l.precio_tarifa)}${l.dto_linea_pct ? ' · −' + l.dto_linea_pct + '%' : ''}${l.origen === 'manual' ? ' · añadida a mano' : ''}</div>
         </div>`).join('')}
       </div>`).join('')}
@@ -7440,7 +7449,7 @@ function presuPanelHTML() {
           <span style="font:600 16px var(--sans)">Total sin IVA</span>
           <span class="num" style="font-size:22px">${eur(d.totales.total)}</span>
         </div>
-        ${costeMargenHTML(d.totales.coste, d.totales.total, d.totales.lineas_sin_coste, d.totales.subtotal)}
+        ${costeMargenHTML(d.totales.coste, d.totales.total, d.totales.lineas_sin_coste, d.totales.subtotal, p.cat)}
       </div>
 
       <div style="margin-top:18px;padding-top:12px;border-top:1px solid var(--l1)">
@@ -8557,6 +8566,36 @@ A.presuGuardarCambios = async () => {
 };
 
 /** Las líneas en modo edición. */
+/**
+ * Mientras se modifica un presupuesto: el total y el margen que saldrían con
+ * los cambios y el descuento al pie, para jugar con el descuento antes de
+ * guardar. Es una cuenta aproximada (el descuento se reparte línea a línea al
+ * céntimo en el servidor); al guardar manda la del servidor.
+ */
+function previaEditHTML(d) {
+  const e = V.presuEdit; if (!e) return '';
+  const num = (v) => Number(String(v == null ? '' : v).replace(',', '.')) || 0;
+  let bruto = 0, coste = 0, sinCoste = 0;
+  (d.lineas || []).forEach((l) => {
+    if (e.quitadas.includes(l.id)) return;
+    const c = e.cambios[l.id] || {};
+    const cant = num(c.cantidad != null ? c.cantidad : l.cantidad), precio = num(c.precio_tarifa != null ? c.precio_tarifa : l.precio_tarifa);
+    bruto += cant * precio;
+    if (l.precio_coste == null || l.precio_coste === '') sinCoste++; else coste += cant * num(l.precio_coste);
+  });
+  if (e.nueva && num(e.nueva.precio_tarifa) > 0) { bruto += num(e.nueva.cantidad || 1) * num(e.nueva.precio_tarifa); sinCoste++; }
+  bruto = Math.round(bruto * 100) / 100; coste = Math.round(coste * 100) / 100;
+  const total = Math.round(bruto * (1 - num(e.dto) / 100) * 100) / 100;
+  return `<div class="row" style="justify-content:space-between;margin-top:12px">
+      <span class="sub">Total sin IVA con estos cambios</span><span class="num" style="font-size:18px">${eur(total)}</span>
+    </div>${num(e.dto) ? `<div class="tiny" style="text-align:right">Con −${esc(String(e.dto))} % al pie (${eur(bruto)} antes)</div>` : ''}
+    ${costeMargenHTML(coste, total, sinCoste, bruto, d.categoria)}`;
+}
+function refrescarPreviaEdit() {
+  const el = document.getElementById('presu-edit-previa');
+  const d = V.presuVer && V.presuVer.datos;
+  if (el && d && V.presuEdit) el.innerHTML = previaEditHTML(d);
+}
 function presuLineasEditHTML(d) {
   const e = V.presuEdit;
   const lineas = (d.lineas || []).slice().sort((a, b) => (a.orden || 0) - (b.orden || 0));
@@ -8589,6 +8628,7 @@ function presuLineasEditHTML(d) {
     <input class="inp" data-f="presuEditDto" value="${esc(String(e.dto))}" inputmode="decimal" style="width:76px;padding:8px 10px;text-align:right">
     <span class="sub">%</span>
   </div>
+  <div id="presu-edit-previa">${previaEditHTML(d)}</div>
   <div class="row g8" style="margin-top:16px">
     <button class="btn btn-gris" data-a="presuEditarCancelar" style="border-radius:99px">Cancelar</button>
     <button class="btn btn-verde" data-a="presuGuardarCambios" style="flex:1" ${e.guardando ? 'disabled' : ''}>${e.guardando ? 'Guardando…' : 'Guardar cambios'}</button>
@@ -8824,7 +8864,7 @@ function vPresupuestoVer() {
           <div class="num" style="font-size:14px;flex:none${l.confirmada === false ? ';color:var(--ambar-o);font-size:12px' : ''}">${l.confirmada === false ? 'Pendiente de confirmar' : eur(l.precio_venta)}</div>
         </div>
         ${l.detalle_tecnico ? `<div class="tiny" style="margin-top:3px;font-size:12px;line-height:1.35;color:var(--t2)">${esc(l.detalle_tecnico)}</div>` : ''}
-        ${margenLineaHTML(l)}
+        ${margenLineaHTML(l, d.categoria)}
         <div class="tiny" style="margin-top:3px;opacity:.75">${esc(String(l.cantidad))} ${esc(l.unidad || 'ud')} × ${eur(l.precio_tarifa)}${l.dto_linea_pct ? ' · −' + l.dto_linea_pct + '%' : ''}</div>
       </div>`).join('')}
       <div class="row" style="justify-content:space-between;margin-top:14px;padding-top:12px;border-top:2px solid var(--tinta)">
@@ -8832,7 +8872,7 @@ function vPresupuestoVer() {
         <span class="num" style="font-size:22px">${eur(d.total_venta)}</span>
       </div>
       ${d.dto_global_pct ? `<div class="tiny" style="margin-top:6px;text-align:right">Incluye −${d.dto_global_pct} % al pie</div>` : ''}
-      ${costeMargenHTML(d.total_coste, d.total_venta, lineas.filter((l) => l.precio_coste == null).length, Number(d.total_bruto || 0) + Number(d.total_dto_linea || 0))}
+      ${costeMargenHTML(d.total_coste, d.total_venta, lineas.filter((l) => l.precio_coste == null).length, Number(d.total_bruto || 0) + Number(d.total_dto_linea || 0), d.categoria)}
       <div class="tiny" style="margin-top:12px">Calculado con las reglas ${esc(d.motor_version || '')}. Queda congelado con la tarifa de ese día.</div>
       <div class="row g8" style="margin-top:14px">
         <button class="btn btn-gris" data-a="presuPdf" style="border-radius:99px">PDF</button>
@@ -11903,9 +11943,11 @@ document.addEventListener('input', (e) => {
   if (f === 'ag_citaFecha') { if (V.citaDraft) { sincronizarRuedas(); V.citaDraft.dia = t.value || null; render(); } return; }
   if (f === 'loginNombre') { V.loginNombre = t.value; return; }
   if (f === 'presuCliente') { if (V.suelto) { V.suelto.cliente = t.value; V.suelto.clienteId = null; const box = document.getElementById('presu-sugerencias'); if (box) box.innerHTML = presuSugerenciasHTML(V.suelto); else render(); } return; }
-  if (f === 'presuLinea') { A.presuLineaCampo(t.dataset.id, t.dataset.k, t.value); return; }
-  if (f === 'presuNueva') { A.presuNuevaCampo(t.dataset.k, t.value); return; }
-  if (f === 'presuEditDto') { A.presuEditDto(t.value); return; }
+  // Al tocar líneas o el descuento al pie se refresca la vista previa del
+  // total y el margen, sin volver a pintar (para no perder el foco).
+  if (f === 'presuLinea') { A.presuLineaCampo(t.dataset.id, t.dataset.k, t.value); refrescarPreviaEdit(); return; }
+  if (f === 'presuNueva') { A.presuNuevaCampo(t.dataset.k, t.value); refrescarPreviaEdit(); return; }
+  if (f === 'presuEditDto') { A.presuEditDto(t.value); refrescarPreviaEdit(); return; }
   if (f === 'presuCampo') {
     const k = t.dataset.k;
     if (['equipos', 'circuitos', 'retirar', 'retirar_ext'].includes(k)) t.value = t.value.replace(/\D/g, '').slice(0, 2);
