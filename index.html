@@ -415,7 +415,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '22.9'; // versión visible de la app (única fuente)
+const APP_VERSION = '22.10'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -10432,7 +10432,7 @@ function vCitaVer() {
       <button class="btn btn-verde" data-a="ag_empezar" data-id="${x.id}">Empezar visita</button>
       <div class="row g8">
         <button class="btn btn-gris ${conf('no_estaba') ? 'btn-rojo' : ''}" data-a="ag_estado" data-id="${x.id}" data-e="no_estaba" style="padding:13px;${conf('no_estaba') ? 'color:#fff' : ''}">${conf('no_estaba') ? '¿Seguro?' : 'No estaba'}</button>
-        <button class="btn btn-gris ${conf('anulada') ? 'btn-rojo' : ''}" data-a="ag_estado" data-id="${x.id}" data-e="anulada" style="padding:13px;${conf('anulada') ? 'color:#fff' : ''}">${conf('anulada') ? '¿Seguro?' : 'Anular'}</button>
+        <button class="btn btn-gris" data-a="ag_borrarCita" data-id="${x.id}" style="padding:13px;color:var(--rojo)">Borrar esta cita</button>
       </div>
     </div>`;
   } else if (x.visita_id) {
@@ -10471,7 +10471,9 @@ function vCitaVer() {
       <div class="sub" style="font-size:12px;margin-top:4px">Historial de citas y visitas.</div></div>
       <div style="font:400 20px/1 var(--sans);color:var(--t3)">›</div>
     </div>
-    ${puedeCitar() ? `<div style="text-align:center;margin-top:22px"><span class="tiny" data-a="ag_borrarCita" data-id="${x.id}" style="color:var(--rojo);cursor:pointer;text-decoration:underline">Borrar esta cita</span></div>` : ''}
+    ${puedeCitar() ? (pendiente
+      ? `<div style="text-align:center;margin-top:22px"><span class="tiny" data-a="ag_estado" data-id="${x.id}" data-e="anulada" style="color:var(--rojo);cursor:pointer;text-decoration:underline">${conf('anulada') ? '¿Seguro? Toca otra vez para anular' : 'Anular la cita'}</span></div>`
+      : `<div style="text-align:center;margin-top:22px"><span class="tiny" data-a="ag_borrarCita" data-id="${x.id}" style="color:var(--rojo);cursor:pointer;text-decoration:underline">Borrar esta cita</span></div>`) : ''}
   </div>
   ${pie}`;
 }
