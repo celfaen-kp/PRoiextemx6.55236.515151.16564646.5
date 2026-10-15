@@ -135,7 +135,7 @@ Deno.serve(async (req) => {
 
   const yo = await quien(req);
   if (!yo) return json({ error: 'Falta la sesión.' }, 401);
-  if (!['admin', 'jefe', 'presupuestos'].includes(String(yo.rol))) {
+  if (!['admin', 'jefe', 'presupuestos'].includes(String(yo.rol)) && !(String(yo.rol) === 'colaborador' && accion === 'estado')) {
     return json({ error: 'Solo Administración, jefes y presupuestos.' }, 403);
   }
 

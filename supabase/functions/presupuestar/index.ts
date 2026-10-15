@@ -114,6 +114,23 @@ const CORS = {
 const json = (cuerpo: unknown, status = 200) =>
   new Response(JSON.stringify(cuerpo), { status, headers: { ...CORS, 'Content-Type': 'application/json' } });
 
+// El rol colaborador (sql/etapa76) trabaja solo con los clientes que tiene
+// asignados (clientes_cache.colaborador_id). Esta función usa la clave maestra,
+// así que la comprobación que en la app hace la base (RLS) aquí se hace a mano.
+// deno-lint-ignore no-explicit-any
+async function clienteDeColaborador(sb: any, yo: any, clienteId: string | null, visitaId?: string | null): Promise<boolean> {
+  if (String(yo.rol) !== 'colaborador') return true;
+  let cid = clienteId || null;
+  if (!cid && visitaId) {
+    const { data: v } = await sb.from('visitas').select('cliente_id').eq('id', visitaId).maybeSingle();
+    cid = v?.cliente_id || null;
+  }
+  if (!cid) return false;
+  const { data: c } = await sb.from('clientes_cache').select('colaborador_id').eq('id', cid).maybeSingle();
+  return !!c && c.colaborador_id === yo.id;
+}
+const SOLO_SUS_CLIENTES = 'Como colaborador solo puedes trabajar con los clientes que te han asignado.';
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
   if (req.method !== 'POST') return json({ error: 'Método no permitido.' }, 405);
@@ -131,8 +148,8 @@ Deno.serve(async (req) => {
     auth: { persistSession: false },
   });
   const { data: yo } = await sb.from('empleados').select('id, rol').eq('user_id', user.id).maybeSingle();
-  if (!yo || !['presupuestos', 'admin'].includes(String(yo.rol))) {
-    return json({ error: 'El motor de presupuestos es de presupuestos y Administración.' }, 403);
+  if (!yo || !['presupuestos', 'admin', 'colaborador'].includes(String(yo.rol))) {
+    return json({ error: 'El motor de presupuestos es de presupuestos, colaboradores y Administración.' }, 403);
   }
 
   // deno-lint-ignore no-explicit-any
@@ -143,8 +160,9 @@ Deno.serve(async (req) => {
   if (b.recalcular === true) {
     const id = String(b.presupuesto_id || '');
     if (!/^[0-9a-f-]{36}$/i.test(id)) return json({ error: 'Falta el presupuesto.' }, 400);
-    const { data: pre } = await sb.from('presupuestos').select('id, dto_global_pct').eq('id', id).maybeSingle();
+    const { data: pre } = await sb.from('presupuestos').select('id, dto_global_pct, cliente_id, visita_id').eq('id', id).maybeSingle();
     if (!pre) return json({ error: 'Ese presupuesto no existe.' }, 404);
+    if (!(await clienteDeColaborador(sb, yo, pre.cliente_id, pre.visita_id))) return json({ error: SOLO_SUS_CLIENTES }, 403);
     const { data: ls } = await sb.from('presupuesto_lineas')
       .select('id, cantidad, precio_tarifa, precio_coste, dto_linea_pct').eq('presupuesto_id', id).order('orden');
     const dto = b.dto_global_pct != null ? Number(b.dto_global_pct) : Number(pre.dto_global_pct || 0);
@@ -190,6 +208,8 @@ Deno.serve(async (req) => {
   } else if (!datos) {
     return json({ error: 'Sin visita hay que mandar los datos.' }, 400);
   }
+  // Colaborador: solo con una visita o un cliente suyos (sin cliente, nada).
+  if (!(await clienteDeColaborador(sb, yo, clienteId, visitaId))) return json({ error: SOLO_SUS_CLIENTES }, 403);
 
   // --- la configuración vigente ------------------------------------------------
   const { data: conjunto } = await sb.from('conjuntos_reglas')

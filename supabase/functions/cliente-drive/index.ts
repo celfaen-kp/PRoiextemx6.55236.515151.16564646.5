@@ -50,7 +50,7 @@ const json = (cuerpo: unknown, status = 200) =>
 // se queda para la siguiente (el cron pasa cada cuarto de hora).
 const MAX_PENDIENTES = 25;
 
-const COLUMNAS = 'id, nombre, tipo, tl_tipo, nif, telefono, email, direccion, poblacion, origen, nota, drive_visitas_id, hoja_fila, created_at';
+const COLUMNAS = 'id, nombre, tipo, tl_tipo, nif, telefono, email, direccion, poblacion, origen, nota, drive_visitas_id, hoja_fila, created_at, colaborador_id';
 
 function mismaClave(a: string, b: string) {
   const x = new TextEncoder().encode(a), y = new TextEncoder().encode(b);
@@ -168,6 +168,8 @@ Deno.serve(async (req) => {
   // O el cron / `teamleader-leads` con la clave, o alguien de la app con sesión.
   const CLAVE = Deno.env.get('AVISOS_CLAVE') || '';
   const esElCron = CLAVE.length >= 24 && mismaClave(req.headers.get('x-clave') || '', CLAVE);
+  // deno-lint-ignore no-explicit-any
+  let quien: any = null;   // la ficha de quien llama (null si es el cron)
   if (!esElCron) {
     const autorizacion = req.headers.get('Authorization') || '';
     if (!autorizacion) return json({ error: 'Falta la sesión.' }, 401);
@@ -178,14 +180,19 @@ Deno.serve(async (req) => {
     if (!user) return json({ error: 'Sesión no válida.' }, 401);
     const { data: yo } = await comoUsuario.from('empleados').select('id, rol').eq('user_id', user.id).maybeSingle();
     if (!yo) return json({ error: 'No se encuentra tu ficha de empleado.' }, 403);
-    if (!['presupuestos', 'jefe', 'admin'].includes(yo.rol)) {
-      return json({ error: 'Solo presupuestos, jefes y Administración.' }, 403);
+    if (!['presupuestos', 'jefe', 'admin', 'colaborador'].includes(yo.rol)) {
+      return json({ error: 'Solo presupuestos, jefes, colaboradores y Administración.' }, 403);
     }
+    quien = yo;
   }
 
   let b: Record<string, unknown>;
   try { b = await req.json(); } catch { return json({ error: 'Petición mal formada.' }, 400); }
   const pendientes = b.pendientes === true;
+  // El colaborador (sql/etapa76) solo apunta a sus clientes, uno a uno.
+  if (quien && String(quien.rol) === 'colaborador' && pendientes) {
+    return json({ error: 'Apuntar la cola de pendientes es de presupuestos y Administración.' }, 403);
+  }
   const clienteId = String(b.cliente_id || '');
   if (!pendientes && !/^[0-9a-f-]{36}$/i.test(clienteId)) return json({ error: 'Falta el id del cliente.' }, 400);
 
@@ -215,6 +222,9 @@ Deno.serve(async (req) => {
       .select(COLUMNAS).eq('id', clienteId).maybeSingle();
     if (errCli) return json({ error: 'No se pudo leer el cliente: ' + errCli.message }, 500);
     if (!cli) return json({ error: 'Ese cliente no existe.' }, 404);
+    if (quien && String(quien.rol) === 'colaborador' && cli.colaborador_id !== quien.id) {
+      return json({ error: 'Como colaborador solo puedes trabajar con los clientes que te han asignado.' }, 403);
+    }
     clientes = [cli];
   }
 

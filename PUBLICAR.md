@@ -69,6 +69,7 @@ romper nada.
 | `etapa19_imputaciones_repetidas.sql` | varias líneas de la misma categoría el mismo día |
 | `etapa74_modelo_fv.sql` | **tabla `motor_modelos` para el presupuestador FV v2 de Ramón** (y después `subir-a-supabase/etapa74b_modelo_fv_datos.sql`, generado por `herramientas/cargar-modelo-fv.py`, con los precios: no va al repo) |
 | `etapa75_presupuesto_enviado.sql` | **«Enviado al cliente» solo cuando lo apunta una persona**: arregla los marcados por la sincronización con Teamleader |
+| `etapa76_colaborador.sql` | **rol `colaborador`**: como presupuestos, pero solo con los clientes que le asignen (ficha del cliente → Colaborador). Hay que volver a desplegar `presupuestar`, `teamleader-presupuesto`, `teamleader-cliente`, `teamleader-visita`, `correo-visita`, `visita-drive`, `cliente-drive`, `recordatorio-citas` y `teamleader-oauth` |
 
 Las funciones `presupuestar` (empaquetada con `python3 herramientas/empaquetar-presupuestar.py`
 → `subir-a-supabase/presupuestar/index.ts`) y `teamleader-presupuesto` se

@@ -415,7 +415,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '22.8'; // versión visible de la app (única fuente)
+const APP_VERSION = '22.9'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -964,7 +964,7 @@ async function sincronizarAusencias() {
     S.festivos = (await Sysefen.db.listarFestivos()) || [];
   } catch (e) { registrarError('sincronizarAusencias', e); /* sigue sin vacaciones */ }
 }
-const refrescarDatos = () => esPresupuestos() ? Promise.all([cargarAvatares(), sincronizarObras(), sincronizarPartes(), sincronizarImputaciones(), sincronizarFases()]) : Promise.all([sincronizarFichajes(), sincronizarObras(), sincronizarImputaciones(), sincronizarPartes(), cargarAvatares(), sincronizarAusencias(), sincronizarPlanMio(), sincronizarFases()]);
+const refrescarDatos = () => esColaborador() ? Promise.all([cargarAvatares()]) : esPresupuestos() ? Promise.all([cargarAvatares(), sincronizarObras(), sincronizarPartes(), sincronizarImputaciones(), sincronizarFases()]) : Promise.all([sincronizarFichajes(), sincronizarObras(), sincronizarImputaciones(), sincronizarPartes(), cargarAvatares(), sincronizarAusencias(), sincronizarPlanMio(), sincronizarFases()]);
 
 // Ausencia de una persona en un día concreto (o null).
 // Un día puede estar marcado por dos vías: la ausencia PERSONAL (vacaciones de
@@ -1048,7 +1048,13 @@ const rol = () => { const u = yo(); return u ? u.rol : null; };
 const esAdmin = () => rol() === 'admin';
 const puedeCrear = () => ['admin', 'jefe'].includes(rol());
 // Presupuestos (Ramón): toma datos en casa del cliente. No ficha ni hace partes.
-const esPresupuestos = () => rol() === 'presupuestos';
+// El colaborador (sql/etapa76, Pedro) hace lo mismo, pero solo con los clientes
+// que presupuestos o Administración le asignan: por eso cuenta como
+// esPresupuestos() en el flujo (agenda, citas, visitas, presupuestos) y se le
+// cierra aparte lo que no debe ver (obras, legalizaciones, leads de la web,
+// CRM, costes y márgenes, crear o borrar clientes).
+const esColaborador = () => rol() === 'colaborador';
+const esPresupuestos = () => ['presupuestos', 'colaborador'].includes(rol());
 const esComercial = () => ['presupuestos', 'jefe', 'admin'].includes(rol());
 // Quién ve costes (sql/etapa59): Administración y presupuestos. El jefe de
 // obra pone albaranes y gastos, pero no ve el coste del personal ni la
@@ -1062,12 +1068,12 @@ const planificadoHoyEn = (obraId) => (V.planMio || []).some((f) => f.obra_id ===
 const puedeParteDe = (obraId) => puedeCrear() || planificadoHoyEn(obraId);
 // La agenda de Ramón es cosa suya y de Administración: los jefes de obra tienen
 // lo suyo. Va también en las políticas de Supabase (sql/etapa33), no solo aquí.
-const verAgenda = () => ['presupuestos', 'admin'].includes(rol());
+const verAgenda = () => ['presupuestos', 'colaborador', 'admin'].includes(rol());
 // El motor de presupuestos es de presupuestos y Administración (sql/etapa40).
-const verMotor = () => ['presupuestos', 'admin'].includes(rol());
-function rolNombre(r) { return r === 'admin' ? 'Administración' : r === 'jefe' ? 'Jefe de obra' : r === 'presupuestos' ? 'Presupuestos' : 'Operario'; }
+const verMotor = () => ['presupuestos', 'colaborador', 'admin'].includes(rol());
+function rolNombre(r) { return r === 'admin' ? 'Administración' : r === 'jefe' ? 'Jefe de obra' : r === 'presupuestos' ? 'Presupuestos' : r === 'colaborador' ? 'Colaborador' : 'Operario'; }
 // equipo() = empleados ACTIVOS no admin (para operaciones nuevas: fichaje, imputación, partes).
-const equipo = () => S.users.filter((u) => u.rol !== 'admin' && u.rol !== 'presupuestos' && u.activo !== false);
+const equipo = () => S.users.filter((u) => !['admin', 'presupuestos', 'colaborador'].includes(u.rol) && u.activo !== false);
 // equipoTodos() = incluye inactivos (para la sección Empleados / histórico).
 const equipoTodos = () => S.users.filter((u) => u.rol !== 'admin');
 const userById = (id) => S.users.find((u) => u.id === id) || { nombre: '—' };
@@ -4206,7 +4212,7 @@ A.instalar = async () => {
 /* ---------- render ---------- */
 function render() {
   // Ramón entra directo a sus visitas: ninguna pantalla de fichar, obras ni partes.
-  if (V.user && esPresupuestos() && !VISITA_VISTAS.includes(V.view) && !['legalizaciones', 'legalizacion', 'obras', 'obra', 'alta', 'costesPersonal', 'planificacion'].includes(V.view)) {
+  if (V.user && esPresupuestos() && !VISITA_VISTAS.includes(V.view) && !(!esColaborador() && ['legalizaciones', 'legalizacion', 'obras', 'obra', 'alta', 'costesPersonal', 'planificacion'].includes(V.view))) {
     V.view = 'agenda';
     if (!V.agenda.cargado) A.cargarAgenda();
   }
@@ -5445,7 +5451,7 @@ function vImputarEmpleado() {
 }
 
 /* --- ADMINISTRACIÓN · Empleados --- */
-const ROLES = [['operario', 'Operario'], ['jefe', 'Jefe'], ['presupuestos', 'Presupuestos'], ['admin', 'Administración']];
+const ROLES = [['operario', 'Operario'], ['jefe', 'Jefe'], ['presupuestos', 'Presupuestos'], ['colaborador', 'Colaborador'], ['admin', 'Administración']];
 const rolLabel = (r) => (ROLES.find((x) => x[0] === r) || [r, r])[1];
 
 function vEmpleados() {
@@ -7081,7 +7087,7 @@ function vVisitaNueva() {
           <input class="inp" id="visita-buscar" data-f="visitaBuscar" value="${esc(V.visitaBuscarTxt || '')}" placeholder="Nombre, NIF o teléfono" autocomplete="off">
           <div class="tiny">Busca en la copia de clientes de la app.</div></div>
         <div id="visita-resultados" class="col g8" style="margin-top:18px">${resultadosClientesHTML()}</div>
-        <div class="dash" data-a="visitaClienteNuevo" style="margin-top:14px">+ Cliente nuevo</div>`;
+        ${esColaborador() ? '<div class="tiny" style="margin-top:14px">Solo puedes hacer visitas a los clientes que te han asignado.</div>' : '<div class="dash" data-a="visitaClienteNuevo" style="margin-top:14px">+ Cliente nuevo</div>'}`;
     }
 
   } else if (p === 2) {
@@ -7342,7 +7348,7 @@ function presupuestoHTML(v, fichas) {
  */
 // Quién ve costes y beneficio: Administración siempre; presupuestos en
 // fotovoltaica, para jugar con el descuento y ver el margen real (Enzo).
-const veMargenPresu = (cat) => esAdmin() || (esPresupuestos() && cat === 'solar');
+const veMargenPresu = (cat) => esAdmin() || (rol() === 'presupuestos' && cat === 'solar');
 // El margen objetivo del presupuestador FV v2 (Ramón): 50 % sobre la venta,
 // en verde si se mantiene y en rojo si el descuento lo baja de ahí.
 const MARGEN_OBJETIVO_FV = 50;
@@ -7492,6 +7498,7 @@ A.presuCalcular = async (categoria) => {
   const vv = V.visitaVer;
   if (!suelto && !vv) return;
   if (!navigator.onLine) { avisar('Sin conexión: el presupuesto se calcula en el servidor.'); return; }
+  if (suelto && esColaborador() && !V.suelto.clienteId) { avisar('Elige uno de tus clientes: como colaborador solo presupuestas a los que te han asignado.'); return; }
   const p = V.presu;
   p.cat = categoria; p.cargando = true; p.error = null; render();
   try {
@@ -9452,6 +9459,7 @@ A.ag = (a, d, e) => {
     case 'ag_cliTipo': if (V.clienteDraft) V.clienteDraft.tipo = d.t; return render();
     case 'ag_cliOrigen': if (V.clienteDraft) V.clienteDraft.origen = V.clienteDraft.origen === d.o ? null : d.o; return render();
     case 'ag_guardarCliente': return agGuardarCliente(d.cita === '1');
+    case 'ag_colaborador': if (e) e.stopPropagation(); return agAsignarColaborador(d.id, d.e);
     case 'ag_abrirCliente': V.clienteVerId = d.id; V.view = 'clienteVer'; scrollMemo.clienteVer = 0; render(); cargarVisitasCliente(d.id); return A.cargarAgenda();
     case 'ag_abrirCita': V.citaVerId = d.id; V.agConfirmar = null; V.view = 'citaVer'; scrollMemo.citaVer = 0; return render();
     case 'ag_nuevaCita': if (e) e.stopPropagation(); return agNuevaCita(d.id, false);
@@ -9630,7 +9638,7 @@ A.leadsBuscar = async () => {
 
 /* ---------- conectar la app con Teamleader (una sola vez) ---------- */
 Object.assign(V, { crm: { cargado: false, busy: false, conectado: false, expira: null, error: null, confirmar: false } });
-const verCRM = () => esAdmin() || esPresupuestos();
+const verCRM = () => esAdmin() || rol() === 'presupuestos';
 
 A.crmEstado = async () => {
   if (!verCRM() || V.crm.busy) return;
@@ -10163,7 +10171,7 @@ function clientesListaHTML() {
   else if (ag.filtroCli !== 'todos') lista = lista.filter((x) => x.e.k === ag.filtroCli);
   if (q) lista = lista.filter(({ c }) => clienteCasa(c, q));
   // Los avisos de la web ya están arriba con sus botones: aquí no se repiten.
-  if (!q && ['todos', 'sin_contactar'].includes(ag.filtroCli) && puedeCitar()) {
+  if (!q && ['todos', 'sin_contactar'].includes(ag.filtroCli) && puedeCitar() && !esColaborador()) {
     const esWeb = (c) => c.lead_at && !c.sin_cita_motivo && !(c.citas || []).length && !(c.visitas || []).length;
     const habiaWeb = lista.some(({ c }) => esWeb(c));
     lista = lista.filter(({ c }) => !esWeb(c));
@@ -10173,7 +10181,7 @@ function clientesListaHTML() {
   return lista.map(({ c, e }) => `<div class="card" data-a="ag_abrirCliente" data-id="${c.id}" style="margin-bottom:10px;cursor:pointer">
     <div class="row g8"><span class="dot" style="width:8px;height:8px;background:${e.color}"></span><span class="lbl"${e.k === 'sin_cita' ? ' style="color:var(--rojo)"' : ''}>${esc(e.txt)}</span></div>
     <div class="h2" style="font-size:17px;margin-top:8px">${esc(c.nombre)}</div>
-    <div class="sub" style="margin-top:3px">${esc([agTipoNombre(c), c.poblacion, c.telefono].filter(Boolean).join(' · '))}</div>
+    <div class="sub" style="margin-top:3px">${esc([agTipoNombre(c), c.poblacion, c.telefono].filter(Boolean).join(' · '))}${c.colaborador_id && !esColaborador() ? ' · <b>' + esc(agNombreEmp(c.colaborador_id) || 'colaborador') + '</b>' : ''}</div>
     <div style="margin-top:11px">${caminoHTML(c)}</div>
     ${seguimientoResumenHTML(c)}
     ${e.k === 'sin_cita' && puedeCitar() ? `<div style="margin-top:12px;padding-top:11px;border-top:1px solid var(--l1)">
@@ -10194,7 +10202,7 @@ function vClientes() {
       <div class="h1">Clientes</div>
       <div class="row g8">
         ${puedeCitar() ? `<button class="pill" data-a="ag_vista" style="padding:8px 12px;background:${ag.vista === 'tablero' ? 'var(--verde)' : 'var(--l1)'};color:${ag.vista === 'tablero' ? '#fff' : 'var(--tinta)'}">${ag.vista === 'tablero' ? 'Lista' : 'Tablero'}</button>` : ''}
-        ${puedeCitar() ? '<button class="pill" data-a="ag_nuevoCliente" style="background:var(--tinta);color:#fff">+ Cliente</button>' : ''}
+        ${puedeCitar() && !esColaborador() ? '<button class="pill" data-a="ag_nuevoCliente" style="background:var(--tinta);color:#fff">+ Cliente</button>' : ''}
       </div>
     </div>
     <input class="inp" id="ag-buscar" data-f="ag_buscar" type="search" value="${esc(ag.buscar || '')}" placeholder="Buscar: nombre, teléfono, población, dirección…" autocomplete="off" style="margin-top:14px">
@@ -10215,7 +10223,7 @@ function vClientes() {
  * son los que están esperando a que alguien les llame.
  */
 function webListaHTML() {
-  if (!puedeCitar()) return '';
+  if (!puedeCitar() || esColaborador()) return '';   // el colaborador no ve los leads de la web
   // Con un filtro o una búsqueda puestos, el bloque de la web se aparta: si
   // no, con muchos avisos de la web parecía que el filtro no hacía nada.
   const ag = V.agenda;
@@ -10511,6 +10519,42 @@ function agCarpetaHTML(c) {
   </div>`;
 }
 
+/**
+ * A qué colaborador (sql/etapa76) está asignado el cliente. Lo cambian
+ * presupuestos y Administración; el colaborador solo ve que es suyo.
+ */
+const colaboradores = () => S.users.filter((u) => u.rol === 'colaborador' && u.activo !== false && u.empId);
+function colaboradorAsignacionHTML(c) {
+  const lista = colaboradores();
+  if (esColaborador()) return `<div class="card" style="padding:12px 15px;margin-bottom:18px"><div class="lbl">Colaborador</div>
+    <div class="tiny" style="margin-top:5px">Este cliente te lo han asignado a ti.</div></div>`;
+  if (!(esAdmin() || rol() === 'presupuestos') || !lista.length) return '';
+  const busy = V.colabBusy === c.id;
+  return `<div class="card" style="padding:12px 15px;margin-bottom:18px">
+    <div class="lbl">Colaborador</div>
+    <div class="tiny" style="margin-top:5px">Quien lo lleve verá este cliente, sus citas, visitas y presupuestos. Sin asignar, ningún colaborador lo ve.</div>
+    <div class="wrap" style="margin-top:10px">
+      <span class="chip ${!c.colaborador_id ? 'on' : ''}" data-a="ag_colaborador" data-id="${c.id}" data-e="" style="cursor:pointer${busy ? ';opacity:.5' : ''}">Nadie</span>
+      ${lista.map((u) => `<span class="chip ${c.colaborador_id === u.empId ? 'on' : ''}" data-a="ag_colaborador" data-id="${c.id}" data-e="${u.empId}" style="cursor:pointer${busy ? ';opacity:.5' : ''}">${esc(u.nombre)}</span>`).join('')}
+    </div>
+  </div>`;
+}
+async function agAsignarColaborador(clienteId, empId) {
+  const c = agCliente(clienteId); if (!c || V.colabBusy) return;
+  if (!(esAdmin() || rol() === 'presupuestos')) return;
+  const nuevo = empId || null;
+  if ((c.colaborador_id || null) === nuevo) return;
+  V.colabBusy = clienteId; render();
+  try {
+    const r = await visitasDB.guardarCliente({ id: clienteId, colaborador_id: nuevo });
+    c.colaborador_id = r && 'colaborador_id' in r ? r.colaborador_id : nuevo;
+    toast(nuevo ? 'Asignado a ' + (agNombreEmp(nuevo) || 'colaborador') + '.' : 'Sin colaborador.');
+    anotar(clienteId, 'nota', nuevo ? 'Cliente asignado a ' + (agNombreEmp(nuevo) || 'colaborador') : 'Cliente sin colaborador');
+  } catch (e) {
+    avisar(/colaborador_id/i.test(msgError(e)) ? 'Falta ejecutar sql/etapa76 en Supabase.' : 'No se pudo guardar: ' + msgError(e));
+  }
+  V.colabBusy = null; render();
+}
 function vClienteVer() {
   const c = agCliente(V.clienteVerId);
   if (!c) {
@@ -10600,6 +10644,7 @@ function vClienteVer() {
         <span style="font:600 16px/1 var(--cond)">${esc(codigoObra(o) || o.titulo)}</span><span class="grow" style="font:500 14px var(--sans)">${esc(o.cliente || o.titulo)}${direccionObra(o) ? ' · ' + esc(direccionObra(o)) : ''}</span><span class="tiny">${esc(estadoObraTxt(o))}</span></div>`).join('')}
     </div>` : ''; })()}
     ${puedeCitar() ? seguimientoClienteHTML(c) : ''}
+    ${colaboradorAsignacionHTML(c)}
     ${c.motivo_web ? `<div class="card" style="padding:12px 15px;margin-bottom:18px;box-shadow:0 0 0 1.5px var(--ambar),var(--sh)">
       <div class="lbl" style="color:var(--ambar-o)">Qué pidió por la web</div>
       <div style="font:500 14px/1.45 var(--sans);margin-top:6px;white-space:pre-wrap">${esc(c.motivo_web)}</div>
@@ -10614,7 +10659,7 @@ function vClienteVer() {
         ${c.origen ? `<div class="tiny" style="margin-top:5px">${esc((AG_ORIGENES.find((o) => o[0] === c.origen) || [null, c.origen])[1])}</div>` : ''}
       </div></div>
     </div>
-    ${puedeCitar() ? `<button class="btn btn-gris" data-a="ag_borrarCliente" data-id="${c.id}" style="margin-top:22px;border-radius:99px;color:var(--rojo)">Borrar cliente</button>` : ''}
+    ${puedeCitar() && !esColaborador() ? `<button class="btn btn-gris" data-a="ag_borrarCliente" data-id="${c.id}" style="margin-top:22px;border-radius:99px;color:var(--rojo)">Borrar cliente</button>` : ''}
   </div>`;
 }
 
@@ -10639,7 +10684,9 @@ A.visitaSeguirMedias = () => { V.sheet = null; A.seguirBorrador(); };
 
 /* --- nav --- */
 function nav(v) {
-  const items = esPresupuestos()
+  const items = esColaborador()
+    ? [['agenda', 'Agenda', '5px'], ['clientes', 'Clientes', '3px'], ['presupuestos', 'Presup.', '2px'], ['ajustes', 'Perfil', '99px']]
+    : esPresupuestos()
     ? [['agenda', 'Agenda', '5px'], ['clientes', 'Clientes', '3px'], ['presupuestos', 'Presup.', '2px'], ['obras', 'Obras', '5px'], ['legalizaciones', 'Legaliz.', '6px'], ['ajustes', 'Perfil', '99px']]
     : esAdmin()
     ? [['hoy', 'Hoy', '99px'], ['empleados', 'Empleados', '4px'], ['obras', 'Obras', '5px'], ['partes', 'Partes', '3px'], ['horas', 'Horas', '2px'], ['agenda', 'Citas', '6px'], ['ajustes', 'Ajustes', '99px']]

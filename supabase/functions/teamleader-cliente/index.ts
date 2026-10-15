@@ -107,6 +107,23 @@ async function crm(token: string, metodo: string, cuerpo: unknown) {
   return res;
 }
 
+// El rol colaborador (sql/etapa76) trabaja solo con los clientes que tiene
+// asignados (clientes_cache.colaborador_id). Esta función usa la clave maestra,
+// así que la comprobación que en la app hace la base (RLS) aquí se hace a mano.
+// deno-lint-ignore no-explicit-any
+async function clienteDeColaborador(sb: any, yo: any, clienteId: string | null, visitaId?: string | null): Promise<boolean> {
+  if (String(yo.rol) !== 'colaborador') return true;
+  let cid = clienteId || null;
+  if (!cid && visitaId) {
+    const { data: v } = await sb.from('visitas').select('cliente_id').eq('id', visitaId).maybeSingle();
+    cid = v?.cliente_id || null;
+  }
+  if (!cid) return false;
+  const { data: c } = await sb.from('clientes_cache').select('colaborador_id').eq('id', cid).maybeSingle();
+  return !!c && c.colaborador_id === yo.id;
+}
+const SOLO_SUS_CLIENTES = 'Como colaborador solo puedes trabajar con los clientes que te han asignado.';
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
   if (req.method !== 'POST') return json({ error: 'Método no permitido.' }, 405);
@@ -125,13 +142,17 @@ Deno.serve(async (req) => {
   });
   const { data: yo } = await sb.from('empleados').select('id, rol').eq('user_id', user.id).maybeSingle();
   if (!yo) return json({ error: 'No se encuentra tu ficha de empleado.' }, 403);
-  if (!['presupuestos', 'jefe', 'admin'].includes(String(yo.rol))) {
-    return json({ error: 'Solo presupuestos, jefes y Administración.' }, 403);
+  if (!['presupuestos', 'jefe', 'admin', 'colaborador'].includes(String(yo.rol))) {
+    return json({ error: 'Solo presupuestos, jefes, colaboradores y Administración.' }, 403);
   }
 
   let b: Record<string, unknown>;
   try { b = await req.json(); } catch { return json({ error: 'Petición mal formada.' }, 400); }
   const accion = limpio(b.accion);
+  // El colaborador no busca ni importa del CRM (vería clientes que no son suyos).
+  if (String(yo.rol) === 'colaborador' && (accion === 'buscar' || accion === 'importar')) {
+    return json({ error: 'Buscar e importar del CRM es de presupuestos y Administración.' }, 403);
+  }
 
   // --- buscar en el CRM ---------------------------------------------------------
   if (accion === 'buscar') {
@@ -235,6 +256,7 @@ Deno.serve(async (req) => {
     .eq('id', clienteId).maybeSingle();
   if (errCli) return json({ error: 'No se pudo leer el cliente: ' + errCli.message }, 500);
   if (!cli) return json({ error: 'Ese cliente no existe.' }, 404);
+  if (!(await clienteDeColaborador(sb, yo, cli.id))) return json({ error: SOLO_SUS_CLIENTES }, 403);
   if (cli.tl_id) {
     return json({ ok: true, ya_estaba: true, tl_id: cli.tl_id, tl_tipo: cli.tl_tipo, nombre: cli.nombre });
   }

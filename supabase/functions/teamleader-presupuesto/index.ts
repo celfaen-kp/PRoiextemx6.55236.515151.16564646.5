@@ -226,6 +226,23 @@ async function subirArchivo(token: string, tipo: string, idCosa: string, nombre:
   throw new Error('Teamleader no aceptó el archivo (' + primero + ' / ' + segundo + ')');
 }
 
+// El rol colaborador (sql/etapa76) trabaja solo con los clientes que tiene
+// asignados (clientes_cache.colaborador_id). Esta función usa la clave maestra,
+// así que la comprobación que en la app hace la base (RLS) aquí se hace a mano.
+// deno-lint-ignore no-explicit-any
+async function clienteDeColaborador(sb: any, yo: any, clienteId: string | null, visitaId?: string | null): Promise<boolean> {
+  if (String(yo.rol) !== 'colaborador') return true;
+  let cid = clienteId || null;
+  if (!cid && visitaId) {
+    const { data: v } = await sb.from('visitas').select('cliente_id').eq('id', visitaId).maybeSingle();
+    cid = v?.cliente_id || null;
+  }
+  if (!cid) return false;
+  const { data: c } = await sb.from('clientes_cache').select('colaborador_id').eq('id', cid).maybeSingle();
+  return !!c && c.colaborador_id === yo.id;
+}
+const SOLO_SUS_CLIENTES = 'Como colaborador solo puedes trabajar con los clientes que te han asignado.';
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
   if (req.method !== 'POST') return json({ error: 'Método no permitido.' }, 405);
@@ -242,9 +259,9 @@ Deno.serve(async (req) => {
   const sb = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, {
     auth: { persistSession: false },
   });
-  const { data: yo } = await sb.from('empleados').select('rol').eq('user_id', user.id).maybeSingle();
-  if (!yo || !['presupuestos', 'admin'].includes(String(yo.rol))) {
-    return json({ error: 'Mandar presupuestos al CRM es de presupuestos y Administración.' }, 403);
+  const { data: yo } = await sb.from('empleados').select('id, rol').eq('user_id', user.id).maybeSingle();
+  if (!yo || !['presupuestos', 'admin', 'colaborador'].includes(String(yo.rol))) {
+    return json({ error: 'Mandar presupuestos al CRM es de presupuestos, colaboradores y Administración.' }, 403);
   }
 
   // deno-lint-ignore no-explicit-any
@@ -264,6 +281,7 @@ Deno.serve(async (req) => {
     .select('id, categoria, titulo, cliente_id, visita_id, total_venta, dto_global_pct, tl_quotation_id')
     .eq('id', id).maybeSingle();
   if (!p) return json({ error: 'Ese presupuesto no existe.' }, 404);
+  if (!(await clienteDeColaborador(sb, yo, p.cliente_id, p.visita_id))) return json({ error: SOLO_SUS_CLIENTES }, 403);
   const yaOferta = limpio(p.tl_quotation_id);
   if (yaOferta && !pdfB64) {
     return json({ error: 'Ese presupuesto ya está en Teamleader.', tl_quotation_id: yaOferta }, 409);

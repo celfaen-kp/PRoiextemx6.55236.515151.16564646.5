@@ -326,9 +326,16 @@ Deno.serve(async (req) => {
     });
     const { data: { user } } = await comoUsuario.auth.getUser();
     if (!user) return json({ error: 'Sesión no válida.' }, 401);
-    const { data: yo } = await comoUsuario.from('empleados').select('rol').eq('user_id', user.id).maybeSingle();
-    if (!yo || !['presupuestos', 'jefe', 'admin'].includes(yo.rol)) {
-      return json({ error: 'Solo presupuestos, jefes y Administración.' }, 403);
+    const { data: yo } = await comoUsuario.from('empleados').select('id, rol').eq('user_id', user.id).maybeSingle();
+    if (!yo || !['presupuestos', 'jefe', 'admin', 'colaborador'].includes(yo.rol)) {
+      return json({ error: 'Solo presupuestos, jefes, colaboradores y Administración.' }, 403);
+    }
+    // El colaborador (sql/etapa76) solo avisa de las citas de sus clientes.
+    // Se mira con SU sesión: la política citas_colaborador solo le deja ver las
+    // citas de sus clientes, así que si no la ve, no es suya.
+    if (String(yo.rol) === 'colaborador') {
+      const { data: ct } = await comoUsuario.from('citas').select('id').eq('id', citaSuelta).maybeSingle();
+      if (!ct) return json({ error: 'Como colaborador solo puedes trabajar con los clientes que te han asignado.' }, 403);
     }
   }
 
