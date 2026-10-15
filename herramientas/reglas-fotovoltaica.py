@@ -219,7 +219,7 @@ S = {x['referencia']: x for x in sysefen}
 RECARGO_PANELES, RECARGO_EQUIPOS = 1.4375, 1.20
 def margen_de(ref):
     if ref.startswith('FV-01-'): return (RECARGO_PANELES, False)                       # panel: 80 → 115
-    if ref.startswith(('FV-FRONIUS-', 'FV-ENPHASE-', 'FV-BYD-', 'FV-TESLA-')): return (RECARGO_EQUIPOS, False)  # equipos: +20 % sobre factura
+    if ref.startswith(('FV-FRONIUS-', 'FV-ENPHASE-', 'FV-BYD-', 'FV-TESLA-', 'FV-DEYE-', 'FV-WECO-')): return (RECARGO_EQUIPOS, False)  # equipos: +20 % sobre factura
     return (None, True)
 paneles = sorted([x for x in sysefen if x['referencia'].startswith('FV-01-001-') and num(x['atributos'].get('wp'))],
                  key=lambda x: num(x['atributos']['wp']))

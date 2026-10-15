@@ -109,6 +109,18 @@ haya usamos lo antiguo».**
   `medio_elevacion = grua`) y FV-10-003 (elevador antiguo) queda inactiva: el
   elevador propio ya va en el v2 a 65 €/h. Hay que volver a pegar `etapa72` y
   la función `presupuestar`.
+- **Tarifa Rebacas (15-10-2026):** `herramientas/extrae-tarifa-rebacas.py` saca de
+  la tarifa del distribuidor (`rebacas-tarifa-2026.pdf` en la carpeta de
+  tarifas; el pie dice «T3 2026» aunque el archivo se llame T4) solo lo que
+  pidió Enzo: los 18 híbridos Deye mono y tri (FV-DEYE-SUN-…), los meters de
+  medida indirecta (SDM 230 y 630) y el WiFi Deye, y las baterías WECO (5K0 LT,
+  5K3 EVO, 16K0 LV) y Deye (SE-F5 PRO, SE-F 16-C, BOS-G alto voltaje) con sus
+  accesorios: 46 productos en `fotovoltaica-2026.csv`, precio de distribuidor
+  sin IVA, portes aparte, margen de equipos ×1,20. Entran en el catálogo (se
+  añaden a mano) y NO hay regla que los ponga sola: la compatibilidad batería ↔
+  inversor y los terminales hay que revisarlos en las fichas técnicas. El
+  modelo v2 de Ramón estima los Deye desde la web con −17,62 %: frente a esta
+  tarifa se va de −39 € (Symo 6K tri) a +45 € (8K mono); lo decide Ramón.
 - **«Enviado al cliente» (etapa 75):** subir a Teamleader creaba la oferta y
   dejaba el presupuesto en `estado = 'enviado'`, y la app lo enseñaba como
   enviado al cliente sin serlo. La función ya no lo pone, la app solo mira
