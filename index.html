@@ -428,7 +428,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '24.2'; // versión visible de la app (única fuente)
+const APP_VERSION = '24.3'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -6667,7 +6667,24 @@ A.editarVisita = async (id) => {
     avisar('No se pudo abrir la visita: ' + msgError(e));
   }
 };
+/* --- volver a donde se estaba (16-10-2026) ---------------------------------
+ * Si una visita o un presupuesto se abren desde la ficha del cliente (o desde
+ * una visita), el «‹ volver» lleva otra vez allí, no a la lista general. */
+function recordarOrigen() {
+  if (V.view === 'clienteVer' && V.clienteVerId) V.volverA = { view: 'clienteVer', id: V.clienteVerId, label: 'Cliente' };
+  else if (V.view === 'visita' && V.visitaVer && V.visitaVer.visita) V.volverA = { view: 'visita', id: V.visitaVer.visita.id, label: 'Visita' };
+  else V.volverA = null;
+}
+const volverHTML = (porDefecto) => (V.volverA ? `<div class="volver" data-a="volverA">‹ ${esc(V.volverA.label)}</div>` : porDefecto);
+A.volverA = () => {
+  const o = V.volverA; V.volverA = null;
+  if (!o) return;
+  if (o.view === 'clienteVer') { V.clienteVerId = o.id; V.view = 'clienteVer'; render(); cargarVisitasCliente(o.id); return; }
+  if (o.view === 'visita') { A.verVisita(o.id); return; }
+  V.view = o.view; render();
+};
 A.verVisita = async (id) => {
+  recordarOrigen();
   V.visitaVer = null; V.okVisitaDrive = null; V.okGracias = null; V.view = 'visita'; scrollMemo.visita = 0; render();
   try {
     V.visitaVer = await visitasDB.verVisita(id);
@@ -7217,7 +7234,7 @@ function vVisitaNueva() {
 function vVisita() {
   const vv = V.visitaVer;
   const cab = (t, s, dir) => `<div class="hdr-dark">
-    <div class="volver" data-a="ir" data-v="visitas">‹ Visitas</div>
+    ${volverHTML('<div class="volver" data-a="ir" data-v="visitas">‹ Visitas</div>')}
     <div style="font:600 27px/1.1 var(--cond)">${esc(t)}</div>
     ${s ? `<div class="sub" style="color:rgba(255,255,255,.5);margin-top:6px">${esc(s)}</div>` : ''}
     ${dir ? `<div class="ag-acciones" style="justify-content:flex-start;gap:26px">${accionComoLlegar(dir)}</div>` : ''}
@@ -7916,6 +7933,7 @@ A.presuSueltoCliente = (id) => {
   render();
 };
 A.presuAbrir = async (id) => {
+  recordarOrigen();
   V.presuVer = { id, cargando: true, datos: null, error: null };
   V.view = 'presupuestoVer'; scrollMemo.presupuestoVer = 0; render();
   try { V.presuVer.datos = await visitasDB.verPresupuesto(id); }
@@ -8410,7 +8428,7 @@ function presuSugerenciasHTML(f) {
 function vPresuNuevo() {
   const f = V.suelto || presuNuevoVacio(), p = V.presu;
   return `<div class="hdr-dark">
-    <div class="back" data-a="ir" data-v="presupuestos">‹ Presupuestos</div>
+    ${volverHTML('<div class="back" data-a="ir" data-v="presupuestos">‹ Presupuestos</div>')}
     <div style="font:600 27px/1.1 var(--cond)">Presupuesto nuevo</div>
     <div class="sub" style="color:rgba(255,255,255,.5);margin-top:6px">Sin visita. Solo hacen falta cuatro datos.</div>
   </div>
@@ -8993,7 +9011,7 @@ function vPresupuestoVer() {
   const lineas = d ? (d.lineas || []).slice().sort((a, b) => (a.orden || 0) - (b.orden || 0)) : [];
   const editando = !!V.presuEdit;
   return `<div class="hdr-dark">
-    <div class="back" data-a="ir" data-v="presupuestos">‹ Presupuestos</div>
+    ${volverHTML('<div class="back" data-a="ir" data-v="presupuestos">‹ Presupuestos</div>')}
     <div style="font:600 27px/1.1 var(--cond)">${esc((d && (d.titulo || (d.cliente && d.cliente.nombre))) || 'Presupuesto')}</div>
     <div class="sub" style="color:rgba(255,255,255,.5);margin-top:6px">${d ? esc(nombreCat(d.categoria) || d.categoria) + ' · ' + fechaCorta(d.created_at) : v.cargando ? 'Cargando…' : ''}</div>
   </div>
@@ -10814,9 +10832,12 @@ function vClienteVer() {
     </div>` : ''}
     ${puedeCitar() ? `<div class="row g8" style="margin-top:14px">
       <button class="pill pill-verde grow" data-a="ag_nuevaCita" data-id="${c.id}" style="padding:13px">+ Nueva cita</button>
-      <button class="pill grow" data-a="ag_visitar" data-id="${c.id}" style="padding:13px;background:rgba(255,255,255,.18);color:#fff" title="Empezar la toma de datos ahora, sin cita">Hacer visita</button>
+      ${(() => { const uv = visitasCli.slice().sort((a, b) => String(b.fecha_visita || '').localeCompare(String(a.fecha_visita || '')))[0];
+        return uv ? `<button class="pill grow" data-a="verVisita" data-id="${uv.id}" style="padding:13px;background:rgba(255,255,255,.18);color:#fff" title="Abrir la última visita${visitasCli.length > 1 ? ' (las demás, en el historial)' : ''}">Ver visita</button>`
+          : `<button class="pill grow" data-a="ag_visitar" data-id="${c.id}" style="padding:13px;background:rgba(255,255,255,.18);color:#fff" title="Empezar la toma de datos ahora, sin cita">Hacer visita</button>`; })()}
       <button class="pill grow" data-a="ag_editarCliente" data-id="${c.id}" style="padding:13px;background:rgba(255,255,255,.12);color:#fff">Editar</button>
     </div>
+    ${visitasCli.length ? `<div class="tiny" data-a="ag_visitar" data-id="${c.id}" style="margin-top:8px;color:rgba(255,255,255,.7);cursor:pointer;text-decoration:underline">Hacer otra visita</div>` : ''}
     <div class="tiny" data-a="presuExternoAbrir" data-id="${c.id}" style="margin-top:10px;color:rgba(255,255,255,.7);cursor:pointer;text-decoration:underline">¿Presupuesto hecho directamente en Teamleader? Apúntalo aquí</div>` : ''}
   </div>
   <div class="scroll pad sin-marca pb-nav">
@@ -11890,6 +11911,7 @@ document.addEventListener('click', (e) => {
   if (a === 'graciasVisita') return A.graciasVisita();
   if (a === 'presuCalcular') return A.presuCalcular(d.c);
   if (a === 'tlSincronizar') return A.tlSincronizar();
+  if (a === 'volverA') return A.volverA();
   if (a === 'presuOpcionMarca') return A.presuOpcionMarca(d.m);
   if (a === 'presuRecalcular') return A.presuRecalcular();
   if (a === 'presuGuardar') return A.presuGuardar();
