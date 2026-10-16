@@ -47,7 +47,7 @@ for f in ('supabase-db.js', 'supabase-auth.js', 'visitas-db.js', 'supabase/funct
     (FUERA / pathlib.Path(f).name).write_text(sin_modulos(f))
 
 # Las piezas del motor de presupuestos (módulos ES sin dependencias).
-for f in ('cadena.js', 'formulas.js', 'motor.js', 'fv.js'):
+for f in ('cadena.js', 'formulas.js', 'motor.js', 'fv.js', 'hibrido.js'):
     ruta = BASE / 'supabase' / 'functions' / 'presupuestar' / f
     if ruta.exists():
         t = re.sub(r"^export ", "", ruta.read_text(), flags=re.M)

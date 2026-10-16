@@ -232,7 +232,7 @@ LOOKUP = [
     ('recargo_sobre_coste', 'defecto', 1.30, 'Precio de venta = coste × 1,30, una vez por línea, para lo que no trae recargo propio. CONFIRMADO (desglose FV, oct 2026).'),
     ('recargo_equipos', 'defecto', 1.20, 'Equipos del distribuidor (Fronius, Enphase, BYD, Tesla): venta = coste × 1,20, sin CDC. Informativo: el valor que manda es productos.recargo (09-10-2026).'),
     ('recargo_paneles', 'defecto', 1.4375, 'Panel: coste 80 → venta 115, sin CDC. Informativo: el valor que manda es productos.recargo (09-10-2026).'),
-    ('ratio_dc_ac', 'defecto', 1.2, 'kWp de paneles por kW de inversor. Por confirmar según ficha técnica de cada marca.'),
+    ('ratio_dc_ac', 'defecto', 1.125, 'kWp de paneles por kW de inversor: inversor ≥ kWp ÷ 1,125 (Ramón, 12-10-2026: 11 paneles con 5 kW). Antes 1,2.'),
     ('micros_por_rama', 'defecto', 11, 'Microinversores Enphase por rama de Q Cable.'),
     ('bateria_kwh', 'defecto', 5, 'kWh de batería si se pide batería sin decir cuántos ni haber consumo.'),
     ('wp_panel', 'defecto', 510, 'Vatios del panel si no se dicen.'),
@@ -428,10 +428,10 @@ aviso({'tipo_estructura': 'plana'}, 'Cubierta plana con lastre: la cantidad de l
 # --- 03 · Inversor: Fronius por potencia, fases y batería en continua
 fr = {
  (1,0): [(3.0,'Fronius Primo GEN24 SC 3.0'),(3.6,'Fronius Primo GEN24 SC 3.6'),(4.0,'Fronius Primo GEN24 SC 4.0'),
-         (4.6,'Fronius Primo GEN24 SC 4.6'),(5.0,'Fronius Primo GEN24 SC 5.0'),(6.0,'Fronius Primo GEN24 SC 6.0'),
+         (5.0,'Fronius Primo GEN24 SC 5.0'),(6.0,'Fronius Primo GEN24 SC 6.0'),
          (8.0,'Fronius Primo GEN24 8.0KW'),(10.0,'Fronius Primo GEN24 10.0KW')],
  (1,1): [(3.0,'Fronius Primo GEN24 SC 3.0 Plus'),(3.6,'Fronius Primo GEN24 SC 3.6 Plus'),(4.0,'Fronius Primo GEN24 SC 4.0 Plus'),
-         (4.6,'Fronius Primo GEN24 SC 4.6 Plus'),(5.0,'Fronius Primo GEN24 SC 5.0 Plus'),(6.0,'Fronius Primo GEN24 SC 6.0 Plus'),
+         (5.0,'Fronius Primo GEN24 SC 5.0 Plus'),(6.0,'Fronius Primo GEN24 SC 6.0 Plus'),
          (8.0,'Fronius Primo GEN24 8.0 Plus'),(10.0,'Fronius Primo GEN24 10.0 Plus')],
  (3,0): [(3.0,'FRONIUS Symo GEN24 SC 3.0'),(4.0,'FRONIUS Symo GEN24 SC 4.0'),(5.0,'FRONIUS Symo GEN24 SC 5.0'),
          (6.0,'FRONIUS Symo GEN24 SC 6.0'),(8.0,'FRONIUS Symo GEN24 SC 8.0'),(10.0,'FRONIUS Symo GEN24 SC 10.0'),
@@ -731,6 +731,9 @@ update public.tablas_lookup set valor = 1.30 where categoria = 'solar' and clave
 -- El lastre pasa de 1 a 3 por triángulo (09-10-2026, orientativo): se fija porque
 -- el 1 anterior era un hueco, no un ajuste.
 update public.tablas_lookup set valor = 3 where categoria = 'solar' and clave = 'lastres_por_triangulo' and entrada = 'defecto';
+-- El ratio kWp/kW pasa de 1,2 a 1,125 (16-10-2026): es el criterio de Ramón en el
+-- presupuestador v2 y así el Plus que elige el motor antiguo es el mismo que el SC del v2.
+update public.tablas_lookup set valor = 1.125 where categoria = 'solar' and clave = 'ratio_dc_ac' and entrada = 'defecto';
 
 -- 5 · Las variables ---------------------------------------------------------------------
 insert into public.variables_derivadas (categoria, codigo, etiqueta, unidad, formula, orden, descripcion, por_cada) values

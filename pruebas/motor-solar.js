@@ -49,8 +49,8 @@ igual('los paneles en el capítulo 01', seccionDe(r, 'FV-01-001'), '01 · Genera
 comprueba('todo lo de la estructura en teja tiene precio (los clips desde el 09-10-2026): la partida sale confirmada', linea(r, 'ESTR_TEJA').confirmada === true);
 comprueba('y sin aviso de pendiente por los clips', !r.incidencias.some(function (i) { return i.codigo === 'precio_pendiente' && i.mensaje.indexOf('FV-02-014') > -1; }));
 comprueba('510 Wp no es el JA de 540: módulo genérico', !!linea(r, 'FV-01-001') && !linea(r, 'FV-01-001-JA540'));
-comprueba('Primo GEN24 4.6 (4,25 kW), sin Plus', tiene(r, 'Fronius Primo GEN24 SC 4.6') && !tiene(r, 'Plus'));
-igual('el inversor en el capítulo 03', porNombre(r, 'GEN24 SC 4.6').seccion, '03 · Inversor y microinversores');
+comprueba('Primo GEN24 SC 5.0 (5,1 ÷ 1,125 = 4,53 kW; el 4.6 no se usa, criterio de Ramón), sin Plus', tiene(r, 'Fronius Primo GEN24 SC 5.0') && !tiene(r, 'Fronius Primo GEN24 SC 4.6') && !tiene(r, 'Plus'));
+igual('el inversor en el capítulo 03', porNombre(r, 'GEN24 SC 5.0').seccion, '03 · Inversor y microinversores');
 igual('el Smart Meter en el 05', porNombre(r, 'Smart Meter TS 100A-1').seccion, '05 · Monitorización, medida y control');
 comprueba('el primer capítulo que sale es el 01', r.lineas[0].seccion === '01 · Generador fotovoltaico');
 
@@ -125,8 +125,8 @@ comprueba('el lote de pequeño material va dentro de PEQ_MAT, no suelto', !linea
 
 titulo('el modelo de precios (motor 1.4): un margen por familia, una vez por línea');
 igual('motor 1.4', r.motor_version, '1.4');
-var inv = porNombre(r, 'GEN24 SC 4.6');
-igual('equipo del distribuidor: coste = la factura, sin complementarios', inv.precio_coste, P('Fronius Primo GEN24 SC 4.6'));
+var inv = porNombre(r, 'GEN24 SC 5.0');
+igual('equipo del distribuidor: coste = la factura, sin complementarios', inv.precio_coste, P('Fronius Primo GEN24 SC 5.0'));
 igual('y venta = coste × 1,20 al céntimo', inv.precio_tarifa, Math.round(inv.precio_coste * 120 + 1e-7) / 100);
 igual('el panel genérico a 80 de coste', linea(r, 'FV-01-001').precio_coste, 80);
 igual('y 115 de venta (× 1,4375, sin complementarios)', linea(r, 'FV-01-001').precio_tarifa, 115);
@@ -335,7 +335,7 @@ comprueba('24,3 kWp con un Powerwall: avisa de la entrada solar', aviso(r, 'admi
 r = calcular('solar', con({ baterias: 'si', baterias_kwh: 13.5, bateria_marca: 'tesla', paneles_manual: 10 }), config);
 comprueba('5,1 kWp: sin ese aviso', !aviso(r, 'admite un Powerwall 3'));
 r = calcular('solar', con({ baterias: 'si', baterias_kwh: 10, bateria_marca: 'byd' }), config);
-comprueba('BYD sigue con su Fronius Plus y su Smart Meter', tiene(r, 'GEN24 SC 4.6 Plus') && tiene(r, 'Smart Meter') && r.variables.inversor_en_bateria === 0);
+comprueba('BYD sigue con su Fronius Plus y su Smart Meter', tiene(r, 'GEN24 SC 5.0 Plus') && tiene(r, 'Smart Meter') && r.variables.inversor_en_bateria === 0);
 igual('módulo HVS 2,56 a 1.007,54 de coste', porNombre(r, 'BYD Premium HVS 2.56').precio_coste, 1007.54);
 igual('y 1.209,05 de venta', porNombre(r, 'BYD Premium HVS 2.56').precio_tarifa, 1209.05);
 
@@ -353,7 +353,7 @@ var conKwp = function (extra) { var d = {}; for (var k in KWP) d[k] = KWP[k]; fo
 r = calcular('solar', conKwp({ tipo_cubierta: 'teja' }), config);
 igual('n_paneles = ⌈5 × 1000 / 540⌉', r.variables.n_paneles, 10);
 igual('kwp 5,40', r.variables.kwp, 5.4);
-igual('kw_inversor 4,5', r.variables.kw_inversor, 4.5);
+igual('kw_inversor 4,8 (5,4 ÷ 1,125)', r.variables.kw_inversor, 4.8);
 igual('n_filas', r.variables.n_filas, 1);
 igual('l_filas', eur2(r.variables.l_filas), '11.89');
 igual('n_barras', r.variables.n_barras, 5);
