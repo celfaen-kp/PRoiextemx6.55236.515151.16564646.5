@@ -428,7 +428,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '24.3'; // versión visible de la app (única fuente)
+const APP_VERSION = '24.4'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -9155,7 +9155,9 @@ A.confirmarBorrarPresu = async () => {
  * Crean y cambian citas solo los de presupuestos; jefes y admin las ven.
  * ============================================================================= */
 Object.assign(V, {
-  agenda: { citas: [], clientes: [], cargado: false, cargando: false, error: null, filtro: 'todas', filtroCli: 'todos', buscar: '' },
+  agenda: { citas: [], clientes: [], cargado: false, cargando: false, error: null, filtro: 'todas', filtroCli: 'todos', buscar: '',
+    // Clientes en tablero por defecto (Enzo, 16-10-2026); el cambio a lista se recuerda en este dispositivo.
+    vista: (() => { try { return localStorage.getItem('ag_vista') === 'lista' ? 'lista' : 'tablero'; } catch (_) { return 'tablero'; } })() },
   clienteDraft: null, citaDraft: null, clienteVerId: null, citaVerId: null, agBusy: false, agConfirmar: null,
 });
 
@@ -9620,6 +9622,7 @@ A.cargarAgenda = async () => {
   } catch (e) { ag.error = msgError(e); }
   finally { ag.cargando = false; ag.cargado = true; if (AG_VISTAS.includes(V.view)) render(); }
   // La última llamada y la próxima acción se ven en la lista sin entrar.
+  if (ag.vista === 'tablero') ag.clientes.forEach((c) => { if (!V.bitacora[c.id]) V.bitacora[c.id] = []; });
   if (puedeCitar()) cargarBitacoraTodos();
   clientesPendientesAHoja();
 };
@@ -9684,7 +9687,7 @@ A.ag = (a, d, e) => {
     case 'ag_estado': return agCambiarEstado(d.id, d.e);
     case 'ag_contactado': if (e) e.stopPropagation(); return A.agContactado(d.id, d.e);
     case 'ag_sinCitaAbrir': if (e) e.stopPropagation(); return A.ag_sinCitaAbrir(d.id);
-    case 'ag_vista': V.agenda.vista = V.agenda.vista === 'tablero' ? 'lista' : 'tablero'; if (V.agenda.vista === 'tablero') { V.agenda.clientes.forEach((c) => { if (!V.bitacora[c.id]) V.bitacora[c.id] = []; }); cargarBitacoraTodos(); } return render();
+    case 'ag_vista': V.agenda.vista = V.agenda.vista === 'tablero' ? 'lista' : 'tablero'; try { localStorage.setItem('ag_vista', V.agenda.vista); } catch (_) { /* da igual */ } if (V.agenda.vista === 'tablero') { V.agenda.clientes.forEach((c) => { if (!V.bitacora[c.id]) V.bitacora[c.id] = []; }); cargarBitacoraTodos(); } return render();
     case 'ag_sinCitaMotivo': if (V.sheet) V.sheet.motivo = d.m; return render();
     case 'ag_sinCitaGuardar': return A.ag_sinCitaGuardar();
     case 'ag_sinCitaQuitar': if (e) e.stopPropagation(); return A.ag_sinCitaQuitar(d.id);
