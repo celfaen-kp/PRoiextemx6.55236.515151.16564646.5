@@ -428,7 +428,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '24.6'; // versión visible de la app (única fuente)
+const APP_VERSION = '24.7'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -9454,8 +9454,8 @@ function seguimientoClienteHTML(c) {
 const TABLERO_COLS = [
   ['sin_cita', 'Nuevos · sin cita', 'var(--rojo)'], ['citado', 'Citados', 'var(--ambar)'], ['visitado', 'Visitados · por presupuestar', 'var(--tinta)'],
   ['sin_cita_ok', 'Resueltos sin cita', 'var(--t3)'],
-  ['presupuestado', 'Presupuesto por revisar o enviar', 'var(--tinta)'], ['esperando', 'Enviado · esperando', 'var(--ambar)'], ['aplazado', 'Aplazados', 'var(--ambar-o)'],
-  ['aceptado', 'Aceptados · obra', 'var(--verde)'], ['rechazado', 'Rechazados', 'var(--rojo)'],
+  ['presupuestado', 'Presupuesto por revisar o enviar', 'var(--tinta)'], ['esperando', 'Enviado · esperando', 'var(--ambar)'],
+  ['aceptado', 'Aceptados · obra', 'var(--verde)'], ['aplazado', 'Aplazados', 'var(--ambar-o)'], ['rechazado', 'Rechazados', 'var(--rojo)'],
 ];
 function tableroColumnas(clientes) {
   const cols = TABLERO_COLS.map(([k, titulo, color]) => ({ k, titulo, color, clientes: [] }));
