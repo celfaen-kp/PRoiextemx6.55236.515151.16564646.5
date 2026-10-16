@@ -85,6 +85,38 @@ const hora = (iso: string) =>
 const diaLargo = (iso: string) =>
   new Date(iso).toLocaleDateString('es-ES', { timeZone: ZONA, weekday: 'long', day: 'numeric', month: 'long' });
 
+// Días laborables (16-10-2026, Enzo): los resúmenes de «mañana» no se mandan
+// en fin de semana ni en festivo, y el del viernes (o la víspera de un festivo)
+// es para el siguiente día de trabajo, normalmente el lunes.
+const sumaDias = (iso: string, n: number) => fechaEnZona(new Date(new Date(iso + 'T12:00:00Z').getTime() + n * 86400_000));
+// deno-lint-ignore no-explicit-any
+async function festivosDesde(sb: any, iso: string): Promise<Set<string>> {
+  try {
+    const { data } = await sb.from('festivos').select('fecha').gte('fecha', iso).lte('fecha', sumaDias(iso, 40));
+    return new Set((data || []).map((f: { fecha: string }) => String(f.fecha)));
+  } catch (_) { return new Set(); }
+}
+const esFinde = (iso: string) => { const d = new Date(iso + 'T12:00:00Z').getUTCDay(); return d === 0 || d === 6; };
+const esLaborable = (iso: string, festivos: Set<string>) => !esFinde(iso) && !festivos.has(iso);
+function siguienteLaborable(iso: string, festivos: Set<string>) {
+  let d = sumaDias(iso, 1);
+  for (let i = 0; i < 30 && !esLaborable(d, festivos); i++) d = sumaDias(d, 1);
+  return d;
+}
+/** Para qué día va el resumen y cómo se dice: {dia, esManana, ref ('mañana' | 'el lunes 20 de octubre'), saltar}. */
+// deno-lint-ignore no-explicit-any
+async function diaDelResumen(sb: any, fechaPedida: unknown) {
+  if (typeof fechaPedida === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(fechaPedida)) {
+    const manana = fechaEnZona(new Date(Date.now() + 24 * 3600 * 1000));
+    return { dia: fechaPedida, esManana: fechaPedida === manana, saltar: false };
+  }
+  const hoy = fechaEnZona(new Date());
+  const festivos = await festivosDesde(sb, hoy);
+  if (!esLaborable(hoy, festivos)) return { dia: hoy, esManana: false, saltar: true };   // sábado, domingo o festivo: nada
+  const dia = siguienteLaborable(hoy, festivos);
+  return { dia, esManana: dia === sumaDias(hoy, 1), saltar: false };
+}
+
 // "hoy", "mañana, miércoles 16 de septiembre" o "miércoles 16 de septiembre".
 function cuando(iso: string, ahora: Date) {
   const dia = fechaEnZona(new Date(iso));
@@ -243,13 +275,13 @@ function correoTecnicoHTML(d: any) {
   const rotulo = d.aviso === 'nueva' ? 'Cita nueva'
     : d.aviso === 'cambio' ? 'Cita cambiada'
     : d.aviso === 'anulada' ? 'Cita anulada'
-    : d.resumen ? 'Citas de mañana'
+    : d.resumen ? (d.cuandoTitulo || 'Citas de mañana')
     : (n === 1 ? 'Próxima cita' : 'Tus próximas citas');
   const entradilla = d.aviso === 'nueva' ? 'Se te ha asignado una cita nueva.'
     : d.aviso === 'cambio' ? 'Una de tus citas ha cambiado de día y hora. Queda así:'
     : d.aviso === 'anulada' ? 'Esta cita se ha anulado. Ya no tienes que ir.'
     : d.resumen
-      ? (n === 1 ? 'Mañana tienes una cita.' : `Mañana tienes ${n} citas.`)
+      ? (n === 1 ? `${d.cuandoTxt || 'Mañana'} tienes una cita.` : `${d.cuandoTxt || 'Mañana'} tienes ${n} citas.`)
       : (n === 1 ? 'Tienes esta cita en las próximas horas.' : `Tienes ${n} citas en las próximas horas.`);
   const cuerpo = `
     ${eyebrow(rotulo)}
@@ -508,9 +540,10 @@ Deno.serve(async (req) => {
   // la hora, la dirección y la nota del planificador. A presupuestos y a
   // Administración: quién no tiene obra y qué obras en marcha no tienen a nadie.
   if (b.planificacion_manana === true) {
-    const dia = typeof b.fecha === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(b.fecha)
-      ? b.fecha
-      : fechaEnZona(new Date(Date.now() + 24 * 3600 * 1000));
+    const dr = await diaDelResumen(sb, b.fecha);
+    if (dr.saltar) return json({ modo: 'planificacion', saltado: 'hoy no es laborable: sin aviso', dia: dr.dia });
+    const dia = dr.dia;
+    const esManana = dr.esManana;
     const [{ data: plan, error: errP }, { data: gente, error: errG }, { data: sinNadie, error: errS }] = await Promise.all([
       sb.from('v_planificacion_dia').select('*').eq('fecha', dia).order('hora_prevista', { nullsFirst: false }),
       sb.from('empleados').select('id, nombre, rol, email_avisos, activo').eq('activo', true),
@@ -520,6 +553,9 @@ Deno.serve(async (req) => {
     // deno-lint-ignore no-explicit-any
     const filas = (plan || []) as any[];
     const diaTxt = mayus(new Date(dia + 'T12:00:00').toLocaleDateString('es-ES', { timeZone: ZONA, weekday: 'long', day: 'numeric', month: 'long' }));
+    const ref = esManana ? 'mañana' : 'el ' + diaTxt.toLowerCase();      // «mañana» o «el lunes 20 de octubre»
+    const Ref = esManana ? 'Mañana' : 'El ' + diaTxt.toLowerCase();
+    const etiq = esManana ? 'Mañana' : diaTxt.split(',')[0];               // etiqueta de las tarjetas
     const horaTxt = (h: string | null) => (h ? String(h).slice(0, 5) : '');
     const donde = (f: any) => [f.direccion, f.poblacion].filter(Boolean).join(', ');
     const correos: { para: string; asunto: string; texto: string; html: string }[] = [];
@@ -531,14 +567,14 @@ Deno.serve(async (req) => {
       if (!e || !esEmail(e.email_avisos)) continue;
       correos.push({
         para: String(e.email_avisos).trim(),
-        asunto: `Mañana vas a ${mias.length === 1 ? mias[0].codigo + ' · ' + (mias[0].cliente || mias[0].obra) : mias.length + ' obras'} · ${diaTxt}`,
-        texto: `Hola ${e.nombre}, mañana (${diaTxt}) ${mias.length === 1 ? 'vas a esta obra' : 'vas a ' + mias.length + ' obras'}:\n\n` +
+        asunto: `${Ref} vas a ${mias.length === 1 ? mias[0].codigo + ' · ' + (mias[0].cliente || mias[0].obra) : mias.length + ' obras'} · ${diaTxt}`,
+        texto: `Hola ${e.nombre}, ${esManana ? 'mañana (' + diaTxt + ')' : ref} ${mias.length === 1 ? 'vas a esta obra' : 'vas a ' + mias.length + ' obras'}:\n\n` +
           mias.map((f) => `· ${f.codigo} · ${f.cliente || f.obra}${horaTxt(f.hora_prevista) ? ' · ' + horaTxt(f.hora_prevista) : ''}\n  ${donde(f) || 'Sin dirección'}${f.nota ? '\n  Nota: ' + f.nota : ''}`).join('\n\n') +
           `\n\nLo tienes en «Hoy» en la app: ${APP_URL}`,
         html: correoTecnicoHTML({
-          logoUrl: LOGO_URL, appUrl: APP_URL, nombre: e.nombre, resumen: true,
+          logoUrl: LOGO_URL, appUrl: APP_URL, nombre: e.nombre, resumen: true, cuandoTitulo: 'Planificación de ' + ref, cuandoTxt: Ref,
           citas: mias.map((f) => ({
-            etiqueta: 'Mañana', dia: f.codigo, hora: horaTxt(f.hora_prevista) || '—', duracion: (f.categorias || []).join(' · '),
+            etiqueta: etiq, dia: f.codigo, hora: horaTxt(f.hora_prevista) || '—', duracion: (f.categorias || []).join(' · '),
             cliente: f.cliente || f.obra || 'Obra', direccion: donde(f), motivo: f.nota ? 'Nota: ' + f.nota : '',
           })),
         }),
@@ -564,11 +600,11 @@ Deno.serve(async (req) => {
     const comerciales = (gente || []).filter((g: any) => ['presupuestos', 'admin'].includes(g.rol) && esEmail(g.email_avisos));
     if (comerciales.length && (filas.length || sinObra.length || obrasSolas.length || segLineas.length)) {
       const lineas = [
-        `Planificación de mañana, ${diaTxt}:`,
+        `Planificación de ${ref}${esManana ? ', ' + diaTxt : ''}:`,
         '',
         ...(filas.length ? filas.map((f) => `· ${f.empleado} → ${f.codigo} · ${f.cliente || f.obra}${horaTxt(f.hora_prevista) ? ' · ' + horaTxt(f.hora_prevista) : ''}`) : ['· Nadie planificado todavía.']),
         '',
-        sinObra.length ? `Sin obra mañana: ${sinObra.join(', ')}.` : 'Todo el mundo tiene obra.',
+        sinObra.length ? `Sin obra ${ref}: ${sinObra.join(', ')}.` : 'Todo el mundo tiene obra.',
         obrasSolas.length ? `Obras en marcha sin nadie: ${obrasSolas.map((o) => o.codigo + ' · ' + (o.cliente || '')).join(' / ')}.` : 'Todas las obras en marcha tienen a alguien.',
         ...(segLineas.length ? ['', 'Clientes que tocan:', ...segLineas] : []),
         '',
@@ -576,15 +612,15 @@ Deno.serve(async (req) => {
       ];
       const texto = lineas.join('\n');
       const html = correoTecnicoHTML({
-        logoUrl: LOGO_URL, appUrl: APP_URL, nombre: 'equipo', resumen: true,
+        logoUrl: LOGO_URL, appUrl: APP_URL, nombre: 'equipo', resumen: true, cuandoTitulo: 'Planificación de ' + ref, cuandoTxt: Ref,
         citas: [
-          ...filas.map((f) => ({ etiqueta: 'Mañana', dia: f.codigo, hora: horaTxt(f.hora_prevista) || '—', duracion: '', cliente: `${f.empleado} → ${f.cliente || f.obra}`, direccion: donde(f), motivo: f.nota || '' })),
+          ...filas.map((f) => ({ etiqueta: etiq, dia: f.codigo, hora: horaTxt(f.hora_prevista) || '—', duracion: '', cliente: `${f.empleado} → ${f.cliente || f.obra}`, direccion: donde(f), motivo: f.nota || '' })),
           { etiqueta: 'Repaso', dia: diaTxt, hora: String(sinObra.length), duracion: 'sin obra', cliente: sinObra.length ? sinObra.join(', ') : 'Todo el mundo tiene obra', direccion: '', motivo: '' },
           { etiqueta: 'Repaso', dia: diaTxt, hora: String(obrasSolas.length), duracion: 'obras sin nadie', cliente: obrasSolas.length ? obrasSolas.map((o) => o.codigo + ' · ' + (o.cliente || '')).join(' / ') : 'Todas tienen a alguien', direccion: '', motivo: '' },
           ...segLineas.map((l) => ({ etiqueta: 'Cliente', dia: diaTxt, hora: '—', duracion: '', cliente: l.replace(/^· /, ''), direccion: '', motivo: '' })),
         ],
       });
-      for (const c of comerciales) correos.push({ para: String(c.email_avisos).trim(), asunto: `Planificación de mañana · ${sinObra.length} sin obra · ${obrasSolas.length} obras sin nadie${segLineas.length ? ' · ' + segLineas.length + ' clientes que tocan' : ''}`, texto, html });
+      for (const c of comerciales) correos.push({ para: String(c.email_avisos).trim(), asunto: `Planificación de ${esManana ? 'mañana' : diaTxt} · ${sinObra.length} sin obra · ${obrasSolas.length} obras sin nadie${segLineas.length ? ' · ' + segLineas.length + ' clientes que tocan' : ''}`, texto, html });
     }
     if (soloVer) return json({ modo: 'planificacion', dia, filas: filas.length, sin_obra: sinObra, obras_sin_nadie: obrasSolas.map((o) => o.codigo), correos: correos.map((m) => ({ para: m.para, asunto: m.asunto })) });
     const fallosP: string[] = [];
@@ -607,9 +643,13 @@ Deno.serve(async (req) => {
   // Tarea aparte (sql/etapa24b): no toca aviso_enviado_at, así que convive con el
   // aviso de cada cita.
   if (b.resumen_dia === true) {
-    const dia = typeof b.fecha === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(b.fecha)
-      ? b.fecha
-      : fechaEnZona(new Date(Date.now() + 24 * 3600 * 1000));
+    const dr = await diaDelResumen(sb, b.fecha);
+    if (dr.saltar) return json({ modo: 'resumen', saltado: 'hoy no es laborable: sin aviso', dia: dr.dia });
+    const dia = dr.dia;
+    const esManana = dr.esManana;
+    const diaTxtR = mayus(new Date(dia + 'T12:00:00').toLocaleDateString('es-ES', { timeZone: ZONA, weekday: 'long', day: 'numeric', month: 'long' }));
+    const refR = esManana ? 'mañana' : 'el ' + diaTxtR.toLowerCase();
+    const RefR = esManana ? 'Mañana' : 'El ' + diaTxtR.toLowerCase();
     const off2 = desfase(dia);
     const { data: filas, error: errR } = await sb.from('citas')
       .select(`id, inicio, duracion_min, categorias, direccion, poblacion,
@@ -635,17 +675,17 @@ Deno.serve(async (req) => {
     const motivoR = (c: any) => (c.categorias?.length ? 'instalación de ' + listaCategorias(c.categorias) : '');
     const correos = [...porPersona.entries()].map(([para, t]) => ({
       para,
-      asunto: `Mañana: ${t.citas.length === 1 ? '1 cita' : t.citas.length + ' citas'} · ${diaLargo(t.citas[0].inicio)}`,
+      asunto: `${RefR}: ${t.citas.length === 1 ? '1 cita' : t.citas.length + ' citas'} · ${diaLargo(t.citas[0].inicio)}`,
       texto:
-        `Hola ${t.nombre}, mañana ${t.citas.length === 1 ? 'tienes 1 cita' : 'tienes ' + t.citas.length + ' citas'}:\n\n` +
+        `Hola ${t.nombre}, ${refR} ${t.citas.length === 1 ? 'tienes 1 cita' : 'tienes ' + t.citas.length + ' citas'}:\n\n` +
         t.citas.map((c) =>
           `· ${hora(c.inicio)} (${duracionTxt(c.duracion_min || 60)}) — ${c.cliente?.nombre || 'Cliente'}\n` +
           `  ${dondeR(c) || 'Sin dirección'}${motivoR(c) ? `\n  ${mayus(motivoR(c))}` : ''}`).join('\n\n') +
         `\n\nLo tienes todo en la Agenda de la app: ${APP_URL}`,
       html: correoTecnicoHTML({
-        logoUrl: LOGO_URL, appUrl: APP_URL, nombre: t.nombre, resumen: true,
+        logoUrl: LOGO_URL, appUrl: APP_URL, nombre: t.nombre, resumen: true, cuandoTitulo: 'Citas de ' + refR, cuandoTxt: RefR,
         citas: t.citas.map((c) => ({
-          etiqueta: 'Mañana', dia: diaCorto(c.inicio), hora: hora(c.inicio),
+          etiqueta: esManana ? 'Mañana' : diaTxtR.split(',')[0], dia: diaCorto(c.inicio), hora: hora(c.inicio),
           duracion: duracionTxt(c.duracion_min || 60), cliente: c.cliente?.nombre || 'Cliente',
           direccion: dondeR(c), motivo: mayus(motivoR(c)),
         })),
