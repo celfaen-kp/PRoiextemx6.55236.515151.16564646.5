@@ -415,7 +415,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '22.12'; // versión visible de la app (única fuente)
+const APP_VERSION = '22.13'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -9455,11 +9455,17 @@ function agEstadoCliente(c) {
       : vis.some((v) => v.estado === 'completada') ? 'Visitado · visita por enviar' : 'Visitado · visita sin cerrar';
     return { k: 'visitado', color: 'var(--tinta)', txt };
   }
-  const prox = pend.filter((x) => x.inicio).sort((a, b) => a.inicio.localeCompare(b.inicio))[0];
-  if (prox) return { k: 'citado', color: 'var(--ambar)', txt: 'Citado · ' + (agDiaDe(prox.inicio) === agHoy() ? 'hoy' : fechaCorta(prox.inicio)) + ' ' + agHora(prox.inicio) };
+  // Una cita marcada «visitada» sin ficha en la app (se fue a verlo y no se
+  // tomó la ficha aquí) también es visitado: toca presupuestar.
+  const hoy = agHoy();
+  const futuras = pend.filter((x) => x.inicio && agDiaDe(x.inicio) >= hoy);
+  if ((c.citas || []).some((x) => x.estado === 'visitada') && !futuras.length) return { k: 'visitado', color: 'var(--tinta)', txt: 'Visitado · sin ficha en la app · por presupuestar' };
   // Se presupuesta sin ir a verlo (cliente de siempre, datos por teléfono):
-  // va con los visitados, que es la cola de presupuestar.
-  if (c.sin_cita_motivo === SIN_VISITA && !pend.length) return { k: 'visitado', color: 'var(--tinta)', txt: 'Por presupuestar · sin visita' };
+  // va con los visitados, que es la cola de presupuestar. Manda sobre una cita
+  // pendiente vieja que nadie cerró (16-10-2026); solo una cita FUTURA la gana.
+  if (c.sin_cita_motivo === SIN_VISITA && !futuras.length) return { k: 'visitado', color: 'var(--tinta)', txt: 'Por presupuestar · sin visita' };
+  const prox = pend.filter((x) => x.inicio).sort((a, b) => a.inicio.localeCompare(b.inicio))[0];
+  if (prox) return { k: 'citado', color: 'var(--ambar)', txt: 'Citado · ' + (agDiaDe(prox.inicio) === hoy ? 'hoy' : fechaCorta(prox.inicio)) + ' ' + agHora(prox.inicio) };
   // Resuelto sin cita (ya tiene obra, presupuesto hecho fuera, solo consulta…).
   if (c.sin_cita_motivo && !pend.length) return { k: 'sin_cita_ok', color: 'var(--t3)', txt: 'Sin cita · ' + c.sin_cita_motivo };
   // Sin cita: rojo si nadie le ha llamado; ámbar si ya se habló con él.
@@ -9880,7 +9886,7 @@ async function agCambiarEstado(id, estado) {
   if (!navigator.onLine) { avisar('Sin conexión: no se ha cambiado.'); return render(); }
   try {
     await visitasDB.guardarCita({ id, estado });
-    toast(estado === 'anulada' ? 'Cita anulada.' : 'Marcada: no estaba.');
+    toast(estado === 'anulada' ? 'Cita anulada.' : estado === 'visitada' ? 'Marcada como visitada: el cliente pasa a «por presupuestar».' : 'Marcada: no estaba.');
     if (estado === 'anulada') avisarDeCita(id);
     await A.cargarAgenda();
   } catch (e) { avisar('No se pudo cambiar: ' + agErrorTxt(e)); render(); }
@@ -10503,8 +10509,10 @@ function vCitaVer() {
 
   let pie = '';
   if (puedeCitar() && pendiente) {
+    const pasada = x.inicio && agDiaDe(x.inicio) < agHoy();
     pie = `<div class="pie col">
       <button class="btn btn-verde" data-a="ag_empezar" data-id="${x.id}">Empezar visita</button>
+      ${pasada ? `<button class="btn btn-gris ${conf('visitada') ? 'btn-rojo' : ''}" data-a="ag_estado" data-id="${x.id}" data-e="visitada" style="padding:13px;${conf('visitada') ? 'color:#fff' : ''}">${conf('visitada') ? '¿Seguro? Se marca visitada sin ficha' : 'Ya se visitó (sin ficha en la app)'}</button>` : ''}
       <div class="row g8">
         <button class="btn btn-gris ${conf('no_estaba') ? 'btn-rojo' : ''}" data-a="ag_estado" data-id="${x.id}" data-e="no_estaba" style="padding:13px;${conf('no_estaba') ? 'color:#fff' : ''}">${conf('no_estaba') ? '¿Seguro?' : 'No estaba'}</button>
         <button class="btn btn-gris" data-a="ag_borrarCita" data-id="${x.id}" style="padding:13px;color:var(--rojo)">Borrar esta cita</button>

@@ -25,6 +25,16 @@ igual('nueve columnas siempre', cols.length, 9);
 comprueba('ya no hay columna «En Teamleader»', !cols.some(function (c) { return c.k === 'teamleader'; }));
 igual('«se presupuesta sin visita» va con los visitados', agEstadoCliente({ citas: [], visitas: [], sin_cita_motivo: SIN_VISITA }).k, 'visitado');
 igual('y lo dice', agEstadoCliente({ citas: [], visitas: [], sin_cita_motivo: SIN_VISITA }).txt, 'Por presupuestar · sin visita');
+// El caso de Inma (16-10-2026): una cita pendiente ya pasada que nadie cerró no
+// debe dejar al cliente clavado en «citado» si se dice que se presupuesta sin
+// visita, ni si la cita se marca visitada (visita hecha fuera de la app).
+var ayer = (function () { var t = new Date(); t.setDate(t.getDate() - 1); return fechaLocal(t.toISOString()) + 'T10:00:00'; })();
+var manana = (function () { var t = new Date(); t.setDate(t.getDate() + 1); return fechaLocal(t.toISOString()) + 'T10:00:00'; })();
+igual('cita pasada sin cerrar + «sin visita» = visitado', agEstadoCliente({ citas: [{ estado: 'pendiente', inicio: ayer }], visitas: [], sin_cita_motivo: SIN_VISITA }).k, 'visitado');
+igual('pero una cita FUTURA gana: citado', agEstadoCliente({ citas: [{ estado: 'pendiente', inicio: manana }], visitas: [], sin_cita_motivo: SIN_VISITA }).k, 'citado');
+var vis = agEstadoCliente({ citas: [{ estado: 'visitada', inicio: ayer }], visitas: [] });
+comprueba('cita marcada visitada sin ficha = visitado, por presupuestar', vis.k === 'visitado' && /sin ficha/.test(vis.txt));
+igual('cita pasada pendiente sin más sigue en citado', agEstadoCliente({ citas: [{ estado: 'pendiente', inicio: ayer }], visitas: [] }).k, 'citado');
 igual('visitado manda sobre una cita posterior', agEstadoCliente({ citas: [{ estado: 'pendiente', inicio: new Date(Date.now() + 86400000).toISOString() }], visitas: [{ id: 'v', estado: 'completada' }] }).k, 'visitado');
 comprueba('las tarjetas del tablero se pueden arrastrar y tienen «⋯»', (function () { V.agenda.clientes = [{ id: 'a', nombre: 'Ana', citas: [], visitas: [] }]; V.agenda.buscar = ''; var h = tableroHTML(); return h.indexOf('draggable="true"') >= 0 && h.indexOf('data-a="tbMoverAbrir"') >= 0 && h.indexOf('data-col="sin_cita"') >= 0; })());
 
