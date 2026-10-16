@@ -36,6 +36,8 @@ var CASOS = [
   ['F · Fronius Plus + Fronius Reserva 10 kWh', { baterias: 'si', baterias_kwh: 10, bateria_marca: 'fronius' }],
   ['F · Tesla Powerwall 3 (sin inversor Fronius)', { baterias: 'si', baterias_kwh: 13.5, bateria_marca: 'tesla' }],
   ['F · Tesla Powerwall 3 + backup', { baterias: 'si', baterias_kwh: 13.5, bateria_marca: 'tesla', backup: true }],
+  ['P · Fronius SC en cubierta PLANA (lastres Sun Ballast, 2 filas)', { tipo_cubierta: 'plana_transitable', plana_anclaje: 'lastre' }],
+  ['P · Fronius SC en cubierta PLANA, una sola fila', { tipo_cubierta: 'plana_transitable', plana_anclaje: 'lastre', _una_fila: true }],
   ['D · Deye híbrido, sin batería', { inversor_marca: 'deye' }],
   ['D · Deye híbrido + batería 10 kWh (a mano)', { inversor_marca: 'deye', baterias: 'si', baterias_kwh: 10 }],
   ['E · Enphase IQ8P, sin batería', { inversor_marca: 'enphase' }],
@@ -48,8 +50,9 @@ var PANELES = [10, 20];
 function datosDe(extra, n) {
   var d = {}; for (var k in BASE) d[k] = BASE[k]; for (var j in extra) d[j] = extra[j];
   d.paneles_manual = n;
-  // Dos filas: n/2 por fila (igual que el reparto por defecto del modelo).
-  d.filas_paneles = [{ paneles: n / 2 }, { paneles: n / 2 }];
+  // Dos filas: n/2 por fila (igual que el reparto por defecto del modelo); o una sola fila si el caso lo pide.
+  d.filas_paneles = d._una_fila ? [{ paneles: n }] : [{ paneles: n / 2 }, { paneles: n / 2 }];
+  delete d._una_fila;
   return d;
 }
 var escH = function (v) { return String(v == null ? '' : v).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); };
@@ -110,7 +113,7 @@ resultados.forEach(function (x, i) {
   w('<h2 id="c' + i + '" class="caso">' + (i + 2) + ' · ' + escH(x.titulo) + ' · ' + x.n + ' paneles</h2>');
   // entrada
   w('<h3>Datos de entrada</h3><table><tr>');
-  var ent = [['Paneles', x.n], ['Inversor', d.inversor_marca], ['Suministro', d.suministro], ['Cubierta', d.tipo_cubierta + ' · ' + d.orientacion_panel + ' · 2 filas'],
+  var ent = [['Paneles', x.n], ['Inversor', d.inversor_marca], ['Suministro', d.suministro], ['Cubierta', d.tipo_cubierta + ' · ' + d.orientacion_panel + ' · ' + d.filas_paneles.length + ' fila(s)'],
     ['Baterías', d.baterias + (d.baterias_kwh ? ' · ' + d.baterias_kwh + ' kWh · ' + d.bateria_marca : '')], ['Backup', d.backup ? 'sí · ' + d.backup_modo : 'no'],
     ['Paneles → inversor', d.distancia_cubierta_inversor_m + ' m'], ['Inversor → cuadro', d.distancia_inversor_cuadro_m + ' m'], ['Cuadro → contador', d.distancia_cuadro_contador_m + ' m'], ['Km a la obra', d.km_obra],
     ['Subvención', d.subvencion ? 'sí' : 'no'], ['Certificado energético', d.certificado_energetico ? 'sí' : 'no'], ['Elevador', d.horas_elevador + ' h']];
