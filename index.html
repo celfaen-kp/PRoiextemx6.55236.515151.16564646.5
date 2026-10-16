@@ -428,7 +428,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '24.4'; // versión visible de la app (única fuente)
+const APP_VERSION = '24.5'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -1326,7 +1326,7 @@ A.salir = () => {
   V.view = 'login'; render();
   sysAuth.logout().catch(() => {});
 };
-A.ir = (v) => { V.view = v; render(); if (v === 'legalizaciones') A.cargarLegalizaciones(); if (v === 'presupuestos') A.cargarPresupuestos(); if (v === 'visitas') A.cargarVisitas(); if (AG_VISTAS.includes(v)) A.cargarAgenda(); if (v === 'ajustes' && verCRM() && !V.crm.cargado) A.crmEstado(); if (['hoy', 'obras', 'obra', 'partes', 'horas'].includes(v)) refrescarDatos().then(render); };
+A.ir = (v) => { V.volverPila = []; V.volverA = null; V.view = v; render(); if (v === 'legalizaciones') A.cargarLegalizaciones(); if (v === 'presupuestos') A.cargarPresupuestos(); if (v === 'visitas') A.cargarVisitas(); if (AG_VISTAS.includes(v)) A.cargarAgenda(); if (v === 'ajustes' && verCRM() && !V.crm.cargado) A.crmEstado(); if (['hoy', 'obras', 'obra', 'partes', 'horas'].includes(v)) refrescarDatos().then(render); };
 A.verObra = (id) => {
   V.obraId = id; V.obraRango = 'total'; V.view = 'obra'; render();
   // El total de una obra se cuenta desde que se abrió, que puede ser de antes
@@ -6670,21 +6670,30 @@ A.editarVisita = async (id) => {
 /* --- volver a donde se estaba (16-10-2026) ---------------------------------
  * Si una visita o un presupuesto se abren desde la ficha del cliente (o desde
  * una visita), el «‹ volver» lleva otra vez allí, no a la lista general. */
+V.volverPila = [];   // de dónde se vino, un nivel por pantalla (cliente → visita → presupuesto)
 function recordarOrigen() {
-  if (V.view === 'clienteVer' && V.clienteVerId) V.volverA = { view: 'clienteVer', id: V.clienteVerId, label: 'Cliente' };
-  else if (V.view === 'visita' && V.visitaVer && V.visitaVer.visita) V.volverA = { view: 'visita', id: V.visitaVer.visita.id, label: 'Visita' };
-  else V.volverA = null;
+  let o = null;
+  if (V.view === 'clienteVer' && V.clienteVerId) o = { view: 'clienteVer', id: V.clienteVerId, label: 'Cliente' };
+  else if (V.view === 'visita' && V.visitaVer && V.visitaVer.visita) o = { view: 'visita', id: V.visitaVer.visita.id, label: 'Visita' };
+  else if (V.view === 'citaVer' && V.citaVerId) o = { view: 'citaVer', id: V.citaVerId, label: 'Cita' };
+  else if (V.view === 'presupuestoVer' && V.presuVer && V.presuVer.id) o = { view: 'presupuestoVer', id: V.presuVer.id, label: 'Presupuesto' };
+  if (o) V.volverPila.push(o); else V.volverPila = [];
+  V.volverA = V.volverPila[V.volverPila.length - 1] || null;
 }
 const volverHTML = (porDefecto) => (V.volverA ? `<div class="volver" data-a="volverA">‹ ${esc(V.volverA.label)}</div>` : porDefecto);
 A.volverA = () => {
-  const o = V.volverA; V.volverA = null;
+  const o = V.volverPila.pop() || null;
+  V.volverA = V.volverPila[V.volverPila.length - 1] || null;
   if (!o) return;
+  // Se vuelve sin volver a apuntar el origen (por eso no se pasa por recordarOrigen).
   if (o.view === 'clienteVer') { V.clienteVerId = o.id; V.view = 'clienteVer'; render(); cargarVisitasCliente(o.id); return; }
-  if (o.view === 'visita') { A.verVisita(o.id); return; }
+  if (o.view === 'citaVer') { V.citaVerId = o.id; V.agConfirmar = null; V.view = 'citaVer'; render(); return; }
+  if (o.view === 'visita') { abrirVisitaSinOrigen(o.id); return; }
+  if (o.view === 'presupuestoVer') { abrirPresuSinOrigen(o.id); return; }
   V.view = o.view; render();
 };
-A.verVisita = async (id) => {
-  recordarOrigen();
+A.verVisita = (id) => { recordarOrigen(); return abrirVisitaSinOrigen(id); };
+async function abrirVisitaSinOrigen(id) {
   V.visitaVer = null; V.okVisitaDrive = null; V.okGracias = null; V.view = 'visita'; scrollMemo.visita = 0; render();
   try {
     V.visitaVer = await visitasDB.verVisita(id);
@@ -6694,7 +6703,7 @@ A.verVisita = async (id) => {
     avisar('No se pudo abrir la visita: ' + msgError(e));
     V.view = 'visitas'; render();
   }
-};
+}
 /**
  * La ficha de la visita en texto plano, que es lo que viaja al CRM: va al
  * resumen de la oportunidad y a las observaciones del cliente.
@@ -7932,14 +7941,14 @@ A.presuSueltoCliente = (id) => {
   V.suelto.cliente = V.suelto.clienteId ? c.nombre : '';
   render();
 };
-A.presuAbrir = async (id) => {
-  recordarOrigen();
+A.presuAbrir = (id) => { recordarOrigen(); return abrirPresuSinOrigen(id); };
+async function abrirPresuSinOrigen(id) {
   V.presuVer = { id, cargando: true, datos: null, error: null };
   V.view = 'presupuestoVer'; scrollMemo.presupuestoVer = 0; render();
   try { V.presuVer.datos = await visitasDB.verPresupuesto(id); }
   catch (e) { V.presuVer.error = msgError(e); }
   V.presuVer.cargando = false; render();
-};
+}
 
 /* =============================================================================
  * LEGALIZACIÓN FOTOVOLTAICA (sql/etapa55)
@@ -9661,7 +9670,7 @@ A.ag = (a, d, e) => {
     case 'ag_filtroCli': V.agenda.filtroCli = d.f; return render();
     case 'ag_sinCita': V.agenda.filtroCli = 'sin_cita'; V.view = 'clientes'; return render();
     case 'ag_visitas': return A.ir('visitas');
-    case 'ag_volver': V.view = d.v; if (d.v === 'clientes') V.agenda.verUltimo = true; return render();
+    case 'ag_volver': V.volverPila = []; V.volverA = null; V.view = d.v; if (d.v === 'clientes') V.agenda.verUltimo = true; return render();
     case 'ag_nuevoCliente': return agNuevoCliente();
     case 'ag_editarCliente': return agEditarCliente(d.id);
     case 'ag_cliTipo': if (V.clienteDraft) V.clienteDraft.tipo = d.t; return render();
@@ -9674,7 +9683,7 @@ A.ag = (a, d, e) => {
     case 'presuExternoGuardar': return A.presuExternoGuardar();
     case 'tbSubir': if (e) e.stopPropagation(); return tbReordenar(d.id, null, true);
     case 'ag_abrirCliente': V.clienteVerId = d.id; V.agenda.ultimoCliente = d.id; V.view = 'clienteVer'; scrollMemo.clienteVer = 0; render(); cargarVisitasCliente(d.id); return A.cargarAgenda();
-    case 'ag_abrirCita': V.citaVerId = d.id; V.agConfirmar = null; V.view = 'citaVer'; scrollMemo.citaVer = 0; return render();
+    case 'ag_abrirCita': recordarOrigen(); V.citaVerId = d.id; V.agConfirmar = null; V.view = 'citaVer'; scrollMemo.citaVer = 0; return render();
     case 'ag_nuevaCita': if (e) e.stopPropagation(); return agNuevaCita(d.id, false);
     case 'ag_visitar': if (e) e.stopPropagation(); return agEmpezarVisitaCliente(d.id);
     case 'ag_editarCita': return agEditarCita(d.id);
@@ -10620,7 +10629,7 @@ function agAvisoTxt(x, c) {
 function vCitaVer() {
   const x = agCita(V.citaVerId);
   if (!x) {
-    return `<div class="hdr-dark"><div class="volver" data-a="ag_volver" data-v="agenda">‹ Agenda</div>
+    return `<div class="hdr-dark">${volverHTML('<div class="volver" data-a="ag_volver" data-v="agenda">‹ Agenda</div>')}
       <div style="font:600 27px/1.1 var(--cond)">Cita</div>
       <div class="sub" style="color:rgba(255,255,255,.5);margin-top:6px">${V.agenda.cargando ? 'Cargando…' : 'No se encuentra la cita.'}</div></div>
       <div class="scroll pad sin-marca"></div>`;
@@ -10659,7 +10668,7 @@ function vCitaVer() {
   }
 
   return `<div class="hdr-dark">
-    <div class="volver" data-a="ag_volver" data-v="agenda">‹ Agenda</div>
+    ${volverHTML('<div class="volver" data-a="ag_volver" data-v="agenda">‹ Agenda</div>')}
     <div class="lbl" style="color:${pendiente ? 'var(--ambar)' : 'rgba(255,255,255,.5)'};margin-top:4px">${esc(cuando)}${pendiente ? '' : ' · ' + esc(AG_ESTADOS[x.estado] || x.estado)}</div>
     <div style="font:600 27px/1.1 var(--cond);margin-top:8px">${esc(c.nombre || 'Cliente')}</div>
     <div class="sub" style="color:rgba(255,255,255,.5);margin-top:6px">${esc(dir || 'Sin dirección')}</div>
