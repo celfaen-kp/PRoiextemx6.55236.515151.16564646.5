@@ -426,6 +426,12 @@ export async function presupuestarVisita(visitaId, categoria, opciones) {
     guardar: o.guardar === true,
     dto_global_pct: o.dtoGlobalPct == null ? undefined : o.dtoGlobalPct,
     lineas_extra: o.lineasExtra && o.lineasExtra.length ? o.lineasExtra : undefined,
+    // Otra opción del mismo presupuesto (otra marca de inversor): los datos de
+    // la ficha con el cambio encima, sin tocar la ficha. Y un título que la
+    // distinga en la lista y en Teamleader.
+    datos: o.datos || undefined,
+    ficha_id: o.fichaId || undefined,
+    titulo: o.titulo || undefined,
   });
 }
 

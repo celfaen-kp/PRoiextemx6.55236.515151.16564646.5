@@ -415,7 +415,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '22.11'; // versión visible de la app (única fuente)
+const APP_VERSION = '22.12'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -7289,7 +7289,7 @@ function vVisita() {
  * ============================================================================= */
 Object.assign(V, {
   presu: { cat: null, cargando: false, error: null, datos: null, dto: 0,
-           extra: [], guardando: false, buscar: '', buscando: false, resultados: [], guardado: null },
+           extra: [], guardando: false, buscar: '', buscando: false, resultados: [], guardado: null, opcion: null },
 });
 
 const CATS_CON_MOTOR = ['aire_acondicionado', 'aerotermia', 'solar'];
@@ -7441,6 +7441,7 @@ function presuPanelHTML() {
     s.lineas.push(l);
   });
   return `${d ? `
+      ${opcionesMarcaHTML(p)}
       ${(d.incidencias || []).length ? `<div style="margin-top:12px">${d.incidencias.map((i) => `<div class="tiny" style="margin-top:6px;color:${i.nivel === 'error' ? 'var(--rojo)' : 'var(--ambar-o)'}">${i.nivel === 'error' ? '⚠' : '·'} ${esc(i.mensaje)}</div>`).join('')}</div>` : ''}
 
       ${secciones.map((s) => `<div style="margin-top:16px">
@@ -7507,6 +7508,55 @@ const eur = (n) => (Number(n) || 0).toLocaleString('es-ES', { minimumFractionDig
  */
 const enSuelto = () => V.view === 'presuNuevo' && !!V.suelto;
 
+/* --- varias opciones por cliente (16-10-2026) ------------------------------
+ * Del mismo presupuesto se pueden sacar varias opciones cambiando la marca del
+ * inversor (Fronius, Deye, Enphase) sin tocar la ficha: cada una se guarda como
+ * un presupuesto aparte (y una oferta aparte en Teamleader), con la marca en el
+ * título. Solo en fotovoltaica, que es donde hay tres marcas. */
+const MARCAS_FV = [['fronius', 'Fronius'], ['deye', 'Deye'], ['enphase', 'Enphase']];
+const nombreMarcaFV = (m) => (MARCAS_FV.find((x) => x[0] === m) || [m, m])[1];
+/** Los datos de la ficha de la visita en curso para esa categoría (o null). */
+function fichaVisitaActual(categoria) {
+  const vv = V.visitaVer; if (!vv) return null;
+  return (vv.fichas || []).find((f) => f.categoria === categoria) || null;
+}
+/** La marca con la que se calcula sin opción: la del suelto o la de la ficha. */
+function marcaBaseFV() {
+  if (enSuelto()) return V.suelto.inversor || 'fronius';
+  const f = fichaVisitaActual('solar');
+  return (f && f.datos && f.datos.inversor_marca) || 'fronius';
+}
+/** Los datos con la opción encima. La batería se adapta a la marca, como en el suelto. */
+function datosConOpcion(base) {
+  const op = V.presu.opcion; if (!op || !base) return base;
+  const d = Object.assign({}, base, op);
+  const conBat = d.baterias === 'si' || Number(d.baterias_kwh) > 0;
+  if (conBat) {
+    const ok = (BATERIAS_DE[d.inversor_marca] || []).map((x) => x[0]);
+    if (ok.length && !ok.includes(d.bateria_marca)) d.bateria_marca = ok[0];
+  }
+  return d;
+}
+const sufijoOpcion = () => (V.presu.opcion ? ' · opción ' + nombreMarcaFV(V.presu.opcion.inversor_marca) : '');
+A.presuOpcionMarca = (m) => {
+  const p = V.presu; if (!p.cat || p.cargando) return;
+  if (!enSuelto() && !fichaVisitaActual(p.cat)) { avisar('Esta visita no tiene ficha de ' + nombreCat(p.cat) + ': no se puede cambiar la marca.'); return; }
+  p.opcion = m && m !== marcaBaseFV() ? { inversor_marca: m } : null;
+  p.guardado = null; p.enTL = false; p.errTL = null;
+  A.presuCalcular(p.cat);
+};
+function opcionesMarcaHTML(p) {
+  if (p.cat !== 'solar') return '';
+  const actual = p.opcion ? p.opcion.inversor_marca : marcaBaseFV();
+  return `<div style="margin-top:12px;padding:10px 12px;border-radius:12px;background:rgba(20,23,15,.045)">
+    <div class="row g8" style="align-items:center;flex-wrap:wrap">
+      <span class="lbl" style="font-size:11px">Opción con</span>
+      ${MARCAS_FV.map(([k, l]) => `<span class="chip ${actual === k ? 'on' : ''}" data-a="presuOpcionMarca" data-m="${k}" style="cursor:pointer">${l}</span>`).join('')}
+    </div>
+    <div class="tiny" style="margin-top:6px">Para dar al cliente dos o tres opciones: guarda esta, cambia de marca y guarda la siguiente. Cada una es un presupuesto aparte, con la marca en el título, y una oferta aparte en Teamleader.${p.opcion ? ' Esta opción no cambia la ficha de la visita.' : ''}</div>
+  </div>`;
+}
+
 A.presuCalcular = async (categoria) => {
   if (!esPresupuestos() && !esAdmin()) return;
   const suelto = enSuelto();
@@ -7517,13 +7567,18 @@ A.presuCalcular = async (categoria) => {
   const p = V.presu;
   p.cat = categoria; p.cargando = true; p.error = null; render();
   try {
+    const ficha = suelto ? null : fichaVisitaActual(categoria);
     p.datos = suelto
-      ? await visitasDB.presupuestarSuelto(categoria, datosDelSuelto(V.suelto), {
+      ? await visitasDB.presupuestarSuelto(categoria, datosConOpcion(datosDelSuelto(V.suelto)), {
           guardar: false, dtoGlobalPct: p.dto, lineasExtra: p.extra,
-          clienteId: V.suelto.clienteId, titulo: tituloDelSuelto(),
+          clienteId: V.suelto.clienteId, titulo: tituloDelSuelto() + sufijoOpcion(),
         })
       : await visitasDB.presupuestarVisita(vv.visita.id, categoria, {
           guardar: false, dtoGlobalPct: p.dto, lineasExtra: p.extra,
+          // Con una opción puesta van los datos de la ficha con la marca cambiada.
+          datos: p.opcion && ficha ? datosConOpcion(ficha.datos || {}) : undefined,
+          fichaId: p.opcion && ficha ? ficha.id : undefined,
+          titulo: p.opcion ? nombreCat(categoria) + sufijoOpcion() : undefined,
         });
   } catch (e) {
     p.datos = null; p.error = msgError(e);
@@ -7549,18 +7604,22 @@ A.presuGuardar = async () => {
   if ((!vv && !suelto) || !p.cat || p.guardando) return;
   p.guardando = true; render();
   try {
+    const ficha = suelto ? null : fichaVisitaActual(p.cat);
     const r = suelto
-      ? await visitasDB.presupuestarSuelto(p.cat, datosDelSuelto(V.suelto), {
+      ? await visitasDB.presupuestarSuelto(p.cat, datosConOpcion(datosDelSuelto(V.suelto)), {
           guardar: true, dtoGlobalPct: p.dto, lineasExtra: p.extra,
-          clienteId: V.suelto.clienteId, titulo: tituloDelSuelto(),
+          clienteId: V.suelto.clienteId, titulo: tituloDelSuelto() + sufijoOpcion(),
         })
       : await visitasDB.presupuestarVisita(vv.visita.id, p.cat, {
           guardar: true, dtoGlobalPct: p.dto, lineasExtra: p.extra,
+          datos: p.opcion && ficha ? datosConOpcion(ficha.datos || {}) : undefined,
+          fichaId: p.opcion && ficha ? ficha.id : undefined,
+          titulo: p.opcion ? nombreCat(p.cat) + sufijoOpcion() : undefined,
         });
     p.datos = r; p.guardado = r.presupuesto_id || null; p.enTL = false; p.errTL = null;
     toast('Presupuesto guardado. Subiéndolo a Teamleader…');
     V.presuLista.cargado = false; A.cargarPresupuestos();
-    anotar(suelto ? V.suelto.clienteId : (vv.visita && vv.visita.cliente_id), 'presupuesto', 'Presupuesto de ' + nombreCat(p.cat) + ' creado' + (r && r.total_venta != null ? ' · ' + eur(r.total_venta) : ''));
+    anotar(suelto ? V.suelto.clienteId : (vv.visita && vv.visita.cliente_id), 'presupuesto', 'Presupuesto de ' + nombreCat(p.cat) + sufijoOpcion() + ' creado' + (r && r.total_venta != null ? ' · ' + eur(r.total_venta) : ''));
   } catch (e) { avisar('No se pudo guardar: ' + msgError(e)); p.guardando = false; render(); return; }
   p.guardando = false; render();
   // Guardado = a Teamleader, sin más botones.
@@ -7773,7 +7832,7 @@ A.cargarPresupuestos = async () => {
 
 A.presuNuevo = () => {
   V.suelto = presuNuevoVacio();
-  V.presu = { cat: null, cargando: false, error: null, datos: null, dto: 0, extra: [], guardando: false, buscar: '', buscando: false, resultados: [], guardado: null };
+  V.presu = { cat: null, cargando: false, error: null, datos: null, dto: 0, extra: [], guardando: false, buscar: '', buscando: false, resultados: [], guardado: null, opcion: null };
   V.view = 'presuNuevo'; scrollMemo.presuNuevo = 0; render();
   if (!V.agenda.cargado) A.cargarAgenda();
 };
@@ -11689,6 +11748,7 @@ document.addEventListener('click', (e) => {
   if (a === 'visitaDrive') return A.visitaDrive();
   if (a === 'graciasVisita') return A.graciasVisita();
   if (a === 'presuCalcular') return A.presuCalcular(d.c);
+  if (a === 'presuOpcionMarca') return A.presuOpcionMarca(d.m);
   if (a === 'presuRecalcular') return A.presuRecalcular();
   if (a === 'presuGuardar') return A.presuGuardar();
   if (a === 'presuBuscar') return A.presuBuscar();
