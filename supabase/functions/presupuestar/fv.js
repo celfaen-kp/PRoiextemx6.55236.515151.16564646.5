@@ -279,7 +279,7 @@ export function seccionCableCC(n_pan, n_str, L, P, PR) {
     aviso = 'Cable CC de ' + elegida.seccion + ' mm² por caída de tensión (' + g(L) + ' m por string, ' + porString + ' paneles × ' + g(vmp) + ' V = ' + g(rnd(vString, 0)) + ' V, '
       + g(imp) + ' A, máx. ' + g(cdt * 100) + ' %): caída ' + g(elegida.caida_pct) + ' %.'
       + (elegida.precio_estimado ? ' Precio del ' + elegida.seccion + ' mm² PENDIENTE de Electromat: estimado proporcional a la sección.' : '')
-      + (elegida.seccion >= 16 ? ' Revisar conectores (MC4 hasta 10 mm²: caja de transición o bornas) y diámetro del tubo.' : '');
+      + (elegida.seccion >= 16 ? ' Revisar el diámetro del tubo (los MC4 se mantienen: se adapta el terminal, Enzo 16-10-2026).' : '');
   }
   if (!tabla.some((t) => t.cumple)) aviso = 'Ni con ' + elegida.seccion + ' mm² se cumple el ' + g(cdt * 100) + ' % de caída (' + g(elegida.caida_pct) + ' %): repartir en más strings o acercar el inversor. ' + aviso;
   return { seccion: elegida.seccion, coste_m: elegida.coste_m, aviso, tabla,

@@ -452,6 +452,15 @@ export async function presupuestarSuelto(categoria, datos, opciones) {
   });
 }
 
+/**
+ * Un presupuesto hecho DIRECTAMENTE en Teamleader (sin pasar por el motor), para
+ * que la app lo conozca y el cliente pase a «presupuestado» y se pueda seguir
+ * (revisado, enviado, aceptado). Sin líneas; motor_version = 'teamleader'.
+ */
+export async function crearPresupuestoExterno(fila) {
+  return unwrap(await supabase.from('presupuestos').insert(fila).select().single());
+}
+
 /** Todos los presupuestos guardados, los de visita y los sueltos. */
 export async function listarPresupuestos(limite = 100) {
   return unwrap(

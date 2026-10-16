@@ -77,8 +77,9 @@ comprueba('y la caída con 6 mm² cumple el 1,5 %', cc20.tabla[0].cumple && cc20
 var r120 = calcularFV(Object.assign({}, ent, { dist_cc: 120 }), modelo), cc120 = r120.cable_cc;
 igual('con 120 m (125 por string), 10 paneles en 1 string: 16 mm²', cc120.seccion, 16);
 comprueba('6 y 10 no cumplen, 16 sí (' + cc120.tabla.map(function (t) { return t.seccion + ':' + t.caida_pct; }).join(' ') + ')', !cc120.tabla[0].cumple && !cc120.tabla[1].cumple && cc120.tabla[2].cumple);
-comprueba('la partida del cable dice 16 mm² y lleva el aviso de precio pendiente y conectores', r120.partidas.some(function (x) { return /Cable solar H1Z2Z2-K 16 mm²/.test(x.partida) && /PENDIENTE/.test(x.aviso) && /conectores/.test(x.aviso); }));
-comprueba('el precio estimado del 16 es proporcional al del 6 (1,365 × 16/6)', Math.abs(cc120.coste_m - rnd(1.365 * 16 / 6, 3)) < 0.001);
+comprueba('la partida del cable dice 16 mm² y avisa del tubo (los MC4 se mantienen)', r120.partidas.some(function (x) { return /Cable solar H1Z2Z2-K 16 mm²/.test(x.partida) && /tubo/.test(x.aviso) && !/conectores/.test(x.aviso); }));
+igual('el 16 mm² va al precio web de Obramat (2,30 €/m), no estimado', cc120.coste_m, 2.3);
+comprueba('el 25 mm² sigue estimado (sin precio): 1,365 × 25/6', cc120.tabla[3].precio_estimado && Math.abs(cc120.tabla[3].coste_m - rnd(1.365 * 25 / 6, 3)) < 0.001);
 comprueba('el aviso llega al presupuesto', r120.avisos.some(function (a) { return /16 mm²/.test(a); }));
 var r120b = calcularFV(Object.assign({}, ent, { dist_cc: 120, paneles_forzado: 20 }), modelo).cable_cc;
 igual('20 paneles en 2 strings de 10: misma tensión de string, también 16 mm²', r120b.seccion, 16);
