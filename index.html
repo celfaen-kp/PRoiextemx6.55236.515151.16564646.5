@@ -428,7 +428,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '24.5'; // versión visible de la app (única fuente)
+const APP_VERSION = '24.6'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -7903,6 +7903,8 @@ A.tlSincronizar = async () => {
     if (r.actualizados) partes.push(r.actualizados + ' presupuesto(s) actualizado(s)');
     toast(partes.length ? 'Teamleader: ' + partes.join(' · ') + '.' : 'Teamleader: sin novedades (' + (r.revisados || 0) + ' revisadas).');
     if (r.detalles && r.detalles.length) console.info('Teamleader →', r.detalles);
+    // Diagnóstico para afinar la detección de «enviado» (solo Administración lo ve).
+    if (esAdmin() && (r.muestra || r.fases)) V.sheet = { tipo: 'tlDiag', r };
     V.presuLista.cargado = false; A.cargarPresupuestos(); A.cargarAgenda();
   } catch (e) { avisar('No se pudo sincronizar: ' + msgError(e)); }
   V.tlSyncBusy = false; render();
@@ -11540,6 +11542,19 @@ function sheet() {
       </div>
     </div></div>`;
   }
+  if (s.tipo === 'tlDiag') {
+    const r = s.r || {};
+    const txt = JSON.stringify({ revisados: r.revisados, actualizados: r.actualizados, importados: r.importados, oportunidades: r.oportunidades, fases: r.fases, detalles: r.detalles, muestra: r.muestra }, null, 1);
+    return `<div class="sheet"><div>
+      <div style="font:600 23px/1.15 var(--cond)">Teamleader · diagnóstico</div>
+      <div class="sub" style="margin-top:6px">Lo que devuelve la API de las ofertas y oportunidades. Sirve para ajustar cómo se detecta «enviado». Cópialo y pásalo.</div>
+      <textarea class="inp" readonly style="margin-top:12px;height:46vh;font:11px/1.4 var(--mono);white-space:pre">${esc(txt)}</textarea>
+      <div class="row g8" style="margin-top:14px">
+        <button class="btn btn-gris" data-a="cerrarSheet" style="border-radius:99px">Cerrar</button>
+        <button class="btn btn-verde" data-a="tlDiagCopiar">Copiar</button>
+      </div>
+    </div></div>`;
+  }
   if (s.tipo === 'presuExterno') {
     const c = agCliente(s.id) || {};
     return `<div class="sheet"><div>
@@ -11924,6 +11939,7 @@ document.addEventListener('click', (e) => {
   if (a === 'presuCalcular') return A.presuCalcular(d.c);
   if (a === 'tlSincronizar') return A.tlSincronizar();
   if (a === 'volverA') return A.volverA();
+  if (a === 'tlDiagCopiar') { const ta = document.querySelector('.sheet textarea'); if (ta) { ta.select(); try { navigator.clipboard.writeText(ta.value); toast('Copiado.'); } catch (_) { document.execCommand('copy'); toast('Copiado.'); } } return; }
   if (a === 'presuOpcionMarca') return A.presuOpcionMarca(d.m);
   if (a === 'presuRecalcular') return A.presuRecalcular();
   if (a === 'presuGuardar') return A.presuGuardar();

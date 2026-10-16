@@ -328,6 +328,19 @@ async function sincronizar(sb: any) {
     catch (e) { if ((e as { status?: number }).status !== 404) resumen.detalles.push('Oportunidad ' + did.slice(0, 8) + ': ' + (e as Error).message); }
   }
   resumen.oportunidades = Object.keys(deals).length;
+  // Diagnóstico (16-10-2026): Teamleader enseña «Enviado / Sin enviar» en sus
+  // ofertas, pero la documentación de la API no trae ese dato. Se devuelve una
+  // muestra cruda (sin líneas) de lo que llega, para ver con qué campo viene.
+  // deno-lint-ignore no-explicit-any
+  (resumen as any).muestra = Object.values(ofertas).slice(0, 4).map((q) => {
+    const d = deals[q.deal?.id];
+    // deno-lint-ignore no-explicit-any
+    const plano: Record<string, any> = {};
+    Object.keys(q).forEach((k) => { if (k !== 'grouped_lines' && k !== 'discounts') plano[k] = q[k]; });
+    return { oferta: plano, oportunidad: d ? { status: d.status, fase: fases[d.current_phase?.id] || d.current_phase?.id, closed_at: d.closed_at, historial: (d.phase_history || []).map((h: { phase?: { id: string }; started_at?: string }) => (fases[h.phase?.id || ''] || h.phase?.id) + ' @ ' + h.started_at) } : null };
+  });
+  // deno-lint-ignore no-explicit-any
+  (resumen as any).fases = Object.values(fases);
 
   // Las ofertas de esas oportunidades que la app no conoce: se piden también.
   const desconocidas: string[] = [];
