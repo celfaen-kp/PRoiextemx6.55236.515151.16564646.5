@@ -427,7 +427,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '23.5'; // versión visible de la app (única fuente)
+const APP_VERSION = '23.6'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -2929,8 +2929,19 @@ A.ag_sinCitaGuardar = async () => {
     const cambios = { sin_cita_motivo: motivo, sin_cita_at: new Date().toISOString(), sin_cita_por: miEmpId() || null };
     await visitasDB.guardarCliente(Object.assign({ id: s.id }, cambios));
     const c = agCliente(s.id); if (c) Object.assign(c, cambios);
-    V.sheet = null; toast('Resuelto sin cita.'); render();
-    anotar(s.id, 'sistema', 'Sin cita: ' + motivo);
+    // «Se presupuesta sin visita» = visitado: las citas que tuviera pendientes se
+    // dan por hechas, que si no el cliente se quedaba clavado en «Citados»
+    // (Imma, 16-10-2026). Las demás razones (ya tiene obra, no interesa…) no
+    // tocan las citas: esas se anulan desde la cita.
+    let cerradas = 0;
+    if (motivo === SIN_VISITA) {
+      const pendientes = V.agenda.citas.filter((x) => x.cliente_id === s.id && x.estado === 'pendiente');
+      for (const x of pendientes) { try { await visitasDB.guardarCita({ id: x.id, estado: 'visitada' }); x.estado = 'visitada'; cerradas++; } catch (_) { /* se queda pendiente */ } }
+      if (c && Array.isArray(c.citas)) c.citas.forEach((x) => { if (x.estado === 'pendiente') x.estado = 'visitada'; });
+    }
+    V.sheet = null; toast(motivo === SIN_VISITA ? 'Pasa a visitado · por presupuestar.' + (cerradas ? ' Sus ' + cerradas + ' cita(s) pendiente(s) quedan como visitadas.' : '') : 'Resuelto sin cita.'); render();
+    anotar(s.id, 'sistema', 'Sin cita: ' + motivo + (cerradas ? ' · ' + cerradas + ' cita(s) dada(s) por visitada(s)' : ''));
+    if (cerradas) A.cargarAgenda();
   } catch (e) { s.busy = false; avisar(/sin_cita_motivo|schema cache/i.test(msgError(e)) ? 'Falta ejecutar sql/etapa69 en Supabase.' : 'No se pudo guardar: ' + msgError(e)); render(); }
 };
 A.ag_sinCitaQuitar = async (id) => {
@@ -9478,7 +9489,7 @@ function agEstadoCliente(c) {
   // Una cita marcada «visitada» sin ficha en la app (se fue a verlo y no se
   // tomó la ficha aquí) también es visitado: toca presupuestar.
   const hoy = agHoy();
-  const futuras = pend.filter((x) => x.inicio && agDiaDe(x.inicio) >= hoy);
+  const futuras = pend.filter((x) => x.inicio && agDiaDe(x.inicio) > hoy);   // de mañana en adelante; la de hoy ya pudo hacerse
   if ((c.citas || []).some((x) => x.estado === 'visitada') && !futuras.length) return { k: 'visitado', color: 'var(--tinta)', txt: 'Visitado · sin ficha en la app · por presupuestar' };
   // Se presupuesta sin ir a verlo (cliente de siempre, datos por teléfono):
   // va con los visitados, que es la cola de presupuestar. Manda sobre una cita

@@ -32,6 +32,8 @@ var ayer = (function () { var t = new Date(); t.setDate(t.getDate() - 1); return
 var manana = (function () { var t = new Date(); t.setDate(t.getDate() + 1); return fechaLocal(t.toISOString()) + 'T10:00:00'; })();
 igual('cita pasada sin cerrar + «sin visita» = visitado', agEstadoCliente({ citas: [{ estado: 'pendiente', inicio: ayer }], visitas: [], sin_cita_motivo: SIN_VISITA }).k, 'visitado');
 igual('pero una cita FUTURA gana: citado', agEstadoCliente({ citas: [{ estado: 'pendiente', inicio: manana }], visitas: [], sin_cita_motivo: SIN_VISITA }).k, 'citado');
+var hoyT = agHoy() + 'T18:00:00';
+igual('una cita pendiente de HOY ya no lo retiene: visitado', agEstadoCliente({ citas: [{ estado: 'pendiente', inicio: hoyT }], visitas: [], sin_cita_motivo: SIN_VISITA }).k, 'visitado');
 var vis = agEstadoCliente({ citas: [{ estado: 'visitada', inicio: ayer }], visitas: [] });
 comprueba('cita marcada visitada sin ficha = visitado, por presupuestar', vis.k === 'visitado' && /sin ficha/.test(vis.txt));
 igual('cita pasada pendiente sin más sigue en citado', agEstadoCliente({ citas: [{ estado: 'pendiente', inicio: ayer }], visitas: [] }).k, 'citado');
