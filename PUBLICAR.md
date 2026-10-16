@@ -33,6 +33,8 @@ sin que nadie se enterara. De ahí la comprobación.
 versión vieja:
 
 - `APP_VERSION` en `index.html` (se ve al final de Ajustes).
+  Numeración (Enzo, 16-10-2026): un decimal; al pasar de .9 se cambia el
+  entero (22.9 → 23.0, no 22.10).
 - `CACHE` en `sw.js` (`ch-v8-7` → `ch-v8-8`…).
 
 El archivo `.nojekyll` de la raíz evita que GitHub procese los archivos: tiene

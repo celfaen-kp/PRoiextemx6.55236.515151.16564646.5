@@ -295,10 +295,20 @@ body.con-captcha #captcha{display:block}
 .pl-mas{font:400 18px/1 var(--sans);color:var(--t3);text-align:center;margin:auto}
 
 /* Tablero de clientes por fases (sql/etapa71): columnas con scroll lateral. */
-.tb-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;margin:0 -16px;padding:4px 16px 10px}
+/* El tablero volteado verticalmente, y su contenido vuelto a voltear: así la barra
+   de desplazamiento horizontal sale ARRIBA y no hay que bajar al final para verla
+   (Enzo, 16-10-2026). Con el ratón también se arrastra el fondo como si fuera táctil. */
+.tb-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;margin:0 -16px;padding:10px 16px 4px;transform:rotateX(180deg);cursor:grab}
+.tb-wrap>.tb-cols{transform:rotateX(180deg)}
+.tb-wrap.arrastre{cursor:grabbing;user-select:none}
+.tb-wrap.arrastre .tb-card{pointer-events:none}
 .tb-cols{display:flex;gap:10px;align-items:flex-start;min-width:max-content}
-.tb-col{width:252px;flex:none;background:rgba(20,23,15,.04);border-radius:16px;padding:10px}
-.tb-col .lbl{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px}
+.tb-col{width:252px;flex:none;background:color-mix(in srgb,var(--col,var(--tinta)) 9%,#f6f6f1);border-radius:16px;padding:10px;border-top:4px solid var(--col,var(--tinta))}
+@supports not (background:color-mix(in srgb,red 9%,white)){.tb-col{background:rgba(20,23,15,.04)}}
+/* Título de columna grande y en el color de la fase (Enzo, 16-10-2026). */
+.tb-cab{display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin:2px 0 10px}
+.tb-tit{font:600 17px/1.15 var(--cond);color:var(--col,var(--tinta));letter-spacing:.01em}
+.tb-n{display:inline-block;min-width:22px;padding:1px 7px;border-radius:99px;background:var(--col,var(--tinta));color:#fff;font:600 12px/18px var(--mono);text-align:center;vertical-align:2px}
 .tb-card{background:#fff;border-radius:12px;padding:10px 12px;margin-bottom:8px;box-shadow:var(--sh);cursor:pointer;border-left:3px solid var(--l2)}
 /* El último cliente abierto, resaltado al volver a la lista o al tablero: para saber dónde se quedó uno. */
 .card.ultimo,.tb-card.ultimo{background:#eaf3ec;box-shadow:var(--sh),inset 0 0 0 2px var(--verde)}
@@ -417,7 +427,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '22.14'; // versión visible de la app (única fuente)
+const APP_VERSION = '23.5'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -9324,10 +9334,13 @@ function seguimientoClienteHTML(c) {
   </div>`;
 }
 // El tablero por fases, como el de Teamleader pero con lo que la app ya sabe.
+// Orden pedido por Enzo (16-10-2026): los resueltos sin cita van entre visitados y
+// presupuesto por revisar; rechazados tiene columna propia siempre a la vista.
 const TABLERO_COLS = [
   ['sin_cita', 'Nuevos · sin cita', 'var(--rojo)'], ['citado', 'Citados', 'var(--ambar)'], ['visitado', 'Visitados · por presupuestar', 'var(--tinta)'],
+  ['sin_cita_ok', 'Resueltos sin cita', 'var(--t3)'],
   ['presupuestado', 'Presupuesto por revisar o enviar', 'var(--tinta)'], ['esperando', 'Enviado · esperando', 'var(--ambar)'], ['aplazado', 'Aplazados', 'var(--ambar-o)'],
-  ['aceptado', 'Aceptados · obra', 'var(--verde)'], ['rechazado', 'Rechazados', 'var(--rojo)'], ['sin_cita_ok', 'Resueltos sin cita', 'var(--t3)'],
+  ['aceptado', 'Aceptados · obra', 'var(--verde)'], ['rechazado', 'Rechazados', 'var(--rojo)'],
 ];
 function tableroColumnas(clientes) {
   const cols = TABLERO_COLS.map(([k, titulo, color]) => ({ k, titulo, color, clientes: [] }));
@@ -9340,10 +9353,10 @@ function tableroHTML() {
   const hoy = hoyISO();
   let lista = ag.clientes;
   if (q) lista = lista.filter((c) => clienteCasa(c, q));
-  const cols = tableroColumnas(lista).filter((col) => col.clientes.length || !['sin_cita_ok', 'rechazado'].includes(col.k));
+  const cols = tableroColumnas(lista);   // todas las columnas, también vacías (16-10-2026)
   const importe = (c) => { const p = presuQueManda(c); return p && p.total_venta != null ? eur(p.total_venta) : ''; };
-  return `<div class="tb-wrap"><div class="tb-cols">${cols.map((col) => `<div class="tb-col" data-col="${col.k}">
-    <div class="lbl"><span style="color:${col.color}">${esc(col.titulo)} (${col.clientes.length})</span><span class="tiny">${(() => { const t = col.clientes.reduce((s, x) => { const p = presuQueManda(x.c); return s + (p && p.total_venta ? Number(p.total_venta) : 0); }, 0); return t ? eur(t) : ''; })()}</span></div>
+  return `<div class="tb-wrap"><div class="tb-cols">${cols.map((col) => `<div class="tb-col" data-col="${col.k}" style="--col:${col.color}">
+    <div class="tb-cab"><span class="tb-tit">${esc(col.titulo)} <span class="tb-n">${col.clientes.length}</span></span><span class="tiny">${(() => { const t = col.clientes.reduce((s, x) => { const p = presuQueManda(x.c); return s + (p && p.total_venta ? Number(p.total_venta) : 0); }, 0); return t ? eur(t) : ''; })()}</span></div>
     ${col.clientes.map(({ c, e }) => { const un = ultimaNota(c); const vencida = c.proxima_accion_at && c.proxima_accion_at < hoy; return `<div class="tb-card ${c.id === V.agenda.ultimoCliente ? 'ultimo' : ''}" data-a="ag_abrirCliente" data-id="${c.id}" ${c.id === V.agenda.ultimoCliente ? 'data-ultimo="1"' : ''} draggable="true" data-cli="${c.id}" style="border-left-color:${e.color}">
       <div class="row" style="justify-content:space-between;align-items:baseline;gap:8px"><div class="n">${esc(c.nombre)}</div>${importe(c) ? `<span class="num" style="font-size:13px;white-space:nowrap">${importe(c)}</span>` : ''}<span class="tb-mas" data-a="tbMoverAbrir" data-id="${c.id}" title="Mover a otra fase">⋯</span></div>
       <div class="s">${esc([agTipoNombre(c), c.poblacion].filter(Boolean).join(' · '))}${c.contacto_estado ? ' · ' + esc(agContactadoTxt(c)) : ''}</div>
@@ -12019,6 +12032,25 @@ document.addEventListener('click', (e) => {
 // Arrastrar tarjetas del tablero de clientes de una columna a otra (ratón y
 // tableta con puntero; en el móvil está el «⋯» de la tarjeta).
 let tbArrastre = null;
+// Arrastrar el tablero con el ratón como si fuera táctil: se agarra el fondo o la
+// cabecera de una columna (no una tarjeta, que esa se lleva a otra columna) y se
+// mueve. Si apenas se mueve, cuenta como clic normal.
+let tbPan = null;
+document.addEventListener('mousedown', (e) => {
+  if (e.button !== 0) return;
+  const wrap = e.target.closest && e.target.closest('.tb-wrap');
+  if (!wrap || (e.target.closest && e.target.closest('.tb-card, input, button, a'))) return;
+  tbPan = { wrap, x: e.clientX, left: wrap.scrollLeft, movido: false };
+});
+document.addEventListener('mousemove', (e) => {
+  if (!tbPan) return;
+  const dx = e.clientX - tbPan.x;
+  if (!tbPan.movido && Math.abs(dx) < 4) return;
+  tbPan.movido = true; tbPan.wrap.classList.add('arrastre');
+  tbPan.wrap.scrollLeft = tbPan.left - dx;
+  e.preventDefault();
+});
+document.addEventListener('mouseup', () => { if (tbPan) { tbPan.wrap.classList.remove('arrastre'); tbPan = null; } });
 document.addEventListener('dragstart', (e) => {
   const card = e.target.closest && e.target.closest('.tb-card[data-cli]');
   if (!card) return;
