@@ -121,6 +121,18 @@ haya usamos lo antiguo».**
   inversor y los terminales hay que revisarlos en las fichas técnicas. El
   modelo v2 de Ramón estima los Deye desde la web con −17,62 %: frente a esta
   tarifa se va de −39 € (Symo 6K tri) a +45 € (8K mono); lo decide Ramón.
+- **Cable de continua por caída de tensión (modelo v2.1, 16-10-2026, Enzo):** el
+  v2 ponía 6 mm² fijo; con 120 m de tirada salía corto. Ahora `fv.js`
+  (`seccionCableCC`) calcula S = 2·L·I / (γ·ΔV) con L = dist_cc + 5 por string,
+  I = Imp del panel, γ = 48 (cobre a 70 °C) y ΔV = 1,5 % (IDAE) de la tensión
+  del string (paneles por string × Vmp), y elige la sección comercial (6, 10,
+  16, 25, 35) que cumple. Los datos van en el modelo (`panel_vmp` 41,6 V,
+  `panel_imp` 12,27 A, SUPUESTOS de la ficha Trina a confirmar; `cdt_max_cc`;
+  `conductividad_cu`) y `precios.cable_solar_por_seccion` (solo el 6 mm² tiene
+  precio real; los demás PENDIENTES de Electromat, estimados proporcionales y
+  avisados). Con 10 paneles y 120 m: 16 mm². Con ≥ 16 mm² avisa de conectores
+  (MC4 hasta 10 mm²) y tubo. Con un modelo sin esos parámetros sigue el 6 mm².
+  La vista interna y el informe enseñan la tabla de secciones con su caída.
 - **«Enviado al cliente» (etapa 75):** subir a Teamleader creaba la oferta y
   dejaba el presupuesto en `estado = 'enviado'`, y la app lo enseñaba como
   enviado al cliente sin serlo. La función ya no lo pone, la app solo mira

@@ -427,7 +427,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '23.6'; // versión visible de la app (única fuente)
+const APP_VERSION = '23.7'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -7447,6 +7447,8 @@ function desgloseFV2HTML(oi) {
   const pct = (v) => v == null ? '' : String(Math.round(v * 1000) / 10).replace('.', ',') + ' %';
   return `<details style="margin-top:6px"><summary class="tiny" style="cursor:pointer;color:var(--t2)">Desglose del presupuestador FV v2 · ${bloques.length} bloques · ${esc(String(oi.modelo || ''))}</summary>
     <div class="tiny" style="margin-top:6px;color:var(--t2)">${esc(String(dim.n_pan))} paneles · ${esc(String(dim.kwp))} kWp · ${esc(String(dim.prod))} kWh/año · ${esc(String(dim.mod_inv || ''))}${dim.cuadro_ac ? ' · ' + esc(dim.cuadro_ac) : ''} · ${esc(String(dim.jornadas))} jornadas</div>
+    ${dim.cable_cc && dim.cable_cc.calculo ? `<div class="tiny" style="margin-top:6px;color:var(--t2)"><b>Cable CC ${esc(String(dim.cable_cc.seccion))} mm²</b> por caída de tensión: ${esc(String(dim.cable_cc.calculo.L))} m por string · ${esc(String(dim.cable_cc.calculo.por_string))} paneles = ${esc(String(dim.cable_cc.calculo.v_string))} V · ${esc(String(dim.cable_cc.calculo.imp))} A · máx. ${esc(String(dim.cable_cc.calculo.cdt_max_pct))} % · sección de cálculo ${esc(String(dim.cable_cc.calculo.s_calc))} mm²</div>
+      <div class="tiny" style="color:var(--t3);padding-left:8px">${(dim.cable_cc.tabla || []).map((t) => `${t.seccion === dim.cable_cc.seccion ? '<b>' : ''}${t.seccion} mm²: ${String(t.caida_pct).replace('.', ',')} %${t.cumple ? ' ✓' : ' ✗'} · ${eur(t.coste_m)}/m${t.precio_estimado ? ' (est.)' : ''}${t.seccion === dim.cable_cc.seccion ? '</b>' : ''}`).join(' · ')}</div>` : ''}
     ${bloques.map((b) => `<div style="margin-top:8px"><div class="tiny" style="font-weight:600;color:var(--tinta)">${esc(b.nombre)} · ${eur(b.total)}</div>
       ${b.items.map((x) => `<div class="tiny" style="color:var(--t3);padding-left:8px">${esc(x.nombre)} · ${esc(String(x.cantidad))} ${esc(x.unidad || 'ud')} × ${eur(x.coste_ud)} = ${eur(x.coste)}${x.aviso ? ` <span style="color:var(--ambar-o)">⚠ ${esc(x.aviso)}</span>` : ''}</div>`).join('')}</div>`).join('')}
     <div class="tiny" style="margin-top:8px;color:var(--tinta)">Coste total ${eur(p.coste_total)} · precio objetivo ${eur(p.precio_objetivo)} (margen ${pct(p.margen_objetivo)} sobre venta, redondeado a 10 €)${p.horas_elev ? ' · elevador ' + esc(String(p.horas_elev)) + ' h = ' + eur(p.elevador) : ''} · margen real sin descuento ${pct(p.margen_real_sin_dto)}</div>

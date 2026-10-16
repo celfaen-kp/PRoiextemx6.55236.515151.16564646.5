@@ -38,6 +38,7 @@ var CASOS = [
   ['F · Tesla Powerwall 3 + backup', { baterias: 'si', baterias_kwh: 13.5, bateria_marca: 'tesla', backup: true }],
   ['P · Fronius SC en cubierta PLANA (lastres Sun Ballast, 2 filas)', { tipo_cubierta: 'plana_transitable', plana_anclaje: 'lastre' }],
   ['P · Fronius SC en cubierta PLANA, una sola fila', { tipo_cubierta: 'plana_transitable', plana_anclaje: 'lastre', _una_fila: true }],
+  ['L · Fronius SC con 120 m de paneles a inversor (cable CC por caída de tensión)', { distancia_cubierta_inversor_m: 120 }],
   ['D · Deye híbrido, sin batería', { inversor_marca: 'deye' }],
   ['D · Deye híbrido + batería 10 kWh (a mano)', { inversor_marca: 'deye', baterias: 'si', baterias_kwh: 10 }],
   ['E · Enphase IQ8P, sin batería', { inversor_marca: 'enphase' }],
@@ -122,6 +123,8 @@ resultados.forEach(function (x, i) {
   // dimensionado v2
   w('<h3>Dimensionado del modelo v2</h3><div class="resumen">' + r.n_pan + ' paneles · ' + fmtNum(r.kwp) + ' kWp · ' + fmtNum(r.prod) + ' kWh/año · ' + r.n_str + ' string(s) · inversor del modelo: <b>' + escH(r.mod_inv) + '</b>'
     + (r.kw_inv ? ' (' + fmtNum(r.kw_inv) + ' kW)' : '') + (r.cuadro_ac ? ' · cuadro AC: ' + escH(r.cuadro_ac.descripcion) : '') + ' · ' + r.jornadas + ' jornadas · ' + r.horas_elev + ' h de elevador'
+    + (r.cable_cc && r.cable_cc.calculo ? '<br><b>Cable CC ' + r.cable_cc.seccion + ' mm²</b> por caída de tensión: ' + r.cable_cc.calculo.L + ' m/string · ' + r.cable_cc.calculo.por_string + ' paneles = ' + r.cable_cc.calculo.v_string + ' V · ' + r.cable_cc.calculo.imp + ' A · máx. ' + r.cable_cc.calculo.cdt_max_pct + ' % → S cálculo ' + r.cable_cc.calculo.s_calc + ' mm² · tabla: '
+      + r.cable_cc.tabla.map(function (t) { return (t.seccion === r.cable_cc.seccion ? '<b>' : '') + t.seccion + ' mm² ' + String(t.caida_pct).replace('.', ',') + ' %' + (t.cumple ? ' ✓' : ' ✗') + ' ' + fmtEur(t.coste_m) + '/m' + (t.precio_estimado ? ' (est.)' : '') + (t.seccion === r.cable_cc.seccion ? '</b>' : ''); }).join(' · ') : '')
     + '<br>Coste v2 ' + fmtEur(r.coste_total) + ' → precio objetivo ' + fmtEur(r.precio_objetivo) + ' (÷ 0,5, redondeado a 10 €) · margen real del v2 solo: ' + fmtPct(r.margen_real) + '</div>');
   // líneas del presupuesto
   w('<h3>Líneas del presupuesto (lo que ve la app)</h3><table><tr><th>Sección</th><th>Línea</th><th class="n">Cant.</th><th class="n">Coste ud</th><th class="n">Venta ud</th><th class="n">Importe</th><th class="n">Margen</th><th>Origen</th></tr>');

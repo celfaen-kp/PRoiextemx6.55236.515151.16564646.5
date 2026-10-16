@@ -136,6 +136,10 @@ export function calcularFV(entrada, modelo, opciones) {
   const caja = PR.caja_famatel_22m;
   // Con el inversor fuera (lo pone el motor antiguo) no se cuentan ni él ni su medidor.
   const invAqui = op.inversorFuera ? 0 : 1;
+  // Cable de continua: sección por caída de tensión (v2.1, Enzo 16-10-2026). Con el
+  // modelo v2 original (sin estos parámetros) sigue el 6 mm² fijo de Ramón.
+  const cc = seccionCableCC(n_pan, n_str, dc + 5, P, PR);
+  const cableCC = PR.cable_solar_6mm_m ? Object.assign({}, cc) : cc;
 
   // ---------- partidas: [bloque, partida, ud, cantidad, coste_ud, texto para el cliente, aviso]
   const L = [
@@ -168,8 +172,8 @@ export function calcularFV(entrada, modelo, opciones) {
     ['ESTRUCTURA', 'Kit presor central Sun Ballast (bolsa 10)', 'bolsa', plana * roundup(filas * 2 * (pan_fila - 1) / 10), PR.kit_presor_central_sb.coste, '', ''],
     ['ESTRUCTURA', 'Kit presor final Sun Ballast (bolsa 10)', 'bolsa', plana * roundup(filas * 4 / 10), PR.kit_presor_final_sb.coste, '', ''],
     ['ESTRUCTURA', 'Lámina protectora de goma Sun Ballast 15×25 cm (2 piezas)', 'bolsa', lastres, PR.lamina_goma_sb.coste, '', ''],
-    ['MATERIAL ELÉCTRICO', 'Cable solar H1Z2Z2-K 6 mm² (rojo + negro)', 'm', fv * (dc + 5) * n_str * 2, PR.cable_solar_6mm_m.coste,
-      fv ? 'Cable solar 6 mm² 1500 V (' + g((dc + 5) * n_str * 2) + ' m) con conectores MC4' : '', ''],
+    ['MATERIAL ELÉCTRICO', 'Cable solar H1Z2Z2-K ' + g(cableCC.seccion) + ' mm² (rojo + negro)', 'm', fv * (dc + 5) * n_str * 2, cableCC.coste_m,
+      fv ? 'Cable solar ' + g(cableCC.seccion) + ' mm² 1500 V (' + g((dc + 5) * n_str * 2) + ' m) con conectores MC4' : '', fv ? cableCC.aviso : ''],
     ['MATERIAL ELÉCTRICO', 'Conectores MC4 (macho + hembra)', 'ud', fv * (n_str * 2 + 2) * 2, PR.mc4_par.coste, '', ''],
     ['MATERIAL ELÉCTRICO', 'Tubo corrugado M25 en cubierta', 'm', 5, PR.tubo_corrugado_m25_m.coste, 'Canalización en tubo de PVC por cubierta y fachada', ''],
     ['MATERIAL ELÉCTRICO', 'Tubo rígido M25 (tira 3 m) CC', 'ud', roundup(dc / 3), PR.tubo_rigido_m25_3m.coste, '', ''],
@@ -241,7 +245,45 @@ export function calcularFV(entrada, modelo, opciones) {
     partidas, coste_total: rnd(coste_total, 2), precio_objetivo: precio_obj, elevador: elev, horas_elev, pvp_antes, dto_eur,
     pvp_final: rnd(pvp_final, 2), iva_eur, pvp_iva: rnd(pvp_iva, 2), margen_real, avisos,
     pvp_elev: P.pvp_elev,
+    cable_cc: cableCC,
   };
+}
+
+/* --- Sección del cable de continua por caída de tensión (v2.1) ---------------
+ * S = 2 · L · I / (γ · ΔV), con L la tirada de un string (ida; el 2 es ida y
+ * vuelta), I la corriente del string (Imp del panel), γ la conductividad del
+ * cobre y ΔV la caída admitida = cdt_max · tensión del string (paneles por
+ * string × Vmp). Se elige la sección comercial que cumple, mínimo 6 mm².
+ * Sin los parámetros en el modelo (v2 original) devuelve el 6 mm² de siempre.
+ * Devuelve también la tabla de secciones con su caída, para enseñarla. */
+export const SECCIONES_CC = [6, 10, 16, 25, 35];
+export function seccionCableCC(n_pan, n_str, L, P, PR) {
+  const base = { seccion: 6, coste_m: PR.cable_solar_6mm_m ? PR.cable_solar_6mm_m.coste : 0, aviso: '', tabla: [], calculo: null };
+  const vmp = num(P.panel_vmp), imp = num(P.panel_imp), cdt = num(P.cdt_max_cc), gamma = num(P.conductividad_cu);
+  if (!(vmp > 0 && imp > 0 && cdt > 0 && gamma > 0) || !(n_pan > 0) || !(L > 0)) return base;
+  const porString = Math.ceil(n_pan / Math.max(1, n_str));
+  const vString = porString * vmp;
+  const dV = cdt * vString;
+  const sCalc = 2 * L * imp / (gamma * dV);
+  const porSec = (PR.cable_solar_por_seccion && PR.cable_solar_por_seccion.coste_m) || {};
+  const precio6 = base.coste_m;
+  const tabla = SECCIONES_CC.map((S) => {
+    const caida = 2 * L * imp / (gamma * S);
+    const real = porSec[String(S)];
+    const coste = real != null ? num(real) : (S === 6 ? precio6 : rnd(precio6 * S / 6, 3));
+    return { seccion: S, caida_v: rnd(caida, 2), caida_pct: rnd(caida / vString * 100, 2), cumple: caida <= dV + 1e-9, coste_m: coste, precio_estimado: real == null && S !== 6 };
+  });
+  const elegida = tabla.find((t) => t.cumple) || tabla[tabla.length - 1];
+  let aviso = '';
+  if (elegida.seccion > 6) {
+    aviso = 'Cable CC de ' + elegida.seccion + ' mm² por caída de tensión (' + g(L) + ' m por string, ' + porString + ' paneles × ' + g(vmp) + ' V = ' + g(rnd(vString, 0)) + ' V, '
+      + g(imp) + ' A, máx. ' + g(cdt * 100) + ' %): caída ' + g(elegida.caida_pct) + ' %.'
+      + (elegida.precio_estimado ? ' Precio del ' + elegida.seccion + ' mm² PENDIENTE de Electromat: estimado proporcional a la sección.' : '')
+      + (elegida.seccion >= 16 ? ' Revisar conectores (MC4 hasta 10 mm²: caja de transición o bornas) y diámetro del tubo.' : '');
+  }
+  if (!tabla.some((t) => t.cumple)) aviso = 'Ni con ' + elegida.seccion + ' mm² se cumple el ' + g(cdt * 100) + ' % de caída (' + g(elegida.caida_pct) + ' %): repartir en más strings o acercar el inversor. ' + aviso;
+  return { seccion: elegida.seccion, coste_m: elegida.coste_m, aviso, tabla,
+    calculo: { L, por_string: porString, v_string: rnd(vString, 1), imp, gamma, cdt_max_pct: cdt * 100, s_calc: rnd(sCalc, 2), caida_pct: elegida.caida_pct } };
 }
 
 // Proveedor al que se pide cada partida de material (según las compras reales de Sysefen).
@@ -280,6 +322,7 @@ export function pedidoMaterial(r, modelo) {
     if (x.partida === 'Inversor') { nombre = r.mod_inv; quien = r.entrada.sis === 'Fronius' ? 'BayWa' : 'Rebacas'; }
     else if (x.partida === 'Cuadro AC Solver' && r.cuadro_ac) { nombre = r.cuadro_ac.descripcion + ' · ref. Saltoki ' + r.cuadro_ac.codigo; quien = 'Saltoki'; }
     else if (x.partida.indexOf('Caja de superficie Famatel') === 0) { nombre = (caja.descripcion || x.partida) + (caja.codigo ? ' · ref. Saltoki ' + caja.codigo : ''); quien = 'Saltoki'; }
+    else if (x.partida.indexOf('Cable solar H1Z2Z2-K') === 0) { nombre = x.partida; quien = 'Electromat'; }
     else { nombre = x.partida; quien = PROVEEDOR_FV[x.partida] || 'PENDIENTE'; }
     const cant = roundup(x.cantidad);
     const aviso = x.aviso || (x.coste_ud === 0 ? 'Sin precio de coste: pedir precio' : '');
@@ -394,7 +437,8 @@ export function lineasPresupuesto(r, modelo, extra) {
       fv2: true, modelo: ex.modelo_version || null,
       entrada: r.entrada,
       dimensionado: { factura: r.factura, consumo: r.consumo, n_pan: r.n_pan, kwp: r.kwp, prod: r.prod, n_str: r.n_str, kw_inv: r.kw_inv, mod_inv: r.mod_inv,
-        cuadro_ac: r.cuadro_ac ? r.cuadro_ac.descripcion : null, jornadas: r.jornadas },
+        cuadro_ac: r.cuadro_ac ? r.cuadro_ac.descripcion : null, jornadas: r.jornadas,
+        cable_cc: r.cable_cc ? { seccion: r.cable_cc.seccion, calculo: r.cable_cc.calculo, tabla: r.cable_cc.tabla } : null },
       desglose,
       precio: { coste_total: r.coste_total, precio_objetivo: r.precio_objetivo, margen_objetivo: (modelo.parametros.margen_obj || {}).valor,
         horas_elev: r.horas_elev, elevador: r.elevador, pvp_antes: r.pvp_antes, margen_real_sin_dto: Math.round(r.margen_real * 10000) / 10000 },

@@ -70,6 +70,21 @@ var ri = calcularFV(ent, modelo, { inversorFuera: true });
 comprueba('con inversorFuera no cuenta inversor ni Smart Meter', ri.partidas.filter(function (x) { return (x.partida === 'Inversor' || x.partida === 'Medidor Fronius Smart Meter') && x.cantidad > 0; }).length === 0
   && ri.coste_total < r0.coste_total);
 
+titulo('cable de continua por caída de tensión (v2.1, 16-10-2026)');
+var cc20 = calcularFV(ent, modelo).cable_cc;
+igual('con 20 m (25 m por string): 6 mm², como siempre', cc20.seccion, 6);
+comprueba('y la caída con 6 mm² cumple el 1,5 %', cc20.tabla[0].cumple && cc20.tabla[0].caida_pct < 1.5);
+var r120 = calcularFV(Object.assign({}, ent, { dist_cc: 120 }), modelo), cc120 = r120.cable_cc;
+igual('con 120 m (125 por string), 10 paneles en 1 string: 16 mm²', cc120.seccion, 16);
+comprueba('6 y 10 no cumplen, 16 sí (' + cc120.tabla.map(function (t) { return t.seccion + ':' + t.caida_pct; }).join(' ') + ')', !cc120.tabla[0].cumple && !cc120.tabla[1].cumple && cc120.tabla[2].cumple);
+comprueba('la partida del cable dice 16 mm² y lleva el aviso de precio pendiente y conectores', r120.partidas.some(function (x) { return /Cable solar H1Z2Z2-K 16 mm²/.test(x.partida) && /PENDIENTE/.test(x.aviso) && /conectores/.test(x.aviso); }));
+comprueba('el precio estimado del 16 es proporcional al del 6 (1,365 × 16/6)', Math.abs(cc120.coste_m - rnd(1.365 * 16 / 6, 3)) < 0.001);
+comprueba('el aviso llega al presupuesto', r120.avisos.some(function (a) { return /16 mm²/.test(a); }));
+var r120b = calcularFV(Object.assign({}, ent, { dist_cc: 120, paneles_forzado: 20 }), modelo).cable_cc;
+igual('20 paneles en 2 strings de 10: misma tensión de string, también 16 mm²', r120b.seccion, 16);
+var sinParams = JSON.parse(JSON.stringify(modelo)); ['panel_vmp', 'panel_imp', 'cdt_max_cc', 'conductividad_cu'].forEach(function (k) { delete sinParams.parametros[k]; });
+igual('con el modelo v2 original (sin parámetros) sigue el 6 mm² fijo aunque haya 120 m', calcularFV(Object.assign({}, ent, { dist_cc: 120 }), sinParams).cable_cc.seccion, 6);
+
 titulo('las líneas del presupuesto de la app');
 var ls = lineasPresupuesto(r0, modelo, { modelo_version: 'v2' });
 igual('una línea llave en mano', ls.length, 1);
