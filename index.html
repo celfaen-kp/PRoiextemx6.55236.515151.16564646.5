@@ -415,7 +415,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '22.10'; // versión visible de la app (única fuente)
+const APP_VERSION = '22.11'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -7352,6 +7352,20 @@ const veMargenPresu = (cat) => esAdmin() || (rol() === 'presupuestos' && cat ===
 // El margen objetivo del presupuestador FV v2 (Ramón): 50 % sobre la venta,
 // en verde si se mantiene y en rojo si el descuento lo baja de ahí.
 const MARGEN_OBJETIVO_FV = 50;
+// Tesla va con un margen MÍNIMO del 35 % sobre la venta (Enzo, 16-10-2026): su
+// precio de tarifa ya lo lleva (coste ÷ 0,65) y no se rebaja. Si el descuento al
+// pie lo baja de ahí, se avisa línea a línea. Solo por dentro.
+const MARGEN_MINIMO_TESLA = 35;
+function avisoTeslaHTML(lineas, cat) {
+  if (!veMargenPresu(cat)) return '';
+  const mal = (lineas || []).filter((l) => /^FV-TESLA-/.test(String(l.producto_ref || '')) && l.precio_coste != null).map((l) => {
+    const cant = Number(l.cantidad) || 1, coste = Number(l.precio_coste) * cant;
+    const venta = Number(l.importe != null ? l.importe : l.precio_venta) || 0;
+    return { l, pct: venta > 0 ? Math.round(((venta - coste) / venta) * 1000) / 10 : 0 };
+  }).filter((x) => x.pct < MARGEN_MINIMO_TESLA);
+  if (!mal.length) return '';
+  return `<div class="tiny" style="margin-top:6px;color:var(--rojo)">⚠ Tesla no se rebaja: con este descuento ${mal.map((x) => esc(x.l.descripcion) + ' queda al ' + String(x.pct).replace('.', ',') + ' %').join(' · ')} (mínimo ${MARGEN_MINIMO_TESLA} %).</div>`;
+}
 function costeMargenHTML(coste, venta, sinCoste, ventaSinDto, cat) {
   if (!veMargenPresu(cat) || coste == null || !(Number(venta) > 0)) return '';
   const c = Number(coste) || 0, v = Number(venta) || 0, m = v - c;
@@ -7456,6 +7470,7 @@ function presuPanelHTML() {
           <span class="num" style="font-size:22px">${eur(d.totales.total)}</span>
         </div>
         ${costeMargenHTML(d.totales.coste, d.totales.total, d.totales.lineas_sin_coste, d.totales.subtotal, p.cat)}
+        ${avisoTeslaHTML(d.lineas, p.cat)}
       </div>
 
       <div style="margin-top:18px;padding-top:12px;border-top:1px solid var(--l1)">
@@ -8880,6 +8895,7 @@ function vPresupuestoVer() {
       </div>
       ${d.dto_global_pct ? `<div class="tiny" style="margin-top:6px;text-align:right">Incluye −${d.dto_global_pct} % al pie</div>` : ''}
       ${costeMargenHTML(d.total_coste, d.total_venta, lineas.filter((l) => l.precio_coste == null).length, Number(d.total_bruto || 0) + Number(d.total_dto_linea || 0), d.categoria)}
+      ${avisoTeslaHTML(lineas, d.categoria)}
       <div class="tiny" style="margin-top:12px">Calculado con las reglas ${esc(d.motor_version || '')}. Queda congelado con la tarifa de ese día.</div>
       <div class="row g8" style="margin-top:14px">
         <button class="btn btn-gris" data-a="presuPdf" style="border-radius:99px">PDF</button>

@@ -267,7 +267,8 @@ además del SQL.
 | Familia | Coste | CDC 10 % | Recargo | Venta | Margen sobre venta |
 |---|---|---|---:|---|---:|
 | Panel (FV-01-…) | 80,00 € fijado por Sysefen | no | 1,4375 | 115,00 € | 30,4 % |
-| Equipos del distribuidor (Fronius, Enphase, BYD, Tesla…) | factura | no | 1,20 | coste × 1,20 | 16,7 % |
+| Equipos del distribuidor (Fronius, Enphase, BYD, Deye, WECO) | factura | no | 1,20 | coste × 1,20 | 16,7 % |
+| **Tesla** (Powerwall, Gateway, accesorios) | factura | no | 1,538462 | coste ÷ 0,65 | **35 % mínimo, no se rebaja** (Enzo, 16-10-2026; la app avisa si el descuento al pie lo baja) |
 | Resto (estructura, cable, protecciones, pequeño material, mano de obra…) | tarifa | material sí | 1,30 | coste × 1,10 × 1,30 | 23,1 % |
 | Trámites (FV-13-…) | venta declarada | no | — | igual | 0 |
 

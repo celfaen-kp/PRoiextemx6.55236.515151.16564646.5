@@ -136,12 +136,12 @@ var malMargen = r.lineas.filter(function (l) {
   if (!l.precio_coste) return false;
   var ref = String(l.producto_ref);
   if (/^FV-13-/.test(ref)) return l.precio_tarifa !== l.precio_coste;
-  var f = /^FV-01-/.test(ref) ? 1.4375 : /^FV-(FRONIUS|ENPHASE|BYD|TESLA)-/.test(ref) ? 1.2 : 1.3;
+  var f = /^FV-01-/.test(ref) ? 1.4375 : /^FV-TESLA-/.test(ref) ? 1.538462 : /^FV-(FRONIUS|ENPHASE|BYD|DEYE|WECO)-/.test(ref) ? 1.2 : 1.3;
   // una partida agrupada suma renglones con el coste ya al céntimo: un céntimo de holgura
   if (l.origen === 'partida') return Math.abs(l.precio_tarifa - l.precio_coste * f) >= 0.011;
   return l.precio_tarifa !== Math.round(l.precio_coste * f * 100 + 1e-7) / 100;
 }).map(function (l) { return l.producto_ref + ' ' + l.precio_coste + '→' + l.precio_tarifa; });
-igual('todas las líneas con precio cumplen su margen: trámites igual, panel × 1,4375, equipos × 1,20, el resto × 1,30', malMargen.join(', '), '');
+igual('todas las líneas con precio cumplen su margen: trámites igual, panel × 1,4375, Tesla ÷ 0,65, equipos × 1,20, el resto × 1,30', malMargen.join(', '), '');
 comprueba('cada línea trae su beneficio y su margen sobre venta', r.lineas.every(function (l) {
   if (l.precio_coste == null) return l.beneficio_ud === null;
   return Math.abs(l.beneficio_ud - (l.precio_tarifa - l.precio_coste)) < 0.005 && (l.precio_tarifa ? Math.abs(l.margen_pct - l.beneficio_ud / l.precio_tarifa) < 0.0001 : true);
@@ -319,7 +319,7 @@ comprueba('y lo explica', aviso(r, 'lleva el inversor dentro'));
 comprueba('sin backup no hay Gateway', !tiene(r, 'Backup Gateway'));
 comprueba('los paneles van en continua al Powerwall: cable DC, MC4 y caja DC siguen', cant(r, 'FV-06-001') === 33 && cant(r, 'FV-06-002') === 4 && desgDe(r, 'CUADRO_PROT', 'FV-07-001') === 1);
 igual('coste confirmado 7.218,50', porNombre(r, 'Powerwall 3 | 13.5').precio_coste, 7218.5);
-igual('venta × 1,20 = 8.662,20', porNombre(r, 'Powerwall 3 | 13.5').precio_tarifa, 8662.2);
+igual('venta = coste × 1,538462 (35 % de margen mínimo, Enzo 16-10-2026) = 11.105,39', porNombre(r, 'Powerwall 3 | 13.5').precio_tarifa, 11105.39);
 igual('medio día más por la batería', r.variables.dias_obra, 2.5);
 r = calcular('solar', con({ baterias: 'si', baterias_kwh: 13.5, bateria_marca: 'tesla', backup: true, backup_tipo: 'parcial' }), config);
 comprueba('con backup: Backup Gateway 2 y cuadro de cargas críticas', tiene(r, 'Backup Gateway 2') && cant(r, 'FV-04-006') === 1);

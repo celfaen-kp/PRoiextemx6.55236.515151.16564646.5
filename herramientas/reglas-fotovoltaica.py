@@ -217,9 +217,14 @@ S = {x['referencia']: x for x in sysefen}
 # El margen propio de cada producto (tarea 4, 09-10-2026): (recargo, aplica_cdc).
 # None = el recargo de la categoría (1,30) con sus costes complementarios.
 RECARGO_PANELES, RECARGO_EQUIPOS = 1.4375, 1.20
+# Tesla: margen MÍNIMO del 35 % sobre la venta (Enzo, 16-10-2026): venta = coste ÷ 0,65.
+# Es el suelo que no se rebaja; el resto de equipos sigue al ×1,20.
+MARGEN_TESLA = 0.35
+RECARGO_TESLA = round(1 / (1 - MARGEN_TESLA), 6)
 def margen_de(ref):
     if ref.startswith('FV-01-'): return (RECARGO_PANELES, False)                       # panel: 80 → 115
-    if ref.startswith(('FV-FRONIUS-', 'FV-ENPHASE-', 'FV-BYD-', 'FV-TESLA-', 'FV-DEYE-', 'FV-WECO-')): return (RECARGO_EQUIPOS, False)  # equipos: +20 % sobre factura
+    if ref.startswith('FV-TESLA-'): return (RECARGO_TESLA, False)                                   # Tesla: 35 % de margen sobre venta, mínimo
+    if ref.startswith(('FV-FRONIUS-', 'FV-ENPHASE-', 'FV-BYD-', 'FV-DEYE-', 'FV-WECO-')): return (RECARGO_EQUIPOS, False)  # equipos: +20 % sobre factura
     return (None, True)
 paneles = sorted([x for x in sysefen if x['referencia'].startswith('FV-01-001-') and num(x['atributos'].get('wp'))],
                  key=lambda x: num(x['atributos']['wp']))
@@ -230,7 +235,9 @@ paneles = sorted([x for x in sysefen if x['referencia'].startswith('FV-01-001-')
 # =============================================================================
 LOOKUP = [
     ('recargo_sobre_coste', 'defecto', 1.30, 'Precio de venta = coste × 1,30, una vez por línea, para lo que no trae recargo propio. CONFIRMADO (desglose FV, oct 2026).'),
-    ('recargo_equipos', 'defecto', 1.20, 'Equipos del distribuidor (Fronius, Enphase, BYD, Tesla): venta = coste × 1,20, sin CDC. Informativo: el valor que manda es productos.recargo (09-10-2026).'),
+    ('recargo_equipos', 'defecto', 1.20, 'Equipos del distribuidor (Fronius, Enphase, BYD, Deye, WECO): venta = coste × 1,20, sin CDC. Informativo: el valor que manda es productos.recargo (09-10-2026).'),
+    ('recargo_tesla', 'defecto', RECARGO_TESLA, 'Tesla: margen mínimo del 35 % sobre la venta, venta = coste ÷ 0,65 (Enzo, 16-10-2026). No se rebaja. Informativo: el valor que manda es productos.recargo.'),
+    ('margen_minimo_tesla', 'defecto', MARGEN_TESLA, 'Margen sobre venta por debajo del cual la app avisa en una línea Tesla (Enzo, 16-10-2026).'),
     ('recargo_paneles', 'defecto', 1.4375, 'Panel: coste 80 → venta 115, sin CDC. Informativo: el valor que manda es productos.recargo (09-10-2026).'),
     ('ratio_dc_ac', 'defecto', 1.125, 'kWp de paneles por kW de inversor: inversor ≥ kWp ÷ 1,125 (Ramón, 12-10-2026: 11 paneles con 5 kW). Antes 1,2.'),
     ('micros_por_rama', 'defecto', 11, 'Microinversores Enphase por rama de Q Cable.'),
