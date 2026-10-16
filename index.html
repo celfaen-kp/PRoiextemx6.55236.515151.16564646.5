@@ -428,7 +428,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '23.8'; // versión visible de la app (única fuente)
+const APP_VERSION = '23.9'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -6571,7 +6571,9 @@ A.guardarVisita = async (completar, trasGuardar) => {
       fecha_visita: d.fecha_visita || hoyISO(),
       cliente_id: (cli && cli.id) || null,
       estado: completar ? 'completada' : 'borrador',
-      sync_estado: 'pendiente',
+      // Una visita que ya estaba en Teamleader sigue estándolo aunque se corrija
+      // la ficha (16-10-2026): no se vuelve a enviar sola ni sale como «por enviar».
+      sync_estado: d.sync_estado === 'sincronizada' && d.tl_deal_id ? 'sincronizada' : 'pendiente',
       sync_error: null,
     };
     CAMPOS_COMUN.forEach((c) => {
@@ -7236,7 +7238,8 @@ function vVisita() {
         ${v.sync_at ? `<span class="k">Enviada</span><span class="v">${fechaCorta(v.sync_at)} · ${hhmm(v.sync_at)}</span>` : ''}
         <span class="k">Deal</span><span class="v">${esc(cats.map(nombreCat).join(' + ') || '—')}<small>${esc([v.poblacion, v.tl_deal_fase].filter(Boolean).join(' · '))}</small></span>
       </div>
-      <div class="tiny" style="margin-top:14px">Ya no se edita desde el móvil. Si hay que corregir algo, se hace en Teamleader.</div>
+      <button class="btn btn-gris" data-a="editarVisita" data-id="${v.id}" style="margin-top:16px">Modificar la ficha</button>
+      <div class="tiny" style="margin-top:8px">Para añadir o cambiar datos antes de presupuestar (baterías, metros, cubierta…). Lo que cambies lo usa el presupuesto; la nota que ya está en Teamleader se queda como se envió. Si ya hay un presupuesto hecho con esta ficha, vuelve a calcularlo después.</div>
     </div>`;
   } else if (v.estado === 'completada') {
     const error = v.sync_estado === 'error';
