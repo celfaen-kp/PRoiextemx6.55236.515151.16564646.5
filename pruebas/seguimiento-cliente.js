@@ -4,7 +4,7 @@
 var hoy = hoyISO();
 function dias(n) { var d = new Date(); d.setDate(d.getDate() + n); return fechaLocal(d); }
 igual('aplazado manda sobre todo lo pendiente', agEstadoCliente({ citas: [], visitas: [], aplazado_hasta: dias(60), aplazado_motivo: 'Subvención de enero' }).k, 'aplazado');
-igual('…pero no sobre un presupuesto aceptado', agEstadoCliente({ citas: [], visitas: [], aplazado_hasta: dias(60), presupuestos: [{ id: 'p', created_at: '1', respuesta_cliente: 'aceptado' }] }).k, 'aceptado');
+igual('…y también sobre un presupuesto aceptado (16-10-2026: una obra aceptada que se pospone)', agEstadoCliente({ citas: [], visitas: [], aplazado_hasta: dias(60), presupuestos: [{ id: 'p', created_at: '1', respuesta_cliente: 'aceptado' }] }).k, 'aplazado');
 igual('un aplazamiento ya vencido no cuenta', agEstadoCliente({ citas: [], visitas: [], aplazado_hasta: dias(-1) }).k, 'sin_cita');
 comprueba('el texto lleva el motivo', agEstadoCliente({ citas: [], visitas: [], aplazado_hasta: dias(10), aplazado_motivo: 'Subvención de enero' }).txt.indexOf('Subvención de enero') > -1);
 

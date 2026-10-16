@@ -428,7 +428,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '24.7'; // versión visible de la app (única fuente)
+const APP_VERSION = '24.8'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -9582,8 +9582,10 @@ function agEstadoCliente(c) {
   // a no ser que ya haya aceptado.
   const pm = presuQueManda(c);
   const sgm = pm ? seguimientoPresu(pm) : null;
+  // Aplazado manda sobre todo, también sobre un presupuesto aceptado (Enzo,
+  // 16-10-2026: una obra aceptada que se pospone). Al vencer vuelve a su sitio.
+  if (c.aplazado_hasta && c.aplazado_hasta >= hoyISO()) return { k: 'aplazado', color: 'var(--ambar-o)', txt: 'Aplazado hasta ' + fechaCorta(c.aplazado_hasta + 'T12:00') + (c.aplazado_motivo ? ' · ' + c.aplazado_motivo : '') + (sgm && sgm.k === 'aceptado' ? ' · presupuesto aceptado' : '') };
   if (sgm && sgm.k === 'aceptado') return { k: 'aceptado', color: sgm.color, txt: 'Presupuesto · aceptado' };
-  if (c.aplazado_hasta && c.aplazado_hasta >= hoyISO()) return { k: 'aplazado', color: 'var(--ambar-o)', txt: 'Aplazado hasta ' + fechaCorta(c.aplazado_hasta + 'T12:00') + (c.aplazado_motivo ? ' · ' + c.aplazado_motivo : '') };
   if (pm) return { k: sgm.k, color: sgm.color, txt: 'Presupuesto · ' + sgm.txt.toLowerCase() };
   // Visitado manda sobre una cita posterior: lo que toca es el presupuesto.
   // Que la visita esté o no en Teamleader es un detalle, no una fase.
