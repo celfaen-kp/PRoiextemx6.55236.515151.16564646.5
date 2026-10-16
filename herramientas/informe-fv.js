@@ -40,7 +40,7 @@ var CASOS = [
   ['P · Fronius SC en cubierta PLANA, una sola fila', { tipo_cubierta: 'plana_transitable', plana_anclaje: 'lastre', _una_fila: true }],
   ['L · Fronius SC con 120 m de paneles a inversor (cable CC por caída de tensión)', { distancia_cubierta_inversor_m: 120 }],
   ['D · Deye híbrido, sin batería', { inversor_marca: 'deye' }],
-  ['D · Deye híbrido + batería 10 kWh (a mano)', { inversor_marca: 'deye', baterias: 'si', baterias_kwh: 10 }],
+  ['D · Deye híbrido + 2 × WECO 5K3 EVO añadidas del catálogo', { inversor_marca: 'deye', baterias: 'si', baterias_kwh: 10, _extra: [['WECO 5K3 EVO 5,22KWH 48V WIFI+BLUETOOTH', 2], ['CABLE COMUNICACIÓN INVERSOR', 1]] }],
   ['E · Enphase IQ8P, sin batería', { inversor_marca: 'enphase' }],
   ['E · Enphase + IQ Battery 10 kWh', { inversor_marca: 'enphase', baterias: 'si', baterias_kwh: 10, bateria_marca: 'enphase' }],
   ['E · Enphase + IQ Battery 10 kWh + backup', { inversor_marca: 'enphase', baterias: 'si', baterias_kwh: 10, bateria_marca: 'enphase', backup: true }],
@@ -64,8 +64,14 @@ var fmtNum = function (x) { return String(Math.round(Number(x) * 1000) / 1000).r
 var resultados = [];
 CASOS.forEach(function (c) {
   PANELES.forEach(function (n) {
-    var datos = datosDe(c[1], n);
+    var extra = c[1]._extra || [];
+    var datos = datosDe(c[1], n); delete datos._extra;
     var res = presupuestarFV(datos, mod, cfg);
+    // Líneas añadidas del catálogo, como hace la app (lineaManual: coste del catálogo × recargo del producto).
+    extra.forEach(function (x) {
+      var ref = Object.keys(fv.productos).filter(function (k) { return fv.productos[k].nombre.indexOf(x[0]) > -1; })[0];
+      if (ref) res.lineas.push(lineaManual({ producto_ref: ref, descripcion: fv.productos[ref].nombre, cantidad: x[1], precio_tarifa: fv.productos[ref].precio_tarifa, precio_catalogo: fv.productos[ref].precio_tarifa, seccion: '04 · Almacenamiento (añadido del catálogo)' }, fv.productos[ref], fv.lookup));
+    });
     res.lineas.forEach(function (l, i) { l.orden = i + 1; });
     var tot = cadenaPrecios(res.lineas, 0);
     var coste = totalCoste(res.lineas);
@@ -131,7 +137,7 @@ resultados.forEach(function (x, i) {
   x.res.lineas.forEach(function (l, k) {
     var imp = x.tot.lineas[k].total, c = l.precio_coste == null ? null : l.precio_coste * l.cantidad;
     var m = c == null || imp <= 0 ? null : (imp - c) / imp;
-    var origen = l.origen_inputs && l.origen_inputs.fv2 ? (l.origen_inputs.elevador ? 'v2 · elevador' : 'v2 · llave en mano') : ('capítulos · ' + (l.producto_ref || l.origen));
+    var origen = l.origen_inputs && l.origen_inputs.fv2 ? (l.origen_inputs.elevador ? 'v2 · elevador' : 'v2 · llave en mano') : l.origen === 'manual' ? ('añadido del catálogo · ' + l.producto_ref + ' ×' + (l.origen_inputs && l.origen_inputs.recargo)) : ('capítulos · ' + (l.producto_ref || l.origen));
     w('<tr><td class="sub">' + escH(l.seccion) + '</td><td>' + escH(l.descripcion) + (l.confirmada === false ? ' <span class="err">(sin confirmar)</span>' : '') + '</td><td class="n">' + fmtNum(l.cantidad) + ' ' + escH(l.unidad) + '</td>'
       + '<td class="n">' + (l.precio_coste == null ? '-' : fmtEur(l.precio_coste)) + '</td><td class="n">' + fmtEur(l.precio_tarifa) + '</td><td class="n"><b>' + fmtEur(imp) + '</b></td><td class="n">' + (m == null ? '-' : fmtPct(m)) + '</td><td class="sub">' + escH(origen) + '</td></tr>');
   });

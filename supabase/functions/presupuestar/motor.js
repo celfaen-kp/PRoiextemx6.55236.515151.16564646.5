@@ -21,7 +21,7 @@
 
 import { evaluar, evaluarNumero, numero, verdad } from './formulas.js';
 
-const MOTOR_VERSION = '1.4';
+const MOTOR_VERSION = '1.5';
 
 /** ¿Se cumple una condición {campo: valor} contra el ámbito? */
 function cumple(condicion, ambito) {
@@ -89,6 +89,73 @@ function mismo(a, b) {
  *   máximo que aguanta cada margen). TODO ESO ES INTERNO: la app lo enseña por
  *   dentro y el PDF del cliente no lo lleva jamás.
  */
+/**
+ * De un precio base (catálogo o fijo) a {coste, venta}, con los coeficientes de
+ * la categoría (lookup): `recargo_sobre_coste` (fotovoltaica 1,30; sin él el
+ * precio es PVP) y `costes_complementarios_pct` (al material). El producto
+ * manda con su `recargo` y `aplica_cdc`; `atributos.sin_recargo` deja el precio
+ * como venta declarada. Pura: la usan el motor y las líneas añadidas a mano.
+ */
+const SIN_CDC = ['mano_obra', 'tramite', 'transporte', 'medios', 'servicio'];
+const alCentimo = (n) => Math.round(numero(n) * 100 + 1e-7) / 100;
+export function preciosProducto(base, p, lookup) {
+  const fila = (clave) => (lookup || []).find((x) => x.clave === clave && x.entrada === 'defecto');
+  const recargoFila = fila('recargo_sobre_coste');
+  const recargo = recargoFila && numero(recargoFila.valor) > 0 ? numero(recargoFila.valor) : 1;
+  const cdcFila = fila('costes_complementarios_pct');
+  const cdc = cdcFila ? numero(cdcFila.valor) : 0;
+  const atr = p && p.atributos && typeof p.atributos === 'object' ? p.atributos : {};
+  const propio = p && p.recargo != null && p.recargo !== '' && numero(p.recargo) > 0 ? numero(p.recargo) : null;
+  const rec = verdad(atr.sin_recargo) ? 1 : (propio != null ? propio : recargo);
+  let coste = numero(base) * (1 - numero(p && p.descuento_proveedor) / 100);
+  if (rec !== 1) {
+    const familia = String((p && p.familia) || '');
+    if (cdc && !SIN_CDC.includes(familia) && !(p && p.aplica_cdc === false)) coste *= 1 + cdc / 100;
+    coste = alCentimo(coste);
+    // venta_exacta: sin redondear, para que una partida agrupada sume sus
+    // renglones sin perder céntimos en los de precio pequeño (0,28 €/m × 22).
+    return { coste, venta: alCentimo(coste * rec), venta_exacta: coste * rec };
+  }
+  return { coste: alCentimo(coste), venta: alCentimo(base), venta_exacta: numero(base) };
+}
+
+/**
+ * Una línea añadida a mano desde el catálogo (16-10-2026). Antes el precio del
+ * catálogo se tomaba como venta y el coste se dejaba en blanco; en fotovoltaica
+ * el catálogo es COSTE, así que una batería WECO salía al cliente a precio de
+ * compra. Ahora: si la persona no tocó el precio (coincide con el del
+ * catálogo), venta = coste × su recargo, como hace el motor; si lo escribió a
+ * mano, ese es el precio de venta y el coste sigue siendo el del catálogo.
+ * Sin producto (concepto libre) queda como antes: venta lo escrito, coste
+ * desconocido salvo que lo den.
+ */
+export function lineaManual(l, producto, lookup) {
+  const escrito = numero(l.precio_tarifa);
+  const base = {
+    producto_ref: l.producto_ref || null,
+    descripcion: String(l.descripcion || '').slice(0, 300) || 'Línea añadida',
+    detalle_tecnico: l.detalle_tecnico || null,
+    especificaciones: Array.isArray(l.especificaciones) ? l.especificaciones : [],
+    cantidad: numero(l.cantidad) || 1,
+    unidad: l.unidad || 'ud',
+    precio_tarifa: escrito,
+    precio_coste: l.precio_coste == null || l.precio_coste === '' ? null : numero(l.precio_coste),
+    dto_linea_pct: numero(l.dto_linea_pct) || 0,
+    iva: l.iva == null ? 21 : numero(l.iva),
+    seccion: l.seccion || 'Equipos',
+    origen: 'manual', origen_regla_id: null, origen_inputs: null, confirmada: true,
+  };
+  if (!producto) return base;
+  const pr = preciosProducto(producto.precio_tarifa, producto, lookup);
+  const catalogo = l.precio_catalogo == null || l.precio_catalogo === '' ? numero(producto.precio_tarifa) : numero(l.precio_catalogo);
+  const sinTocar = !escrito || Math.abs(escrito - catalogo) < 0.005;
+  base.precio_coste = pr.coste;
+  base.precio_tarifa = sinTocar ? pr.venta : escrito;
+  base.detalle_tecnico = base.detalle_tecnico || producto.detalle_tecnico || null;
+  base.origen_inputs = { catalogo: numero(producto.precio_tarifa), recargo: pr.coste > 0 ? Math.round(pr.venta / pr.coste * 10000) / 10000 : null, precio_escrito: sinTocar ? null : escrito };
+  return base;
+}
+
 export function calcular(categoria, datos, config) {
   const cfg = config || {};
   const incidencias = [];
@@ -121,30 +188,13 @@ export function calcular(categoria, datos, config) {
   // El recargo sobre coste de esta categoría, si lo tiene (ver cabecera).
   const recargoFila = (cfg.lookup || []).find((x) => x.clave === 'recargo_sobre_coste' && x.entrada === 'defecto');
   const recargo = recargoFila && numero(recargoFila.valor) > 0 ? numero(recargoFila.valor) : 1;
-  const alCentimo = (n) => Math.round(numero(n) * 100 + 1e-7) / 100;
-  const cdcFila = (cfg.lookup || []).find((x) => x.clave === 'costes_complementarios_pct' && x.entrada === 'defecto');
-  const cdc = cdcFila ? numero(cdcFila.valor) : 0;
-  const SIN_CDC = ['mano_obra', 'tramite', 'transporte', 'medios', 'servicio'];
+
   // De un precio base (catálogo o fijo) a {coste, venta}. `p` es el producto
   // (o un sucedáneo {familia} para los precios fijos): su familia decide si
   // lleva costes complementarios (material sí, salvo aplica_cdc = false) y su
   // `recargo`, si lo trae, manda sobre el de la categoría. Con sin_recargo, o
   // sin recargo ninguno (aerotermia, aire), el precio base es PVP: venta = base.
-  const preciosDe = (base, p) => {
-    const atr = p && p.atributos && typeof p.atributos === 'object' ? p.atributos : {};
-    const propio = p && p.recargo != null && p.recargo !== '' && numero(p.recargo) > 0 ? numero(p.recargo) : null;
-    const rec = verdad(atr.sin_recargo) ? 1 : (propio != null ? propio : recargo);
-    let coste = numero(base) * (1 - numero(p && p.descuento_proveedor) / 100);
-    if (rec !== 1) {
-      const familia = String((p && p.familia) || '');
-      if (cdc && !SIN_CDC.includes(familia) && !(p && p.aplica_cdc === false)) coste *= 1 + cdc / 100;
-      coste = alCentimo(coste);
-      // venta_exacta: sin redondear, para que una partida agrupada sume sus
-      // renglones sin perder céntimos en los de precio pequeño (0,28 €/m × 22).
-      return { coste, venta: alCentimo(coste * rec), venta_exacta: coste * rec };
-    }
-    return { coste: alCentimo(coste), venta: alCentimo(base), venta_exacta: numero(base) };
-  };
+  const preciosDe = (base, p) => preciosProducto(base, p, cfg.lookup || []);
 
   /* --- 1 · variables derivadas, en su orden ------------------------------- */
   // Una variable suele mirar dos sitios: el dato de la visita o el que se

@@ -37,7 +37,7 @@
 // =============================================================================
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
-import { calcular, resumenDe, MOTOR_VERSION } from './motor.js';
+import { calcular, resumenDe, lineaManual, MOTOR_VERSION } from './motor.js';
 import { cadenaPrecios, totalCoste } from './cadena.js';
 // El cálculo híbrido de fotovoltaica (v2 de Ramón + capítulos) vive en
 // hibrido.js, compartido con las pruebas y los informes.
@@ -229,26 +229,20 @@ Deno.serve(async (req) => {
     ? Number(b.dto_global_pct)
     : Number(((dtos.data || []).find((d) => d.ambito === 'global') || {}).descuento_pct || 0);
   // Lo que ha puesto la persona va detrás de lo que propuso el motor, y marcado
-  // como suyo: así se distingue de un vistazo qué salió de las reglas.
+  // como suyo. Si viene del catálogo, su precio pasa por el mismo recargo que
+  // aplica el motor (en fotovoltaica el catálogo es coste): ver lineaManual().
   // deno-lint-ignore no-explicit-any
-  const extra = (Array.isArray(b.lineas_extra) ? b.lineas_extra : []).map((l: any) => ({
-    producto_ref: l.producto_ref || null,
-    descripcion: String(l.descripcion || '').slice(0, 300) || 'Línea añadida',
-    detalle_tecnico: l.detalle_tecnico || null,
-    especificaciones: Array.isArray(l.especificaciones) ? l.especificaciones : [],
-    cantidad: Number(l.cantidad) || 1,
-    unidad: l.unidad || 'ud',
-    precio_tarifa: Number(l.precio_tarifa) || 0,
-    // Lo que escribe la persona es precio de venta; su coste no se sabe.
-    precio_coste: l.precio_coste == null || l.precio_coste === '' ? null : Number(l.precio_coste),
-    dto_linea_pct: Number(l.dto_linea_pct) || 0,
-    iva: l.iva == null ? 21 : Number(l.iva),
-    seccion: l.seccion || 'Equipos',
-    origen: 'manual',
-    origen_regla_id: null,
-    origen_inputs: null,
-    confirmada: true,
-  }));
+  const extrasBrutos: any[] = Array.isArray(b.lineas_extra) ? b.lineas_extra : [];
+  // deno-lint-ignore no-explicit-any
+  const productosExtra: Record<string, any> = {};
+  const refsExtra = [...new Set(extrasBrutos.map((l) => String(l.producto_ref || '')).filter(Boolean))];
+  if (refsExtra.length) {
+    const cols = 'referencia, nombre, familia, unidad, precio_tarifa, descuento_proveedor, detalle_tecnico, iva, atributos, activo';
+    let prods = (await sb.from('productos').select(cols + ', recargo, aplica_cdc').in('referencia', refsExtra)).data;
+    if (!prods) prods = (await sb.from('productos').select(cols).in('referencia', refsExtra)).data;
+    (prods || []).forEach((p) => { if (!productosExtra[p.referencia]) productosExtra[p.referencia] = p; });
+  }
+  const extra = extrasBrutos.map((l) => lineaManual(l, productosExtra[String(l.producto_ref || '')] || null, cfg.lookup));
   res.lineas = res.lineas.concat(extra);
   res.lineas.forEach((l, i) => { l.orden = i + 1; });
   // El resumen interno cuenta también lo añadido a mano (sin coste conocido).

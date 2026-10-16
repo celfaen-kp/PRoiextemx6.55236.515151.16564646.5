@@ -133,6 +133,15 @@ haya usamos lo antiguo».**
   avisados). Con 10 paneles y 120 m: 16 mm². Con ≥ 16 mm² avisa de conectores
   (MC4 hasta 10 mm²) y tubo. Con un modelo sin esos parámetros sigue el 6 mm².
   La vista interna y el informe enseñan la tabla de secciones con su caída.
+- **Líneas añadidas del catálogo con su recargo (16-10-2026, motor 1.5):** una
+  batería WECO añadida a mano salía al cliente a precio de coste, porque las
+  `lineas_extra` tomaban el precio del catálogo como venta y en fotovoltaica el
+  catálogo es coste. Ahora `motor.js` exporta `preciosProducto()` (la cuenta de
+  coste → venta que ya usaba el motor) y `lineaManual()`: si la persona no tocó
+  el precio, venta = coste × recargo del producto (equipos ×1,20, Tesla ÷0,65,
+  resto ×1,10×1,30; aerotermia y aire siguen a PVP); si lo escribió, ese es la
+  venta y el coste sigue siendo el del catálogo. La app manda `precio_catalogo`
+  y refleja la venta que vuelve. Vale para las tres categorías.
 - **«Enviado al cliente» (etapa 75):** subir a Teamleader creaba la oferta y
   dejaba el presupuesto en `estado = 'enviado'`, y la app lo enseñaba como
   enviado al cliente sin serlo. La función ya no lo pone, la app solo mira

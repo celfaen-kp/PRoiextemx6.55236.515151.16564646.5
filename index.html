@@ -428,7 +428,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '23.9'; // versión visible de la app (única fuente)
+const APP_VERSION = '24.0'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -7614,6 +7614,10 @@ A.presuCalcular = async (categoria) => {
           fichaId: p.opcion && ficha ? ficha.id : undefined,
           titulo: p.opcion ? nombreCat(categoria) + sufijoOpcion() : undefined,
         });
+    // Las líneas añadidas del catálogo vuelven con su precio de venta (recargo
+    // aplicado): se refleja en la lista de añadidas para que no se vea el coste.
+    const manuales = (p.datos && p.datos.lineas || []).filter((l) => l.origen === 'manual');
+    if (manuales.length === p.extra.length) manuales.forEach((l, i) => { if (p.extra[i].producto_ref && Math.abs(Number(p.extra[i].precio_tarifa) - Number(p.extra[i].precio_catalogo)) < 0.005) p.extra[i].precio_tarifa = l.precio_tarifa; });
   } catch (e) {
     p.datos = null; p.error = msgError(e);
   }
@@ -7686,7 +7690,10 @@ A.presuAnadir = (ref) => {
   p.extra.push({
     producto_ref: x.referencia, descripcion: x.nombre, detalle_tecnico: x.detalle_tecnico || null,
     especificaciones: x.especificaciones || [], cantidad: 1, unidad: x.unidad || 'ud',
-    precio_tarifa: x.precio_tarifa, iva: x.iva == null ? 21 : x.iva, seccion: 'Equipos',
+    // precio_catalogo: el servidor sabe así si la persona tocó el precio. Si no
+    // lo tocó, le aplica el recargo del producto (en fotovoltaica el catálogo
+    // es coste). Lo que vuelve ya con recargo se refleja aquí (presuCalcular).
+    precio_tarifa: x.precio_tarifa, precio_catalogo: x.precio_tarifa, iva: x.iva == null ? 21 : x.iva, seccion: 'Equipos',
   });
   p.buscar = ''; p.resultados = [];
   A.presuRecalcular();

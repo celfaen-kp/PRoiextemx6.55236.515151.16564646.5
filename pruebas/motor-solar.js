@@ -124,7 +124,7 @@ comprueba('avisa de las tasas municipales', aviso(r, 'tasas e ICIO'));
 comprueba('el lote de pequeño material va dentro de PEQ_MAT, no suelto', !linea(r, 'FV-08-001') && desgDe(r, 'PEQ_MAT', 'FV-08-001') === 1);
 
 titulo('el modelo de precios (motor 1.4): un margen por familia, una vez por línea');
-igual('motor 1.4', r.motor_version, '1.4');
+igual('motor 1.5', r.motor_version, '1.5');
 var inv = porNombre(r, 'GEN24 SC 5.0');
 igual('equipo del distribuidor: coste = la factura, sin complementarios', inv.precio_coste, P('Fronius Primo GEN24 SC 5.0'));
 igual('y venta = coste × 1,20 al céntimo', inv.precio_tarifa, Math.round(inv.precio_coste * 120 + 1e-7) / 100);
@@ -265,6 +265,21 @@ igual('camión grúa los días de obra', cant(r, 'FV-10-002'), 2);
 comprueba('y se llama camión grúa', /Camión grúa/.test(linea(r, 'FV-10-002').descripcion));
 r = calcular('solar', con({ medio_elevacion: 'plataforma' }), config);
 comprueba('la plataforma elevadora no se usa: no sale nada', !linea(r, 'FV-10-002') && !linea(r, 'FV-10-003'));
+
+titulo('líneas añadidas a mano desde el catálogo (16-10-2026): el catálogo FV es coste');
+var weco = refDe('WECO 5K3 EVO 5,22KWH 48V WIFI+BLUETOOTH');
+var lm = lineaManual({ producto_ref: weco, descripcion: 'WECO 5K3 EVO', cantidad: 1, precio_tarifa: fv.productos[weco].precio_tarifa, precio_catalogo: fv.productos[weco].precio_tarifa }, fv.productos[weco], fv.lookup);
+igual('WECO: coste = catálogo 1.020', lm.precio_coste, 1020);
+igual('y venta = coste × 1,20 = 1.224 (antes salía a 1.020, a coste)', lm.precio_tarifa, 1224);
+var pw = refDe('TESLA Powerwall 3 | 13.5 kWh/11 kW');
+var lt = lineaManual({ producto_ref: pw, descripcion: 'PW3', cantidad: 1, precio_tarifa: fv.productos[pw].precio_tarifa }, fv.productos[pw], fv.lookup);
+igual('Tesla a mano: 35 % de margen mínimo (7.218,50 → 11.105,39)', lt.precio_tarifa, 11105.39);
+var le = lineaManual({ producto_ref: weco, descripcion: 'WECO', cantidad: 2, precio_tarifa: 1300, precio_catalogo: 1020 }, fv.productos[weco], fv.lookup);
+comprueba('si la persona escribe otro precio, ese es la venta y el coste sigue siendo el del catálogo', le.precio_tarifa === 1300 && le.precio_coste === 1020 && le.cantidad === 2 && le.origen_inputs.precio_escrito === 1300);
+var ll = lineaManual({ descripcion: 'Concepto libre', cantidad: 1, precio_tarifa: 500 }, null, fv.lookup);
+comprueba('un concepto libre: venta lo escrito, coste desconocido', ll.precio_tarifa === 500 && ll.precio_coste === null && ll.origen === 'manual');
+var cable = lineaManual({ producto_ref: 'FV-06-001', descripcion: 'cable', cantidad: 10, precio_tarifa: 3.95 }, fv.productos['FV-06-001'], fv.lookup);
+comprueba('material de partida: coste × 1,10 (CDC) × 1,30 (' + cable.precio_coste + ' → ' + cable.precio_tarifa + ')', cable.precio_coste === 4.35 && cable.precio_tarifa === 5.66);
 
 titulo('backup automático o manual (Ramón, 13-10-2026)');
 r = calcular('solar', con({ baterias: 'si', baterias_kwh: 10, backup: true, backup_modo: 'automatico' }), config);
