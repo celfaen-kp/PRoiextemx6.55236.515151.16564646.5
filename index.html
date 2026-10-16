@@ -428,7 +428,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '24.0'; // versión visible de la app (única fuente)
+const APP_VERSION = '24.1'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -7587,7 +7587,7 @@ function opcionesMarcaHTML(p) {
       <span class="lbl" style="font-size:11px">Opción con</span>
       ${MARCAS_FV.map(([k, l]) => `<span class="chip ${actual === k ? 'on' : ''}" data-a="presuOpcionMarca" data-m="${k}" style="cursor:pointer">${l}</span>`).join('')}
     </div>
-    <div class="tiny" style="margin-top:6px">Para dar al cliente dos o tres opciones: guarda esta, cambia de marca y guarda la siguiente. Cada una es un presupuesto aparte, con la marca en el título, y una oferta aparte en Teamleader.${p.opcion ? ' Esta opción no cambia la ficha de la visita.' : ''}</div>
+    <div class="tiny" style="margin-top:6px">Para dar al cliente dos o tres opciones: guarda esta, cambia de marca y guarda la siguiente. Cada una es un presupuesto aparte (el título lleva marca, kWp y batería) y una oferta aparte en Teamleader.${p.opcion ? ' Esta opción no cambia la ficha de la visita.' : ''}</div>
   </div>`;
 }
 
@@ -7605,14 +7605,14 @@ A.presuCalcular = async (categoria) => {
     p.datos = suelto
       ? await visitasDB.presupuestarSuelto(categoria, datosConOpcion(datosDelSuelto(V.suelto)), {
           guardar: false, dtoGlobalPct: p.dto, lineasExtra: p.extra,
-          clienteId: V.suelto.clienteId, titulo: tituloDelSuelto() + sufijoOpcion(),
+          clienteId: V.suelto.clienteId, titulo: tituloDelSuelto(),
         })
       : await visitasDB.presupuestarVisita(vv.visita.id, categoria, {
           guardar: false, dtoGlobalPct: p.dto, lineasExtra: p.extra,
           // Con una opción puesta van los datos de la ficha con la marca cambiada.
           datos: p.opcion && ficha ? datosConOpcion(ficha.datos || {}) : undefined,
           fichaId: p.opcion && ficha ? ficha.id : undefined,
-          titulo: p.opcion ? nombreCat(categoria) + sufijoOpcion() : undefined,
+          titulo: undefined,   // el servidor pone cliente · marca · kWp · batería
         });
     // Las líneas añadidas del catálogo vuelven con su precio de venta (recargo
     // aplicado): se refleja en la lista de añadidas para que no se vea el coste.
@@ -7646,13 +7646,13 @@ A.presuGuardar = async () => {
     const r = suelto
       ? await visitasDB.presupuestarSuelto(p.cat, datosConOpcion(datosDelSuelto(V.suelto)), {
           guardar: true, dtoGlobalPct: p.dto, lineasExtra: p.extra,
-          clienteId: V.suelto.clienteId, titulo: tituloDelSuelto() + sufijoOpcion(),
+          clienteId: V.suelto.clienteId, titulo: tituloDelSuelto(),
         })
       : await visitasDB.presupuestarVisita(vv.visita.id, p.cat, {
           guardar: true, dtoGlobalPct: p.dto, lineasExtra: p.extra,
           datos: p.opcion && ficha ? datosConOpcion(ficha.datos || {}) : undefined,
           fichaId: p.opcion && ficha ? ficha.id : undefined,
-          titulo: p.opcion ? nombreCat(p.cat) + sufijoOpcion() : undefined,
+          titulo: undefined,
         });
     p.datos = r; p.guardado = r.presupuesto_id || null; p.enTL = false; p.errTL = null;
     toast('Presupuesto guardado. Subiéndolo a Teamleader…');

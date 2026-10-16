@@ -288,11 +288,30 @@ Deno.serve(async (req) => {
   if (!guardar) return json(salida);
 
   // --- guardar --------------------------------------------------------------------
+  // El título lleva lo que distingue un presupuesto FV de otro (Enzo, 16-10-2026):
+  // marca del inversor, kWp y batería si la hay. Delante, lo que mande la app
+  // (el nombre del suelto) o el nombre del cliente.
+  let titulo = String(b.titulo || '').trim().slice(0, 200) || null;
+  if (modeloFV && res.fv2) {
+    const r = res.fv2;
+    const MARCAS_BAT: Record<string, string> = { byd: 'BYD', fronius: 'Fronius Reserva', tesla: 'Tesla Powerwall', enphase: 'Enphase IQ Battery', weco: 'WECO', deye: 'Deye' };
+    const partes = [String(r.entrada.sis), String(r.kwp).replace('.', ',') + ' kWp'];
+    const conBat = String(datos.baterias || '') === 'si' || Number(datos.baterias_kwh) > 0;
+    if (conBat) partes.push('batería ' + (MARCAS_BAT[String(datos.bateria_marca || '')] || String(datos.bateria_marca || '')).trim() + (Number(datos.baterias_kwh) > 0 ? ' ' + String(Number(datos.baterias_kwh)).replace('.', ',') + ' kWh' : ''));
+    else if (String(datos.baterias || '') === 'dejar_preparado') partes.push('preparado para baterías');
+    const detalle = partes.filter(Boolean).join(' · ');
+    let cabecera = titulo;
+    if (!cabecera && clienteId) {
+      const { data: cli } = await sb.from('clientes_cache').select('nombre').eq('id', clienteId).maybeSingle();
+      cabecera = cli?.nombre || null;
+    }
+    titulo = ((cabecera ? cabecera + ' · ' : '') + detalle).slice(0, 200);
+  }
   const { data: creado, error: errP } = await sb.from('presupuestos').insert({
     visita_id: visitaId,
     ficha_id: fichaId,
     cliente_id: clienteId,
-    titulo: String(b.titulo || '').trim().slice(0, 200) || null,
+    titulo,
     categoria,
     conjunto_reglas_id: conjunto.id,
     tarifa_id: tarifaId,
