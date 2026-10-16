@@ -428,7 +428,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '24.1'; // versión visible de la app (única fuente)
+const APP_VERSION = '24.2'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -7862,6 +7862,25 @@ function datosDelSuelto(f) {
   };
 }
 
+/* --- traer de Teamleader lo que ha pasado allí (16-10-2026) -----------------
+ * Ofertas enviadas (por la fase de la oportunidad), aceptadas, rechazadas y las
+ * hechas directamente en el CRM. El cron lo hace cada cuarto de hora
+ * (sql/etapa78); esto es para no esperar. */
+A.tlSincronizar = async () => {
+  if (!(esAdmin() || rol() === 'presupuestos') || V.tlSyncBusy) return;
+  if (!navigator.onLine) { avisar('Sin conexión.'); return; }
+  V.tlSyncBusy = true; render();
+  try {
+    const r = await visitasDB.sincronizarTeamleader();
+    const partes = [];
+    if (r.importados) partes.push(r.importados + ' oferta(s) nueva(s) importada(s)');
+    if (r.actualizados) partes.push(r.actualizados + ' presupuesto(s) actualizado(s)');
+    toast(partes.length ? 'Teamleader: ' + partes.join(' · ') + '.' : 'Teamleader: sin novedades (' + (r.revisados || 0) + ' revisadas).');
+    if (r.detalles && r.detalles.length) console.info('Teamleader →', r.detalles);
+    V.presuLista.cargado = false; A.cargarPresupuestos(); A.cargarAgenda();
+  } catch (e) { avisar('No se pudo sincronizar: ' + msgError(e)); }
+  V.tlSyncBusy = false; render();
+};
 A.cargarPresupuestos = async () => {
   const l = V.presuLista; if (l.cargando) return;
   l.cargando = true; if (!l.cargado) render();
@@ -8354,9 +8373,12 @@ function vPresupuestos() {
     ${marcaSysefen(false)}
     <div class="row" style="justify-content:space-between">
       <div class="h1">Presupuestos</div>
-      <button class="pill" data-a="presuNuevo" style="background:var(--tinta);color:#fff">+ Nuevo</button>
+      <div class="row g8">
+        ${esAdmin() || rol() === 'presupuestos' ? `<button class="pill" data-a="tlSincronizar" style="padding:8px 12px;background:var(--l1);color:var(--tinta)" ${V.tlSyncBusy ? 'disabled' : ''} title="Traer de Teamleader lo enviado, aceptado o rechazado, y las ofertas hechas allí">${V.tlSyncBusy ? 'Mirando…' : '↻ Teamleader'}</button>` : ''}
+        <button class="pill" data-a="presuNuevo" style="background:var(--tinta);color:#fff">+ Nuevo</button>
+      </div>
     </div>
-    <div class="sub" style="margin-top:8px">Los de las visitas y los sueltos, juntos.</div>
+    <div class="sub" style="margin-top:8px">Los de las visitas y los sueltos, juntos. Lo que pasa en Teamleader (enviado, aceptado, ofertas hechas allí) entra solo cada cuarto de hora, o con ↻.</div>
   </div>
   <div class="scroll pad pb-nav">
     ${l.error ? `<div class="card" style="background:var(--rojo-cl)"><div class="sub" style="color:var(--rojo)">${esc(l.error)}</div></div>` : ''}
@@ -10373,6 +10395,7 @@ function vClientes() {
       <div class="h1">Clientes</div>
       <div class="row g8">
         ${puedeCitar() ? `<button class="pill" data-a="ag_vista" style="padding:8px 12px;background:${ag.vista === 'tablero' ? 'var(--verde)' : 'var(--l1)'};color:${ag.vista === 'tablero' ? '#fff' : 'var(--tinta)'}">${ag.vista === 'tablero' ? 'Lista' : 'Tablero'}</button>` : ''}
+        ${esAdmin() || rol() === 'presupuestos' ? `<button class="pill" data-a="tlSincronizar" style="padding:8px 12px;background:var(--l1);color:var(--tinta)" ${V.tlSyncBusy ? 'disabled' : ''} title="Traer de Teamleader lo enviado, aceptado o rechazado">${V.tlSyncBusy ? '…' : '↻'}</button>` : ''}
         ${puedeCitar() && !esColaborador() ? '<button class="pill" data-a="ag_nuevoCliente" style="background:var(--tinta);color:#fff">+ Cliente</button>' : ''}
       </div>
     </div>
@@ -11866,6 +11889,7 @@ document.addEventListener('click', (e) => {
   if (a === 'visitaDrive') return A.visitaDrive();
   if (a === 'graciasVisita') return A.graciasVisita();
   if (a === 'presuCalcular') return A.presuCalcular(d.c);
+  if (a === 'tlSincronizar') return A.tlSincronizar();
   if (a === 'presuOpcionMarca') return A.presuOpcionMarca(d.m);
   if (a === 'presuRecalcular') return A.presuRecalcular();
   if (a === 'presuGuardar') return A.presuGuardar();

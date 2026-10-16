@@ -243,9 +243,182 @@ async function clienteDeColaborador(sb: any, yo: any, clienteId: string | null, 
 }
 const SOLO_SUS_CLIENTES = 'Como colaborador solo puedes trabajar con los clientes que te han asignado.';
 
+// =============================================================================
+// Sincronizar con Teamleader (16-10-2026, Enzo): lo que pasa con las ofertas en
+// el CRM vuelve a la app. Lo pide la app («Actualizar desde Teamleader») y lo
+// hace el cron cada cuarto de hora (sql/etapa78, cabecera x-clave).
+//
+//   · Una oferta de Teamleader no tiene estado «enviada» (sus estados son open,
+//     accepted, rejected, expired, closed): el envío se ve en la FASE de la
+//     oportunidad. Si la oportunidad ha pasado a una fase cuyo nombre encaja
+//     con FASE_ENVIADO (ajustes.tl_fase_enviado, o la expresión por defecto),
+//     el presupuesto pasa a «enviado al cliente» con la fecha de ese cambio.
+//   · accepted, o la oportunidad ganada → aceptado. rejected, o perdida →
+//     rechazado. expired → caducado.
+//   · Las ofertas que están en la oportunidad de una visita y la app no conoce
+//     (hechas directamente en Teamleader) se importan como presupuestos sin
+//     líneas (motor_version 'teamleader'), para que el cliente salga en su fase.
+// =============================================================================
+const FASE_ENVIADO_DEFECTO = /enviad|presupuest|oferta|propuest/i;
+const FASE_INICIAL = /nuev|contact|visita|oportunidad|cita|lead|primer/i;
+function mismaClave(a: string, b: string) {
+  const x = new TextEncoder().encode(a), y = new TextEncoder().encode(b);
+  let dif = x.length ^ y.length;
+  for (let i = 0; i < Math.max(x.length, y.length); i++) dif |= (x[i] ?? 0) ^ (y[i] ?? 0);
+  return dif === 0;
+}
+const esUuid = (v: unknown) => /^[0-9a-f-]{36}$/i.test(String(v || ''));
+// deno-lint-ignore no-explicit-any
+async function sincronizar(sb: any) {
+  const token = await tokenValido(sb);
+  const ahora = new Date().toISOString();
+  const desde = new Date(Date.now() - 400 * 86400_000).toISOString();
+  const resumen = { revisados: 0, actualizados: 0, importados: 0, oportunidades: 0, detalles: [] as string[] };
+
+  // La expresión de la fase «enviado», si Administración la ha cambiado en ajustes.
+  let faseEnviado = FASE_ENVIADO_DEFECTO;
+  try {
+    const { data: aj } = await sb.from('ajustes').select('valor').eq('clave', 'tl_fase_enviado').maybeSingle();
+    if (aj?.valor) faseEnviado = new RegExp(String(aj.valor), 'i');
+  } catch (_) { /* sin ajuste: la de por defecto */ }
+
+  // Las fases, por id → nombre.
+  const fases: Record<string, string> = {};
+  try {
+    const f = await crm(token, 'dealPhases.list', { page: { size: 100 } });
+    // deno-lint-ignore no-explicit-any
+    (f?.data || []).forEach((x: any) => { fases[x.id] = String(x.name || ''); });
+  } catch (e) { resumen.detalles.push('Fases: ' + (e as Error).message); }
+  const esFaseEnviado = (id: string) => { const n = fases[id] || ''; return faseEnviado.test(n) && !FASE_INICIAL.test(n); };
+
+  // Lo nuestro: presupuestos con oferta y visitas con oportunidad.
+  const { data: presus } = await sb.from('presupuestos')
+    .select('id, tl_quotation_id, visita_id, cliente_id, estado, revisado_at, enviado_cliente_at, respuesta_cliente, categoria')
+    .not('tl_quotation_id', 'is', null).gte('created_at', desde);
+  const { data: visitas } = await sb.from('visitas')
+    .select('id, tl_deal_id, cliente_id').not('tl_deal_id', 'is', null).gte('created_at', desde);
+  // deno-lint-ignore no-explicit-any
+  const presuPorOferta: Record<string, any> = {};
+  (presus || []).forEach((p) => { if (esUuid(p.tl_quotation_id)) presuPorOferta[p.tl_quotation_id] = p; });
+  // deno-lint-ignore no-explicit-any
+  const visitaPorDeal: Record<string, any> = {};
+  (visitas || []).forEach((v) => { if (v.tl_deal_id) visitaPorDeal[v.tl_deal_id] = v; });
+
+  // Las ofertas que conocemos, en bloques de 50.
+  // deno-lint-ignore no-explicit-any
+  const ofertas: Record<string, any> = {};
+  const ids = Object.keys(presuPorOferta);
+  for (let i = 0; i < ids.length; i += 50) {
+    try {
+      const r = await crm(token, 'quotations.list', { filter: { ids: ids.slice(i, i + 50) }, page: { size: 50 } });
+      // deno-lint-ignore no-explicit-any
+      (r?.data || []).forEach((q: any) => { ofertas[q.id] = q; });
+    } catch (e) { resumen.detalles.push('Ofertas: ' + (e as Error).message); }
+  }
+
+  // Las oportunidades: las de las visitas y las de las ofertas conocidas.
+  const dealIds = new Set<string>(Object.keys(visitaPorDeal));
+  Object.values(ofertas).forEach((q) => { if (q?.deal?.id) dealIds.add(q.deal.id); });
+  // deno-lint-ignore no-explicit-any
+  const deals: Record<string, any> = {};
+  let n = 0;
+  for (const did of dealIds) {
+    if (n++ >= 150) { resumen.detalles.push('Más de 150 oportunidades: el resto en la siguiente pasada.'); break; }
+    try { const r = await crm(token, 'deals.info', { id: did }); if (r?.data) deals[did] = r.data; }
+    catch (e) { if ((e as { status?: number }).status !== 404) resumen.detalles.push('Oportunidad ' + did.slice(0, 8) + ': ' + (e as Error).message); }
+  }
+  resumen.oportunidades = Object.keys(deals).length;
+
+  // Las ofertas de esas oportunidades que la app no conoce: se piden también.
+  const desconocidas: string[] = [];
+  Object.values(deals).forEach((d) => (d.quotations || []).forEach((q: { id: string }) => { if (q?.id && !presuPorOferta[q.id] && !ofertas[q.id]) desconocidas.push(q.id); }));
+  for (let i = 0; i < desconocidas.length; i += 50) {
+    try {
+      const r = await crm(token, 'quotations.list', { filter: { ids: desconocidas.slice(i, i + 50) }, page: { size: 50 } });
+      // deno-lint-ignore no-explicit-any
+      (r?.data || []).forEach((q: any) => { ofertas[q.id] = q; });
+    } catch (e) { resumen.detalles.push('Ofertas nuevas: ' + (e as Error).message); }
+  }
+
+  // Qué dice la oportunidad: cuándo pasó a «enviado» y si está ganada o perdida.
+  // deno-lint-ignore no-explicit-any
+  const enviadoDe = (d: any): string | null => {
+    if (!d) return null;
+    // deno-lint-ignore no-explicit-any
+    const hist = ((d.phase_history || []) as any[]).filter((h) => h?.phase?.id && esFaseEnviado(h.phase.id) && h.started_at)
+      .map((h) => new Date(String(h.started_at).replace(' ', 'T')).toISOString()).sort();
+    if (hist.length) return hist[0];
+    if (d.current_phase?.id && esFaseEnviado(d.current_phase.id)) return d.closed_at || ahora;
+    return null;
+  };
+  // deno-lint-ignore no-explicit-any
+  const respuestaDe = (q: any, d: any): [string | null, string | null] => {
+    if (q?.status === 'accepted' || d?.status === 'won') return ['aceptado', d?.closed_at || q?.updated_at || ahora];
+    if (q?.status === 'rejected' || d?.status === 'lost') return ['rechazado', d?.closed_at || q?.updated_at || ahora];
+    if (q?.status === 'expired') return ['caducado', q?.updated_at || ahora];
+    return [null, null];
+  };
+
+  // 1 · Los presupuestos de la app.
+  for (const p of presus || []) {
+    const q = ofertas[p.tl_quotation_id]; if (!q) continue;
+    resumen.revisados++;
+    const d = deals[q.deal?.id];
+    // deno-lint-ignore no-explicit-any
+    const cambios: Record<string, any> = {};
+    const env = enviadoDe(d);
+    const [resp, cuando] = respuestaDe(q, d);
+    if (!p.enviado_cliente_at && (env || resp === 'aceptado')) {
+      cambios.enviado_cliente_at = env || cuando; cambios.estado = 'enviado';
+      if (!p.revisado_at) cambios.revisado_at = env || cuando;
+    }
+    if (resp && (p.respuesta_cliente || 'pendiente') === 'pendiente') { cambios.respuesta_cliente = resp; cambios.respondido_at = cuando; }
+    if (Object.keys(cambios).length) {
+      cambios.updated_at = ahora;
+      const { error } = await sb.from('presupuestos').update(cambios).eq('id', p.id);
+      if (error) resumen.detalles.push('Presupuesto ' + p.id.slice(0, 8) + ': ' + error.message);
+      else { resumen.actualizados++; resumen.detalles.push((p.categoria || '') + ' ' + p.id.slice(0, 8) + ': ' + Object.keys(cambios).filter((k) => k !== 'updated_at').join(', ')); }
+    }
+  }
+
+  // 2 · Las ofertas hechas directamente en Teamleader, en la oportunidad de una visita.
+  for (const q of Object.values(ofertas)) {
+    if (presuPorOferta[q.id]) continue;
+    const v = visitaPorDeal[q.deal?.id]; if (!v) continue;   // sin visita no sabemos de quién es
+    const d = deals[q.deal?.id];
+    const { data: fichas } = await sb.from('visita_fichas').select('categoria').eq('visita_id', v.id).limit(1);
+    const env = enviadoDe(d);
+    const [resp, cuando] = respuestaDe(q, d);
+    const creada = q.created_at ? new Date(q.created_at).toISOString() : ahora;
+    const importe = Number(q?.total?.tax_exclusive?.amount);
+    const fila = {
+      visita_id: v.id, cliente_id: v.cliente_id, categoria: fichas?.[0]?.categoria || 'solar',
+      titulo: 'Hecho en Teamleader' + (q.name ? ' · ' + String(q.name).slice(0, 120) : ''),
+      total_bruto: Number.isFinite(importe) ? importe : null, total_venta: Number.isFinite(importe) ? importe : null, total_dto_linea: 0, dto_global_pct: 0,
+      tl_quotation_id: q.id, sync_estado: 'sincronizado', sync_at: ahora, motor_version: 'teamleader',
+      estado: env || resp ? 'enviado' : 'aprobado', revisado_at: creada,
+      enviado_cliente_at: env || (resp === 'aceptado' ? cuando : null),
+      respuesta_cliente: resp || 'pendiente', respondido_at: resp ? cuando : null,
+      created_at: creada,
+    };
+    const { error } = await sb.from('presupuestos').insert(fila);
+    if (error) resumen.detalles.push('Importar ' + q.id.slice(0, 8) + ': ' + error.message);
+    else { resumen.importados++; resumen.detalles.push('Importada oferta ' + (q.name || q.id.slice(0, 8)) + (Number.isFinite(importe) ? ' · ' + importe.toFixed(2) + ' €' : '')); presuPorOferta[q.id] = fila; }
+  }
+  return resumen;
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
   if (req.method !== 'POST') return json({ error: 'Método no permitido.' }, 405);
+
+  // --- el cron (sql/etapa78): solo sincroniza, con su clave ----------------------
+  const CLAVE = Deno.env.get('AVISOS_CLAVE') || '';
+  if (CLAVE.length >= 24 && mismaClave(req.headers.get('x-clave') || '', CLAVE)) {
+    const sbCron = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, { auth: { persistSession: false } });
+    try { return json(Object.assign({ ok: true, cron: true }, await sincronizar(sbCron))); }
+    catch (e) { return json({ error: (e as Error).message, sin_permiso: e instanceof SinPermiso }, e instanceof SinPermiso ? 409 : 502); }
+  }
 
   // --- quién llama ------------------------------------------------------------
   const autorizacion = req.headers.get('Authorization') || '';
@@ -267,6 +440,14 @@ Deno.serve(async (req) => {
   // deno-lint-ignore no-explicit-any
   let b: any;
   try { b = await req.json(); } catch { return json({ error: 'Petición mal formada.' }, 400); }
+
+  // --- desde la app: «Actualizar desde Teamleader» ---------------------------------
+  if (b.accion === 'sincronizar') {
+    if (!['presupuestos', 'admin'].includes(String(yo.rol))) return json({ error: 'Sincronizar con el CRM es de presupuestos y Administración.' }, 403);
+    try { return json(Object.assign({ ok: true }, await sincronizar(sb))); }
+    catch (e) { return json({ error: (e as Error).message, sin_permiso: e instanceof SinPermiso }, e instanceof SinPermiso ? 409 : 502); }
+  }
+
   const id = limpio(b.presupuesto_id);
   if (!/^[0-9a-f-]{36}$/i.test(id)) return json({ error: 'Falta el presupuesto.' }, 400);
   const soloVer = b.solo_ver === true;

@@ -461,6 +461,11 @@ export async function crearPresupuestoExterno(fila) {
   return unwrap(await supabase.from('presupuestos').insert(fila).select().single());
 }
 
+/** Lo que ha pasado en Teamleader (fases, aceptadas, rechazadas, ofertas hechas allí) vuelve a la app. */
+export async function sincronizarTeamleader() {
+  return invocar('teamleader-presupuesto', { accion: 'sincronizar' });
+}
+
 /** Todos los presupuestos guardados, los de visita y los sueltos. */
 export async function listarPresupuestos(limite = 100) {
   return unwrap(
