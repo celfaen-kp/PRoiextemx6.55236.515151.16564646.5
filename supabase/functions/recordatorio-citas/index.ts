@@ -345,6 +345,7 @@ Deno.serve(async (req) => {
   const otraVez = b.otra_vez === true;
   const citaSuelta = typeof b.cita_id === 'string' ? b.cita_id : '';
 
+
   // Dos maneras de entrar: la tarea programada, con su clave, que puede hacerlo
   // todo; o alguien de la app con sesión, que solo puede avisar de UNA cita, la
   // que acaba de crear o cambiar. Así el aviso sale al momento sin que la clave
@@ -377,6 +378,15 @@ Deno.serve(async (req) => {
   const sb = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, {
     auth: { persistSession: false },
   });
+
+  // Fin de semana y festivos: la tarea programada no manda ningún correo (Enzo,
+  // 17-10-2026: «solo de lunes a viernes»). Lo que pide una persona desde la app
+  // (avisar de una cita que acaba de crear) sí sale, sea el día que sea.
+  if (esElCron && !citaSuelta && !(typeof b.fecha === 'string')) {
+    const hoy0 = fechaEnZona(new Date());
+    const fest0 = await festivosDesde(sb, hoy0);
+    if (!esLaborable(hoy0, fest0)) return json({ saltado: 'fin de semana o festivo: sin correos', dia: hoy0 });
+  }
 
   const mandar = async (para: string, asunto: string, texto: string, html: string) => {
     const r = await fetch('https://api.resend.com/emails', {
@@ -720,6 +730,13 @@ Deno.serve(async (req) => {
     desde = ahora.toISOString();
     hasta = new Date(ahora.getTime() + 24 * 3600 * 1000).toISOString();
     ventana = 'próximas 24 horas';
+    // El viernes (o la víspera de un festivo) el aviso de «mañana» llega hasta
+    // el final del siguiente día laborable: así las citas del lunes se avisan
+    // el viernes y el fin de semana no sale nada.
+    const hoyV = fechaEnZona(ahora);
+    const festV = await festivosDesde(sb, hoyV);
+    const sig = siguienteLaborable(hoyV, festV);
+    if (sig !== sumaDias(hoyV, 1)) hasta = new Date(`${sig}T23:59:59${desfase(sig)}`).toISOString();
   }
 
   const enviarCorreo = async (para: string, asunto: string, texto: string, html: string) => {

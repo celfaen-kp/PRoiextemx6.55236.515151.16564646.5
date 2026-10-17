@@ -71,6 +71,7 @@ romper nada.
 | `etapa19_imputaciones_repetidas.sql` | varias líneas de la misma categoría el mismo día |
 | `etapa74_modelo_fv.sql` | **tabla `motor_modelos` para el presupuestador FV v2 de Ramón** (y después `subir-a-supabase/etapa74b_modelo_fv_datos.sql`, generado por `herramientas/cargar-modelo-fv.py`, con los precios: no va al repo) |
 | `etapa75_presupuesto_enviado.sql` | **«Enviado al cliente» solo cuando lo apunta una persona**: arregla los marcados por la sincronización con Teamleader |
+| `etapa79_avisos_solo_laborables.sql` | **los tres crons de recordatorio-citas solo de lunes a viernes** (`1-5`). Cambiar CAMBIA_ESTA_CLAVE |
 | `etapa78_sync_teamleader_cron.sql` | **cron cada 15 min**: lo enviado, aceptado o rechazado en Teamleader (y las ofertas hechas allí) vuelve a la app. Cambiar CAMBIA_ESTA_CLAVE por la AVISOS_CLAVE |
 | `etapa77_tablero_orden.sql` | **orden a mano dentro de una columna del tablero** (`clientes_cache.tablero_orden`) |
 | `etapa76_colaborador.sql` | **rol `colaborador`**: como presupuestos, pero solo con los clientes que le asignen (ficha del cliente → Colaborador). Hay que volver a desplegar `presupuestar`, `teamleader-presupuesto`, `teamleader-cliente`, `teamleader-visita`, `correo-visita`, `visita-drive`, `cliente-drive`, `recordatorio-citas` y `teamleader-oauth` |
