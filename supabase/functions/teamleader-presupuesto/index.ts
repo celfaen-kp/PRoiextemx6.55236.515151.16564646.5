@@ -634,12 +634,37 @@ Deno.serve(async (req) => {
         };
       });
 
-      const r = await crm(token, 'quotations.create', {
+      // El nombre de la oferta (Enzo, 18-10-2026): con dos ofertas en la misma
+      // oportunidad hay que abrirlas para saber cuál es cuál. En fotovoltaica el
+      // título del presupuesto ya lleva marca · kWp · batería; en las demás se
+      // compone con la categoría y el equipo (la primera línea de «Equipos» o
+      // la primera línea). Se quita el nombre del cliente de delante si está.
+      const CATS: Record<string, string> = { solar: 'Fotovoltaica', aerotermia: 'Aerotermia', aire_acondicionado: 'Aire acondicionado', electricidad: 'Electricidad' };
+      let nombreOferta = limpio(p.titulo);
+      if (cli?.nombre && nombreOferta.startsWith(cli.nombre + ' · ')) nombreOferta = nombreOferta.slice(cli.nombre.length + 3);
+      if (!nombreOferta || /^(Fotovoltaica|Aerotermia|Aire acondicionado|Electricidad|Paneles solares)( · .*)?$/.test(nombreOferta) && !/kWp|kW/.test(nombreOferta)) {
+        // deno-lint-ignore no-explicit-any
+        const equipo = (lineas as any[]).find((l) => /equipo/i.test(String(l.seccion || ''))) || lineas[0];
+        nombreOferta = (CATS[String(p.categoria)] || String(p.categoria)) + (equipo ? ' · ' + limpio(equipo.descripcion) : '');
+      }
+      nombreOferta = nombreOferta.slice(0, 120);
+      // La API documentada no admite «name» al crear: se intenta, y si lo
+      // rechaza se crea sin él. El nombre va también como texto de cabecera de
+      // la oferta, que eso sí lo admite siempre.
+      const base = {
         deal_id: dealId,
         // exchange_rate es obligatorio aunque sea euro («exchange_rate must be present»).
         currency: { code: 'EUR', exchange_rate: 1 },
+        text: '**' + nombreOferta + '**',
         grouped_lines: grupos.map((g) => ({ section: { title: g.titulo }, line_items: items(g) })),
-      });
+      };
+      // deno-lint-ignore no-explicit-any
+      let r: any;
+      try { r = await crm(token, 'quotations.create', { ...base, name: nombreOferta }); }
+      catch (e) {
+        if ((e as { status?: number }).status === 400 || /name|unknown|invalid/i.test((e as Error).message)) r = await crm(token, 'quotations.create', base);
+        else throw e;
+      }
       quotationId = r?.data?.id || '';
       if (!quotationId) throw new Error('El CRM no devolvió el id de la oferta.');
     } catch (e) {
