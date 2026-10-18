@@ -428,7 +428,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '24.8'; // versión visible de la app (única fuente)
+const APP_VERSION = '24.9'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -1789,6 +1789,7 @@ A.abrirEmpleado = (userId) => {
     nombreCompleto: row.nombre_completo || '',
     fechaAlta: row.fecha_alta ? String(row.fecha_alta).slice(0, 10) : '',
     vacacionesAnuales: row.vacaciones_anuales != null ? row.vacaciones_anuales : 30,
+    ordenPlan: row.orden_plan != null ? row.orden_plan : '',
     emailAvisos: row.email_avisos || '',
   };
   V.view = 'empleado'; render();
@@ -1837,6 +1838,7 @@ A.empGuardar = async () => {
   if (columnaEmp('nombre_completo')) campos.nombre_completo = (d.nombreCompleto || '').trim() || null;
   if (columnaEmp('fecha_alta')) campos.fecha_alta = (d.fechaAlta || '').trim() || null;
   if (columnaEmp('vacaciones_anuales')) campos.vacaciones_anuales = parseInt(d.vacacionesAnuales, 10) || 30;
+  if (columnaEmp('orden_plan')) campos.orden_plan = String(d.ordenPlan || '').trim() === '' ? null : parseInt(d.ordenPlan, 10) || null;
   if (columnaEmp('email_avisos')) {
     const ea = (d.emailAvisos || '').trim().toLowerCase();
     if (ea && !esCorreo(ea)) { avisar('El email para avisos no es válido.'); return; }
@@ -2813,8 +2815,11 @@ const siguienteLaborable = (fecha) => { let d = agSumaDias(fecha, 1); while (esF
 const anteriorLaborable = (fecha) => { let d = agSumaDias(fecha, -1); while (esFinde(d)) d = agSumaDias(d, -1); return d; };
 const planDias = (lunes, finde) => Array.from({ length: finde ? 7 : 5 }, (_, i) => agSumaDias(lunes, i));
 // Quién sale como fila: operarios y jefes activos. Los jefes primero.
+// Orden de las filas: el que ponga Administración en cada persona (orden_plan,
+// sql/etapa80: Bayron, Ale, Jaime, David…); sin él, jefes primero y por nombre.
+const ordenPlanDe = (r) => (r.orden_plan == null || r.orden_plan === '' ? Infinity : Number(r.orden_plan));
 const planGente = () => empRows.filter((r) => r.activo !== false && ['operario', 'jefe'].includes(r.rol))
-  .sort((a, b) => (a.rol === 'jefe' ? 0 : 1) - (b.rol === 'jefe' ? 0 : 1) || String(a.nombre).localeCompare(String(b.nombre), 'es'));
+  .sort((a, b) => (ordenPlanDe(a) - ordenPlanDe(b)) || (a.rol === 'jefe' ? 0 : 1) - (b.rol === 'jefe' ? 0 : 1) || String(a.nombre).localeCompare(String(b.nombre), 'es'));
 const planFilasDe = (empId, fecha) => V.plan.filas.filter((f) => f.empleado_id === empId && f.fecha === fecha);
 // Obras en marcha a las que no va nadie ese día.
 const obrasSinPlanificarDia = (fecha, filas, obras) => (obras || []).filter((o) => ['planificada', 'en_curso'].includes(o.estado) && !(filas || []).some((f) => f.obra_id === o.id && f.fecha === fecha)).sort(porNumeroDesc);
@@ -5548,6 +5553,9 @@ function vEmpleado() {
     ${columnaEmp('vacaciones_anuales') ? `<div class="lbl" style="margin:14px 0 7px">Vacaciones al año</div>
     <input class="inp" data-f="empVacaciones" inputmode="numeric" value="${esc(String(d.vacacionesAnuales != null ? d.vacacionesAnuales : 30))}">
     <div class="sub" style="font-size:12px;margin-top:6px">Días <b>naturales</b> según convenio. 30 es el mínimo legal; pon los de tu convenio si son más.</div>` : ''}
+    ${columnaEmp('orden_plan') && ['operario', 'jefe'].includes(d.rol) ? `<div class="lbl" style="margin:14px 0 7px">Orden en la planificación</div>
+    <input class="inp" data-f="empOrdenPlan" inputmode="numeric" value="${esc(String(d.ordenPlan != null ? d.ordenPlan : ''))}" placeholder="1 = arriba; vacío = al final">
+    <div class="sub" style="font-size:12px;margin-top:6px">La fila que ocupa en la planificación semanal. Quien no tenga número va detrás, por nombre.</div>` : ''}
     <div class="lbl" style="margin:14px 0 7px">Email (acceso)</div>
     <input class="inp" data-f="empEmail" value="${esc(d.email)}" type="email" inputmode="email" autocapitalize="off" placeholder="${d.nuevo ? esc(emailSugerido(d.nombre) || 'nombre@sysefen.app') : 'nombre@sysefen.app'}">
     <div class="lbl" style="margin:14px 0 7px">Teléfono</div>
@@ -12370,6 +12378,7 @@ document.addEventListener('input', (e) => {
   if (f === 'empNombreCompleto') { A.empCampo('nombreCompleto', t.value); return; }
   if (f === 'empFechaAlta') { A.empCampo('fechaAlta', t.value); return; }
   if (f === 'empVacaciones') { t.value = t.value.replace(/\D/g, '').slice(0, 3); A.empCampo('vacacionesAnuales', t.value); return; }
+  if (f === 'empOrdenPlan') { t.value = t.value.replace(/\D/g, '').slice(0, 2); A.empCampo('ordenPlan', t.value); return; }
   if (f === 'sheetVal') { V.sheet.val = t.value.replace(/\D/g, '').slice(0, 4); return; }
   if (f === 'sheetNombre') { V.sheet.nombre = t.value; return; }
   if (f === 'sheetPin') { V.sheet.pin = t.value.replace(/\D/g, '').slice(0, 4); return; }
