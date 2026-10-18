@@ -428,7 +428,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '24.9'; // versión visible de la app (única fuente)
+const APP_VERSION = '25.0'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -7594,6 +7594,12 @@ function marcaBaseFV() {
   const f = fichaVisitaActual('solar');
   return (f && f.datos && f.datos.inversor_marca) || 'fronius';
 }
+/** La batería con la que se calcula sin opción: la del suelto o la de la ficha. */
+function bateriaBaseFV() {
+  if (enSuelto()) { const f = V.suelto; const kwh = Number(String(f.bateria || '').replace(',', '.')) || 0; return { con: kwh > 0, marca: f.bateria_marca || '', kwh }; }
+  const f = fichaVisitaActual('solar'); const d = (f && f.datos) || {};
+  return { con: d.baterias === 'si' || Number(d.baterias_kwh) > 0, marca: d.bateria_marca || '', kwh: Number(d.baterias_kwh) || 0 };
+}
 /** Los datos con la opción encima. La batería se adapta a la marca, como en el suelto. */
 function datosConOpcion(base) {
   const op = V.presu.opcion; if (!op || !base) return base;
@@ -7605,23 +7611,61 @@ function datosConOpcion(base) {
   }
   return d;
 }
-const sufijoOpcion = () => (V.presu.opcion ? ' · opción ' + nombreMarcaFV(V.presu.opcion.inversor_marca) : '');
+const sufijoOpcion = () => {
+  const op = V.presu.opcion; if (!op) return '';
+  const partes = [];
+  if (op.inversor_marca) partes.push(nombreMarcaFV(op.inversor_marca));
+  if (op.baterias === 'si') partes.push('batería ' + (BATERIAS_DE[op.inversor_marca || marcaBaseFV()] || []).concat(BATERIAS_DE.fronius, BATERIAS_DE.enphase).filter(([k]) => k === op.bateria_marca).map(([, l]) => l)[0] + ' ' + op.baterias_kwh + ' kWh');
+  else if (op.baterias === 'no') partes.push('sin batería');
+  return partes.length ? ' · opción ' + partes.join(' + ') : '';
+};
 A.presuOpcionMarca = (m) => {
   const p = V.presu; if (!p.cat || p.cargando) return;
   if (!enSuelto() && !fichaVisitaActual(p.cat)) { avisar('Esta visita no tiene ficha de ' + nombreCat(p.cat) + ': no se puede cambiar la marca.'); return; }
-  p.opcion = m && m !== marcaBaseFV() ? { inversor_marca: m } : null;
+  const op = Object.assign({}, p.opcion || {});
+  if (m && m !== marcaBaseFV()) op.inversor_marca = m; else delete op.inversor_marca;
+  p.opcion = Object.keys(op).length ? op : null;
   p.guardado = null; p.enTL = false; p.errTL = null;
   A.presuCalcular(p.cat);
 };
+/** La batería de esta opción, sin tocar la ficha (Enzo, 18-10-2026): '' = sin batería, o la marca; kWh aparte. */
+A.presuOpcionBateria = (marca, kwh) => {
+  const p = V.presu; if (!p.cat || p.cargando) return;
+  if (!enSuelto() && !fichaVisitaActual(p.cat)) { avisar('Esta visita no tiene ficha de ' + nombreCat(p.cat) + ': no se puede cambiar la batería.'); return; }
+  const op = Object.assign({}, p.opcion || {});
+  const actual = opcionBateriaActual(p);
+  const nuevaMarca = marca == null ? actual.marca : marca;
+  const nuevosKwh = kwh == null ? (actual.kwh || 10) : (Number(String(kwh).replace(',', '.')) || 0);
+  if (!nuevaMarca) { op.baterias = 'no'; op.baterias_kwh = 0; op.bateria_marca = ''; op.backup = false; }
+  else { op.baterias = 'si'; op.baterias_kwh = nuevosKwh || 10; op.bateria_marca = nuevaMarca; }
+  p.opcion = op;
+  p.guardado = null; p.enTL = false; p.errTL = null;
+  A.presuCalcular(p.cat);
+};
+function opcionBateriaActual(p) {
+  const op = p.opcion || {};
+  if (op.baterias != null) return { con: op.baterias === 'si', marca: op.bateria_marca || '', kwh: Number(op.baterias_kwh) || 0 };
+  return bateriaBaseFV();
+}
 function opcionesMarcaHTML(p) {
   if (p.cat !== 'solar') return '';
-  const actual = p.opcion ? p.opcion.inversor_marca : marcaBaseFV();
+  const actual = (p.opcion && p.opcion.inversor_marca) || marcaBaseFV();
   return `<div style="margin-top:12px;padding:10px 12px;border-radius:12px;background:rgba(20,23,15,.045)">
     <div class="row g8" style="align-items:center;flex-wrap:wrap">
       <span class="lbl" style="font-size:11px">Opción con</span>
       ${MARCAS_FV.map(([k, l]) => `<span class="chip ${actual === k ? 'on' : ''}" data-a="presuOpcionMarca" data-m="${k}" style="cursor:pointer">${l}</span>`).join('')}
     </div>
-    <div class="tiny" style="margin-top:6px">Para dar al cliente dos o tres opciones: guarda esta, cambia de marca y guarda la siguiente. Cada una es un presupuesto aparte (el título lleva marca, kWp y batería) y una oferta aparte en Teamleader.${p.opcion ? ' Esta opción no cambia la ficha de la visita.' : ''}</div>
+    ${(() => {
+      const bat = opcionBateriaActual(p);
+      const marcas = BATERIAS_DE[actual] || [];
+      return `<div class="row g8" style="align-items:center;flex-wrap:wrap;margin-top:8px">
+      <span class="lbl" style="font-size:11px">Batería</span>
+      <span class="chip ${!bat.con ? 'on' : ''}" data-a="presuOpcionBateria" data-m="" style="cursor:pointer">Sin batería</span>
+      ${marcas.map(([k, l]) => `<span class="chip ${bat.con && bat.marca === k ? 'on' : ''}" data-a="presuOpcionBateria" data-m="${k}" style="cursor:pointer">${l}</span>`).join('')}
+      ${marcas.length ? '' : '<span class="tiny">Deye: la batería se añade del catálogo.</span>'}
+      ${bat.con ? `<input class="inp" data-f="presuOpcionKwh" value="${esc(String(bat.kwh || ''))}" inputmode="decimal" placeholder="kWh" style="width:74px;padding:7px 9px;text-align:right"><span class="tiny">kWh</span>` : ''}
+    </div>`; })()}
+    <div class="tiny" style="margin-top:6px">Para dar al cliente dos o tres opciones: guarda esta, cambia de marca o de batería y guarda la siguiente. Cada una es un presupuesto aparte (el título lleva marca, kWp y batería) y una oferta aparte en Teamleader.${p.opcion ? ' Esta opción no cambia la ficha de la visita.' : ''}</div>
   </div>`;
 }
 
@@ -7699,7 +7743,7 @@ A.presuGuardar = async () => {
 };
 
 /* --- añadir la máquina, del catálogo o a mano --- */
-let presuBuscarT;
+let presuBuscarT, presuKwhT;
 A.presuTexto = (t) => {
   V.presu.buscar = t;
   clearTimeout(presuBuscarT);
@@ -11951,6 +11995,7 @@ document.addEventListener('click', (e) => {
   if (a === 'volverA') return A.volverA();
   if (a === 'tlDiagCopiar') { const ta = document.querySelector('.sheet textarea'); if (ta) { ta.select(); try { navigator.clipboard.writeText(ta.value); toast('Copiado.'); } catch (_) { document.execCommand('copy'); toast('Copiado.'); } } return; }
   if (a === 'presuOpcionMarca') return A.presuOpcionMarca(d.m);
+  if (a === 'presuOpcionBateria') return A.presuOpcionBateria(d.m, null);
   if (a === 'presuRecalcular') return A.presuRecalcular();
   if (a === 'presuGuardar') return A.presuGuardar();
   if (a === 'presuBuscar') return A.presuBuscar();
@@ -12289,6 +12334,7 @@ document.addEventListener('input', (e) => {
   if (f === 'moverBuscar') { if (V.sheet) { V.sheet.buscar = t.value; const box = document.getElementById('mover-obras'); if (box) box.innerHTML = moverParteListaHTML(V.sheet); } return; }
   if (f === 'sinCitaOtro') { if (V.sheet) V.sheet.otro = t.value; return; }
   if (f === 'presuExtImporte') { if (V.sheet) V.sheet.importe = t.value; return; }
+  if (f === 'presuOpcionKwh') { clearTimeout(presuKwhT); presuKwhT = setTimeout(() => A.presuOpcionBateria(null, t.value), 900); return; }
   if (f === 'presuExtTl') { if (V.sheet) V.sheet.tl = t.value; return; }
   if (f === 'categoriaOtra') { if (V.draft) V.draft.categoriaOtra = t.value; return; }
   if (f === 'faseNota') { if (V.sheet) V.sheet.nota = t.value; return; }
