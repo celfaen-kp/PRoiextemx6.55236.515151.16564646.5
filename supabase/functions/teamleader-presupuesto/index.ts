@@ -383,6 +383,8 @@ async function sincronizar(sb: any, opciones: { cliente_id?: string } = {}) {
   // cliente está en la app (clientes_cache.tl_id). Su oferta se importa a
   // nombre del cliente, sin visita; la categoría se saca del título.
   const { data: clientesTl } = await sb.from('clientes_cache').select('id, tl_id, tl_tipo').not('tl_id', 'is', null);
+  // deno-lint-ignore no-explicit-any
+  const dealCliente: Record<string, { cliente_id: string; titulo: string }> = {};
   const clientePorTl: Record<string, string> = {};
   (clientesTl || []).forEach((c: { id: string; tl_id: string }) => { clientePorTl[String(c.tl_id)] = c.id; });
   // «Traer de Teamleader» desde la ficha de un cliente: todas sus oportunidades, sin límite de fecha.
@@ -398,8 +400,6 @@ async function sincronizar(sb: any, opciones: { cliente_id?: string } = {}) {
     }
     resumen.detalles.push('Cliente: ' + Object.keys(dealCliente).length + ' oportunidad(es) en Teamleader.');
   }
-  // deno-lint-ignore no-explicit-any
-  const dealCliente: Record<string, { cliente_id: string; titulo: string }> = {};
   try {
     const desdeDeals = new Date(Date.now() - 60 * 86400_000).toISOString();
     for (let pag = 1; pag <= 5; pag++) {
