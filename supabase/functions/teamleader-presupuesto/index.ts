@@ -304,6 +304,29 @@ async function sincronizar(sb: any) {
   const visitaPorDeal: Record<string, any> = {};
   (visitas || []).forEach((v) => { if (v.tl_deal_id) visitaPorDeal[v.tl_deal_id] = v; });
 
+  // Oportunidades de clientes de la app que NO vienen de una visita (Heim
+  // Desarrollos, 19-10-2026): las que han cambiado en los últimos 60 días cuyo
+  // cliente está en la app (clientes_cache.tl_id). Su oferta se importa a
+  // nombre del cliente, sin visita; la categoría se saca del título.
+  const { data: clientesTl } = await sb.from('clientes_cache').select('id, tl_id').not('tl_id', 'is', null);
+  const clientePorTl: Record<string, string> = {};
+  (clientesTl || []).forEach((c: { id: string; tl_id: string }) => { clientePorTl[String(c.tl_id)] = c.id; });
+  // deno-lint-ignore no-explicit-any
+  const dealCliente: Record<string, { cliente_id: string; titulo: string }> = {};
+  try {
+    const desdeDeals = new Date(Date.now() - 60 * 86400_000).toISOString();
+    for (let pag = 1; pag <= 5; pag++) {
+      const r = await crm(token, 'deals.list', { filter: { updated_since: desdeDeals }, page: { size: 100, number: pag } });
+      // deno-lint-ignore no-explicit-any
+      const lista = (r?.data || []) as any[];
+      lista.forEach((d) => {
+        const tl = String(d?.lead?.customer?.id || '');
+        if (tl && clientePorTl[tl] && !visitaPorDeal[d.id]) dealCliente[d.id] = { cliente_id: clientePorTl[tl], titulo: String(d.title || '') };
+      });
+      if (lista.length < 100) break;
+    }
+  } catch (e) { resumen.detalles.push('Oportunidades recientes: ' + (e as Error).message); }
+
   // Las ofertas que conocemos, en bloques de 50.
   // deno-lint-ignore no-explicit-any
   const ofertas: Record<string, any> = {};
@@ -317,7 +340,7 @@ async function sincronizar(sb: any) {
   }
 
   // Las oportunidades: las de las visitas y las de las ofertas conocidas.
-  const dealIds = new Set<string>(Object.keys(visitaPorDeal));
+  const dealIds = new Set<string>([...Object.keys(visitaPorDeal), ...Object.keys(dealCliente)]);
   Object.values(ofertas).forEach((q) => { if (q?.deal?.id) dealIds.add(q.deal.id); });
   // deno-lint-ignore no-explicit-any
   const deals: Record<string, any> = {};
@@ -394,18 +417,23 @@ async function sincronizar(sb: any) {
     }
   }
 
-  // 2 · Las ofertas hechas directamente en Teamleader, en la oportunidad de una visita.
+  // 2 · Las ofertas hechas directamente en Teamleader: en la oportunidad de una
+  //     visita, o de un cliente de la app aunque no tenga visita.
+  const categoriaDeTitulo = (t: string) => (EMBUDOS.find(([, rx]) => rx.test(t || '')) || ['solar'])[0];
   for (const q of Object.values(ofertas)) {
     if (presuPorOferta[q.id]) continue;
-    const v = visitaPorDeal[q.deal?.id]; if (!v) continue;   // sin visita no sabemos de quién es
+    const v = visitaPorDeal[q.deal?.id] || null;
+    const dc = dealCliente[q.deal?.id] || null;
+    if (!v && !dc) continue;   // ni visita ni cliente conocido: no sabemos de quién es
     const d = deals[q.deal?.id];
-    const { data: fichas } = await sb.from('visita_fichas').select('categoria').eq('visita_id', v.id).limit(1);
+    const { data: fichas } = v ? await sb.from('visita_fichas').select('categoria').eq('visita_id', v.id).limit(1) : { data: null };
     const env = enviadoDe(d);
     const [resp, cuando] = respuestaDe(q, d);
     const creada = q.created_at ? new Date(q.created_at).toISOString() : ahora;
     const importe = Number(q?.total?.tax_exclusive?.amount);
     const fila = {
-      visita_id: v.id, cliente_id: v.cliente_id, categoria: fichas?.[0]?.categoria || 'solar',
+      visita_id: v ? v.id : null, cliente_id: v ? v.cliente_id : dc!.cliente_id,
+      categoria: fichas?.[0]?.categoria || categoriaDeTitulo((dc && dc.titulo) || (d && d.title) || (q.name || '')),
       titulo: 'Hecho en Teamleader' + (q.name ? ' · ' + String(q.name).slice(0, 120) : ''),
       total_bruto: Number.isFinite(importe) ? importe : null, total_venta: Number.isFinite(importe) ? importe : null, total_dto_linea: 0, dto_global_pct: 0,
       tl_quotation_id: q.id, sync_estado: 'sincronizado', sync_at: ahora, motor_version: 'teamleader',
