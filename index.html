@@ -428,7 +428,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '25.1'; // versión visible de la app (única fuente)
+const APP_VERSION = '25.2'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -9755,8 +9755,6 @@ A.ag = (a, d, e) => {
     case 'ag_cliOrigen': if (V.clienteDraft) V.clienteDraft.origen = V.clienteDraft.origen === d.o ? null : d.o; return render();
     case 'ag_guardarCliente': return agGuardarCliente(d.cita === '1');
     case 'ag_colaborador': if (e) e.stopPropagation(); return agAsignarColaborador(d.id, d.e);
-    case 'presuExternoAbrir': if (e) e.stopPropagation(); return A.presuExternoAbrir(d.id);
-    case 'tlTraerCliente': if (e) e.stopPropagation(); return A.tlTraerCliente(d.id);
     case 'presuExternoCat': return A.presuExternoCat(d.k);
     case 'presuExternoRevisado': return A.presuExternoRevisado();
     case 'presuExternoGuardar': return A.presuExternoGuardar();
@@ -12006,6 +12004,8 @@ document.addEventListener('click', (e) => {
   if (a === 'verVisita') return A.verVisita(d.id);
   if (a === 'tbMoverAbrir') { e.stopPropagation(); return A.tbMoverAbrir(d.id); }
   if (a === 'tbMover') return A.tbMover(d.id, d.k);
+  if (a === 'tlTraerCliente') { e.stopPropagation(); return A.tlTraerCliente(d.id); }
+  if (a === 'presuExternoAbrir') { e.stopPropagation(); return A.presuExternoAbrir(d.id); }
   if (a === 'editarVisita') return A.editarVisita(d.id);
   if (a === 'enviarVisita') return A.enviarVisita();
   if (a === 'visitaPdf') return A.visitaPdf();
