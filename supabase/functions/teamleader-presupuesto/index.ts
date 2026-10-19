@@ -268,8 +268,75 @@ function mismaClave(a: string, b: string) {
   return dif === 0;
 }
 const esUuid = (v: unknown) => /^[0-9a-f-]{36}$/i.test(String(v || ''));
+/**
+ * Las líneas de una oferta de Teamleader, tal cual, como líneas del presupuesto
+ * de la app (19-10-2026, Heim Desarrollos): descripción, cantidad, precio,
+ * descuento, IVA y, si la oferta lo lleva, el precio de compra. Devuelve las
+ * filas para presupuesto_lineas y los totales con el convenio de la app
+ * (total_dto_linea en negativo; total_venta = el total sin IVA de la oferta).
+ */
 // deno-lint-ignore no-explicit-any
-async function sincronizar(sb: any) {
+function lineasDeOferta(q: any, ivaPorId: Record<string, number>) {
+  // deno-lint-ignore no-explicit-any
+  const filas: Record<string, any>[] = [];
+  let bruto = 0, dto = 0, coste = 0, sinCoste = 0, orden = 0;
+  // deno-lint-ignore no-explicit-any
+  ((q?.grouped_lines || []) as any[]).forEach((g) => {
+    const seccion = String(g?.section?.title || '').trim() || null;
+    // deno-lint-ignore no-explicit-any
+    ((g?.line_items || []) as any[]).forEach((li) => {
+      const cantidad = Number(li?.quantity) || 0;
+      const tarifa = Number(li?.unit_price?.amount) || 0;
+      const dtoPct = li?.discount?.type === 'percentage' ? (Number(li.discount.value) || 0) : 0;
+      const venta = Math.round(tarifa * (1 - dtoPct / 100) * 100) / 100;
+      const compra = li?.purchase_price?.amount != null ? Number(li.purchase_price.amount) : null;
+      const iva = li?.tax?.id && ivaPorId[li.tax.id] != null ? ivaPorId[li.tax.id] : 21;
+      bruto += cantidad * tarifa; dto += cantidad * (venta - tarifa);
+      if (compra != null && Number.isFinite(compra)) coste += cantidad * compra; else sinCoste++;
+      filas.push({
+        orden: orden++, seccion,
+        descripcion: String(li?.description || '').trim().slice(0, 500) || 'Línea de la oferta',
+        detalle_tecnico: String(li?.extended_description || '').trim() || null,
+        cantidad, unidad: 'ud', precio_tarifa: tarifa, dto_linea_pct: dtoPct,
+        precio_coste: compra != null && Number.isFinite(compra) ? compra : null, precio_venta: venta, iva,
+        origen: 'manual', confirmada: true,
+        origen_inputs: { teamleader: true, producto_tl: li?.product?.id || null, total_linea: li?.total?.tax_exclusive?.amount ?? null },
+      });
+    });
+  });
+  const dtoGlobal = ((q?.discounts || []) as { type?: string; value?: number }[])
+    .filter((d) => d?.type === 'percentage').reduce((a, d) => a + (Number(d.value) || 0), 0);
+  const totalOferta = Number(q?.total?.tax_exclusive?.amount);
+  const r2 = (n: number) => Math.round(n * 100) / 100;
+  const venta = Number.isFinite(totalOferta) ? totalOferta : r2((bruto + dto) * (1 - dtoGlobal / 100));
+  return {
+    filas,
+    totales: {
+      total_bruto: r2(bruto), total_dto_linea: r2(dto), dto_global_pct: r2(dtoGlobal),
+      total_coste: filas.length && !sinCoste ? r2(coste) : (coste ? r2(coste) : null),
+      total_venta: r2(venta),
+    },
+  };
+}
+
+/** Pide la oferta entera (con líneas) y la deja en el presupuesto de la app. */
+// deno-lint-ignore no-explicit-any
+async function volcarOferta(sb: any, token: string, presupuestoId: string, quotationId: string, ivaPorId: Record<string, number>) {
+  const r = await crm(token, 'quotations.info', { id: quotationId });
+  const q = r?.data; if (!q) throw new Error('La oferta ' + quotationId.slice(0, 8) + ' no se pudo leer.');
+  const { filas, totales } = lineasDeOferta(q, ivaPorId);
+  await sb.from('presupuesto_lineas').delete().eq('presupuesto_id', presupuestoId);
+  if (filas.length) {
+    const { error } = await sb.from('presupuesto_lineas').insert(filas.map((f) => Object.assign({ presupuesto_id: presupuestoId }, f)));
+    if (error) throw new Error(error.message);
+  }
+  const { error: e2 } = await sb.from('presupuestos').update(Object.assign({ updated_at: new Date().toISOString() }, totales)).eq('id', presupuestoId);
+  if (e2) throw new Error(e2.message);
+  return filas.length;
+}
+
+// deno-lint-ignore no-explicit-any
+async function sincronizar(sb: any, opciones: { cliente_id?: string } = {}) {
   const token = await tokenValido(sb);
   const ahora = new Date().toISOString();
   const desde = new Date(Date.now() - 400 * 86400_000).toISOString();
@@ -293,8 +360,15 @@ async function sincronizar(sb: any) {
 
   // Lo nuestro: presupuestos con oferta y visitas con oportunidad.
   const { data: presus } = await sb.from('presupuestos')
-    .select('id, tl_quotation_id, visita_id, cliente_id, estado, revisado_at, enviado_cliente_at, respuesta_cliente, categoria')
+    .select('id, tl_quotation_id, visita_id, cliente_id, estado, revisado_at, enviado_cliente_at, respuesta_cliente, categoria, motor_version')
     .not('tl_quotation_id', 'is', null).gte('created_at', desde);
+  // Los tipos de IVA por id (0.21 → 21), para traducir las líneas que vengan del CRM.
+  const ivaPorId: Record<string, number> = {};
+  try {
+    const t = await crm(token, 'taxRates.list', { page: { size: 100 } });
+    // deno-lint-ignore no-explicit-any
+    (t?.data || []).forEach((x: any) => { ivaPorId[x.id] = Math.round(Number(x.rate) * 10000) / 100; });
+  } catch (e) { resumen.detalles.push('Tipos de IVA: ' + (e as Error).message); }
   const { data: visitas } = await sb.from('visitas')
     .select('id, tl_deal_id, cliente_id').not('tl_deal_id', 'is', null).gte('created_at', desde);
   // deno-lint-ignore no-explicit-any
@@ -308,9 +382,22 @@ async function sincronizar(sb: any) {
   // Desarrollos, 19-10-2026): las que han cambiado en los últimos 60 días cuyo
   // cliente está en la app (clientes_cache.tl_id). Su oferta se importa a
   // nombre del cliente, sin visita; la categoría se saca del título.
-  const { data: clientesTl } = await sb.from('clientes_cache').select('id, tl_id').not('tl_id', 'is', null);
+  const { data: clientesTl } = await sb.from('clientes_cache').select('id, tl_id, tl_tipo').not('tl_id', 'is', null);
   const clientePorTl: Record<string, string> = {};
   (clientesTl || []).forEach((c: { id: string; tl_id: string }) => { clientePorTl[String(c.tl_id)] = c.id; });
+  // «Traer de Teamleader» desde la ficha de un cliente: todas sus oportunidades, sin límite de fecha.
+  if (opciones.cliente_id) {
+    const c = (clientesTl || []).find((x: { id: string }) => x.id === opciones.cliente_id);
+    if (!c) throw new Error('Ese cliente no está enlazado con Teamleader: primero hay que subirlo al CRM desde su ficha.');
+    for (let pag = 1; pag <= 5; pag++) {
+      const r = await crm(token, 'deals.list', { filter: { customer: { type: c.tl_tipo === 'company' ? 'company' : 'contact', id: String(c.tl_id) } }, page: { size: 100, number: pag } });
+      // deno-lint-ignore no-explicit-any
+      const lista = (r?.data || []) as any[];
+      lista.forEach((d) => { if (!visitaPorDeal[d.id]) dealCliente[d.id] = { cliente_id: c.id, titulo: String(d.title || '') }; });
+      if (lista.length < 100) break;
+    }
+    resumen.detalles.push('Cliente: ' + Object.keys(dealCliente).length + ' oportunidad(es) en Teamleader.');
+  }
   // deno-lint-ignore no-explicit-any
   const dealCliente: Record<string, { cliente_id: string; titulo: string }> = {};
   try {
@@ -395,10 +482,23 @@ async function sincronizar(sb: any) {
     return [null, null];
   };
 
+  // Los presupuestos traídos del CRM que aún no tienen líneas (importados antes
+  // de que se volcaran, o apuntados a mano con su nº de oferta).
+  const idsTL = (presus || []).filter((p) => p.motor_version === 'teamleader').map((p) => p.id);
+  const conLineas = new Set<string>();
+  if (idsTL.length) {
+    const { data: l } = await sb.from('presupuesto_lineas').select('presupuesto_id').in('presupuesto_id', idsTL);
+    (l || []).forEach((x: { presupuesto_id: string }) => conLineas.add(x.presupuesto_id));
+  }
+
   // 1 · Los presupuestos de la app.
   for (const p of presus || []) {
     const q = ofertas[p.tl_quotation_id]; if (!q) continue;
     resumen.revisados++;
+    if (p.motor_version === 'teamleader' && !conLineas.has(p.id)) {
+      try { const n = await volcarOferta(sb, token, p.id, q.id, ivaPorId); resumen.actualizados++; resumen.detalles.push('Líneas traídas (' + n + ') a ' + p.id.slice(0, 8)); }
+      catch (e) { resumen.detalles.push('Líneas de ' + p.id.slice(0, 8) + ': ' + (e as Error).message); }
+    }
     const d = deals[q.deal?.id];
     // deno-lint-ignore no-explicit-any
     const cambios: Record<string, any> = {};
@@ -442,9 +542,13 @@ async function sincronizar(sb: any) {
       respuesta_cliente: resp || 'pendiente', respondido_at: resp ? cuando : null,
       created_at: creada,
     };
-    const { error } = await sb.from('presupuestos').insert(fila);
-    if (error) resumen.detalles.push('Importar ' + q.id.slice(0, 8) + ': ' + error.message);
-    else { resumen.importados++; resumen.detalles.push('Importada oferta ' + (q.name || q.id.slice(0, 8)) + (Number.isFinite(importe) ? ' · ' + importe.toFixed(2) + ' €' : '')); presuPorOferta[q.id] = fila; }
+    const { data: nuevo, error } = await sb.from('presupuestos').insert(fila).select('id').single();
+    if (error || !nuevo) { resumen.detalles.push('Importar ' + q.id.slice(0, 8) + ': ' + (error?.message || 'sin id')); continue; }
+    resumen.importados++; presuPorOferta[q.id] = fila;
+    let nLineas = 0;
+    try { nLineas = await volcarOferta(sb, token, nuevo.id, q.id, ivaPorId); }
+    catch (e) { resumen.detalles.push('Líneas de ' + q.id.slice(0, 8) + ': ' + (e as Error).message); }
+    resumen.detalles.push('Importada oferta ' + (q.name || q.id.slice(0, 8)) + (Number.isFinite(importe) ? ' · ' + importe.toFixed(2) + ' €' : '') + ' · ' + nLineas + ' línea(s)');
   }
   return resumen;
 }
@@ -485,7 +589,8 @@ Deno.serve(async (req) => {
   // --- desde la app: «Actualizar desde Teamleader» ---------------------------------
   if (b.accion === 'sincronizar') {
     if (!['presupuestos', 'admin'].includes(String(yo.rol))) return json({ error: 'Sincronizar con el CRM es de presupuestos y Administración.' }, 403);
-    try { return json(Object.assign({ ok: true }, await sincronizar(sb))); }
+    const clienteId = esUuid(b.cliente_id) ? String(b.cliente_id) : undefined;
+    try { return json(Object.assign({ ok: true }, await sincronizar(sb, { cliente_id: clienteId }))); }
     catch (e) { return json({ error: (e as Error).message, sin_permiso: e instanceof SinPermiso }, e instanceof SinPermiso ? 409 : 502); }
   }
 

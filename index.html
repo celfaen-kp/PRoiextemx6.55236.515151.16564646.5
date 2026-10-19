@@ -428,7 +428,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '25.0'; // versión visible de la app (única fuente)
+const APP_VERSION = '25.1'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -7944,6 +7944,25 @@ function datosDelSuelto(f) {
  * Ofertas enviadas (por la fase de la oportunidad), aceptadas, rechazadas y las
  * hechas directamente en el CRM. El cron lo hace cada cuarto de hora
  * (sql/etapa78); esto es para no esperar. */
+/** Desde la ficha de un cliente (19-10-2026): todas sus oportunidades de
+ * Teamleader, y las ofertas que haya en ellas entran como presupuestos con
+ * sus líneas, igual que si se hubieran hecho aquí. */
+A.tlTraerCliente = async (id) => {
+  if (!(esAdmin() || rol() === 'presupuestos') || V.tlSyncBusy) return;
+  const c = agCliente(id); if (!c) return;
+  if (!c.tl_id) { avisar('Este cliente aún no está en Teamleader: súbelo primero desde su ficha (Editar → Teamleader).'); return; }
+  if (!navigator.onLine) { avisar('Sin conexión.'); return; }
+  V.tlSyncBusy = true; V.sheet = null; render();
+  try {
+    const r = await visitasDB.sincronizarTeamleader(id);
+    if (r.importados) toast('Teamleader: ' + r.importados + ' presupuesto(s) de ' + (c.nombre || 'este cliente') + ' traído(s) con sus líneas.');
+    else if (r.actualizados) toast('Teamleader: ' + r.actualizados + ' presupuesto(s) puesto(s) al día.');
+    else avisar('En Teamleader no hay ninguna oferta nueva en las oportunidades de ' + (c.nombre || 'este cliente') + '. Si la oferta es de otro contacto o empresa del CRM, enlázalo desde Editar.');
+    if (r.detalles && r.detalles.length) console.info('Teamleader →', r.detalles);
+    V.presuLista.cargado = false; A.cargarPresupuestos(); await A.cargarAgenda();
+  } catch (e) { avisar('No se pudo traer: ' + msgError(e)); }
+  V.tlSyncBusy = false; render();
+};
 A.tlSincronizar = async () => {
   if (!(esAdmin() || rol() === 'presupuestos') || V.tlSyncBusy) return;
   if (!navigator.onLine) { avisar('Sin conexión.'); return; }
@@ -9100,7 +9119,10 @@ function vPresupuestoVer() {
       ${costeMargenHTML(d.total_coste, d.total_venta, lineas.filter((l) => l.precio_coste == null).length, Number(d.total_bruto || 0) + Number(d.total_dto_linea || 0), d.categoria)}
       ${avisoTeslaHTML(lineas, d.categoria)}
       ${d.motor_version === 'teamleader'
-        ? '<div class="tiny" style="margin-top:12px">Hecho directamente en Teamleader: aquí no hay líneas, solo el seguimiento (revisado, enviado, respuesta del cliente).</div>'
+        ? (lineas.length
+          ? `<div class="tiny" style="margin-top:12px">Hecho en Teamleader: las líneas son las de la oferta de allí. Si cambia en el CRM, se vuelve a traer con ↻ Actualizar desde Teamleader.</div>
+      <div class="row g8" style="margin-top:14px"><button class="btn btn-gris" data-a="presuPdf" style="border-radius:99px">PDF</button></div>`
+          : '<div class="tiny" style="margin-top:12px">Hecho en Teamleader: las líneas aún no se han traído. Pulsa ↻ Actualizar desde Teamleader en Presupuestos.</div>')
         : `<div class="tiny" style="margin-top:12px">Calculado con las reglas ${esc(d.motor_version || '')}. Queda congelado con la tarifa de ese día.</div>
       <div class="row g8" style="margin-top:14px">
         <button class="btn btn-gris" data-a="presuPdf" style="border-radius:99px">PDF</button>
@@ -9402,7 +9424,7 @@ A.tbMover = async (id, k) => {
     } catch (e) { avisar('No se pudo: ' + msgError(e)); render(); }
     return;
   }
-  if (k === 'presupuestado') return A.presuExternoAbrir(id);   // hecho en Teamleader: se apunta aquí
+  if (k === 'presupuestado') return A.tlTraerCliente(id);   // hecho en Teamleader: se trae de allí con sus líneas
   avisar('A esa fase se llega con su acción: enviar el presupuesto al cliente desde su ficha.'); render();
 };
 A.segAccionAbrir = (id) => { const c = agCliente(id); if (!c) return; V.sheet = { tipo: 'segAccion', id, texto: c.proxima_accion || '', fecha: c.proxima_accion_at || siguienteLaborable(hoyISO()), quien: c.proxima_accion_por || miEmpId() || null, busy: false }; render(); };
@@ -9734,6 +9756,7 @@ A.ag = (a, d, e) => {
     case 'ag_guardarCliente': return agGuardarCliente(d.cita === '1');
     case 'ag_colaborador': if (e) e.stopPropagation(); return agAsignarColaborador(d.id, d.e);
     case 'presuExternoAbrir': if (e) e.stopPropagation(); return A.presuExternoAbrir(d.id);
+    case 'tlTraerCliente': if (e) e.stopPropagation(); return A.tlTraerCliente(d.id);
     case 'presuExternoCat': return A.presuExternoCat(d.k);
     case 'presuExternoRevisado': return A.presuExternoRevisado();
     case 'presuExternoGuardar': return A.presuExternoGuardar();
@@ -10906,7 +10929,7 @@ function vClienteVer() {
       <button class="pill grow" data-a="ag_editarCliente" data-id="${c.id}" style="padding:13px;background:rgba(255,255,255,.12);color:#fff">Editar</button>
     </div>
     ${visitasCli.length ? `<div class="tiny" data-a="ag_visitar" data-id="${c.id}" style="margin-top:8px;color:rgba(255,255,255,.7);cursor:pointer;text-decoration:underline">Hacer otra visita</div>` : ''}
-    <div class="tiny" data-a="presuExternoAbrir" data-id="${c.id}" style="margin-top:10px;color:rgba(255,255,255,.7);cursor:pointer;text-decoration:underline">¿Presupuesto hecho directamente en Teamleader? Apúntalo aquí</div>` : ''}
+    ${(esAdmin() || rol() === 'presupuestos') && c.tl_id ? `<div class="tiny" data-a="tlTraerCliente" data-id="${c.id}" style="margin-top:10px;color:rgba(255,255,255,.7);cursor:pointer;text-decoration:underline">${V.tlSyncBusy ? 'Trayendo de Teamleader…' : '¿Presupuesto hecho en Teamleader? Tráelo aquí con sus líneas'}</div>` : ''}` : ''}
   </div>
   <div class="scroll pad sin-marca pb-nav">
     ${c.email || c.nif || c.direccion || c.nota ? `<div class="card" style="padding:6px 15px;margin-bottom:18px">

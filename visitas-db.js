@@ -462,8 +462,8 @@ export async function crearPresupuestoExterno(fila) {
 }
 
 /** Lo que ha pasado en Teamleader (fases, aceptadas, rechazadas, ofertas hechas allí) vuelve a la app. */
-export async function sincronizarTeamleader() {
-  return invocar('teamleader-presupuesto', { accion: 'sincronizar' });
+export async function sincronizarTeamleader(clienteId = null) {
+  return invocar('teamleader-presupuesto', clienteId ? { accion: 'sincronizar', cliente_id: clienteId } : { accion: 'sincronizar' });
 }
 
 /** Todos los presupuestos guardados, los de visita y los sueltos. */
