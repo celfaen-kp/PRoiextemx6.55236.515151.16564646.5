@@ -150,7 +150,9 @@ PARTIDAS = [
     ('FV-13-007', 'Solicitud de bonificación IBI / ICIO', 'ud', {'sin_recargo': True}, 'Precio de venta; confirmar con Xavi'),
     ('FV-13-008', 'Gestión con la distribuidora y compensación de excedentes', 'ud', {'sin_recargo': True}, 'Precio de venta; confirmar con Xavi'),
     ('FV-13-010', 'Certificado energético', 'ud', {'sin_recargo': True}, 'Declarado 300 € venta; confirmar con Xavi'),
-    ('FV-14-001', 'Cargador de vehículo eléctrico (equipo Wallbox Pulsar Plus 7,4 kW)', 'ud', {}, 'Solo equipo; instalación y protecciones aparte, POR DECIDIR'),
+    ('FV-14-001', 'Cargador de vehículo eléctrico (equipo Wallbox Pulsar Plus 7,4 kW)', 'ud', {}, 'Solo el equipo; el cuadro y la instalación van en FV-14-005 y FV-14-006 (Enzo, 20-10-2026)'),
+    ('FV-14-005', 'Cuadro de mando y protecciones del cargador de coche', 'ud', {}, 'Coste 212 € (Enzo, 20-10-2026); con el recargo normal'),
+    ('FV-14-006', 'Instalación del cargador de coche (jornada)', 'día', {}, 'Venta 450 € la jornada (Enzo, 20-10-2026); coste la jornada de pareja (330 €)'),
     ('FV-14-002', 'Derivador de excedentes a termo eléctrico', 'ud', {}, ''),
     ('FV-14-003', 'Integración con aerotermia (SG Ready / gestión energética)', 'ud', {}, ''),
     ('FV-14-004', 'Ampliación de backup a toda la vivienda', 'ud', {}, ''),
@@ -162,6 +164,7 @@ PRECIOS_DOCUMENTO = {
     'FV-13-002': ('1800', 'Xavi', '2026-09-01'), 'FV-13-003': ('300', 'Xavi', '2026-09-01'),
     'FV-13-004': ('150', 'Xavi', '2026-09-01'), 'FV-13-006': ('300', 'Xavi', '2026-09-01'),
     'FV-13-010': ('300', 'Xavi', '2026-09-01'),
+    'FV-14-005': ('212', 'Enzo', '2026-10-20'), 'FV-14-006': ('330', 'Sysefen', '2026-10-20'),
 }
 
 # =============================================================================
@@ -186,6 +189,18 @@ if not os.path.exists(RUTA_PARTIDAS):
     print('Creada la plantilla', RUTA_PARTIDAS, '(rellena la columna coste y vuelve a ejecutar)')
 
 precios_csv = {x['codigo']: x for x in csv.DictReader(open(RUTA_PARTIDAS, encoding='utf-8'))}
+# Partidas nuevas del catálogo que aún no están en el CSV: se añaden con su
+# precio declarado, para que el CSV siga siendo la única fuente de costes.
+_nuevas = [(cod, desc, ud, atr, nota) for cod, desc, ud, atr, nota in PARTIDAS if cod not in precios_csv]
+if _nuevas:
+    with open(RUTA_PARTIDAS, 'a', encoding='utf-8', newline='') as f:
+        wr = csv.DictWriter(f, COLUMNAS)
+        for cod, desc, ud, atr, nota in _nuevas:
+            coste, prov, fecha = PRECIOS_DOCUMENTO.get(cod, ('', '', ''))
+            fila = dict(codigo=cod, descripcion=desc, unidad=ud, coste=coste, proveedor=prov, fecha=fecha,
+                        atributos=json.dumps(atr, ensure_ascii=False) if atr else '', notas=nota)
+            wr.writerow(fila); precios_csv[cod] = fila
+    print('Añadidas al CSV de partidas:', ', '.join(c for c, *_ in _nuevas))
 
 def num(v):
     s = str(v or '').strip().replace('€', '').replace(' ', '')
@@ -221,9 +236,15 @@ RECARGO_PANELES, RECARGO_EQUIPOS = 1.4375, 1.20
 # Es el suelo que no se rebaja; el resto de equipos sigue al ×1,20.
 MARGEN_TESLA = 0.35
 RECARGO_TESLA = round(1 / (1 - MARGEN_TESLA), 6)
+# WECO: un 7 % más que el resto de equipos (Enzo, 20-10-2026: «las veo baratas»): ×1,20 ×1,07.
+RECARGO_WECO = round(RECARGO_EQUIPOS * 1.07, 4)
+# La jornada de instalación del cargador se vende a 450 € con coste de jornada 330 € (Enzo, 20-10-2026).
+VENTA_JORNADA_CARGADOR, COSTE_JORNADA = 450.0, 330.0
 def margen_de(ref):
     if ref.startswith('FV-01-'): return (RECARGO_PANELES, False)                       # panel: 80 → 115
     if ref.startswith('FV-TESLA-'): return (RECARGO_TESLA, False)                                   # Tesla: 35 % de margen sobre venta, mínimo
+    if ref.startswith('FV-WECO-'): return (RECARGO_WECO, False)                                     # WECO: equipos +7 %
+    if ref == 'FV-14-006': return (round(VENTA_JORNADA_CARGADOR / COSTE_JORNADA, 6), False)       # jornada del cargador: 330 → 450
     if ref.startswith(('FV-FRONIUS-', 'FV-ENPHASE-', 'FV-BYD-', 'FV-DEYE-', 'FV-WECO-')): return (RECARGO_EQUIPOS, False)  # equipos: +20 % sobre factura
     return (None, True)
 paneles = sorted([x for x in sysefen if x['referencia'].startswith('FV-01-001-') and num(x['atributos'].get('wp'))],
@@ -236,6 +257,7 @@ paneles = sorted([x for x in sysefen if x['referencia'].startswith('FV-01-001-')
 LOOKUP = [
     ('recargo_sobre_coste', 'defecto', 1.30, 'Precio de venta = coste × 1,30, una vez por línea, para lo que no trae recargo propio. CONFIRMADO (desglose FV, oct 2026).'),
     ('recargo_equipos', 'defecto', 1.20, 'Equipos del distribuidor (Fronius, Enphase, BYD, Deye, WECO): venta = coste × 1,20, sin CDC. Informativo: el valor que manda es productos.recargo (09-10-2026).'),
+    ('recargo_weco', 'defecto', RECARGO_WECO, 'Baterías WECO: venta = coste × 1,20 × 1,07 (Enzo, 20-10-2026). Informativo: el valor que manda es productos.recargo.'),
     ('recargo_tesla', 'defecto', RECARGO_TESLA, 'Tesla: margen mínimo del 35 % sobre la venta, venta = coste ÷ 0,65 (Enzo, 16-10-2026). No se rebaja. Informativo: el valor que manda es productos.recargo.'),
     ('margen_minimo_tesla', 'defecto', MARGEN_TESLA, 'Margen sobre venta por debajo del cual la app avisa en una línea Tesla (Enzo, 16-10-2026).'),
     ('recargo_paneles', 'defecto', 1.4375, 'Panel: coste 80 → venta 115, sin CDC. Informativo: el valor que manda es productos.recargo (09-10-2026).'),
@@ -606,7 +628,9 @@ fuera('FV-13-008', {'excedentes': 'con_excedentes'}, HAY, '13', sub=7, notas='Co
 aviso({}, 'Las tasas e ICIO municipales las paga el cliente aparte (FV-13-005): escribirlo en exclusiones.', var='n_paneles', mn=1, mx=None, prio=100)
 
 # --- 14 · Opcionales
-regla('FV-14-001', {'cargador_ve': True}, '1', '14', sub=9, notas='Cargador de coche con su instalación.')
+regla('FV-14-001', {'cargador_ve': True}, '1', '14', sub=9, notas='Cargador de coche: el equipo.')
+regla('FV-14-005', {'cargador_ve': True}, '1', '14', sub=9, notas='Cargador de coche: cuadro de mando y protecciones (coste 212 €, con recargo).')
+regla('FV-14-006', {'cargador_ve': True}, '1', '14', sub=9, notas='Cargador de coche: una jornada de instalación a 450 €.')
 regla('FV-14-002', {'excedentes_gestion': 'termo'}, '1', '14', sub=8, notas='Derivador de excedentes al termo.')
 regla('FV-14-003', {'excedentes_gestion': 'aerotermia'}, '1', '14', sub=8, notas='Integración con la aerotermia.')
 regla('FV-14-004', {'backup_total': 1}, '1', '14', sub=7, notas='Backup de toda la vivienda.')

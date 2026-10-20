@@ -30,6 +30,37 @@ const FV_SUELTAS = new Set(['FV-07-010', 'FV-07-011', 'FV-05-005', 'FV-05-006', 
  * reglas, partidas, productos…). Devuelve lo mismo que calcular(): líneas,
  * incidencias, variables, y además motor_version y modelo_id.
  */
+const REFS_CARGADOR = /^FV-14-00[156]$/;
+const r2 = (n) => Math.round(n * 100) / 100;
+/** Las líneas del cargador (equipo FV-14-001, cuadro FV-14-005, jornada FV-14-006) → una sola, con desglose. */
+export function agruparCargador(lineas) {
+  const del = lineas.filter((l) => REFS_CARGADOR.test(String(l.producto_ref || '')));
+  if (del.length < 2) return lineas;
+  const resto = lineas.filter((l) => !del.includes(l));
+  const tarifa = r2(del.reduce((t, l) => t + (Number(l.cantidad) || 0) * (Number(l.precio_tarifa) || 0), 0));
+  const conCoste = del.every((l) => l.precio_coste != null && l.precio_coste !== '');
+  const coste = conCoste ? r2(del.reduce((t, l) => t + (Number(l.cantidad) || 0) * Number(l.precio_coste), 0)) : null;
+  const base = del.find((l) => String(l.producto_ref) === 'FV-14-001') || del[0];
+  const desglose = del.map((l) => ({
+    nombre: l.descripcion, cantidad: Number(l.cantidad) || 0, unidad: l.unidad || 'ud',
+    coste_ud: l.precio_coste == null ? null : Number(l.precio_coste), coste: l.precio_coste == null ? null : r2((Number(l.cantidad) || 0) * Number(l.precio_coste)),
+    venta_ud: Number(l.precio_tarifa) || 0, venta: r2((Number(l.cantidad) || 0) * (Number(l.precio_tarifa) || 0)),
+  }));
+  const linea = Object.assign({}, base, {
+    producto_ref: 'FV-14-001',
+    descripcion: 'Cargador de coche eléctrico instalado (Wallbox Pulsar Plus 7,4 kW, cuadro de protecciones y montaje)',
+    detalle_tecnico: del.map((l) => l.descripcion).join(' · '),
+    cantidad: 1, unidad: 'ud', precio_tarifa: tarifa, precio_coste: coste, dto_linea_pct: 0,
+    origen: 'partida', origen_regla_id: null,
+    origen_inputs: { grupo: 'Cargador de coche', desglose },
+    confirmada: del.every((l) => l.confirmada !== false),
+  });
+  if ('precio_venta' in base) linea.precio_venta = tarifa;
+  if ('importe' in base) linea.importe = tarifa;
+  resto.push(linea);
+  return resto;
+}
+
 export function presupuestarFV(datos, mod, cfg) {
   const modelo = mod.datos;
   const m = entradaDesdeDatos(datos, modelo);
@@ -65,8 +96,11 @@ export function presupuestarFV(datos, mod, cfg) {
   });
   const viejo = calcular('solar', datos, Object.assign({}, cfg, { reglas }));
   const deViejo = viejo.incidencias.filter((i) => i.codigo !== 'sin_lineas' && !/^Faltan los metros/.test(String(i.mensaje || '')));
+  // El cargador de coche va en UNA partida (equipo + cuadro + instalación) con
+  // su desglose por dentro, como la línea principal (Enzo, 20-10-2026).
+  const lineasViejo = agruparCargador(viejo.lineas);
   return {
-    lineas: lineas.concat(viejo.lineas),
+    lineas: lineas.concat(lineasViejo),
     incidencias: incidencias.concat(deViejo),
     variables: Object.assign({}, viejo.variables, { fv2_n_pan: r.n_pan, fv2_kwp: r.kwp, fv2_prod: r.prod, fv2_mod_inv: r.mod_inv, fv2_jornadas: r.jornadas }),
     recargo_sobre_coste: viejo.recargo_sobre_coste,

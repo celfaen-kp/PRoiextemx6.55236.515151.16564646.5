@@ -136,7 +136,7 @@ var malMargen = r.lineas.filter(function (l) {
   if (!l.precio_coste) return false;
   var ref = String(l.producto_ref);
   if (/^FV-13-/.test(ref)) return l.precio_tarifa !== l.precio_coste;
-  var f = /^FV-01-/.test(ref) ? 1.4375 : /^FV-TESLA-/.test(ref) ? 1.538462 : /^FV-(FRONIUS|ENPHASE|BYD|DEYE|WECO)-/.test(ref) ? 1.2 : 1.3;
+  var f = /^FV-01-/.test(ref) ? 1.4375 : /^FV-TESLA-/.test(ref) ? 1.538462 : /^FV-WECO-/.test(ref) ? 1.284 : /^FV-(FRONIUS|ENPHASE|BYD|DEYE)-/.test(ref) ? 1.2 : ref === 'FV-14-006' ? 1.363636 : 1.3;
   // una partida agrupada suma renglones con el coste ya al céntimo: un céntimo de holgura
   if (l.origen === 'partida') return Math.abs(l.precio_tarifa - l.precio_coste * f) >= 0.011;
   return l.precio_tarifa !== Math.round(l.precio_coste * f * 100 + 1e-7) / 100;
@@ -270,7 +270,7 @@ titulo('líneas añadidas a mano desde el catálogo (16-10-2026): el catálogo F
 var weco = refDe('WECO 5K3 EVO 5,22KWH 48V WIFI+BLUETOOTH');
 var lm = lineaManual({ producto_ref: weco, descripcion: 'WECO 5K3 EVO', cantidad: 1, precio_tarifa: fv.productos[weco].precio_tarifa, precio_catalogo: fv.productos[weco].precio_tarifa }, fv.productos[weco], fv.lookup);
 igual('WECO: coste = catálogo 1.020', lm.precio_coste, 1020);
-igual('y venta = coste × 1,20 = 1.224 (antes salía a 1.020, a coste)', lm.precio_tarifa, 1224);
+igual('y venta = coste × 1,20 × 1,07 = 1.309,68 (WECO +7 %, 20-10-2026)', lm.precio_tarifa, 1309.68);
 var pw = refDe('TESLA Powerwall 3 | 13.5 kWh/11 kW');
 var lt = lineaManual({ producto_ref: pw, descripcion: 'PW3', cantidad: 1, precio_tarifa: fv.productos[pw].precio_tarifa }, fv.productos[pw], fv.lookup);
 igual('Tesla a mano: 35 % de margen mínimo (7.218,50 → 11.105,39)', lt.precio_tarifa, 11105.39);

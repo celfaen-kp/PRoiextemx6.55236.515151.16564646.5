@@ -463,7 +463,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '26.2'; // versión visible de la app (única fuente)
+const APP_VERSION = '26.3'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -7712,6 +7712,9 @@ function margenLineaHTML(l, cat) {
   const desglose = oi && Array.isArray(oi.desglose) ? oi.desglose : [];
   const cab = `<div class="tiny" style="margin-top:4px;color:${m >= 0 ? 'var(--verde-o)' : 'var(--rojo)'}">Interno · coste ${eur(coste)} · venta ${eur(venta)} · beneficio ${eur(m)} · margen ${String(pct).replace('.', ',')} %</div>`;
   if (oi && oi.fv2 && desglose.length) return cab + desgloseFV2HTML(oi);
+  if (oi && oi.grupo && desglose.length) return cab + `<details style="margin-top:4px"><summary class="tiny" style="cursor:pointer;color:var(--t2)">Desglose · ${esc(oi.grupo)} · ${desglose.length} renglones</summary>
+    ${desglose.map((x) => `<div class="tiny" style="color:var(--t3);padding-left:8px">${esc(x.nombre)} · ${esc(String(x.cantidad))} ${esc(x.unidad || 'ud')} × ${eur(x.venta_ud)} = <b>${eur(x.venta)}</b>${x.coste != null ? ' · coste ' + eur(x.coste) : ''}</div>`).join('')}
+  </details>`;
   return cab + (desglose.length ? `<div class="tiny" style="margin-top:3px;color:var(--t3)">${desglose.map((x) => esc(x.nombre) + ' ' + esc(String(x.cantidad)) + ' ' + esc(x.unidad || 'ud') + ' · ' + eur(x.coste)).join(' · ')}</div>` : '');
 }
 /** El desglose del presupuestador FV v2 (Ramón): las partidas por bloque con
