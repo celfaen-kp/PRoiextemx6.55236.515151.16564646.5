@@ -11,3 +11,6 @@ herramientas/tarifas/
 
 # Lo que queda por pegar en el panel de Supabase (lleva precios: el repo es público)
 subir-a-supabase/
+
+# Herramientas de despliegue: el token personal de Supabase vive en ~/.config/sysefen, nunca aquí
+subir-a-supabase/
