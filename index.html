@@ -463,7 +463,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '25.9'; // versión visible de la app (única fuente)
+const APP_VERSION = '26.0'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -554,7 +554,7 @@ async function restaurarSesion() {
     }
   } catch (e) { /* sin token y sin red: se queda en login */ }
   render();
-  refrescarDatos().then(() => { render(); comprobarFirmaPendiente(); });
+  refrescarDatos().then(() => { if (V.user && !/^p[123]$/.test(V.view)) restaurarBorradorParte(); render(); comprobarFirmaPendiente(); });
 }
 
 /* ---------- comprobación antirrobots (Cloudflare Turnstile) -----------------
@@ -1362,7 +1362,7 @@ A.salir = () => {
   V.view = 'login'; render();
   sysAuth.logout().catch(() => {});
 };
-A.ir = (v) => { V.volverPila = []; V.volverA = null; V.view = v; render(); if (v === 'legalizaciones') A.cargarLegalizaciones(); if (v === 'presupuestos') A.cargarPresupuestos(); if (v === 'visitas') A.cargarVisitas(); if (AG_VISTAS.includes(v)) A.cargarAgenda(); if (v === 'ajustes' && verCRM() && !V.crm.cargado) A.crmEstado(); if (['hoy', 'obras', 'obra', 'partes', 'horas'].includes(v)) refrescarDatos().then(render); };
+A.ir = (v) => { if (/^p[123]$/.test(V.view) && !/^p[123]$/.test(v)) limpiarBorradorParte(); V.volverPila = []; V.volverA = null; V.view = v; render(); if (v === 'legalizaciones') A.cargarLegalizaciones(); if (v === 'presupuestos') A.cargarPresupuestos(); if (v === 'visitas') A.cargarVisitas(); if (AG_VISTAS.includes(v)) A.cargarAgenda(); if (v === 'ajustes' && verCRM() && !V.crm.cargado) A.crmEstado(); if (['hoy', 'obras', 'obra', 'partes', 'horas'].includes(v)) refrescarDatos().then(render); };
 A.verObra = (id) => {
   V.obraId = id; V.obraRango = 'total'; V.view = 'obra'; render();
   // El total de una obra se cuenta desde que se abrió, que puede ser de antes
@@ -3613,7 +3613,7 @@ A.guardarEnviar = async (enviar) => {
         : 'El parte se guardó, pero no subió ' + fallos.length + (fallos.length === 1 ? ' foto' : ' fotos') + (motivo ? ': ' + motivo : '.'));
     }
     const p = S.partes.find((x) => x.id === nuevo.id);
-    V.verParte = nuevo.id; V.draft = null; V.okEnvio = null; V.okDrive = null;
+    V.verParte = nuevo.id; V.draft = null; V.okEnvio = null; V.okDrive = null; limpiarBorradorParte();
     // Si la obra no tenía correo del cliente y el parte sí, se le guarda: así el
     // próximo parte de esa obra ya sale con el correo puesto.
     const obra = obraById(campos.obra_id);
@@ -4347,7 +4347,47 @@ function render() {
     const el = app.querySelector('[data-ultimo]');
     if (el && el.scrollIntoView) el.scrollIntoView({ block: 'nearest' });
   }
+  // El parte a medias se guarda en el móvil por si la app se recarga (20-10-2026).
+  if (/^p[123]$/.test(v) && V.draft) programarBorradorParte();
+  // La actualización que esperaba a que se terminara lo que se estaba haciendo.
+  if (actualizacionPendiente && !enFaena() && cartelActualizarFn) { actualizacionPendiente = false; cartelActualizarFn(); }
 }
+
+/* ---------- el parte a medias sobrevive a una recarga (Enzo, 20-10-2026) -------
+ * El jefe de obra estaba haciendo un parte, saltaba el cartel de actualizar y
+ * al recargar perdía todo. Ahora (1) el cartel espera a que no haya nada a
+ * medias (ver enFaena) y (2) el parte se guarda en el móvil a cada cambio y se
+ * recupera al volver a abrir la app, con sus fotos si caben.
+ * ------------------------------------------------------------------------- */
+const KEY_PARTE = 'sysefen.parte.borrador';
+let borradorParteT = null;
+function programarBorradorParte() { clearTimeout(borradorParteT); borradorParteT = setTimeout(guardarBorradorParte, 400); }
+function guardarBorradorParte() {
+  if (!V.draft || !V.draft.obraId || !/^p[123]$/.test(V.view) || !V.user) return;
+  const b = { draft: V.draft, view: V.view, user: V.user.id, t: Date.now() };
+  try { localStorage.setItem(KEY_PARTE, JSON.stringify(b)); }
+  catch (e) {
+    // Sin sitio (casi siempre por las fotos): se guarda el resto.
+    try { localStorage.setItem(KEY_PARTE, JSON.stringify(Object.assign({}, b, { draft: Object.assign({}, V.draft, { adjuntos: [] }), sinFotos: true }))); } catch (_) {}
+  }
+}
+function limpiarBorradorParte() { clearTimeout(borradorParteT); try { localStorage.removeItem(KEY_PARTE); } catch (e) {} }
+function restaurarBorradorParte() {
+  let b = null;
+  try { b = JSON.parse(localStorage.getItem(KEY_PARTE) || 'null'); } catch (e) { b = null; }
+  if (!b || !b.draft || !V.user || b.user !== V.user.id) return false;
+  if (Date.now() - (b.t || 0) > 36 * 3600e3 || !obraById(b.draft.obraId)) { limpiarBorradorParte(); return false; }
+  V.draft = b.draft; V.view = /^p[123]$/.test(b.view) ? b.view : 'p1';
+  toast('Se recupera el parte que tenías a medias' + (b.sinFotos ? '. Las fotos no cabían: vuelve a adjuntarlas' : '') + '.');
+  return true;
+}
+// ¿Hay algo a medias que una recarga se llevaría por delante?
+const enFaena = () => /^p[123]$/.test(V.view)
+  || ['alta', 'visitaNueva', 'imputar', 'imputarGrupo', 'imputarEmp'].includes(V.view)
+  || !!V.sheet || !!V.presuEdit || !!V.parteBusy || !!V.visitaBusy;   // la cita a medias va en una hoja: ya cuenta con V.sheet
+let actualizacionPendiente = false;
+let cartelActualizarFn = null;
+window.addEventListener('pagehide', () => { if (/^p[123]$/.test(V.view) && V.draft) guardarBorradorParte(); });
 const scrollMemo = {};
 document.addEventListener('scroll', (e) => {
   if (e.target.classList && (e.target.classList.contains('scroll') || e.target.classList.contains('hoja'))) scrollMemo[V.view] = e.target.scrollTop;
@@ -12872,12 +12912,15 @@ if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
   let recargada = false;
   const cartelActualizar = () => {
     if (document.getElementById('actualizar')) return;
+    // Con un parte, una visita o una hoja a medias, el cartel espera a que se
+    // termine o se salga: una recarga en mitad de un parte lo perdía entero.
+    if (enFaena()) { actualizacionPendiente = true; return; }
     const div = document.createElement('div');
     div.id = 'actualizar';
     div.innerHTML = `<div>
       <img src="logo-blanco.png?v=3" alt="" style="height:40px;margin-bottom:22px;opacity:.9">
       <div style="font:700 28px/1.1 var(--cond);color:#fff">Hay una versión nueva</div>
-      <div style="font:400 14px/1.5 var(--sans);color:rgba(255,255,255,.7);margin-top:10px">La app se ha actualizado. Para seguir hace falta cargarla; tarda un segundo y no se pierde nada.</div>
+      <div style="font:400 14px/1.5 var(--sans);color:rgba(255,255,255,.7);margin-top:10px">La app se ha actualizado. Para seguir hace falta cargarla; tarda un segundo. Lo que tengas a medias queda guardado en el móvil.</div>
       <button class="btn btn-verde" id="actualizar-btn" style="margin-top:26px">Actualizar</button>
       <div class="tiny" style="color:rgba(255,255,255,.4);margin-top:16px">Tienes la versión ${APP_VERSION}</div>
     </div>`;
@@ -12890,6 +12933,7 @@ if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
       setTimeout(() => { if (!recargada) { recargada = true; location.reload(); } }, 4000);
     });
   };
+  cartelActualizarFn = cartelActualizar;
   const vigilar = (sw) => {
     if (!sw) return;
     if (sw.state === 'installed') { esperando = sw; cartelActualizar(); return; }
