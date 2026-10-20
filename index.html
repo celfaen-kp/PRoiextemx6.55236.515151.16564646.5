@@ -459,7 +459,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '25.6'; // versión visible de la app (única fuente)
+const APP_VERSION = '25.7'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -12608,7 +12608,34 @@ document.addEventListener('dragstart', (e) => {
   tbArrastre = card.dataset.cli; card.classList.add('arrastrando');
   try { e.dataTransfer.setData('text/plain', tbArrastre); e.dataTransfer.effectAllowed = 'move'; } catch (_) { /* da igual */ }
 });
-document.addEventListener('dragend', () => { tbArrastre = null; document.querySelectorAll('.tb-card.arrastrando, .tb-col.sobre, .tb-card.antes').forEach((x) => x.classList.remove('arrastrando', 'sobre', 'antes')); });
+document.addEventListener('dragend', () => { tbArrastre = null; tbAutoScrollParar(); document.querySelectorAll('.tb-card.arrastrando, .tb-col.sobre, .tb-card.antes').forEach((x) => x.classList.remove('arrastrando', 'sobre', 'antes')); });
+// Al llevar una tarjeta hasta el borde del tablero, se desplaza solo (Enzo,
+// 20-10-2026): a los lados, las columnas; arriba y abajo, la página. Cuanto
+// más cerca del borde, más rápido.
+let tbAutoScroll = null;
+function tbAutoScrollParar() { if (tbAutoScroll) { cancelAnimationFrame(tbAutoScroll.raf); tbAutoScroll = null; } }
+function tbAutoScrollPaso() {
+  const a = tbAutoScroll; if (!a || !tbArrastre) { tbAutoScrollParar(); return; }
+  const MARGEN = 80, VEL = 22;
+  const wrap = document.querySelector('.tb-wrap');
+  if (wrap) {
+    const r = wrap.getBoundingClientRect();
+    if (a.x < r.left + MARGEN) wrap.scrollLeft -= VEL * Math.min(1, (r.left + MARGEN - a.x) / MARGEN);
+    else if (a.x > r.right - MARGEN) wrap.scrollLeft += VEL * Math.min(1, (a.x - (r.right - MARGEN)) / MARGEN);
+    const sc = wrap.closest('.scroll');
+    if (sc) {
+      const rs = sc.getBoundingClientRect();
+      if (a.y < rs.top + MARGEN) sc.scrollTop -= VEL * Math.min(1, (rs.top + MARGEN - a.y) / MARGEN);
+      else if (a.y > rs.bottom - MARGEN) sc.scrollTop += VEL * Math.min(1, (a.y - (rs.bottom - MARGEN)) / MARGEN);
+    }
+  }
+  a.raf = requestAnimationFrame(tbAutoScrollPaso);
+}
+document.addEventListener('dragover', (e) => {
+  if (!tbArrastre) return;
+  if (!tbAutoScroll) { tbAutoScroll = { x: e.clientX, y: e.clientY, raf: 0 }; tbAutoScrollPaso(); }
+  else { tbAutoScroll.x = e.clientX; tbAutoScroll.y = e.clientY; }
+});
 /** Nuevo orden dentro de la columna: `id` pasa delante de `antesDe` (o al
  *  principio, o al final si antesDe es null y arriba es false). Se renumera la
  *  columna entera (1..n) y se guarda en cada cliente. */
