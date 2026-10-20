@@ -236,16 +236,17 @@ RECARGO_PANELES, RECARGO_EQUIPOS = 1.4375, 1.20
 # Es el suelo que no se rebaja; el resto de equipos sigue al ×1,20.
 MARGEN_TESLA = 0.35
 RECARGO_TESLA = round(1 / (1 - MARGEN_TESLA), 6)
-# WECO: un 7 % más que el resto de equipos (Enzo, 20-10-2026: «las veo baratas»): ×1,20 ×1,07.
-RECARGO_WECO = round(RECARGO_EQUIPOS * 1.07, 4)
+# WECO y Deye (lo de Rebacas): 50 % de beneficio sobre la venta (Enzo, 20-10-2026): venta = coste ÷ 0,5.
+MARGEN_REBACAS = 0.50
+RECARGO_REBACAS = round(1 / (1 - MARGEN_REBACAS), 6)
 # La jornada de instalación del cargador se vende a 450 € con coste de jornada 330 € (Enzo, 20-10-2026).
 VENTA_JORNADA_CARGADOR, COSTE_JORNADA = 450.0, 330.0
 def margen_de(ref):
     if ref.startswith('FV-01-'): return (RECARGO_PANELES, False)                       # panel: 80 → 115
     if ref.startswith('FV-TESLA-'): return (RECARGO_TESLA, False)                                   # Tesla: 35 % de margen sobre venta, mínimo
-    if ref.startswith('FV-WECO-'): return (RECARGO_WECO, False)                                     # WECO: equipos +7 %
+    if ref.startswith(('FV-WECO-', 'FV-DEYE-')): return (RECARGO_REBACAS, False)                   # WECO y Deye: 50 % sobre venta
     if ref == 'FV-14-006': return (round(VENTA_JORNADA_CARGADOR / COSTE_JORNADA, 6), False)       # jornada del cargador: 330 → 450
-    if ref.startswith(('FV-FRONIUS-', 'FV-ENPHASE-', 'FV-BYD-', 'FV-DEYE-', 'FV-WECO-')): return (RECARGO_EQUIPOS, False)  # equipos: +20 % sobre factura
+    if ref.startswith(('FV-FRONIUS-', 'FV-ENPHASE-', 'FV-BYD-')): return (RECARGO_EQUIPOS, False)  # equipos: +20 % sobre factura
     return (None, True)
 paneles = sorted([x for x in sysefen if x['referencia'].startswith('FV-01-001-') and num(x['atributos'].get('wp'))],
                  key=lambda x: num(x['atributos']['wp']))
@@ -256,8 +257,8 @@ paneles = sorted([x for x in sysefen if x['referencia'].startswith('FV-01-001-')
 # =============================================================================
 LOOKUP = [
     ('recargo_sobre_coste', 'defecto', 1.30, 'Precio de venta = coste × 1,30, una vez por línea, para lo que no trae recargo propio. CONFIRMADO (desglose FV, oct 2026).'),
-    ('recargo_equipos', 'defecto', 1.20, 'Equipos del distribuidor (Fronius, Enphase, BYD, Deye, WECO): venta = coste × 1,20, sin CDC. Informativo: el valor que manda es productos.recargo (09-10-2026).'),
-    ('recargo_weco', 'defecto', RECARGO_WECO, 'Baterías WECO: venta = coste × 1,20 × 1,07 (Enzo, 20-10-2026). Informativo: el valor que manda es productos.recargo.'),
+    ('recargo_equipos', 'defecto', 1.20, 'Equipos del distribuidor (Fronius, Enphase, BYD): venta = coste × 1,20, sin CDC. WECO y Deye: ver recargo_rebacas. Informativo: el valor que manda es productos.recargo (09-10-2026).'),
+    ('recargo_rebacas', 'defecto', RECARGO_REBACAS, 'WECO y Deye: 50 % de beneficio sobre la venta, venta = coste ÷ 0,5 (Enzo, 20-10-2026). Informativo: el valor que manda es productos.recargo.'),
     ('recargo_tesla', 'defecto', RECARGO_TESLA, 'Tesla: margen mínimo del 35 % sobre la venta, venta = coste ÷ 0,65 (Enzo, 16-10-2026). No se rebaja. Informativo: el valor que manda es productos.recargo.'),
     ('margen_minimo_tesla', 'defecto', MARGEN_TESLA, 'Margen sobre venta por debajo del cual la app avisa en una línea Tesla (Enzo, 16-10-2026).'),
     ('recargo_paneles', 'defecto', 1.4375, 'Panel: coste 80 → venta 115, sin CDC. Informativo: el valor que manda es productos.recargo (09-10-2026).'),
