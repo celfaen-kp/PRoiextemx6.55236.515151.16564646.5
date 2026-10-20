@@ -459,7 +459,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '25.5'; // versión visible de la app (única fuente)
+const APP_VERSION = '25.6'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -816,6 +816,7 @@ function mapObraDeDB(row) {
     // no se ha ejecutado, las columnas no vienen y esto queda a null.
     tlId: row.tl_id || null,
     tlTipo: row.tl_tipo || null,
+    comentarios: row.comentarios || '',   // sql/etapa82
   };
 }
 
@@ -4646,6 +4647,7 @@ function vObra() {
     ${o.dir ? `<div class="ag-acciones" style="justify-content:flex-start;gap:26px">${accionComoLlegar(o.dir)}</div>` : ''}
     ${puedeObras() ? `<div class="row g8" style="margin-top:16px">
       ${puedeCrear() ? `<button class="pill pill-verde grow" data-a="nuevoParte" data-id="${o.id}" style="padding:14px">Nuevo parte</button>` : ''}
+      <button class="pill grow" data-a="horasObraAbrir" data-id="${o.id}" style="padding:14px;background:rgba(255,255,255,.12);color:#fff" title="Horas en esta obra sin hacer parte: control propio">Apuntar horas</button>
       <button class="pill grow" data-a="editarObra" data-id="${o.id}" style="padding:14px;background:rgba(255,255,255,.12);color:#fff">Editar</button>
     </div>
     <div class="row g8" style="margin-top:8px">
@@ -4653,6 +4655,7 @@ function vObra() {
     </div>` : ''}
   </div>
   <div class="scroll pad pb-nav">
+    ${puedeObras() ? comentariosObraHTML(o) : ''}
     <div class="row" style="justify-content:space-between;align-items:baseline;margin-bottom:10px">
       <div class="lbl" style="font-weight:600;font-size:12px;color:var(--t2)">Horas por empleado</div>
       <div class="wrap">${OBRA_RANGOS.map(([r, l]) => `<div class="chip" style="padding:6px 11px;font-size:11px${r === rango ? ';background:var(--tinta);color:#fff;border-color:var(--tinta)' : ''}" data-a="obraRango" data-r="${r}">${l}</div>`).join('')}</div>
@@ -4681,7 +4684,71 @@ function vObra() {
     <div class="tiny" style="text-align:center;margin-top:8px">Solo se puede borrar una obra sin partes ni horas. Si se creó dos veces, borra la que esté vacía.</div>` : ''}
   </div>`;
 }
-/* --- albaranes y recibos de la obra (control interno: jefe y admin) --- */
+/* --- comentarios libres de la obra (sql/etapa82, 20-10-2026) --- */
+Object.assign(V, { obraComentarioDraft: {}, obraComentarioBusy: null });
+function comentariosObraHTML(o) {
+  const borrador = V.obraComentarioDraft[o.id];
+  const texto = borrador != null ? borrador : (o.comentarios || '');
+  const cambiado = borrador != null && borrador !== (o.comentarios || '');
+  return `<div class="card" style="margin-bottom:16px">
+    <div class="lbl" style="font-weight:600;font-size:12px;color:var(--t2)">Comentarios de la obra</div>
+    <textarea class="inp" data-f="obraComentarios" data-id="${o.id}" rows="3" style="margin-top:8px" placeholder="Lo que haya que saber de esta obra: accesos, llaves, acuerdos con el cliente, pendientes…">${esc(texto)}</textarea>
+    ${cambiado ? `<button class="btn btn-verde" data-a="obraComentariosGuardar" data-id="${o.id}" style="margin-top:10px" ${V.obraComentarioBusy === o.id ? 'disabled' : ''}>${V.obraComentarioBusy === o.id ? 'Guardando…' : 'Guardar comentarios'}</button>` : ''}
+  </div>`;
+}
+A.obraComentariosGuardar = async (id) => {
+  const o = obraById(id); if (!o || V.obraComentarioBusy) return;
+  const texto = String(V.obraComentarioDraft[id] != null ? V.obraComentarioDraft[id] : o.comentarios || '').trim();
+  if (!navigator.onLine) { avisar('Sin conexión: los comentarios no se han guardado.'); return; }
+  V.obraComentarioBusy = id; render();
+  try {
+    await Sysefen.db.actualizarObra(id, { comentarios: texto || null });
+    o.comentarios = texto; delete V.obraComentarioDraft[id];
+    toast('Comentarios guardados.');
+  } catch (e) {
+    const msg = (e && e.message) || 'error';
+    avisar(/comentarios|schema cache/i.test(msg) ? 'Falta ejecutar sql/etapa82 en Supabase.' : 'No se pudo guardar: ' + msg);
+  }
+  V.obraComentarioBusy = null; render();
+};
+
+/* --- horas apuntadas a mano en la obra, sin parte (sql/etapa82, 20-10-2026) ---
+ * Control propio: una línea de imputación de categoría «obra» con origen manual.
+ * Si ese día ya había una línea de esa persona en esa obra, se suman. */
+A.horasObraAbrir = (obraId) => {
+  if (!puedeObras()) return;
+  const yoEmp = miEmpId();
+  V.sheet = { tipo: 'horasObra', obraId, empId: yoEmp || null, fecha: hoyISO(), horas: '', nota: '', busy: false };
+  render();
+};
+A.horasObraEmp = (empId) => { if (V.sheet && V.sheet.tipo === 'horasObra') { V.sheet.empId = empId; render(); } };
+A.horasObraGuardar = async () => {
+  const s = V.sheet; if (!s || s.tipo !== 'horasObra' || s.busy) return;
+  const horas = Number(String(s.horas || '').replace(',', '.'));
+  if (!s.empId) { avisar('Elige a quién se le apuntan las horas.'); return; }
+  if (!(horas > 0) || horas > 24) { avisar('Pon las horas (por ejemplo 2,5).'); return; }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(s.fecha || ''))) { avisar('Falta la fecha.'); return; }
+  if (!navigator.onLine) { avisar('Sin conexión: las horas no se han apuntado.'); return; }
+  s.busy = true; render();
+  const minutos = Math.round(horas * 60);
+  const nota = String(s.nota || '').trim() || null;
+  try {
+    const existente = S.imputaciones.find((i) => i.empleado_id === s.empId && i.fecha === s.fecha && i.categoria === 'obra' && i.obraId === s.obraId);
+    if (existente) {
+      await Sysefen.db.guardarImputaciones([{ id: existente.id, minutos: Math.min(1440, (existente.minutos || 0) + minutos), nota: nota || existente.nota || null, origen: 'manual', actualizado_por: miEmpId() || null }]);
+    } else {
+      await Sysefen.db.guardarImputaciones([{ empleado_id: s.empId, fecha: s.fecha, categoria: 'obra', obra_id: s.obraId, minutos, origen: 'manual', nota, creado_por: miEmpId() || null }]);
+    }
+    await sincronizarImputaciones();
+    V.sheet = null; toast(durMin(minutos) + ' apuntadas en la obra.'); render();
+  } catch (e) {
+    s.busy = false; render();
+    const msg = (e && e.message) || 'error';
+    avisar(/row-level security|policy|permission/i.test(msg) ? 'Sin permiso para apuntar horas con esta cuenta. Si eres de presupuestos, falta ejecutar sql/etapa82 en Supabase (y solo puedes apuntarte las tuyas).' : 'No se pudo apuntar: ' + msg);
+  }
+};
+
+/* --- albaranes y recibos de la obra (control interno: jefe, presupuestos y admin) --- */
 const DOC_TIPOS = [['albaran', 'Albarán'], ['recibo', 'Recibo'], ['factura', 'Factura'], ['otro', 'Otro']];
 const docTipoNombre = (t) => (DOC_TIPOS.find((x) => x[0] === t) || [t, 'Documento'])[1];
 const euros = (n) => Number(n || 0).toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' €';
@@ -4705,7 +4772,7 @@ A.cargarDocsObra = async (obraId) => {
 };
 
 A.nuevoDocObra = () => {
-  if (!puedeCrear()) return;
+  if (!(puedeCrear() || veCostes())) { avisar('Los albaranes los adjuntan jefes, presupuestos y Administración.'); return; }
   const inp = document.createElement('input');
   inp.type = 'file'; inp.accept = 'image/*,application/pdf';
   inp.onchange = async () => {
@@ -4748,7 +4815,9 @@ A.guardarDocObra = async () => {
   } catch (e) {
     s.busy = false;
     const msg = (e && e.message) || 'error';
-    s.err = faltaTablaDocs(msg) ? 'Falta preparar Supabase: ejecuta sql/etapa21_obra_documentos.sql.' : 'No se pudo guardar: ' + msg;
+    s.err = faltaTablaDocs(msg) ? 'Falta preparar Supabase: ejecuta sql/etapa21_obra_documentos.sql.'
+      : /row-level security|policy|permission|403/i.test(msg) ? 'Sin permiso para guardar albaranes con esta cuenta. Si eres de presupuestos, falta ejecutar sql/etapa82 en Supabase.'
+      : 'No se pudo guardar: ' + msg;
     render();
   }
 };
@@ -9481,6 +9550,7 @@ const TB_DESTINOS = [
   ['sin_cita_ok', 'Resueltos sin cita', 'Ya tiene obra, presupuesto fuera, no interesa…'],
   ['rechazado', 'Rechazados', 'Con presupuesto se marca rechazado; sin él, se apunta el porqué'],
   ['aceptado', 'Aceptados · obra', 'El presupuesto se marca aceptado'],
+  ['finalizado', 'Finalizados', 'La obra está terminada y entregada'],
   ['otros', 'Otros', 'Lo que no encaja en ninguna fase'],
 ];
 /** Colocar a mano en «Rechazados» (sin presupuesto) o en «Otros», con el porqué (sql/etapa81). */
@@ -9492,8 +9562,8 @@ A.tbColocarGuardar = async () => {
   try {
     const cambios = { tablero_col: s.k, tablero_motivo: motivo };
     await visitasDB.guardarCliente(Object.assign({ id: s.id }, cambios)); Object.assign(c, cambios);
-    V.sheet = null; toast(s.k === 'otros' ? 'Pasa a Otros.' : 'Rechazado.'); render();
-    anotar(s.id, 'sistema', (s.k === 'otros' ? 'Pasado a Otros' : 'Rechazado sin presupuesto') + (motivo ? ' · ' + motivo : ''));
+    V.sheet = null; toast(s.k === 'otros' ? 'Pasa a Otros.' : s.k === 'finalizado' ? 'Finalizado.' : 'Rechazado.'); render();
+    anotar(s.id, 'sistema', (s.k === 'otros' ? 'Pasado a Otros' : s.k === 'finalizado' ? 'Dado por finalizado' : 'Rechazado sin presupuesto') + (motivo ? ' · ' + motivo : ''));
   } catch (e) {
     s.busy = false; render();
     avisar(/tablero_col|schema cache/i.test(msgError(e)) ? 'Falta ejecutar sql/etapa81 en Supabase.' : 'No se pudo: ' + msgError(e));
@@ -9546,7 +9616,7 @@ A.tbMover = async (id, k) => {
     catch (e) { avisar('No se pudo: ' + msgError(e)); render(); return; }
     if (k === agEstadoCliente(c).k) { toast('Vuelve a su fase.'); render(); return; }
   }
-  if (k === 'otros' || (k === 'rechazado' && !presuQueManda(c))) { V.sheet = { tipo: 'tbColocar', id, k, motivo: '', busy: false }; render(); return; }
+  if (k === 'otros' || k === 'finalizado' || (k === 'rechazado' && !presuQueManda(c))) { V.sheet = { tipo: 'tbColocar', id, k, motivo: '', busy: false }; render(); return; }
   if (k === 'sin_cita_ok') return A.ag_sinCitaAbrir(id);
   if (k === 'aplazado') return A.segAplazarAbrir(id);
   if (k === 'citado') return A.ag_nuevaCita(id);
@@ -9671,7 +9741,8 @@ const TABLERO_COLS = [
   ['sin_cita', 'Nuevos · sin cita', 'var(--rojo)'], ['citado', 'Citados', 'var(--ambar)'], ['visitado', 'Visitados · por presupuestar', 'var(--tinta)'],
   ['sin_cita_ok', 'Resueltos sin cita', 'var(--t3)'],
   ['presupuestado', 'Presupuesto por revisar o enviar', 'var(--tinta)'], ['esperando', 'Enviado · esperando', 'var(--ambar)'],
-  ['aceptado', 'Aceptados · obra', 'var(--verde)'], ['aplazado', 'Aplazados', 'var(--ambar-o)'], ['rechazado', 'Rechazados', 'var(--rojo)'],
+  ['aceptado', 'Aceptados · obra', 'var(--verde)'], ['finalizado', 'Finalizados', 'var(--verde-o)'],
+  ['aplazado', 'Aplazados', 'var(--ambar-o)'], ['rechazado', 'Rechazados', 'var(--rojo)'],
   ['otros', 'Otros', 'var(--t3)'],
 ];
 function tableroColumnas(clientes) {
@@ -9803,6 +9874,12 @@ function agEstadoCliente(c) {
   // hasta que se mueve a otra columna.
   if (c.tablero_col === 'otros') return { k: 'otros', color: 'var(--t3)', txt: 'Otros' + (c.tablero_motivo ? ' · ' + c.tablero_motivo : '') };
   if (c.tablero_col === 'rechazado') return { k: 'rechazado', color: 'var(--rojo)', txt: 'Rechazado' + (pm ? '' : ' · sin presupuesto') + (c.tablero_motivo ? ' · ' + c.tablero_motivo : '') };
+  if (c.tablero_col === 'finalizado') return { k: 'finalizado', color: 'var(--verde-o)', txt: 'Finalizado' + (c.tablero_motivo ? ' · ' + c.tablero_motivo : '') };
+  // Finalizado solo: todas sus obras están finalizadas o cerradas.
+  const obrasC = typeof obrasDeCliente === 'function' ? obrasDeCliente(c) : [];
+  if (obrasC.length && obrasC.every((o) => o.estado === 'finalizada' || o.estado === 'cerrada')) {
+    return { k: 'finalizado', color: 'var(--verde-o)', txt: 'Finalizado · ' + obrasC.map((o) => codigoObra(o) || o.titulo).filter(Boolean).join(', ') };
+  }
   // Aplazado manda sobre todo, también sobre un presupuesto aceptado (Enzo,
   // 16-10-2026: una obra aceptada que se pospone). Al vencer vuelve a su sitio.
   if (c.aplazado_hasta && c.aplazado_hasta >= hoyISO()) return { k: 'aplazado', color: 'var(--ambar-o)', txt: 'Aplazado hasta ' + fechaCorta(c.aplazado_hasta + 'T12:00') + (c.aplazado_motivo ? ' · ' + c.aplazado_motivo : '') + (sgm && sgm.k === 'aceptado' ? ' · presupuesto aceptado' : '') };
@@ -11817,16 +11894,36 @@ function sheet() {
       </div>
     </div></div>`;
   }
+  if (s.tipo === 'horasObra') {
+    const o = obraById(s.obraId) || {};
+    const gente = puedeCrear() ? equipoTodos().filter((u) => u.empId && u.activo !== false) : S.users.filter((u) => u.empId === miEmpId());
+    return `<div class="sheet"><div>
+      <div style="font:600 23px/1.15 var(--cond)">Apuntar horas</div>
+      <div class="sub" style="margin-top:6px">${esc(codigoObra(o) || o.titulo || '')}${o.cliente ? ' · ' + esc(o.cliente) : ''}. Sin parte: solo para el control de horas de la obra.</div>
+      <div class="lbl" style="margin:14px 0 6px">Quién</div>
+      <div class="wrap">${gente.map((u) => `<span class="chip ${s.empId === u.empId ? 'on' : ''}" data-a="horasObraEmp" data-emp="${u.empId}" style="cursor:pointer">${esc(u.nombre)}</span>`).join('') || '<span class="tiny">No hay personas con ficha de empleado.</span>'}</div>
+      <div class="row g8" style="margin-top:12px">
+        <div class="grow"><div class="lbl" style="margin-bottom:6px">Día</div><input class="inp" type="date" data-f="horasObraFecha" value="${esc(s.fecha || '')}"></div>
+        <div style="width:110px"><div class="lbl" style="margin-bottom:6px">Horas</div><input class="inp" type="number" step="0.25" min="0.25" max="24" inputmode="decimal" data-f="horasObraHoras" value="${esc(s.horas || '')}" placeholder="2,5"></div>
+      </div>
+      <div class="lbl" style="margin:12px 0 6px">Nota (opcional)</div>
+      <input class="inp" data-f="horasObraNota" value="${esc(s.nota || '')}" placeholder="Qué se hizo">
+      <div class="row g8" style="margin-top:18px">
+        <button class="btn btn-gris" data-a="cerrarSheet" style="border-radius:99px">Cancelar</button>
+        <button class="btn btn-verde" data-a="horasObraGuardar" ${s.busy ? 'disabled' : ''}>${s.busy ? 'Guardando…' : 'Apuntar'}</button>
+      </div>
+    </div></div>`;
+  }
   if (s.tipo === 'tbColocar') {
     const c = agCliente(s.id) || {};
     return `<div class="sheet"><div>
-      <div style="font:600 23px/1.15 var(--cond)">${s.k === 'otros' ? 'Pasar a Otros' : 'Rechazado sin presupuesto'}</div>
-      <div class="sub" style="margin-top:6px">${esc(c.nombre || '')}. ${s.k === 'otros' ? 'Se queda en la última columna hasta que lo muevas a otra.' : 'No llegó a presupuesto. Se queda en Rechazados hasta que lo muevas a otra columna.'}</div>
+      <div style="font:600 23px/1.15 var(--cond)">${s.k === 'otros' ? 'Pasar a Otros' : s.k === 'finalizado' ? 'Dar por finalizado' : 'Rechazado sin presupuesto'}</div>
+      <div class="sub" style="margin-top:6px">${esc(c.nombre || '')}. ${s.k === 'otros' ? 'Se queda en la última columna hasta que lo muevas a otra.' : s.k === 'finalizado' ? 'Obra terminada y entregada. Se queda en Finalizados hasta que lo muevas a otra columna.' : 'No llegó a presupuesto. Se queda en Rechazados hasta que lo muevas a otra columna.'}</div>
       <div class="lbl" style="margin:12px 0 6px">Por qué (opcional)</div>
-      <input class="inp" data-f="tbColocarMotivo" value="${esc(s.motivo || '')}" placeholder="${s.k === 'otros' ? 'Qué es' : 'No le interesa, lo hace otro, no contesta…'}">
+      <input class="inp" data-f="tbColocarMotivo" value="${esc(s.motivo || '')}" placeholder="${s.k === 'otros' ? 'Qué es' : s.k === 'finalizado' ? 'Fecha de entrega, qué quedó…' : 'No le interesa, lo hace otro, no contesta…'}">
       <div class="row g8" style="margin-top:18px">
         <button class="btn btn-gris" data-a="cerrarSheet" style="border-radius:99px">Cancelar</button>
-        <button class="btn btn-verde" data-a="tbColocarGuardar" ${s.busy ? 'disabled' : ''}>${s.busy ? 'Guardando…' : (s.k === 'otros' ? 'Pasar a Otros' : 'Marcar rechazado')}</button>
+        <button class="btn btn-verde" data-a="tbColocarGuardar" ${s.busy ? 'disabled' : ''}>${s.busy ? 'Guardando…' : (s.k === 'otros' ? 'Pasar a Otros' : s.k === 'finalizado' ? 'Finalizado' : 'Marcar rechazado')}</button>
       </div>
     </div></div>`;
   }
@@ -12209,6 +12306,10 @@ document.addEventListener('click', (e) => {
   if (a === 'tbMoverAbrir') { e.stopPropagation(); return A.tbMoverAbrir(d.id); }
   if (a === 'tbMover') return A.tbMover(d.id, d.k);
   if (a === 'tbColocarGuardar') return A.tbColocarGuardar();
+  if (a === 'horasObraAbrir') return A.horasObraAbrir(d.id);
+  if (a === 'horasObraEmp') return A.horasObraEmp(d.emp);
+  if (a === 'horasObraGuardar') return A.horasObraGuardar();
+  if (a === 'obraComentariosGuardar') return A.obraComentariosGuardar(d.id);
   if (a === 'tlTraerCliente') { e.stopPropagation(); return A.tlTraerCliente(d.id); }
   if (a === 'fotoVisorForm') return A.fotoVisorForm(d.c, d.k);
   if (a === 'fotoVisorAdj') return A.fotoVisorAdj(d.c, d.i);
@@ -12564,6 +12665,17 @@ document.addEventListener('input', (e) => {
   if (f === 'segFecha') { if (V.sheet) V.sheet.fecha = t.value; return; }
   if (f === 'segOtro') { if (V.sheet) V.sheet.otro = t.value; return; }
   if (f === 'tbColocarMotivo') { if (V.sheet) V.sheet.motivo = t.value; return; }
+  if (f === 'horasObraFecha') { if (V.sheet) V.sheet.fecha = t.value; return; }
+  if (f === 'horasObraHoras') { if (V.sheet) V.sheet.horas = t.value; return; }
+  if (f === 'horasObraNota') { if (V.sheet) V.sheet.nota = t.value; return; }
+  if (f === 'obraComentarios') {
+    const id = t.dataset.id; if (!id) return;
+    const o = obraById(id); const antes = V.obraComentarioDraft[id] != null;
+    V.obraComentarioDraft[id] = t.value;
+    // El botón de guardar aparece al primer cambio; después no se repinta para no perder el foco.
+    if (!antes && o && t.value !== (o.comentarios || '')) render();
+    return;
+  }
   if (f === 'moverBuscar') { if (V.sheet) { V.sheet.buscar = t.value; const box = document.getElementById('mover-obras'); if (box) box.innerHTML = moverParteListaHTML(V.sheet); } return; }
   if (f === 'sinCitaOtro') { if (V.sheet) V.sheet.otro = t.value; return; }
   if (f === 'presuExtImporte') { if (V.sheet) V.sheet.importe = t.value; return; }

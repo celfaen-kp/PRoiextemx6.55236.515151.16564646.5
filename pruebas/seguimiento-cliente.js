@@ -21,7 +21,7 @@ igual('citados', por.citado, 'Bea');
 igual('aplazados', por.aplazado, 'Cai');
 igual('esperando respuesta', por.esperando, 'Dani');
 igual('resueltos sin cita', por.sin_cita_ok, 'Eva');
-igual('nueve columnas siempre', cols.length, 9);
+igual('once columnas siempre (Finalizados y Otros, V25.6)', cols.length, 11);
 comprueba('ya no hay columna «En Teamleader»', !cols.some(function (c) { return c.k === 'teamleader'; }));
 igual('«se presupuesta sin visita» va con los visitados', agEstadoCliente({ citas: [], visitas: [], sin_cita_motivo: SIN_VISITA }).k, 'visitado');
 igual('y lo dice', agEstadoCliente({ citas: [], visitas: [], sin_cita_motivo: SIN_VISITA }).txt, 'Por presupuestar · sin visita');
