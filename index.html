@@ -463,7 +463,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '26.0'; // versión visible de la app (única fuente)
+const APP_VERSION = '26.1'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -6311,7 +6311,13 @@ function vP2() {
     </div>
     ${d.clienteAusente ? `<div class="card" style="margin-top:12px;background:rgba(20,23,15,.04)">
       <div class="sub" style="font-size:13px">Constará en el parte: <b>«Cliente no presente en la finalización de los trabajos. Parte emitido sin firma del cliente.»</b></div>
-    </div>` : `<div class="lbl" style="margin:20px 0 8px">Nombre y DNI del firmante</div>
+    </div>` : `<div class="row" style="justify-content:space-between;align-items:baseline;margin:22px 0 8px">
+      <div class="lbl">Lo que va a firmar el cliente</div>
+      <div data-a="parteVerPrevia" style="font:500 12px var(--sans);color:var(--verde-o);cursor:pointer">Ver en grande (PDF)</div>
+    </div>
+    <div class="sub" style="font-size:12px;margin-bottom:10px">Enséñaselo antes de pedirle la firma: trabajos, horas y materiales de hoy.</div>
+    ${docParteHTML(d, true)}
+    <div class="lbl" style="margin:20px 0 8px">Nombre y DNI del firmante</div>
     <input class="inp" data-f="firmante" value="${esc(d.firmante)}" placeholder="Ana Ruiz · 50123456K">
     <div class="row" style="justify-content:space-between;margin:22px 0 8px">
       <div class="lbl">Firma aquí</div>
@@ -6366,20 +6372,13 @@ function montarFirmaPlanilla() {
   });
 }
 
-/* --- paso 3: vista previa --- */
-function vP3() {
-  const d = V.draft, o = obraById(d.obraId);
+/* --- el documento del parte tal como lo verá el cliente: en el paso 2, antes de
+ * firmar (con «Firma pendiente» en su casilla; Enzo, 20-10-2026: el cliente
+ * quiere ver lo que firma), y en el paso 3 ya firmado. --- */
+function docParteHTML(d, previa) {
+  const o = obraById(d.obraId) || { titulo: '—' };
   const total = d.incluidos.reduce((t, id) => t + (d.horas[id] || 0), 0);
-  return `<div class="hdr-dark" style="padding-bottom:16px">
-    <div class="row g12">
-      <div data-a="aPaso" data-p="p2" class="volver">‹ Atrás</div>
-      <div class="grow" style="text-align:center;font:600 15px var(--sans)">Enviar informe</div>
-      <div class="tiny" style="color:rgba(255,255,255,.45)">3/3</div>
-    </div>
-    <div class="pasos"><i class="on"></i><i class="on"></i><i class="on"></i></div>
-  </div>
-  <div class="scroll pad" style="padding-bottom:120px">
-    <div class="docu">
+  return `    <div class="docu">
       <div class="row" style="align-items:flex-start;justify-content:space-between">
         <div><div style="font:600 15px/1 var(--sans)">${esc(S.empresa)}</div>
         <div class="tiny" style="margin-top:5px">PARTE DE TRABAJO · borrador</div></div>
@@ -6401,9 +6400,23 @@ function vP3() {
         <div class="wrap">${d.adjuntos.map((a) => a.img ? `<img src="${a.data}" style="width:64px;height:64px;object-fit:cover;border-radius:6px">` : `<div class="tiny" style="padding:8px 10px;background:#efede6;border-radius:6px">${esc(a.nombre)}</div>`).join('')}</div>` : ''}
       <div class="hr"></div>
       <div class="lbl">Conforme el cliente</div>
-      ${d.clienteAusente ? '<div class="sub" style="font-size:13px;margin-top:4px">Cliente no presente en la finalización de los trabajos. Parte emitido sin firma del cliente.</div>' : (d.firma ? `<img src="${d.firma}" style="width:100%;max-height:90px;object-fit:contain;margin-top:4px">` : '')}
+      ${previa && !d.firma && !d.clienteAusente ? '<div style="margin-top:8px;height:64px;border:1.5px dashed rgba(20,23,15,.3);border-radius:8px;display:flex;align-items:center;justify-content:center;font:600 13px var(--sans);color:var(--t2);letter-spacing:.04em">FIRMA PENDIENTE</div>' : d.clienteAusente ? '<div class="sub" style="font-size:13px;margin-top:4px">Cliente no presente en la finalización de los trabajos. Parte emitido sin firma del cliente.</div>' : (d.firma ? `<img src="${d.firma}" style="width:100%;max-height:90px;object-fit:contain;margin-top:4px">` : '')}
       <div class="tiny" style="margin-top:2px">${d.clienteAusente ? 'Sin firma' : esc(d.firmante || 'Firmado por el cliente')} · ${new Date().toLocaleString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</div>
+    </div>`;
+}
+/* --- paso 3: vista previa --- */
+function vP3() {
+  const d = V.draft;
+  return `<div class="hdr-dark" style="padding-bottom:16px">
+    <div class="row g12">
+      <div data-a="aPaso" data-p="p2" class="volver">‹ Atrás</div>
+      <div class="grow" style="text-align:center;font:600 15px var(--sans)">Enviar informe</div>
+      <div class="tiny" style="color:rgba(255,255,255,.45)">3/3</div>
     </div>
+    <div class="pasos"><i class="on"></i><i class="on"></i><i class="on"></i></div>
+  </div>
+  <div class="scroll pad" style="padding-bottom:120px">
+    ${docParteHTML(d, false)}
     <div class="lbl" style="margin:20px 0 8px">Enviar PDF a</div>
     <input class="inp" data-f="email" value="${esc(d.email)}" type="email" inputmode="email" autocapitalize="off" placeholder="cliente@correo.es">
     <div class="sub" style="font-size:12px;margin-top:10px">Al pulsar «Firmar y enviar informe», el PDF firmado llega a este correo desde noreply@sysefen.com. Viene puesto el correo de la obra; si está vacío, escríbelo.</div>
@@ -12234,6 +12247,15 @@ function avisar(msg) { toast(msg, 'err'); }
 /* --- PDF --- */
 // Se separa en dos: `imprimirParteHTML` solo pinta el parte en #print (lo que
 // necesita el generador de PDF) y `imprimirParte` además manda a imprimir.
+// La vista previa en grande del parte a medias (paso 2): el mismo PDF, sin número y con la firma pendiente.
+A.parteVerPrevia = () => {
+  const d = V.draft; if (!d) return;
+  const horas = {}; d.incluidos.forEach((id) => { if ((d.horas[id] || 0) > 0) horas[id] = d.horas[id]; });
+  const p = Object.assign({}, d, { ref: 'BORRADOR', horas, _previa: true, estado: 'borrador' });
+  imprimirParteHTML(p);
+  const o = obraById(d.obraId) || {};
+  salidaImpresion('parte-borrador.pdf', 'Parte · vista previa', S.empresa + ' · Parte de trabajo (vista previa)' + (o.titulo ? ' · ' + nombreObra(o) : ''));
+};
 function imprimirParte(p) {
   imprimirParteHTML(p);
   const o = obraById(p.obraId) || {};
@@ -12279,8 +12301,8 @@ function imprimirParteHTML(p) {
     <div style="display:flex;gap:24px;margin-top:26px">
       <div style="flex:1">
         <div style="font:600 10px var(--mono);letter-spacing:.1em;text-transform:uppercase;color:#666">Conforme el cliente</div>
-        ${p.firma ? `<img src="${p.firma}" style="width:100%;max-height:26mm;object-fit:contain">` : '<div style="height:26mm;display:flex;align-items:center;font:italic 400 11px/1.4 var(--sans);color:#444">Cliente no presente en la finalización de los trabajos. Parte emitido sin firma del cliente.</div>'}
-        <div style="border-top:1px solid #14170f;padding-top:4px;font:400 11px var(--sans)">${p.firma ? esc(p.firmante || '') : 'Sin firma'}</div>
+        ${p._previa && !p.firma ? '<div style="height:26mm;display:flex;align-items:center;justify-content:center;border:1px dashed #888;border-radius:3px;font:600 11px var(--mono);letter-spacing:.1em;color:#666">FIRMA PENDIENTE</div>' : p.firma ? `<img src="${p.firma}" style="width:100%;max-height:26mm;object-fit:contain">` : '<div style="height:26mm;display:flex;align-items:center;font:italic 400 11px/1.4 var(--sans);color:#444">Cliente no presente en la finalización de los trabajos. Parte emitido sin firma del cliente.</div>'}
+        <div style="border-top:1px solid #14170f;padding-top:4px;font:400 11px var(--sans)">${p.firma ? esc(p.firmante || '') : p._previa ? 'Pendiente de firma' : 'Sin firma'}</div>
       </div>
       <div style="flex:1">
         <div style="font:600 10px var(--mono);letter-spacing:.1em;text-transform:uppercase;color:#666">Por ${esc(S.empresa)}</div>
@@ -12503,6 +12525,7 @@ document.addEventListener('click', (e) => {
   if (a === 'compartirParte') { e.stopPropagation(); V.sheet = null; return A.compartirParte(d.id); }
   if (a === 'compartirListo') return A.compartirListo();
   if (a === 'nuevoDocObra') return A.nuevoDocObra();
+  if (a === 'parteVerPrevia') return A.parteVerPrevia();
   if (a === 'docTipo') return A.docTipo(d.t);
   if (a === 'guardarDocObra') return A.guardarDocObra();
   if (a === 'borrarDocObra') { e.stopPropagation(); return A.borrarDocObra(d.id); }
