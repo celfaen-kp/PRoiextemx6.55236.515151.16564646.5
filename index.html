@@ -463,7 +463,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '25.8'; // versión visible de la app (única fuente)
+const APP_VERSION = '25.9'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -11180,10 +11180,26 @@ function vClienteVer() {
           : `<button class="pill grow" data-a="ag_visitar" data-id="${c.id}" style="padding:13px;background:rgba(255,255,255,.18);color:#fff" title="Empezar la toma de datos ahora, sin cita">Hacer visita</button>`; })()}
       <button class="pill grow" data-a="ag_editarCliente" data-id="${c.id}" style="padding:13px;background:rgba(255,255,255,.12);color:#fff">Editar</button>
     </div>
+    ${(() => { const obs = obrasDeCliente(c); if (!obs.length || !puedeObras()) return '';
+      const o = obs[0]; const av = avanceObra(o.id);
+      return `<button class="pill grow" data-a="verObra" data-id="${o.id}" style="margin-top:8px;padding:13px;width:100%;background:var(--verde);color:#fff;text-align:center">Ver obra ${esc(codigoObra(o) || o.titulo)}${obs.length > 1 ? ' (+' + (obs.length - 1) + ' más)' : ''} · ${esc(estadoObraTxt(o))}${av ? ' · ' + av.pct + ' %' : ''}</button>`; })()}
     ${visitasCli.length ? `<div class="tiny" data-a="ag_visitar" data-id="${c.id}" style="margin-top:8px;color:rgba(255,255,255,.7);cursor:pointer;text-decoration:underline">Hacer otra visita</div>` : ''}
     ${(esAdmin() || rol() === 'presupuestos') && c.tl_id ? `<div class="tiny" data-a="tlTraerCliente" data-id="${c.id}" style="margin-top:10px;color:rgba(255,255,255,.7);cursor:pointer;text-decoration:underline">${V.tlSyncBusy ? 'Trayendo de Teamleader…' : '¿Presupuesto hecho en Teamleader? Tráelo aquí con sus líneas'}</div>` : ''}` : ''}
   </div>
   <div class="scroll pad sin-marca pb-nav">
+    ${(() => { const obs = obrasDeCliente(c); return obs.length ? `<div class="card" style="padding:12px 15px;margin-bottom:18px;box-shadow:0 0 0 1.5px var(--verde),var(--sh)">
+      <div class="row" style="justify-content:space-between;align-items:baseline"><div class="lbl" style="color:var(--verde-o)">${obs.length === 1 ? 'Obra de este cliente' : 'Obras de este cliente'}</div><span class="tiny">${obs.length}</span></div>
+      ${obs.map((o, i) => { const av = avanceObra(o.id); return `<div data-a="verObra" data-id="${o.id}" style="padding:10px 0;${i ? 'border-top:1px solid var(--l1);' : ''}cursor:pointer">
+        <div class="row g8" style="align-items:baseline">
+          <span style="font:700 18px/1 var(--cond)">${esc(codigoObra(o) || o.titulo)}</span>
+          <span class="grow" style="font:500 14px var(--sans)">${esc((o.categorias || []).map((k) => catObraNombre(k, o)).join(' · '))}</span>
+          <span class="badge" style="background:${o.estado === 'finalizada' || o.estado === 'cerrada' ? 'var(--verde)' : o.estado === 'en_curso' ? 'var(--ambar)' : 'rgba(20,23,15,.1)'};color:${o.estado === 'planificada' ? 'var(--tinta)' : '#fff'}">${esc(estadoObraTxt(o))}</span>
+        </div>
+        ${direccionObra(o) ? `<div class="sub" style="margin-top:4px">${esc(direccionObra(o))}</div>` : ''}
+        ${av ? `<div class="row" style="justify-content:space-between;margin-top:8px"><span class="tiny">Avance · ${av.hechas} de ${av.total} fases</span><span class="num" style="font-size:13px">${av.pct} %</span></div><div class="prog"><i style="width:${av.pct}%"></i></div>` : ''}
+        <div class="tiny" style="margin-top:8px;color:var(--verde-o)">Abrir la obra ›</div>
+      </div>`; }).join('')}
+    </div>` : ''; })()}
     ${c.email || c.nif || c.direccion || c.nota ? `<div class="card" style="padding:6px 15px;margin-bottom:18px">
       ${c.telefono ? `<div class="fila"><span class="k">Teléfono</span><span class="v"><a href="tel:${esc(String(c.telefono).replace(/[^\d+]/g, ''))}">${esc(c.telefono)}</a></span></div>` : ''}
       ${c.email ? `<div class="fila"><span class="k">Email</span><span class="v">${esc(c.email)}</span></div>` : ''}
@@ -11201,11 +11217,6 @@ function vClienteVer() {
       ${c.sin_cita_motivo ? `<div class="row g8" style="margin-top:10px;align-items:center"><span class="tiny grow">Resuelto sin cita: <b>${esc(c.sin_cita_motivo)}</b>${c.sin_cita_at ? ' · ' + fechaCorta(c.sin_cita_at) : ''}${c.sin_cita_por ? ' · ' + esc(agNombreEmp(c.sin_cita_por)) : ''}</span><button class="pill" data-a="ag_sinCitaQuitar" data-id="${c.id}" style="padding:7px 10px;font-size:11px;background:var(--l1);color:var(--tinta)">Volver a pendiente</button></div>`
         : (!(c.citas || []).length ? `<div style="margin-top:10px"><button class="pill" data-a="ag_sinCitaAbrir" data-id="${c.id}" style="padding:8px 12px;background:var(--l1);color:var(--tinta)">No hace falta cita</button></div>` : '')}
     </div>` : ''}
-    ${(() => { const obs = obrasDeCliente(c); return obs.length ? `<div class="card" style="padding:12px 15px;margin-bottom:18px">
-      <div class="lbl" style="margin-bottom:4px">Obras de este cliente</div>
-      ${obs.map((o) => `<div class="row g8" data-a="verObra" data-id="${o.id}" style="align-items:center;padding:8px 0;border-top:1px solid var(--l1);cursor:pointer">
-        <span style="font:600 16px/1 var(--cond)">${esc(codigoObra(o) || o.titulo)}</span><span class="grow" style="font:500 14px var(--sans)">${esc(o.cliente || o.titulo)}${direccionObra(o) ? ' · ' + esc(direccionObra(o)) : ''}</span><span class="tiny">${esc(estadoObraTxt(o))}</span></div>`).join('')}
-    </div>` : ''; })()}
     ${puedeCitar() ? seguimientoClienteHTML(c) : ''}
     ${colaboradorAsignacionHTML(c)}
     ${c.motivo_web ? `<div class="card" style="padding:12px 15px;margin-bottom:18px;box-shadow:0 0 0 1.5px var(--ambar),var(--sh)">
