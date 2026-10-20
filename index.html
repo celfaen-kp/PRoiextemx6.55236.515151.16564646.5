@@ -432,6 +432,10 @@ body.con-captcha #captcha{display:block}
 .visor-pie .puntos{flex:1;display:flex;justify-content:center;align-items:center;gap:6px}
 .visor-pie .puntos i{width:7px;height:7px;border-radius:50%;background:rgba(255,255,255,.3)}
 .visor-pie .puntos i.on{background:#fff}
+/* Tablero: fecha de ingreso en la tarjeta y botón de orden en la cabecera (20-10-2026). */
+.tb-card .ing{font:500 10.5px/1 var(--mono);letter-spacing:.04em;color:var(--t3);margin-bottom:5px}
+.tb-ord{flex:none;cursor:pointer;font:600 11px/1 var(--sans);padding:4px 8px;border-radius:99px;background:rgba(20,23,15,.07);color:var(--t2);white-space:nowrap}
+.tb-ord.on{background:var(--col,var(--tinta));color:#fff}
 /* Agenda (20-10-2026): títulos de sección grandes y la etiqueta de cuándo es la cita. */
 .ag-sec{font:600 22px/1.1 var(--cond);letter-spacing:-.01em;min-width:0}
 .ag-sec-n{font:500 13px/1 var(--sans);color:var(--t2);flex:none}
@@ -459,7 +463,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '25.7'; // versión visible de la app (única fuente)
+const APP_VERSION = '25.8'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -9429,7 +9433,9 @@ A.confirmarBorrarPresu = async () => {
 Object.assign(V, {
   agenda: { citas: [], clientes: [], cargado: false, cargando: false, error: null, filtro: 'todas', filtroCli: 'todos', buscar: '',
     // Clientes en tablero por defecto (Enzo, 16-10-2026); el cambio a lista se recuerda en este dispositivo.
-    vista: (() => { try { return localStorage.getItem('ag_vista') === 'lista' ? 'lista' : 'tablero'; } catch (_) { return 'tablero'; } })() },
+    vista: (() => { try { return localStorage.getItem('ag_vista') === 'lista' ? 'lista' : 'tablero'; } catch (_) { return 'tablero'; } })(),
+    // Orden de cada columna del tablero (20-10-2026): null = a mano; 'fecha_desc' = los que entraron más tarde arriba; 'fecha_asc' = los más antiguos arriba.
+    tbOrden: (() => { try { const o = JSON.parse(localStorage.getItem('tb_orden') || '{}'); return o && typeof o === 'object' ? o : {}; } catch (_) { return {}; } })() },
   clienteDraft: null, citaDraft: null, clienteVerId: null, citaVerId: null, agBusy: false, agConfirmar: null,
 });
 
@@ -9749,10 +9755,30 @@ function tableroColumnas(clientes) {
   const cols = TABLERO_COLS.map(([k, titulo, color]) => ({ k, titulo, color, clientes: [] }));
   (clientes || []).forEach((c) => { const e = agEstadoCliente(c); const col = cols.find((x) => x.k === e.k) || cols[0]; col.clientes.push({ c, e }); });
   // Primero los ordenados a mano (tablero_orden, sql/etapa77); después, por próxima acción y nombre.
+  // Si la columna está puesta «por fecha de ingreso», manda esa fecha (20-10-2026).
   const ord = (c) => (c.tablero_orden == null ? Infinity : Number(c.tablero_orden));
-  cols.forEach((col) => col.clientes.sort((a, b) => (ord(a.c) - ord(b.c)) || String(a.c.proxima_accion_at || '9').localeCompare(String(b.c.proxima_accion_at || '9')) || String(a.c.nombre).localeCompare(String(b.c.nombre), 'es')));
+  const modo = (k) => ((V.agenda && V.agenda.tbOrden) || {})[k] || null;
+  cols.forEach((col) => {
+    const m = modo(col.k);
+    if (m === 'fecha_desc' || m === 'fecha_asc') {
+      col.clientes.sort((a, b) => (String(fechaIngreso(b.c)).localeCompare(String(fechaIngreso(a.c))) * (m === 'fecha_desc' ? 1 : -1)) || String(a.c.nombre).localeCompare(String(b.c.nombre), 'es'));
+    } else {
+      col.clientes.sort((a, b) => (ord(a.c) - ord(b.c)) || String(a.c.proxima_accion_at || '9').localeCompare(String(b.c.proxima_accion_at || '9')) || String(a.c.nombre).localeCompare(String(b.c.nombre), 'es'));
+    }
+  });
   return cols;
 }
+/** Cuándo entró el cliente: el formulario de la web si vino por ahí, si no el alta en la app. */
+const fechaIngreso = (c) => String(c.lead_at || c.created_at || '').slice(0, 10);
+const TB_ORDEN_TXT = { fecha_desc: 'Ingreso ↓', fecha_asc: 'Ingreso ↑' };
+A.tbOrden = (k) => {
+  const o = V.agenda.tbOrden || (V.agenda.tbOrden = {});
+  o[k] = o[k] === 'fecha_desc' ? 'fecha_asc' : o[k] === 'fecha_asc' ? null : 'fecha_desc';
+  if (!o[k]) delete o[k];
+  try { localStorage.setItem('tb_orden', JSON.stringify(o)); } catch (_) { /* da igual */ }
+  toast(o[k] === 'fecha_desc' ? 'Los que entraron más tarde, arriba.' : o[k] === 'fecha_asc' ? 'Los más antiguos, arriba.' : 'Orden a mano.');
+  render();
+};
 function tableroHTML() {
   const ag = V.agenda, q = String(ag.buscar || '').trim().toLowerCase();
   const hoy = hoyISO();
@@ -9761,8 +9787,9 @@ function tableroHTML() {
   const cols = tableroColumnas(lista);   // todas las columnas, también vacías (16-10-2026)
   const importe = (c) => { const p = presuQueManda(c); return p && p.total_venta != null ? eur(p.total_venta) : ''; };
   return `<div class="tb-wrap"><div class="tb-cols">${cols.map((col) => `<div class="tb-col" data-col="${col.k}" style="--col:${col.color}">
-    <div class="tb-cab"><span class="tb-tit">${esc(col.titulo)} <span class="tb-n">${col.clientes.length}</span></span><span class="tiny">${(() => { const t = col.clientes.reduce((s, x) => { const p = presuQueManda(x.c); return s + (p && p.total_venta ? Number(p.total_venta) : 0); }, 0); return t ? eur(t) : ''; })()}</span></div>
+    <div class="tb-cab"><span class="tb-tit">${esc(col.titulo)} <span class="tb-n">${col.clientes.length}</span></span><span class="row" style="gap:6px;align-items:baseline"><span class="tiny">${(() => { const t = col.clientes.reduce((s, x) => { const p = presuQueManda(x.c); return s + (p && p.total_venta ? Number(p.total_venta) : 0); }, 0); return t ? eur(t) : ''; })()}</span><span class="tb-ord ${(ag.tbOrden || {})[col.k] ? 'on' : ''}" data-a="tbOrden" data-col="${col.k}" title="Ordenar la columna por fecha de ingreso (pulsa otra vez para invertir o volver al orden a mano)">${TB_ORDEN_TXT[(ag.tbOrden || {})[col.k]] || '⇅ Fecha'}</span></span></div>
     ${col.clientes.map(({ c, e }) => { const un = ultimaNota(c); const vencida = c.proxima_accion_at && c.proxima_accion_at < hoy; return `<div class="tb-card ${c.id === V.agenda.ultimoCliente ? 'ultimo' : ''}" data-a="ag_abrirCliente" data-id="${c.id}" ${c.id === V.agenda.ultimoCliente ? 'data-ultimo="1"' : ''} draggable="true" data-cli="${c.id}" style="border-left-color:${e.color}">
+      ${fechaIngreso(c) ? `<div class="ing" title="Fecha de ingreso${c.lead_at ? ' (formulario de la web)' : ' (alta en la app)'}">Ingreso ${esc(fechaCorta(fechaIngreso(c) + 'T12:00'))}</div>` : ''}
       <div class="row" style="justify-content:space-between;align-items:baseline;gap:8px"><div class="n">${esc(c.nombre)}</div>${importe(c) ? `<span class="num" style="font-size:13px;white-space:nowrap">${importe(c)}</span>` : ''}<span class="tb-mas" data-a="tbMoverAbrir" data-id="${c.id}" title="Mover a otra fase">⋯</span></div>
       <div class="s">${esc([agTipoNombre(c), c.poblacion].filter(Boolean).join(' · '))}${c.contacto_estado ? ' · ' + esc(agContactadoTxt(c)) : ''}</div>
       <div style="margin-top:7px">${caminoHTML(c, false, true)}</div>
@@ -12305,6 +12332,7 @@ document.addEventListener('click', (e) => {
   if (a === 'verVisita') return A.verVisita(d.id);
   if (a === 'tbMoverAbrir') { e.stopPropagation(); return A.tbMoverAbrir(d.id); }
   if (a === 'tbMover') return A.tbMover(d.id, d.k);
+  if (a === 'tbOrden') { e.stopPropagation(); return A.tbOrden(d.col); }
   if (a === 'tbColocarGuardar') return A.tbColocarGuardar();
   if (a === 'horasObraAbrir') return A.horasObraAbrir(d.id);
   if (a === 'horasObraEmp') return A.horasObraEmp(d.emp);
@@ -12643,6 +12671,7 @@ async function tbReordenar(id, antesDe, arriba) {
   const c = agCliente(id); if (!c || !puedeCitar()) return;
   V.sheet = null;
   const k = agEstadoCliente(c).k;
+  if (V.agenda.tbOrden && V.agenda.tbOrden[k]) { delete V.agenda.tbOrden[k]; try { localStorage.setItem('tb_orden', JSON.stringify(V.agenda.tbOrden)); } catch (_) { /* da igual */ } toast('La columna vuelve al orden a mano.'); }
   const col = tableroColumnas(V.agenda.clientes).find((x) => x.k === k); if (!col) return;
   let ids = col.clientes.map((x) => x.c.id).filter((x) => x !== id);
   const pos = antesDe ? ids.indexOf(antesDe) : -1;
