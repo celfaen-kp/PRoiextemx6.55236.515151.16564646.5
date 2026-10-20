@@ -459,7 +459,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '25.4'; // versión visible de la app (única fuente)
+const APP_VERSION = '25.5'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -9479,9 +9479,26 @@ const TB_DESTINOS = [
   ['visitado', 'Visitados · por presupuestar', 'Se presupuesta sin ir a verlo'],
   ['aplazado', 'Aplazados', 'Hasta una fecha y por qué'],
   ['sin_cita_ok', 'Resueltos sin cita', 'Ya tiene obra, presupuesto fuera, no interesa…'],
-  ['rechazado', 'Rechazados', 'El presupuesto se marca rechazado'],
+  ['rechazado', 'Rechazados', 'Con presupuesto se marca rechazado; sin él, se apunta el porqué'],
   ['aceptado', 'Aceptados · obra', 'El presupuesto se marca aceptado'],
+  ['otros', 'Otros', 'Lo que no encaja en ninguna fase'],
 ];
+/** Colocar a mano en «Rechazados» (sin presupuesto) o en «Otros», con el porqué (sql/etapa81). */
+A.tbColocarGuardar = async () => {
+  const s = V.sheet; if (!s || s.tipo !== 'tbColocar' || s.busy) return;
+  const c = agCliente(s.id); if (!c) return;
+  s.busy = true; render();
+  const motivo = String(s.motivo || '').trim() || null;
+  try {
+    const cambios = { tablero_col: s.k, tablero_motivo: motivo };
+    await visitasDB.guardarCliente(Object.assign({ id: s.id }, cambios)); Object.assign(c, cambios);
+    V.sheet = null; toast(s.k === 'otros' ? 'Pasa a Otros.' : 'Rechazado.'); render();
+    anotar(s.id, 'sistema', (s.k === 'otros' ? 'Pasado a Otros' : 'Rechazado sin presupuesto') + (motivo ? ' · ' + motivo : ''));
+  } catch (e) {
+    s.busy = false; render();
+    avisar(/tablero_col|schema cache/i.test(msgError(e)) ? 'Falta ejecutar sql/etapa81 en Supabase.' : 'No se pudo: ' + msgError(e));
+  }
+};
 A.tbMoverAbrir = (id) => { const c = agCliente(id); if (!c || !puedeCitar()) return; V.sheet = { tipo: 'tbMover', id, actual: agEstadoCliente(c).k }; render(); };
 
 /* --- un presupuesto hecho directamente en Teamleader (16-10-2026) -----------
@@ -9523,6 +9540,13 @@ A.tbMover = async (id, k) => {
   const actual = agEstadoCliente(c).k;
   V.sheet = null;
   if (k === actual) { render(); return; }
+  // Sale de una columna puesta a mano: se quita la colocación y sigue con su fase normal.
+  if (c.tablero_col && k !== c.tablero_col) {
+    try { const cambios = { tablero_col: null, tablero_motivo: null }; await visitasDB.guardarCliente(Object.assign({ id }, cambios)); Object.assign(c, cambios); }
+    catch (e) { avisar('No se pudo: ' + msgError(e)); render(); return; }
+    if (k === agEstadoCliente(c).k) { toast('Vuelve a su fase.'); render(); return; }
+  }
+  if (k === 'otros' || (k === 'rechazado' && !presuQueManda(c))) { V.sheet = { tipo: 'tbColocar', id, k, motivo: '', busy: false }; render(); return; }
   if (k === 'sin_cita_ok') return A.ag_sinCitaAbrir(id);
   if (k === 'aplazado') return A.segAplazarAbrir(id);
   if (k === 'citado') return A.ag_nuevaCita(id);
@@ -9648,6 +9672,7 @@ const TABLERO_COLS = [
   ['sin_cita_ok', 'Resueltos sin cita', 'var(--t3)'],
   ['presupuestado', 'Presupuesto por revisar o enviar', 'var(--tinta)'], ['esperando', 'Enviado · esperando', 'var(--ambar)'],
   ['aceptado', 'Aceptados · obra', 'var(--verde)'], ['aplazado', 'Aplazados', 'var(--ambar-o)'], ['rechazado', 'Rechazados', 'var(--rojo)'],
+  ['otros', 'Otros', 'var(--t3)'],
 ];
 function tableroColumnas(clientes) {
   const cols = TABLERO_COLS.map(([k, titulo, color]) => ({ k, titulo, color, clientes: [] }));
@@ -9774,6 +9799,10 @@ function agEstadoCliente(c) {
   // a no ser que ya haya aceptado.
   const pm = presuQueManda(c);
   const sgm = pm ? seguimientoPresu(pm) : null;
+  // Colocado a mano en el tablero (sql/etapa81, 20-10-2026): manda sobre todo
+  // hasta que se mueve a otra columna.
+  if (c.tablero_col === 'otros') return { k: 'otros', color: 'var(--t3)', txt: 'Otros' + (c.tablero_motivo ? ' · ' + c.tablero_motivo : '') };
+  if (c.tablero_col === 'rechazado') return { k: 'rechazado', color: 'var(--rojo)', txt: 'Rechazado' + (pm ? '' : ' · sin presupuesto') + (c.tablero_motivo ? ' · ' + c.tablero_motivo : '') };
   // Aplazado manda sobre todo, también sobre un presupuesto aceptado (Enzo,
   // 16-10-2026: una obra aceptada que se pospone). Al vencer vuelve a su sitio.
   if (c.aplazado_hasta && c.aplazado_hasta >= hoyISO()) return { k: 'aplazado', color: 'var(--ambar-o)', txt: 'Aplazado hasta ' + fechaCorta(c.aplazado_hasta + 'T12:00') + (c.aplazado_motivo ? ' · ' + c.aplazado_motivo : '') + (sgm && sgm.k === 'aceptado' ? ' · presupuesto aceptado' : '') };
@@ -11788,6 +11817,19 @@ function sheet() {
       </div>
     </div></div>`;
   }
+  if (s.tipo === 'tbColocar') {
+    const c = agCliente(s.id) || {};
+    return `<div class="sheet"><div>
+      <div style="font:600 23px/1.15 var(--cond)">${s.k === 'otros' ? 'Pasar a Otros' : 'Rechazado sin presupuesto'}</div>
+      <div class="sub" style="margin-top:6px">${esc(c.nombre || '')}. ${s.k === 'otros' ? 'Se queda en la última columna hasta que lo muevas a otra.' : 'No llegó a presupuesto. Se queda en Rechazados hasta que lo muevas a otra columna.'}</div>
+      <div class="lbl" style="margin:12px 0 6px">Por qué (opcional)</div>
+      <input class="inp" data-f="tbColocarMotivo" value="${esc(s.motivo || '')}" placeholder="${s.k === 'otros' ? 'Qué es' : 'No le interesa, lo hace otro, no contesta…'}">
+      <div class="row g8" style="margin-top:18px">
+        <button class="btn btn-gris" data-a="cerrarSheet" style="border-radius:99px">Cancelar</button>
+        <button class="btn btn-verde" data-a="tbColocarGuardar" ${s.busy ? 'disabled' : ''}>${s.busy ? 'Guardando…' : (s.k === 'otros' ? 'Pasar a Otros' : 'Marcar rechazado')}</button>
+      </div>
+    </div></div>`;
+  }
   if (s.tipo === 'tbMover') {
     const c = agCliente(s.id) || {};
     return `<div class="sheet"><div>
@@ -12166,6 +12208,7 @@ document.addEventListener('click', (e) => {
   if (a === 'verVisita') return A.verVisita(d.id);
   if (a === 'tbMoverAbrir') { e.stopPropagation(); return A.tbMoverAbrir(d.id); }
   if (a === 'tbMover') return A.tbMover(d.id, d.k);
+  if (a === 'tbColocarGuardar') return A.tbColocarGuardar();
   if (a === 'tlTraerCliente') { e.stopPropagation(); return A.tlTraerCliente(d.id); }
   if (a === 'fotoVisorForm') return A.fotoVisorForm(d.c, d.k);
   if (a === 'fotoVisorAdj') return A.fotoVisorAdj(d.c, d.i);
@@ -12520,6 +12563,7 @@ document.addEventListener('input', (e) => {
   if (f === 'segTexto') { if (V.sheet) V.sheet.texto = t.value; return; }
   if (f === 'segFecha') { if (V.sheet) V.sheet.fecha = t.value; return; }
   if (f === 'segOtro') { if (V.sheet) V.sheet.otro = t.value; return; }
+  if (f === 'tbColocarMotivo') { if (V.sheet) V.sheet.motivo = t.value; return; }
   if (f === 'moverBuscar') { if (V.sheet) { V.sheet.buscar = t.value; const box = document.getElementById('mover-obras'); if (box) box.innerHTML = moverParteListaHTML(V.sheet); } return; }
   if (f === 'sinCitaOtro') { if (V.sheet) V.sheet.otro = t.value; return; }
   if (f === 'presuExtImporte') { if (V.sheet) V.sheet.importe = t.value; return; }
