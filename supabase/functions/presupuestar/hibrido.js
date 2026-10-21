@@ -76,7 +76,7 @@ export function presupuestarFV(datos, mod, cfg) {
   if (!estructuraNueva) avisosEntrada.push('Cubierta «' + m.cubierta_app + '»: el modelo v2 no la cubre; la estructura sale del motor por capítulos con sus precios (pendientes de confirmar). Revisar.');
   if (inversorFuera && conBateria) avisosEntrada.push('Con batería, el inversor Fronius Plus (o ninguno con Tesla), el Smart Meter y la batería salen del motor por capítulos con su margen; el modelo v2 aún no lleva baterías.');
   if (inversorFuera && !conBateria) avisosEntrada.push('Preparado para baterías: el inversor Fronius Plus (híbrido) y el Smart Meter salen del motor por capítulos con su margen.');
-  if (conBateria && m.entrada.sis === 'Deye') avisosEntrada.push('Batería con Deye: el presupuestador no la pone sola. Añádela desde «Añadir del catálogo» (WECO 5K0 LT, 5K3 EVO, 16K0 o Deye SE-F5 PRO, SE-F 16-C, con sus accesorios) y comprueba la compatibilidad en la ficha técnica.');
+  if (conBateria && m.entrada.sis === 'Deye' && !datos.bateria_ref) avisosEntrada.push('Batería con Deye: el presupuestador no la pone sola. Añádela desde «Añadir del catálogo» (WECO 5K0 LT, 5K3 EVO, 16K0 o Deye SE-F5 PRO, SE-F 16-C, con sus accesorios) y comprueba la compatibilidad en la ficha técnica.');
   if (conBateria && m.entrada.sis === 'Enphase') avisosEntrada.push('Batería con Enphase: la batería sale del motor por capítulos con su margen; el modelo v2 aún no lleva baterías.');
   const lineas = lineasPresupuesto(r, modelo, { modelo_version: mod.version, avisos: avisosEntrada });
   const incidencias = [];

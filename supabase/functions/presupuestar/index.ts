@@ -37,7 +37,7 @@
 // =============================================================================
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
-import { calcular, resumenDe, lineaManual, MOTOR_VERSION } from './motor.js';
+import { calcular, resumenDe, lineaManual, preciosProducto, MOTOR_VERSION } from './motor.js';
 import { cadenaPrecios, totalCoste } from './cadena.js';
 // El cálculo híbrido de fotovoltaica (v2 de Ramón + capítulos) vive en
 // hibrido.js, compartido con las pruebas y los informes.
@@ -233,6 +233,13 @@ Deno.serve(async (req) => {
   // aplica el motor (en fotovoltaica el catálogo es coste): ver lineaManual().
   // deno-lint-ignore no-explicit-any
   const extrasBrutos: any[] = Array.isArray(b.lineas_extra) ? b.lineas_extra : [];
+  // La batería elegida en el desplegable del presupuesto (21-10-2026). Las de
+  // WECO y Deye no tienen regla: entran como línea del catálogo con su recargo,
+  // tantas como hagan falta para los kWh pedidos. Las demás marcas las pone el
+  // motor por capítulos con marca y kWh.
+  const bateriaRef = datos && typeof datos.bateria_ref === 'string' ? datos.bateria_ref : '';
+  const bateriaAuto = !!bateriaRef && String(datos.baterias || '') === 'si' && ['weco', 'deye'].includes(String(datos.bateria_marca || '').toLowerCase());
+  if (bateriaAuto) extrasBrutos.push({ producto_ref: bateriaRef, cantidad: 1, _auto: 'bateria' });
   // deno-lint-ignore no-explicit-any
   const productosExtra: Record<string, any> = {};
   const refsExtra = [...new Set(extrasBrutos.map((l) => String(l.producto_ref || '')).filter(Boolean))];
@@ -242,7 +249,18 @@ Deno.serve(async (req) => {
     if (!prods) prods = (await sb.from('productos').select(cols).in('referencia', refsExtra)).data;
     (prods || []).forEach((p) => { if (!productosExtra[p.referencia]) productosExtra[p.referencia] = p; });
   }
-  const extra = extrasBrutos.map((l) => lineaManual(l, productosExtra[String(l.producto_ref || '')] || null, cfg.lookup));
+  const extra = extrasBrutos.map((l) => {
+    const prod = productosExtra[String(l.producto_ref || '')] || null;
+    if (l._auto === 'bateria' && prod) {
+      const cap = Number((prod.atributos || {}).capacidad_kwh) || 0;
+      const kwh = Number(datos.baterias_kwh) || 0;
+      l.descripcion = prod.nombre; l.unidad = prod.unidad || 'ud'; l.seccion = 'Almacenamiento';
+      l.cantidad = cap > 0 && kwh > 0 ? Math.max(1, Math.ceil(kwh / cap - 0.001)) : 1;
+    }
+    const linea = lineaManual(l, prod, cfg.lookup);
+    if (l._auto === 'bateria') linea.origen_inputs = { auto: 'bateria', ref: String(l.producto_ref || '') };
+    return linea;
+  });
   res.lineas = res.lineas.concat(extra);
   res.lineas.forEach((l, i) => { l.orden = i + 1; });
   // El resumen interno cuenta también lo añadido a mano (sin coste conocido).
@@ -256,9 +274,22 @@ Deno.serve(async (req) => {
     : res.incidencias;
   res.incidencias = incidenciasUtiles;
 
+  // Las baterías del catálogo, para el desplegable del presupuesto (solo FV).
+  // deno-lint-ignore no-explicit-any
+  let bateriasCatalogo: any[] | null = null;
+  if (modeloFV) {
+    const { data: bats } = await sb.from('productos').select('referencia, nombre, familia, unidad, precio_tarifa, atributos, recargo, aplica_cdc, activo')
+      .eq('familia', 'bateria').eq('activo', true).order('nombre');
+    bateriasCatalogo = (bats || []).map((p) => ({
+      ref: p.referencia, nombre: p.nombre, marca: String((p.atributos || {}).marca || '').toLowerCase(),
+      kwh: Number((p.atributos || {}).capacidad_kwh) || null, venta: preciosProducto(p.precio_tarifa, p, cfg.lookup).venta,
+    })).filter((x) => x.marca);
+  }
+
   const salida = {
     ok: true,
     categoria,
+    opciones_fv: bateriasCatalogo ? { baterias: bateriasCatalogo } : null,
     visita_id: visitaId,
     motor_version: motorVersion,
     conjunto_version: conjunto.version,

@@ -298,15 +298,18 @@ body.con-captcha #captcha{display:block}
 /* El tablero volteado verticalmente, y su contenido vuelto a voltear: así la barra
    de desplazamiento horizontal sale ARRIBA y no hay que bajar al final para verla
    (Enzo, 16-10-2026). Con el ratón también se arrastra el fondo como si fuera táctil. */
-.tb-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;margin:0 -16px;padding:10px 16px 4px;transform:rotateX(180deg);cursor:grab}
-.tb-wrap>.tb-cols{transform:rotateX(180deg)}
+.tb-wrap{overflow:auto;-webkit-overflow-scrolling:touch;margin:0 -16px;padding:0 16px 4px;cursor:grab;flex:1;min-height:0}
+/* El tablero ocupa lo que queda de pantalla y es él quien hace scroll (21-10-2026):
+   así la cabecera de cada columna se queda fija arriba y solo suben las tarjetas. */
+.scroll.tb-scroll{display:flex;flex-direction:column;overflow:hidden;padding-bottom:0}
+.tb-cols{padding-bottom:calc(96px + var(--safe-b))}
 .tb-wrap.arrastre{cursor:grabbing;user-select:none}
 .tb-wrap.arrastre .tb-card{pointer-events:none}
 .tb-cols{display:flex;gap:10px;align-items:flex-start;min-width:max-content}
 .tb-col{width:252px;flex:none;background:color-mix(in srgb,var(--col,var(--tinta)) 9%,#f6f6f1);border-radius:16px;padding:10px;border-top:4px solid var(--col,var(--tinta))}
 @supports not (background:color-mix(in srgb,red 9%,white)){.tb-col{background:rgba(20,23,15,.04)}}
 /* Título de columna grande y en el color de la fase (Enzo, 16-10-2026). */
-.tb-cab{display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin:2px 0 10px}
+.tb-cab{display:flex;justify-content:space-between;align-items:baseline;gap:8px;position:sticky;top:0;z-index:2;background:inherit;margin:-10px -10px 10px;padding:12px 10px 8px;border-radius:16px 16px 0 0}
 .tb-tit{font:600 17px/1.15 var(--cond);color:var(--col,var(--tinta));letter-spacing:.01em}
 .tb-n{display:inline-block;min-width:22px;padding:1px 7px;border-radius:99px;background:var(--col,var(--tinta));color:#fff;font:600 12px/18px var(--mono);text-align:center;vertical-align:2px}
 .tb-card{background:#fff;border-radius:12px;padding:10px 12px;margin-bottom:8px;box-shadow:var(--sh);cursor:pointer;border-left:3px solid var(--l2)}
@@ -463,7 +466,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '26.3'; // versión visible de la app (única fuente)
+const APP_VERSION = '26.4'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -7862,7 +7865,7 @@ const sufijoOpcion = () => {
   const op = V.presu.opcion; if (!op) return '';
   const partes = [];
   if (op.inversor_marca) partes.push(nombreMarcaFV(op.inversor_marca));
-  if (op.baterias === 'si') partes.push('batería ' + (BATERIAS_DE[op.inversor_marca || marcaBaseFV()] || []).concat(BATERIAS_DE.fronius, BATERIAS_DE.enphase).filter(([k]) => k === op.bateria_marca).map(([, l]) => l)[0] + ' ' + op.baterias_kwh + ' kWh');
+  if (op.baterias === 'si') partes.push('batería ' + (BATERIAS_DE[op.inversor_marca || marcaBaseFV()] || []).concat(BATERIAS_DE.fronius, BATERIAS_DE.enphase, BATERIAS_DE.deye).filter(([k]) => k === op.bateria_marca).map(([, l]) => l)[0] + ' ' + op.baterias_kwh + ' kWh');
   else if (op.baterias === 'no') partes.push('sin batería');
   return partes.length ? ' · opción ' + partes.join(' + ') : '';
 };
@@ -7871,6 +7874,7 @@ A.presuOpcionMarca = (m) => {
   if (!enSuelto() && !fichaVisitaActual(p.cat)) { avisar('Esta visita no tiene ficha de ' + nombreCat(p.cat) + ': no se puede cambiar la marca.'); return; }
   const op = Object.assign({}, p.opcion || {});
   if (m && m !== marcaBaseFV()) op.inversor_marca = m; else delete op.inversor_marca;
+  delete op.inversor_modelo; delete op.bateria_ref;   // eran de la otra marca
   p.opcion = Object.keys(op).length ? op : null;
   p.guardado = null; p.enTL = false; p.errTL = null;
   A.presuCalcular(p.cat);
@@ -7883,8 +7887,45 @@ A.presuOpcionBateria = (marca, kwh) => {
   const actual = opcionBateriaActual(p);
   const nuevaMarca = marca == null ? actual.marca : marca;
   const nuevosKwh = kwh == null ? (actual.kwh || 10) : (Number(String(kwh).replace(',', '.')) || 0);
-  if (!nuevaMarca) { op.baterias = 'no'; op.baterias_kwh = 0; op.bateria_marca = ''; op.backup = false; }
-  else { op.baterias = 'si'; op.baterias_kwh = nuevosKwh || 10; op.bateria_marca = nuevaMarca; }
+  if (!nuevaMarca) { op.baterias = 'no'; op.baterias_kwh = 0; op.bateria_marca = ''; op.backup = false; delete op.bateria_ref; }
+  else { op.baterias = 'si'; op.baterias_kwh = nuevosKwh || 10; op.bateria_marca = nuevaMarca; if (marca != null && marca !== actual.marca) delete op.bateria_ref; }
+  p.opcion = op;
+  p.guardado = null; p.enTL = false; p.errTL = null;
+  A.presuCalcular(p.cat);
+};
+/** Un inversor concreto del modelo ('' = el automático). Se recalcula. */
+A.presuOpcionInversor = (modelo) => {
+  const p = V.presu; if (!p.cat || p.cargando) return;
+  const op = Object.assign({}, p.opcion || {});
+  if (modelo) op.inversor_modelo = modelo; else delete op.inversor_modelo;
+  p.opcion = Object.keys(op).length ? op : null;
+  p.guardado = null; p.enTL = false; p.errTL = null;
+  A.presuCalcular(p.cat);
+};
+/** Número de paneles a mano ('' = los que calcula el motor). */
+A.presuOpcionPaneles = (n) => {
+  const p = V.presu; if (!p.cat || p.cargando) return;
+  const op = Object.assign({}, p.opcion || {});
+  const v = Math.round(Number(String(n || '').replace(',', '.')));
+  if (v > 0) op.paneles_manual = v; else delete op.paneles_manual;
+  p.opcion = Object.keys(op).length ? op : null;
+  p.guardado = null; p.enTL = false; p.errTL = null;
+  A.presuCalcular(p.cat);
+};
+/** Una batería concreta del catálogo ('' = la que elige el motor con marca y kWh). */
+A.presuOpcionBateriaRef = (ref) => {
+  const p = V.presu; if (!p.cat || p.cargando) return;
+  const op = Object.assign({}, p.opcion || {});
+  const bats = (p.datos && p.datos.opciones_fv && p.datos.opciones_fv.baterias) || [];
+  const b = bats.find((x) => x.ref === ref);
+  const actual = opcionBateriaActual(p);
+  if (!b) { delete op.bateria_ref; }
+  else {
+    op.baterias = 'si'; op.bateria_marca = b.marca; op.bateria_ref = b.ref;
+    // Los kWh: los que había si llegan a una unidad; si no, la capacidad de esta.
+    const kwh = Number(actual.kwh) || 0;
+    op.baterias_kwh = b.kwh ? (kwh >= b.kwh ? kwh : b.kwh) : (kwh || 10);
+  }
   p.opcion = op;
   p.guardado = null; p.enTL = false; p.errTL = null;
   A.presuCalcular(p.cat);
@@ -7903,6 +7944,22 @@ function opcionesMarcaHTML(p) {
       ${MARCAS_FV.map(([k, l]) => `<span class="chip ${actual === k ? 'on' : ''}" data-a="presuOpcionMarca" data-m="${k}" style="cursor:pointer">${l}</span>`).join('')}
     </div>
     ${(() => {
+      // Inversor concreto y paneles a mano (Enzo, 21-10-2026): lo que trae el último cálculo.
+      const oi = ((p.datos && p.datos.lineas) || []).map((l) => l.origen_inputs).find((o) => o && o.fv2) || null;
+      const ops = oi && oi.opciones; if (!ops) return '';
+      const op = p.opcion || {};
+      const sel = op.inversor_modelo || '';
+      return `<div class="row g8" style="align-items:center;flex-wrap:wrap;margin-top:8px">
+      ${actual !== 'enphase' && ops.inversores && ops.inversores.length ? `<span class="lbl" style="font-size:11px">Inversor</span>
+      <select class="inp" data-f="presuOpcionInversor" style="width:auto;max-width:100%;padding:7px 9px;font-size:13px">
+        <option value="" ${sel ? '' : 'selected'}>Automático · ${esc(String(ops.inversor_elegido || ''))}</option>
+        ${ops.inversores.map((i) => `<option value="${esc(i.modelo)}" ${sel === i.modelo ? 'selected' : ''}>${esc(i.modelo)} · ${esc(String(i.kw))} kW</option>`).join('')}
+      </select>` : ''}
+      <span class="lbl" style="font-size:11px">Paneles</span>
+      <input class="inp" data-f="presuOpcionPaneles" type="number" min="1" max="120" value="${esc(String(op.paneles_manual || ops.n_pan || ''))}" style="width:66px;padding:7px 9px;text-align:right">
+      ${op.paneles_manual ? '<span class="tiny">a mano</span>' : '<span class="tiny">calculados</span>'}
+    </div>`; })()}
+    ${(() => {
       const bat = opcionBateriaActual(p);
       const marcas = BATERIAS_DE[actual] || [];
       return `<div class="row g8" style="align-items:center;flex-wrap:wrap;margin-top:8px">
@@ -7911,7 +7968,23 @@ function opcionesMarcaHTML(p) {
       ${marcas.map(([k, l]) => `<span class="chip ${bat.con && bat.marca === k ? 'on' : ''}" data-a="presuOpcionBateria" data-m="${k}" style="cursor:pointer">${l}</span>`).join('')}
       ${marcas.length ? '' : '<span class="tiny">Deye: la batería se añade del catálogo.</span>'}
       ${bat.con ? `<input class="inp" data-f="presuOpcionKwh" value="${esc(String(bat.kwh || ''))}" inputmode="decimal" placeholder="kWh" style="width:74px;padding:7px 9px;text-align:right"><span class="tiny">kWh</span>` : ''}
-    </div>`; })()}
+    </div>
+    ${(() => {
+      // El modelo de batería, del catálogo (21-10-2026): la que elige el motor o una concreta.
+      if (!bat.con) return '';
+      const marcasOk = marcas.map((x) => x[0]);
+      const bats = ((p.datos && p.datos.opciones_fv && p.datos.opciones_fv.baterias) || []).filter((b) => marcasOk.includes(b.marca));
+      if (!bats.length) return '';
+      const ref = (p.opcion || {}).bateria_ref || '';
+      const auto = ['weco', 'deye'].includes(bat.marca) ? 'Elige el modelo' : 'La que elige el motor (' + esc(nombreMarcaFV(bat.marca) === bat.marca ? bat.marca.toUpperCase() : bat.marca) + ' según los kWh)';
+      return `<div class="row g8" style="align-items:center;flex-wrap:wrap;margin-top:8px">
+      <span class="lbl" style="font-size:11px">Modelo</span>
+      <select class="inp" data-f="presuOpcionBateriaRef" style="width:auto;max-width:100%;padding:7px 9px;font-size:13px">
+        <option value="" ${ref ? '' : 'selected'}>${auto}</option>
+        ${bats.map((b) => `<option value="${esc(b.ref)}" ${ref === b.ref ? 'selected' : ''}>${esc(b.nombre)}${b.kwh ? ' · ' + esc(String(b.kwh)) + ' kWh' : ''} · ${eur(b.venta)}</option>`).join('')}
+      </select>
+      ${ref && ['weco', 'deye'].includes(bat.marca) ? '<span class="tiny">Entra como línea del catálogo, tantas como hagan falta para los kWh.</span>' : ''}
+    </div>`; })()}`; })()}
     <div class="tiny" style="margin-top:6px">Para dar al cliente dos o tres opciones: guarda esta, cambia de marca o de batería y guarda la siguiente. Cada una es un presupuesto aparte (el título lleva marca, kWp y batería) y una oferta aparte en Teamleader.${p.opcion ? ' Esta opción no cambia la ficha de la visita.' : ''}</div>
   </div>`;
 }
@@ -8088,7 +8161,7 @@ const presuNuevoVacio = () => ({
 const BATERIAS_DE = {
   fronius: [['byd', 'BYD'], ['fronius', 'Fronius Reserva'], ['tesla', 'Tesla']],
   enphase: [['enphase', 'Enphase'], ['tesla', 'Tesla']],
-  deye: [],   // híbrido de Rebacas; sus baterías no están en la tarifa todavía
+  deye: [['weco', 'WECO'], ['deye', 'Deye']],   // híbrido de Rebacas: sus baterías, del catálogo (etapa72)
 };
 
 /**
@@ -10819,7 +10892,7 @@ function vClientes() {
       return `<span class="chip ${ag.filtroCli === k ? 'on' : ''}" data-a="ag_filtroCli" data-f="${k}" style="cursor:pointer">${l}${n ? ' · ' + n : ''}</span>`;
     }).join('')}</div>`}
   </div>
-  <div class="scroll pad pb-nav">
+  <div class="scroll pad pb-nav ${ag.vista === 'tablero' ? 'tb-scroll' : ''}">
     ${agAvisoHTML()}
     ${ag.vista === 'tablero' ? `<div class="tiny" style="margin-bottom:8px">Cada columna es una fase. Toca una tarjeta para abrir al cliente; desde su ficha se apunta la llamada, la próxima acción o el aplazamiento.</div>${tableroHTML()}`
       : `<div id="clientes-web">${webListaHTML()}</div><div id="clientes-lista">${clientesListaHTML()}</div>`}
@@ -12342,6 +12415,14 @@ function imprimirParteHTML(p) {
  * botón de volver de esa pantalla («‹ Obras», «‹ Agenda», «Atrás»…), que
  * sigue estando para quien prefiera tocarlo. Con una hoja abierta, la cierra.
  * ------------------------------------------------------------------------- */
+// El PIN con el teclado del ordenador (Enzo, 21-10-2026): cifras, Retroceso y Escape.
+document.addEventListener('keydown', (e) => {
+  if (V.view !== 'pin' || !V.pinUser || e.metaKey || e.ctrlKey || e.altKey) return;
+  const t = e.target; if (t && /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)) return;
+  if (/^[0-9]$/.test(e.key)) { e.preventDefault(); A.pinTecla(e.key); }
+  else if (e.key === 'Backspace') { e.preventDefault(); A.pinTecla('del'); }
+  else if (e.key === 'Escape') { e.preventDefault(); const b = document.querySelector('[data-a="volverLogin"]'); if (b) b.click(); }
+});
 // El visor de fotos: flechas del teclado y deslizar con el dedo.
 document.addEventListener('keydown', (e) => {
   const s = V.sheet; if (!s || s.tipo !== 'fotoVisor') return;
@@ -12701,14 +12782,14 @@ document.addEventListener('mousedown', (e) => {
   if (e.button !== 0) return;
   const wrap = e.target.closest && e.target.closest('.tb-wrap');
   if (!wrap || (e.target.closest && e.target.closest('.tb-card, input, button, a'))) return;
-  tbPan = { wrap, x: e.clientX, left: wrap.scrollLeft, movido: false };
+  tbPan = { wrap, x: e.clientX, y: e.clientY, left: wrap.scrollLeft, top: wrap.scrollTop, movido: false };
 });
 document.addEventListener('mousemove', (e) => {
   if (!tbPan) return;
-  const dx = e.clientX - tbPan.x;
-  if (!tbPan.movido && Math.abs(dx) < 4) return;
+  const dx = e.clientX - tbPan.x, dy = e.clientY - tbPan.y;
+  if (!tbPan.movido && Math.abs(dx) < 4 && Math.abs(dy) < 4) return;
   tbPan.movido = true; tbPan.wrap.classList.add('arrastre');
-  tbPan.wrap.scrollLeft = tbPan.left - dx;
+  tbPan.wrap.scrollLeft = tbPan.left - dx; tbPan.wrap.scrollTop = tbPan.top - dy;
   e.preventDefault();
 });
 document.addEventListener('mouseup', () => { if (tbPan) { tbPan.wrap.classList.remove('arrastre'); tbPan = null; } });
@@ -12732,12 +12813,8 @@ function tbAutoScrollPaso() {
     const r = wrap.getBoundingClientRect();
     if (a.x < r.left + MARGEN) wrap.scrollLeft -= VEL * Math.min(1, (r.left + MARGEN - a.x) / MARGEN);
     else if (a.x > r.right - MARGEN) wrap.scrollLeft += VEL * Math.min(1, (a.x - (r.right - MARGEN)) / MARGEN);
-    const sc = wrap.closest('.scroll');
-    if (sc) {
-      const rs = sc.getBoundingClientRect();
-      if (a.y < rs.top + MARGEN) sc.scrollTop -= VEL * Math.min(1, (rs.top + MARGEN - a.y) / MARGEN);
-      else if (a.y > rs.bottom - MARGEN) sc.scrollTop += VEL * Math.min(1, (a.y - (rs.bottom - MARGEN)) / MARGEN);
-    }
+    if (a.y < r.top + MARGEN) wrap.scrollTop -= VEL * Math.min(1, (r.top + MARGEN - a.y) / MARGEN);
+    else if (a.y > r.bottom - MARGEN) wrap.scrollTop += VEL * Math.min(1, (a.y - (r.bottom - MARGEN)) / MARGEN);
   }
   a.raf = requestAnimationFrame(tbAutoScrollPaso);
 }
@@ -12818,6 +12895,9 @@ document.addEventListener('input', (e) => {
   if (f === 'sinCitaOtro') { if (V.sheet) V.sheet.otro = t.value; return; }
   if (f === 'presuExtImporte') { if (V.sheet) V.sheet.importe = t.value; return; }
   if (f === 'presuOpcionKwh') { clearTimeout(presuKwhT); presuKwhT = setTimeout(() => A.presuOpcionBateria(null, t.value), 900); return; }
+  if (f === 'presuOpcionInversor') return A.presuOpcionInversor(t.value);
+  if (f === 'presuOpcionBateriaRef') return A.presuOpcionBateriaRef(t.value);
+  if (f === 'presuOpcionPaneles') { clearTimeout(presuKwhT); presuKwhT = setTimeout(() => A.presuOpcionPaneles(t.value), 900); return; }
   if (f === 'presuExtTl') { if (V.sheet) V.sheet.tl = t.value; return; }
   if (f === 'categoriaOtra') { if (V.draft) V.draft.categoriaOtra = t.value; return; }
   if (f === 'faseNota') { if (V.sheet) V.sheet.nota = t.value; return; }

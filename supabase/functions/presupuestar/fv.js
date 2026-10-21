@@ -59,6 +59,7 @@ export const ENTRADA_POR_DEFECTO = {
   cli: '', muni: '', origen: 'Meta',
   factura_rango: 'Entre 100 € y 200 €', factura_exacta: null, consumo_real: null, paneles_forzado: null,
   sis: 'Fronius',            // Fronius | Deye | Enphase
+  inv_modelo: null,          // un inversor concreto del modelo, elegido a mano (si no, el más pequeño que cubra)
   sumi: 'Monofásico',        // Monofásico | Trifásico
   cubierta: 'Teja',          // Teja | Plana (lastres Sun Ballast) | Chapa (= A MEDIDA)
   orient: 'Vertical',        // Vertical | Horizontal
@@ -104,6 +105,11 @@ export function calcularFV(entrada, modelo, opciones) {
   if (fv) {
     const candidatos = (modelo.inversores || []).filter((i) => i.sistema === e.sis && i.suministro === e.sumi && i.usar && i.kw >= kwp / P.ratio);
     candidatos.forEach((i) => { if (!inv || i.kw < inv.kw) inv = i; });
+    // Elegido a mano desde el presupuesto (Enzo, 21-10-2026): manda sobre el automático.
+    if (e.inv_modelo) {
+      const forzado = (modelo.inversores || []).find((i) => i.modelo === e.inv_modelo && i.sistema === e.sis);
+      if (forzado) inv = forzado;
+    }
   }
   const kw_inv = enp ? 0 : (inv ? inv.kw : null);          // null = A MEDIDA
   const mod_inv = enp ? 'Microinversores Enphase IQ8P (uno por panel)' : (inv ? inv.modelo : 'A MEDIDA');
@@ -233,6 +239,8 @@ export function calcularFV(entrada, modelo, opciones) {
   let avisos = [];
   if (bloqueo) avisos.push('CASO A MEDIDA: el presupuestador no da precio. Pasar a Ramón');
   if (n_pan > P.max_pan) avisos.push('Más de ' + P.max_pan + ' paneles: revisar jornadas y estructura');
+  if (fv && e.inv_modelo && inv && inv.modelo === e.inv_modelo && inv.kw < kwp / P.ratio) avisos.push('Inversor elegido a mano (' + inv.modelo + ', ' + g(inv.kw) + ' kW) por debajo del ratio ' + g(P.ratio) + ' para ' + fixed(kwp, 2) + ' kWp: revisar.');
+  if (fv && e.inv_modelo && (!inv || inv.modelo !== e.inv_modelo)) avisos.push('El inversor «' + e.inv_modelo + '» no está en el modelo para este sistema: se usa el automático.');
   if (!num(e.factura_exacta) && !num(e.consumo_real) && !num(e.paneles_forzado) && e.factura_rango === 'No lo sé') {
     avisos.push('Factura desconocida: dimensionado poco fiable');
   }
@@ -393,6 +401,7 @@ export function entradaDesdeDatos(d, modelo) {
     consumo_real: n('consumo_anual_kwh') > 0 ? n('consumo_anual_kwh') : null,
     paneles_forzado: paneles > 0 ? paneles : null,
     sis,
+    inv_modelo: d.inversor_modelo ? String(d.inversor_modelo) : null,
     sumi: String(d.suministro || '') === 'trifasico' ? 'Trifásico' : 'Monofásico',
     cubierta,
     orient: String(d.orientacion_panel || '') === 'horizontal' ? 'Horizontal' : 'Vertical',
@@ -443,6 +452,13 @@ export function lineasPresupuesto(r, modelo, extra) {
       precio: { coste_total: r.coste_total, precio_objetivo: r.precio_objetivo, margen_objetivo: (modelo.parametros.margen_obj || {}).valor,
         horas_elev: r.horas_elev, elevador: r.elevador, pvp_antes: r.pvp_antes, margen_real_sin_dto: Math.round(r.margen_real * 10000) / 10000 },
       pedido: pedidoMaterial(r, modelo),
+      // Lo que se puede cambiar a mano desde el presupuesto (21-10-2026): los
+      // inversores del modelo para este sistema y suministro, y los paneles.
+      opciones: {
+        inversores: (modelo.inversores || []).filter((i) => i.usar && i.sistema === r.entrada.sis && i.suministro === r.entrada.sumi).map((i) => ({ modelo: i.modelo, kw: i.kw })),
+        inversor_elegido: r.mod_inv, inversor_forzado: !!r.entrada.inv_modelo,
+        n_pan: r.n_pan, paneles_forzado: r.entrada.paneles_forzado || null,
+      },
       avisos: r.avisos.concat(ex.avisos || []),
       bloques,
       nota: NOTA_CLIENTE, condiciones: CONDICIONES_CLIENTE,
