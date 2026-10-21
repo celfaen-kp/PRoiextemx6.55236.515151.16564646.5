@@ -466,7 +466,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '26.4'; // versión visible de la app (única fuente)
+const APP_VERSION = '26.5'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -7602,7 +7602,7 @@ function vVisita() {
  * ============================================================================= */
 Object.assign(V, {
   presu: { cat: null, cargando: false, error: null, datos: null, dto: 0,
-           extra: [], guardando: false, buscar: '', buscando: false, resultados: [], guardado: null, opcion: null },
+           extra: [], fusion: {}, guardando: false, buscar: '', buscando: false, resultados: [], guardado: null, opcion: null },
 });
 
 const CATS_CON_MOTOR = ['aire_acondicionado', 'aerotermia', 'solar'];
@@ -7644,8 +7644,16 @@ function presupuestoHTML(v, fichas) {
       ${d ? `<span class="tiny">reglas ${esc(d.conjunto_version || '')}</span>` : ''}</div>
     <div class="sub" style="margin-top:6px;font-size:13px">El motor propone a partir de la ficha; tú confirmas. Los precios salen de la tarifa cargada, no de la app.</div>
 
-    ${!d ? `<div class="row g8" style="margin-top:14px">
-      ${cats.map((c) => `<button class="pill grow" data-a="presuCalcular" data-c="${c}" style="padding:12px;text-align:center;background:var(--tinta);color:#fff" ${p.cargando ? 'disabled' : ''}>${p.cargando ? 'Calculando…' : 'Calcular ' + esc(nombreCat(c))}</button>`).join('')}
+    <div class="row g8" style="margin-top:14px;flex-wrap:wrap">
+      ${cats.map((c) => { const activa = d && p.cat === c; const fusionada = !!(p.fusion || {})[c];
+        return `<button class="pill grow" data-a="presuCalcular" data-c="${c}" style="padding:12px;text-align:center;background:${activa ? 'var(--verde)' : fusionada ? 'var(--verde-c)' : 'var(--tinta)'};color:#fff" ${p.cargando ? 'disabled' : ''}>${p.cargando && p.cat === c ? 'Calculando…' : (activa ? 'Recalcular ' : fusionada ? 'Ya está en el conjunto · ' : 'Calcular ') + esc(nombreCat(c))}</button>`; }).join('')}
+    </div>
+    ${d && cats.length > 1 ? `<div class="row g8" style="margin-top:8px;flex-wrap:wrap;align-items:center">
+      <span class="tiny">Presupuesto conjunto:</span>
+      ${cats.filter((c) => c !== p.cat).map((c) => (p.fusion || {})[c]
+        ? `<span class="chip on" data-a="presuFusionQuitar" data-c="${c}" style="cursor:pointer" title="Quitar del conjunto">${esc(nombreCat(c))} ✕</span>`
+        : `<span class="chip" data-a="presuFusionar" data-c="${c}" style="cursor:pointer">+ ${esc(nombreCat(c))}</span>`).join('')}
+      <span class="tiny">Añade las otras fichas de la visita a este mismo presupuesto: una sola oferta con todo.</span>
     </div>` : ''}
     ${p.error ? `<div class="aviso-rojo" style="margin-top:12px"><span class="ex">!</span><span style="font:400 13px/1.4 var(--sans)">${esc(p.error)}</span></div>` : ''}
 
@@ -7760,7 +7768,7 @@ function presuPanelHTML() {
   });
   return `${d ? `
       ${opcionesMarcaHTML(p)}
-      ${(d.incidencias || []).length ? `<div style="margin-top:12px">${d.incidencias.map((i) => `<div class="tiny" style="margin-top:6px;color:${i.nivel === 'error' ? 'var(--rojo)' : 'var(--ambar-o)'}">${i.nivel === 'error' ? '⚠' : '·'} ${esc(i.mensaje)}</div>`).join('')}</div>` : ''}
+      ${(d.incidencias || []).concat(Object.keys(p.fusion || {}).flatMap((c) => p.fusion[c].incidencias || [])).length ? `<div style="margin-top:12px">${(d.incidencias || []).concat(Object.keys(p.fusion || {}).flatMap((c) => p.fusion[c].incidencias || [])).map((i) => `<div class="tiny" style="margin-top:6px;color:${i.nivel === 'error' ? 'var(--rojo)' : 'var(--ambar-o)'}">${i.nivel === 'error' ? '⚠' : '·'} ${esc(i.mensaje)}</div>`).join('')}</div>` : ''}
 
       ${secciones.map((s) => `<div style="margin-top:16px">
         <div class="lbl" style="font-size:11px">${esc(s.nombre)}</div>
@@ -7997,16 +8005,19 @@ A.presuCalcular = async (categoria) => {
   if (!navigator.onLine) { avisar('Sin conexión: el presupuesto se calcula en el servidor.'); return; }
   if (suelto && esColaborador() && !V.suelto.clienteId) { avisar('Elige uno de tus clientes: como colaborador solo presupuestas a los que te han asignado.'); return; }
   const p = V.presu;
+  if (p.cat && p.cat !== categoria) {   // otra ficha: las opciones, añadidos y el conjunto eran de la anterior
+    p.extra = []; p.opcion = null; p.fusion = {}; p.guardado = null; p.enTL = false; p.errTL = null;
+  }
   p.cat = categoria; p.cargando = true; p.error = null; render();
   try {
     const ficha = suelto ? null : fichaVisitaActual(categoria);
     p.datos = suelto
       ? await visitasDB.presupuestarSuelto(categoria, datosConOpcion(datosDelSuelto(V.suelto)), {
-          guardar: false, dtoGlobalPct: p.dto, lineasExtra: p.extra,
+          guardar: false, dtoGlobalPct: p.dto, lineasExtra: extrasEnvio(p), tituloSufijo: sufijoFusion(p),
           clienteId: V.suelto.clienteId, titulo: tituloDelSuelto(),
         })
       : await visitasDB.presupuestarVisita(vv.visita.id, categoria, {
-          guardar: false, dtoGlobalPct: p.dto, lineasExtra: p.extra,
+          guardar: false, dtoGlobalPct: p.dto, lineasExtra: extrasEnvio(p), tituloSufijo: sufijoFusion(p),
           // Con una opción puesta van los datos de la ficha con la marca cambiada.
           datos: p.opcion && ficha ? datosConOpcion(ficha.datos || {}) : undefined,
           fichaId: p.opcion && ficha ? ficha.id : undefined,
@@ -8014,12 +8025,47 @@ A.presuCalcular = async (categoria) => {
         });
     // Las líneas añadidas del catálogo vuelven con su precio de venta (recargo
     // aplicado): se refleja en la lista de añadidas para que no se vea el coste.
-    const manuales = (p.datos && p.datos.lineas || []).filter((l) => l.origen === 'manual');
+    const manuales = (p.datos && p.datos.lineas || []).filter((l) => l.origen === 'manual').slice(0, p.extra.length);
     if (manuales.length === p.extra.length) manuales.forEach((l, i) => { if (p.extra[i].producto_ref && Math.abs(Number(p.extra[i].precio_tarifa) - Number(p.extra[i].precio_catalogo)) < 0.005) p.extra[i].precio_tarifa = l.precio_tarifa; });
   } catch (e) {
     p.datos = null; p.error = msgError(e);
   }
   p.cargando = false; render();
+};
+
+/* ---------- presupuesto conjunto (Enzo, 21-10-2026) ----------------------------
+ * Una visita con varias fichas (aerotermia + fotovoltaica + aire) se presupuesta
+ * en UNA oferta: se calcula la otra categoría con su motor y sus líneas entran
+ * en este presupuesto como líneas añadidas, con su precio y su coste, en una
+ * sección con el nombre de la categoría. Se guarda y sube como un solo
+ * presupuesto; el título lleva «+ Aerotermia». */
+const extrasEnvio = (p) => (p.extra || []).concat(Object.keys(p.fusion || {}).flatMap((c) => p.fusion[c].lineas));
+const sufijoFusion = (p) => Object.keys(p.fusion || {}).map((c) => nombreCat(c)).join(' + ') || undefined;
+A.presuFusionar = async (c) => {
+  const p = V.presu, vv = V.visitaVer;
+  if (!vv || !p.cat || p.cargando || c === p.cat) return;
+  if (!navigator.onLine) { avisar('Sin conexión: el presupuesto se calcula en el servidor.'); return; }
+  p.cargando = true; p.error = null; render();
+  try {
+    const r = await visitasDB.presupuestarVisita(vv.visita.id, c, { guardar: false, dtoGlobalPct: 0 });
+    const lineas = (r.lineas || []).map((l) => ({
+      descripcion: l.descripcion, detalle_tecnico: l.detalle_tecnico || null, especificaciones: Array.isArray(l.especificaciones) ? l.especificaciones : [],
+      cantidad: l.cantidad, unidad: l.unidad || 'ud',
+      precio_tarifa: l.precio_tarifa, precio_coste: l.precio_coste == null || l.precio_coste === '' ? null : l.precio_coste,
+      dto_linea_pct: l.dto_linea_pct || 0, iva: l.iva == null ? 21 : l.iva,
+      seccion: nombreCat(c) + ' · ' + (l.seccion || 'Otros'), _fusion: c,
+    }));
+    if (!lineas.length) { p.cargando = false; avisar('El motor de ' + nombreCat(c) + ' no ha dado líneas: revisa esa ficha.'); render(); return; }
+    p.fusion = Object.assign({}, p.fusion || {}, { [c]: { lineas, incidencias: (r.incidencias || []).map((i) => Object.assign({}, i, { mensaje: nombreCat(c) + ': ' + i.mensaje })), total: r.totales && r.totales.total } });
+    p.guardado = null; p.enTL = false; p.errTL = null; p.cargando = false;
+    await A.presuCalcular(p.cat);
+  } catch (e) { p.cargando = false; p.error = msgError(e); render(); }
+};
+A.presuFusionQuitar = (c) => {
+  const p = V.presu; if (!p.fusion || !p.fusion[c] || p.cargando) return;
+  const f = Object.assign({}, p.fusion); delete f[c]; p.fusion = f;
+  p.guardado = null; p.enTL = false; p.errTL = null;
+  A.presuCalcular(p.cat);
 };
 
 /** "Aire acondicionado · Casa de Ana", para reconocerlo en la lista. */
@@ -8043,11 +8089,11 @@ A.presuGuardar = async () => {
     const ficha = suelto ? null : fichaVisitaActual(p.cat);
     const r = suelto
       ? await visitasDB.presupuestarSuelto(p.cat, datosConOpcion(datosDelSuelto(V.suelto)), {
-          guardar: true, dtoGlobalPct: p.dto, lineasExtra: p.extra,
+          guardar: true, dtoGlobalPct: p.dto, lineasExtra: extrasEnvio(p), tituloSufijo: sufijoFusion(p),
           clienteId: V.suelto.clienteId, titulo: tituloDelSuelto(),
         })
       : await visitasDB.presupuestarVisita(vv.visita.id, p.cat, {
-          guardar: true, dtoGlobalPct: p.dto, lineasExtra: p.extra,
+          guardar: true, dtoGlobalPct: p.dto, lineasExtra: extrasEnvio(p), tituloSufijo: sufijoFusion(p),
           datos: p.opcion && ficha ? datosConOpcion(ficha.datos || {}) : undefined,
           fichaId: p.opcion && ficha ? ficha.id : undefined,
           titulo: undefined,
@@ -8311,7 +8357,7 @@ A.cargarPresupuestos = async () => {
 
 A.presuNuevo = () => {
   V.suelto = presuNuevoVacio();
-  V.presu = { cat: null, cargando: false, error: null, datos: null, dto: 0, extra: [], guardando: false, buscar: '', buscando: false, resultados: [], guardado: null, opcion: null };
+  V.presu = { cat: null, cargando: false, error: null, datos: null, dto: 0, extra: [], fusion: {}, guardando: false, buscar: '', buscando: false, resultados: [], guardado: null, opcion: null };
   V.view = 'presuNuevo'; scrollMemo.presuNuevo = 0; render();
   if (!V.agenda.cargado) A.cargarAgenda();
 };
@@ -12501,6 +12547,8 @@ document.addEventListener('click', (e) => {
   if (a === 'horasObraGuardar') return A.horasObraGuardar();
   if (a === 'obraComentariosGuardar') return A.obraComentariosGuardar(d.id);
   if (a === 'tlTraerCliente') { e.stopPropagation(); return A.tlTraerCliente(d.id); }
+  if (a === 'presuFusionar') return A.presuFusionar(d.c);
+  if (a === 'presuFusionQuitar') return A.presuFusionQuitar(d.c);
   if (a === 'fotoVisorForm') return A.fotoVisorForm(d.c, d.k);
   if (a === 'fotoVisorAdj') return A.fotoVisorAdj(d.c, d.i);
   if (a === 'fotoVisorIr') return A.fotoVisorIr(Number(d.d) || 0);

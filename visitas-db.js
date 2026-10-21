@@ -432,6 +432,7 @@ export async function presupuestarVisita(visitaId, categoria, opciones) {
     datos: o.datos || undefined,
     ficha_id: o.fichaId || undefined,
     titulo: o.titulo || undefined,
+    titulo_sufijo: o.tituloSufijo || undefined,   // presupuesto conjunto: «+ Aerotermia»
   });
 }
 

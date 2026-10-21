@@ -338,6 +338,9 @@ Deno.serve(async (req) => {
     }
     titulo = ((cabecera ? cabecera + ' · ' : '') + detalle).slice(0, 200);
   }
+  // Presupuesto conjunto (21-10-2026): «+ Aerotermia + Aire acondicionado» al final del título.
+  const sufijo = String(b.titulo_sufijo || '').trim().slice(0, 80);
+  if (sufijo) titulo = ((titulo || '') + ' + ' + sufijo).replace(/^ \+ /, '').slice(0, 200);
   const { data: creado, error: errP } = await sb.from('presupuestos').insert({
     visita_id: visitaId,
     ficha_id: fichaId,
