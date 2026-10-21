@@ -466,7 +466,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '26.5'; // versión visible de la app (única fuente)
+const APP_VERSION = '26.6'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -7766,11 +7766,23 @@ function presuPanelHTML() {
     if (!s) { s = { nombre, lineas: [] }; secciones.push(s); }
     s.lineas.push(l);
   });
+  // En el conjunto, cada instalación va en su bloque, con su cabecera y su suma (21-10-2026).
+  const nombresFusion = Object.keys(p.fusion || {}).map((c) => [nombreCat(c), c]);
+  const grupos = [];
+  secciones.forEach((sec) => {
+    const m = /^(.+?) · (.+)$/.exec(sec.nombre);
+    const f = m && nombresFusion.find(([n]) => n === m[1]);
+    const titulo = f ? f[0] : nombreCat(p.cat);
+    let g = grupos.find((x) => x.titulo === titulo);
+    if (!g) { g = { titulo, secciones: [], total: 0 }; grupos.push(g); }
+    g.secciones.push(f ? Object.assign({}, sec, { nombre: m[2] }) : sec);
+    g.total += sec.lineas.reduce((t, l) => t + (Number(l.importe != null ? l.importe : (Number(l.cantidad) || 0) * (Number(l.precio_tarifa) || 0)) || 0), 0);
+  });
   return `${d ? `
-      ${opcionesMarcaHTML(p)}
+      ${opcionesMarcaHTML()}
       ${(d.incidencias || []).concat(Object.keys(p.fusion || {}).flatMap((c) => p.fusion[c].incidencias || [])).length ? `<div style="margin-top:12px">${(d.incidencias || []).concat(Object.keys(p.fusion || {}).flatMap((c) => p.fusion[c].incidencias || [])).map((i) => `<div class="tiny" style="margin-top:6px;color:${i.nivel === 'error' ? 'var(--rojo)' : 'var(--ambar-o)'}">${i.nivel === 'error' ? '⚠' : '·'} ${esc(i.mensaje)}</div>`).join('')}</div>` : ''}
 
-      ${secciones.map((s) => `<div style="margin-top:16px">
+      ${grupos.map((g) => `${grupos.length > 1 ? `<div style="margin-top:24px;padding-top:12px;border-top:3px solid var(--tinta)"><div style="font:600 19px/1.1 var(--cond)">${esc(g.titulo)}</div>${g.total != null ? `<div class="tiny" style="margin-top:3px">${eur(g.total)} sin IVA</div>` : ''}</div>` : ''}${g.secciones.map((s) => `<div style="margin-top:16px">
         <div class="lbl" style="font-size:11px">${esc(s.nombre)}</div>
         ${s.lineas.map((l) => `<div style="padding:9px 0;border-bottom:1px solid var(--l1)">
           <div class="row" style="align-items:baseline;justify-content:space-between;gap:12px">
@@ -7781,8 +7793,7 @@ function presuPanelHTML() {
           ${margenLineaHTML(l, p.cat)}
           <div class="tiny" style="margin-top:3px;opacity:.75">${esc(String(l.cantidad))} ${esc(l.unidad || 'ud')} × ${eur(l.precio_tarifa)}${l.dto_linea_pct ? ' · −' + l.dto_linea_pct + '%' : ''}${l.origen === 'manual' ? ' · añadida a mano' : ''}</div>
         </div>`).join('')}
-      </div>`).join('')}
-
+      </div>`).join('')}`).join('')}
       <div style="margin-top:16px;padding-top:12px;border-top:2px solid var(--tinta)">
         <div class="row" style="justify-content:space-between"><span class="sub">Suma</span><span class="num" style="font-size:15px">${eur(d.totales.bruto)}</span></div>
         ${d.totales.dto_linea ? `<div class="row" style="justify-content:space-between;margin-top:4px"><span class="sub">Descuento de línea</span><span class="num" style="font-size:15px">${eur(d.totales.dto_linea)}</span></div>` : ''}
@@ -7859,8 +7870,17 @@ function bateriaBaseFV() {
   return { con: d.baterias === 'si' || Number(d.baterias_kwh) > 0, marca: d.bateria_marca || '', kwh: Number(d.baterias_kwh) || 0 };
 }
 /** Los datos con la opción encima. La batería se adapta a la marca, como en el suelto. */
-function datosConOpcion(base) {
-  const op = V.presu.opcion; if (!op || !base) return base;
+/** Dónde viven las opciones de fotovoltaica ahora mismo: en el presupuesto
+ *  principal si es FV, o en la ficha FV del conjunto (Enzo, 21-10-2026). */
+function fvObjetivo() {
+  const p = V.presu;
+  if (p.cat === 'solar') return { holder: p, recalc: () => A.presuCalcular('solar'), conjunto: false };
+  const f = p.fusion && p.fusion.solar;
+  if (f) return { holder: f, recalc: () => A.presuFusionar('solar', true), conjunto: true };
+  return null;
+}
+function datosConOpcion(base, opcionDada) {
+  const op = opcionDada !== undefined ? opcionDada : V.presu.opcion; if (!op || !base) return base;
   const d = Object.assign({}, base, op);
   const conBat = d.baterias === 'si' || Number(d.baterias_kwh) > 0;
   if (conBat) {
@@ -7878,19 +7898,19 @@ const sufijoOpcion = () => {
   return partes.length ? ' · opción ' + partes.join(' + ') : '';
 };
 A.presuOpcionMarca = (m) => {
-  const p = V.presu; if (!p.cat || p.cargando) return;
-  if (!enSuelto() && !fichaVisitaActual(p.cat)) { avisar('Esta visita no tiene ficha de ' + nombreCat(p.cat) + ': no se puede cambiar la marca.'); return; }
+  const t = fvObjetivo(); if (!t || V.presu.cargando) return; const p = t.holder;
+  if (!enSuelto() && !fichaVisitaActual('solar')) { avisar('Esta visita no tiene ficha de paneles solares: no se puede cambiar la marca.'); return; }
   const op = Object.assign({}, p.opcion || {});
   if (m && m !== marcaBaseFV()) op.inversor_marca = m; else delete op.inversor_marca;
   delete op.inversor_modelo; delete op.bateria_ref;   // eran de la otra marca
   p.opcion = Object.keys(op).length ? op : null;
   p.guardado = null; p.enTL = false; p.errTL = null;
-  A.presuCalcular(p.cat);
+  t.recalc();
 };
 /** La batería de esta opción, sin tocar la ficha (Enzo, 18-10-2026): '' = sin batería, o la marca; kWh aparte. */
 A.presuOpcionBateria = (marca, kwh) => {
-  const p = V.presu; if (!p.cat || p.cargando) return;
-  if (!enSuelto() && !fichaVisitaActual(p.cat)) { avisar('Esta visita no tiene ficha de ' + nombreCat(p.cat) + ': no se puede cambiar la batería.'); return; }
+  const t = fvObjetivo(); if (!t || V.presu.cargando) return; const p = t.holder;
+  if (!enSuelto() && !fichaVisitaActual('solar')) { avisar('Esta visita no tiene ficha de paneles solares: no se puede cambiar la batería.'); return; }
   const op = Object.assign({}, p.opcion || {});
   const actual = opcionBateriaActual(p);
   const nuevaMarca = marca == null ? actual.marca : marca;
@@ -7899,30 +7919,30 @@ A.presuOpcionBateria = (marca, kwh) => {
   else { op.baterias = 'si'; op.baterias_kwh = nuevosKwh || 10; op.bateria_marca = nuevaMarca; if (marca != null && marca !== actual.marca) delete op.bateria_ref; }
   p.opcion = op;
   p.guardado = null; p.enTL = false; p.errTL = null;
-  A.presuCalcular(p.cat);
+  t.recalc();
 };
 /** Un inversor concreto del modelo ('' = el automático). Se recalcula. */
 A.presuOpcionInversor = (modelo) => {
-  const p = V.presu; if (!p.cat || p.cargando) return;
+  const t = fvObjetivo(); if (!t || V.presu.cargando) return; const p = t.holder;
   const op = Object.assign({}, p.opcion || {});
   if (modelo) op.inversor_modelo = modelo; else delete op.inversor_modelo;
   p.opcion = Object.keys(op).length ? op : null;
   p.guardado = null; p.enTL = false; p.errTL = null;
-  A.presuCalcular(p.cat);
+  t.recalc();
 };
 /** Número de paneles a mano ('' = los que calcula el motor). */
 A.presuOpcionPaneles = (n) => {
-  const p = V.presu; if (!p.cat || p.cargando) return;
+  const t = fvObjetivo(); if (!t || V.presu.cargando) return; const p = t.holder;
   const op = Object.assign({}, p.opcion || {});
   const v = Math.round(Number(String(n || '').replace(',', '.')));
   if (v > 0) op.paneles_manual = v; else delete op.paneles_manual;
   p.opcion = Object.keys(op).length ? op : null;
   p.guardado = null; p.enTL = false; p.errTL = null;
-  A.presuCalcular(p.cat);
+  t.recalc();
 };
 /** Una batería concreta del catálogo ('' = la que elige el motor con marca y kWh). */
 A.presuOpcionBateriaRef = (ref) => {
-  const p = V.presu; if (!p.cat || p.cargando) return;
+  const t = fvObjetivo(); if (!t || V.presu.cargando) return; const p = t.holder;
   const op = Object.assign({}, p.opcion || {});
   const bats = (p.datos && p.datos.opciones_fv && p.datos.opciones_fv.baterias) || [];
   const b = bats.find((x) => x.ref === ref);
@@ -7936,17 +7956,19 @@ A.presuOpcionBateriaRef = (ref) => {
   }
   p.opcion = op;
   p.guardado = null; p.enTL = false; p.errTL = null;
-  A.presuCalcular(p.cat);
+  t.recalc();
 };
 function opcionBateriaActual(p) {
   const op = p.opcion || {};
   if (op.baterias != null) return { con: op.baterias === 'si', marca: op.bateria_marca || '', kwh: Number(op.baterias_kwh) || 0 };
   return bateriaBaseFV();
 }
-function opcionesMarcaHTML(p) {
-  if (p.cat !== 'solar') return '';
+function opcionesMarcaHTML() {
+  const t = fvObjetivo(); if (!t) return '';
+  const p = t.holder;
   const actual = (p.opcion && p.opcion.inversor_marca) || marcaBaseFV();
   return `<div style="margin-top:12px;padding:10px 12px;border-radius:12px;background:rgba(20,23,15,.045)">
+    ${t.conjunto ? '<div class="lbl" style="font-size:11px;margin-bottom:8px;color:var(--verde-o)">Paneles solares · dentro del conjunto</div>' : ''}
     <div class="row g8" style="align-items:center;flex-wrap:wrap">
       <span class="lbl" style="font-size:11px">Opción con</span>
       ${MARCAS_FV.map(([k, l]) => `<span class="chip ${actual === k ? 'on' : ''}" data-a="presuOpcionMarca" data-m="${k}" style="cursor:pointer">${l}</span>`).join('')}
@@ -8041,13 +8063,20 @@ A.presuCalcular = async (categoria) => {
  * presupuesto; el título lleva «+ Aerotermia». */
 const extrasEnvio = (p) => (p.extra || []).concat(Object.keys(p.fusion || {}).flatMap((c) => p.fusion[c].lineas));
 const sufijoFusion = (p) => Object.keys(p.fusion || {}).map((c) => nombreCat(c)).join(' + ') || undefined;
-A.presuFusionar = async (c) => {
+A.presuFusionar = async (c, rehacer) => {
   const p = V.presu, vv = V.visitaVer;
   if (!vv || !p.cat || p.cargando || c === p.cat) return;
   if (!navigator.onLine) { avisar('Sin conexión: el presupuesto se calcula en el servidor.'); return; }
+  const previa = (p.fusion || {})[c] || null;
+  const opcion = previa ? (previa.opcion || null) : null;     // marca, inversor, batería… de esa ficha dentro del conjunto
+  const ficha = fichaVisitaActual(c);
   p.cargando = true; p.error = null; render();
   try {
-    const r = await visitasDB.presupuestarVisita(vv.visita.id, c, { guardar: false, dtoGlobalPct: 0 });
+    const r = await visitasDB.presupuestarVisita(vv.visita.id, c, {
+      guardar: false, dtoGlobalPct: 0,
+      datos: opcion && ficha ? datosConOpcion(ficha.datos || {}, opcion) : undefined,
+      fichaId: opcion && ficha ? ficha.id : undefined,
+    });
     const lineas = (r.lineas || []).map((l) => ({
       descripcion: l.descripcion, detalle_tecnico: l.detalle_tecnico || null, especificaciones: Array.isArray(l.especificaciones) ? l.especificaciones : [],
       cantidad: l.cantidad, unidad: l.unidad || 'ud',
@@ -8056,7 +8085,7 @@ A.presuFusionar = async (c) => {
       seccion: nombreCat(c) + ' · ' + (l.seccion || 'Otros'), _fusion: c,
     }));
     if (!lineas.length) { p.cargando = false; avisar('El motor de ' + nombreCat(c) + ' no ha dado líneas: revisa esa ficha.'); render(); return; }
-    p.fusion = Object.assign({}, p.fusion || {}, { [c]: { lineas, incidencias: (r.incidencias || []).map((i) => Object.assign({}, i, { mensaje: nombreCat(c) + ': ' + i.mensaje })), total: r.totales && r.totales.total } });
+    p.fusion = Object.assign({}, p.fusion || {}, { [c]: { lineas, datos: r, opcion, incidencias: (r.incidencias || []).map((i) => Object.assign({}, i, { mensaje: nombreCat(c) + ': ' + i.mensaje })), total: r.totales && r.totales.total } });
     p.guardado = null; p.enTL = false; p.errTL = null; p.cargando = false;
     await A.presuCalcular(p.cat);
   } catch (e) { p.cargando = false; p.error = msgError(e); render(); }
