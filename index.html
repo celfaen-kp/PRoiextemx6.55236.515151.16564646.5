@@ -466,7 +466,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '26.6'; // versión visible de la app (única fuente)
+const APP_VERSION = '26.7'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -7602,7 +7602,7 @@ function vVisita() {
  * ============================================================================= */
 Object.assign(V, {
   presu: { cat: null, cargando: false, error: null, datos: null, dto: 0,
-           extra: [], fusion: {}, guardando: false, buscar: '', buscando: false, resultados: [], guardado: null, opcion: null },
+           extra: [], fusion: {}, quitadas: [], guardando: false, buscar: '', buscando: false, resultados: [], guardado: null, opcion: null },
 });
 
 const CATS_CON_MOTOR = ['aire_acondicionado', 'aerotermia', 'solar'];
@@ -7791,9 +7791,13 @@ function presuPanelHTML() {
           </div>
           ${l.detalle_tecnico ? `<div class="tiny" style="margin-top:3px;font-size:12px;line-height:1.35;color:var(--t2)">${esc(l.detalle_tecnico)}</div>` : ''}
           ${margenLineaHTML(l, p.cat)}
-          <div class="tiny" style="margin-top:3px;opacity:.75">${esc(String(l.cantidad))} ${esc(l.unidad || 'ud')} × ${eur(l.precio_tarifa)}${l.dto_linea_pct ? ' · −' + l.dto_linea_pct + '%' : ''}${l.origen === 'manual' ? ' · añadida a mano' : ''}</div>
+          <div class="tiny row" style="margin-top:3px;opacity:.75;justify-content:space-between;gap:10px"><span>${esc(String(l.cantidad))} ${esc(l.unidad || 'ud')} × ${eur(l.precio_tarifa)}${l.dto_linea_pct ? ' · −' + l.dto_linea_pct + '%' : ''}${l.origen === 'manual' ? ' · añadida a mano' : ''}</span><span data-a="presuQuitarCalculada" data-clave="${esc(claveLineaPresu(l))}" style="color:var(--rojo);cursor:pointer;flex:none">Quitar</span></div>
         </div>`).join('')}
       </div>`).join('')}`).join('')}
+      ${(p.quitadas || []).length ? `<div style="margin-top:14px;padding:10px 12px;border-radius:12px;background:rgba(20,23,15,.045)">
+        <div class="lbl" style="font-size:11px">Quitadas de este presupuesto · ${(p.quitadas || []).length}</div>
+        ${(p.quitadas || []).map((k) => `<div class="row tiny" style="justify-content:space-between;gap:10px;margin-top:6px"><span style="text-decoration:line-through;color:var(--t2)">${esc(k.split('|').slice(1).join('|') || k)}</span><span data-a="presuRecuperarLinea" data-clave="${esc(k)}" style="color:var(--verde-o);cursor:pointer;flex:none">Recuperar</span></div>`).join('')}
+      </div>` : ''}
       <div style="margin-top:16px;padding-top:12px;border-top:2px solid var(--tinta)">
         <div class="row" style="justify-content:space-between"><span class="sub">Suma</span><span class="num" style="font-size:15px">${eur(d.totales.bruto)}</span></div>
         ${d.totales.dto_linea ? `<div class="row" style="justify-content:space-between;margin-top:4px"><span class="sub">Descuento de línea</span><span class="num" style="font-size:15px">${eur(d.totales.dto_linea)}</span></div>` : ''}
@@ -8028,18 +8032,18 @@ A.presuCalcular = async (categoria) => {
   if (suelto && esColaborador() && !V.suelto.clienteId) { avisar('Elige uno de tus clientes: como colaborador solo presupuestas a los que te han asignado.'); return; }
   const p = V.presu;
   if (p.cat && p.cat !== categoria) {   // otra ficha: las opciones, añadidos y el conjunto eran de la anterior
-    p.extra = []; p.opcion = null; p.fusion = {}; p.guardado = null; p.enTL = false; p.errTL = null;
+    p.extra = []; p.opcion = null; p.fusion = {}; p.quitadas = []; p.guardado = null; p.enTL = false; p.errTL = null;
   }
   p.cat = categoria; p.cargando = true; p.error = null; render();
   try {
     const ficha = suelto ? null : fichaVisitaActual(categoria);
     p.datos = suelto
       ? await visitasDB.presupuestarSuelto(categoria, datosConOpcion(datosDelSuelto(V.suelto)), {
-          guardar: false, dtoGlobalPct: p.dto, lineasExtra: extrasEnvio(p), tituloSufijo: sufijoFusion(p),
+          guardar: false, dtoGlobalPct: p.dto, lineasExtra: extrasEnvio(p), lineasQuitar: p.quitadas, tituloSufijo: sufijoFusion(p),
           clienteId: V.suelto.clienteId, titulo: tituloDelSuelto(),
         })
       : await visitasDB.presupuestarVisita(vv.visita.id, categoria, {
-          guardar: false, dtoGlobalPct: p.dto, lineasExtra: extrasEnvio(p), tituloSufijo: sufijoFusion(p),
+          guardar: false, dtoGlobalPct: p.dto, lineasExtra: extrasEnvio(p), lineasQuitar: p.quitadas, tituloSufijo: sufijoFusion(p),
           // Con una opción puesta van los datos de la ficha con la marca cambiada.
           datos: p.opcion && ficha ? datosConOpcion(ficha.datos || {}) : undefined,
           fichaId: p.opcion && ficha ? ficha.id : undefined,
@@ -8118,11 +8122,11 @@ A.presuGuardar = async () => {
     const ficha = suelto ? null : fichaVisitaActual(p.cat);
     const r = suelto
       ? await visitasDB.presupuestarSuelto(p.cat, datosConOpcion(datosDelSuelto(V.suelto)), {
-          guardar: true, dtoGlobalPct: p.dto, lineasExtra: extrasEnvio(p), tituloSufijo: sufijoFusion(p),
+          guardar: true, dtoGlobalPct: p.dto, lineasExtra: extrasEnvio(p), lineasQuitar: p.quitadas, tituloSufijo: sufijoFusion(p),
           clienteId: V.suelto.clienteId, titulo: tituloDelSuelto(),
         })
       : await visitasDB.presupuestarVisita(vv.visita.id, p.cat, {
-          guardar: true, dtoGlobalPct: p.dto, lineasExtra: extrasEnvio(p), tituloSufijo: sufijoFusion(p),
+          guardar: true, dtoGlobalPct: p.dto, lineasExtra: extrasEnvio(p), lineasQuitar: p.quitadas, tituloSufijo: sufijoFusion(p),
           datos: p.opcion && ficha ? datosConOpcion(ficha.datos || {}) : undefined,
           fichaId: p.opcion && ficha ? ficha.id : undefined,
           titulo: undefined,
@@ -8169,6 +8173,22 @@ A.presuAnadir = (ref) => {
     precio_tarifa: x.precio_tarifa, precio_catalogo: x.precio_tarifa, iva: x.iva == null ? 21 : x.iva, seccion: 'Equipos',
   });
   p.buscar = ''; p.resultados = [];
+  A.presuRecalcular();
+};
+/** Quitar una línea del presupuesto mientras se genera (Enzo, 21-10-2026): se
+ *  recalcula sin ella y sigue fuera aunque se cambie de opción. Se recupera abajo. */
+const claveLineaPresu = (l) => String(l.producto_ref || '') + '|' + String(l.descripcion || '');
+A.presuQuitarCalculada = (clave) => {
+  const p = V.presu; if (!p.cat || p.cargando || !clave) return;
+  if (!p.quitadas) p.quitadas = [];
+  if (!p.quitadas.includes(clave)) p.quitadas.push(clave);
+  p.guardado = null; p.enTL = false; p.errTL = null;
+  A.presuRecalcular();
+};
+A.presuRecuperarLinea = (clave) => {
+  const p = V.presu; if (!p.cat || p.cargando) return;
+  p.quitadas = (p.quitadas || []).filter((x) => x !== clave);
+  p.guardado = null; p.enTL = false; p.errTL = null;
   A.presuRecalcular();
 };
 A.presuQuitarExtra = (i) => {
@@ -8386,7 +8406,7 @@ A.cargarPresupuestos = async () => {
 
 A.presuNuevo = () => {
   V.suelto = presuNuevoVacio();
-  V.presu = { cat: null, cargando: false, error: null, datos: null, dto: 0, extra: [], fusion: {}, guardando: false, buscar: '', buscando: false, resultados: [], guardado: null, opcion: null };
+  V.presu = { cat: null, cargando: false, error: null, datos: null, dto: 0, extra: [], fusion: {}, quitadas: [], guardando: false, buscar: '', buscando: false, resultados: [], guardado: null, opcion: null };
   V.view = 'presuNuevo'; scrollMemo.presuNuevo = 0; render();
   if (!V.agenda.cargado) A.cargarAgenda();
 };
@@ -12601,6 +12621,8 @@ document.addEventListener('click', (e) => {
   if (a === 'presuBuscar') return A.presuBuscar();
   if (a === 'presuAnadir') return A.presuAnadir(d.ref);
   if (a === 'presuQuitarExtra') return A.presuQuitarExtra(d.i);
+  if (a === 'presuQuitarCalculada') return A.presuQuitarCalculada(d.clave);
+  if (a === 'presuRecuperarLinea') return A.presuRecuperarLinea(d.clave);
   if (a === 'borrarVisita') return A.borrarVisita(d.id);
   if (a === 'presuBorrar') return A.presuBorrar(d.id);
   if (a === 'presuEnviadoCliente') return A.presuEnviadoCliente();

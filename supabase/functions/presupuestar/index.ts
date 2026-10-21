@@ -262,6 +262,11 @@ Deno.serve(async (req) => {
     return linea;
   });
   res.lineas = res.lineas.concat(extra);
+  // Líneas quitadas desde la pantalla mientras se genera (Enzo, 21-10-2026): se
+  // identifican por descripción (y referencia), así siguen fuera al recalcular.
+  const quitar = new Set((Array.isArray(b.lineas_quitar) ? b.lineas_quitar : []).map((x) => String(x || '')).filter(Boolean));
+  const claveLinea = (l: { producto_ref?: string | null; descripcion?: string }) => String(l.producto_ref || '') + '|' + String(l.descripcion || '');
+  if (quitar.size) res.lineas = res.lineas.filter((l) => !quitar.has(claveLinea(l)));
   res.lineas.forEach((l, i) => { l.orden = i + 1; });
   // El resumen interno cuenta también lo añadido a mano (sin coste conocido).
   res.resumen = resumenDe(res.lineas);
