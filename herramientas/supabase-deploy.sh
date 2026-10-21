@@ -23,6 +23,9 @@ fi
 ACTUAL=$(curl -sS -o /tmp/sysefen-fn.json -w '%{http_code}' "https://api.supabase.com/v1/projects/$REF/functions/$SLUG" -H "Authorization: Bearer $TOKEN")
 VERIFY="false"
 if [ "$ACTUAL" = "200" ]; then VERIFY=$(python3 -c 'import json; print(str(json.load(open("/tmp/sysefen-fn.json")).get("verify_jwt", False)).lower())'); fi
+# VERIFY_JWT=false herramientas/supabase-deploy.sh nombre → fuerza el ajuste (las funciones
+# que llama el cron con x-clave, sin sesión, tienen que ir en false o la pasarela las corta).
+if [ -n "${VERIFY_JWT:-}" ]; then VERIFY="$VERIFY_JWT"; fi
 META=$(python3 -c 'import json,sys; print(json.dumps({"entrypoint_path": "index.ts", "name": sys.argv[1], "verify_jwt": sys.argv[2] == "true"}))' "$SLUG" "$VERIFY")
 HTTP=$(curl -sS -o /tmp/sysefen-deploy.out -w '%{http_code}' -X POST "https://api.supabase.com/v1/projects/$REF/functions/deploy?slug=$SLUG" \
   -H "Authorization: Bearer $TOKEN" -F "metadata=$META;type=application/json" -F "file=@$ARCHIVO;filename=index.ts;type=application/typescript")

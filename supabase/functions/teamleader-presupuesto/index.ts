@@ -401,7 +401,7 @@ async function sincronizar(sb: any, opciones: { cliente_id?: string } = {}) {
     resumen.detalles.push('Cliente: ' + Object.keys(dealCliente).length + ' oportunidad(es) en Teamleader.');
   }
   try {
-    const desdeDeals = new Date(Date.now() - 60 * 86400_000).toISOString();
+    const desdeDeals = new Date(Date.now() - 60 * 86400_000).toISOString().replace(/\.\d{3}Z$/, '+00:00');   // Teamleader no admite milisegundos ni la Z
     for (let pag = 1; pag <= 5; pag++) {
       const r = await crm(token, 'deals.list', { filter: { updated_since: desdeDeals }, page: { size: 100, number: pag } });
       // deno-lint-ignore no-explicit-any
