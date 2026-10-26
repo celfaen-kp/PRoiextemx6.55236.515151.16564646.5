@@ -98,6 +98,13 @@ function mismo(a, b) {
  */
 const SIN_CDC = ['mano_obra', 'tramite', 'transporte', 'medios', 'servicio'];
 const alCentimo = (n) => Math.round(numero(n) * 100 + 1e-7) / 100;
+/** Coste de un concepto de precio fijo: coste_fijo si lo hay; si no, el calculado,
+ *  y null cuando el calculado es igual a la venta (no se sabe el coste). */
+export function costeConcepto(item, pr) {
+  if (item && item.coste_fijo != null && item.coste_fijo !== '') return alCentimo(numero(item.coste_fijo));
+  if (!pr) return null;
+  return Math.abs(numero(pr.coste) - numero(pr.venta_exacta != null ? pr.venta_exacta : pr.venta)) < 0.005 ? null : pr.coste;
+}
 export function preciosProducto(base, p, lookup) {
   const fila = (clave) => (lookup || []).find((x) => x.clave === clave && x.entrada === 'defecto');
   const recargoFila = fila('recargo_sobre_coste');
@@ -280,7 +287,7 @@ export function calcular(categoria, datos, config) {
       // Una sola línea: el nombre de la partida × veces, al coste y la venta de
       // lo que lleva (renglón a renglón: cada uno con su margen).
       const desglose = [];
-      let costeTotal = 0, ventaTotal = 0, pendiente = false;
+      let costeTotal = 0, ventaTotal = 0, pendiente = false, costeDesconocido = false;
       items.forEach((item) => {
         let cantidad;
         try { cantidad = evaluarNumero(item.formula_cantidad || '1', ambito, ayudas); }
@@ -291,7 +298,8 @@ export function calcular(categoria, datos, config) {
         const base = p ? p.precio_tarifa : item.precio_fijo;
         if (!(numero(base) > 0)) { pendiente = true; avisar('aviso', 'precio_pendiente', 'Falta el precio de ' + (item.producto_ref || item.concepto_libre) + ' (dentro de ' + partida.nombre + '): pendiente de confirmar.'); }
         const pr = preciosDe(base, p || { familia: 'material' });
-        costeTotal += pr.coste * cantidad;
+        const costeItem = p ? (Math.abs(pr.coste - pr.venta_exacta) < 0.005 ? null : pr.coste) : costeConcepto(item, pr);
+        if (costeItem == null) costeDesconocido = true; else costeTotal += costeItem * cantidad;
         ventaTotal += pr.venta_exacta * cantidad;
         desglose.push({ ref: item.producto_ref || null, nombre: p ? p.nombre : item.concepto_libre, cantidad: Math.round(cantidad * 1000) / 1000, unidad: item.unidad || (p && p.unidad) || 'ud', coste_ud: pr.coste, coste: alCentimo(pr.coste * cantidad), venta_ud: pr.venta, venta: alCentimo(pr.venta * cantidad) });
       });
@@ -301,7 +309,7 @@ export function calcular(categoria, datos, config) {
       mete({
         producto_ref: partida.codigo, descripcion: partida.nombre, detalle_tecnico: partida.detalle_tecnico || null, especificaciones: [],
         cantidad: veces, unidad: 'ud',
-        precio_tarifa: ventaUd, precio_coste: costeUd,
+        precio_tarifa: ventaUd, precio_coste: costeDesconocido ? null : costeUd,
         dto_linea_pct: 0, iva: 21, confirmada: !pendiente,
         seccion: (regla && regla.seccion) || partida.nombre, origen: 'partida', origen_regla_id: (regla && regla.id) || null,
         origen_inputs: { partida: partida.codigo, veces, desglose, coste_total: alCentimo(costeTotal), venta_total: alCentimo(ventaTotal) },
@@ -332,7 +340,10 @@ export function calcular(categoria, datos, config) {
         // La unidad de la partida (etapa 51): m para la tubería, kg para el gas.
         unidad: item.unidad || 'ud',
         precio_tarifa: preciosDe(item.precio_fijo, { familia: 'material' }).venta,
-        precio_coste: preciosDe(item.precio_fijo, { familia: 'material' }).coste,
+        // El coste del concepto (etapa85, 26-10-2026): el propio si está puesto;
+        // si no, el de siempre, salvo que saliera igual que la venta (tarifa de
+        // PVP sin coste conocido): entonces va sin coste, no con beneficio 0.
+        precio_coste: costeConcepto(item, preciosDe(item.precio_fijo, { familia: 'material' })),
         dto_linea_pct: 0,
         iva: 21,
         confirmada: true,
