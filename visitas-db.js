@@ -464,6 +464,39 @@ export async function crearPresupuestoExterno(fila) {
   return unwrap(await supabase.from('presupuestos').insert(fila).select().single());
 }
 
+/* --- documentos del cliente (sql/etapa90): la factura de la luz y lo que haga falta --- */
+const BUCKET_CLI = 'cliente-docs';
+export async function listarDocumentosCliente(clienteId) {
+  return unwrap(await supabase.from('cliente_documentos').select('*').eq('cliente_id', clienteId).order('creado_en', { ascending: false })) || [];
+}
+export async function subirDocumentoCliente(clienteId, doc) {
+  const blob = blobDeDataURL(doc.data);
+  const ext = doc.esImagen ? 'jpg' : (String(doc.nombre || '').split('.').pop() || 'pdf').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 5) || 'pdf';
+  const ruta = `${clienteId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+  const subida = await supabase.storage.from(BUCKET_CLI).upload(ruta, blob, { contentType: blob.type, upsert: false });
+  if (subida.error) throw new Error(subida.error.message);
+  const { data, error } = await supabase.from('cliente_documentos').insert({
+    cliente_id: clienteId, tipo: doc.tipo || 'factura', nota: doc.nota || null, ruta, nombre: doc.nombre || null,
+    mime: blob.type, bytes: blob.size, es_imagen: !!doc.esImagen,
+  }).select().single();
+  if (error) { await supabase.storage.from(BUCKET_CLI).remove([ruta]); throw new Error(error.message); }
+  return data;
+}
+export async function urlsDocumentosCliente(rutas, segundos = 3600) {
+  if (!rutas || !rutas.length) return {};
+  const { data, error } = await supabase.storage.from(BUCKET_CLI).createSignedUrls(rutas, segundos);
+  if (error) throw new Error(error.message);
+  const out = {};
+  (data || []).forEach((x) => { if (x.signedUrl && !x.error) out[x.path] = x.signedUrl; });
+  return out;
+}
+export async function borrarDocumentoCliente(id, ruta) {
+  const { error } = await supabase.from('cliente_documentos').delete().eq('id', id);
+  if (error) throw new Error(error.message);
+  await supabase.storage.from(BUCKET_CLI).remove([ruta]);
+  return true;
+}
+
 /** Lo que ha pasado en Teamleader (fases, aceptadas, rechazadas, ofertas hechas allí) vuelve a la app. */
 export async function sincronizarTeamleader(clienteId = null) {
   return invocar('teamleader-presupuesto', clienteId ? { accion: 'sincronizar', cliente_id: clienteId } : { accion: 'sincronizar' });
