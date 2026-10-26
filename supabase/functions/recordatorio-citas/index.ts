@@ -672,20 +672,32 @@ Deno.serve(async (req) => {
     }).filter((p) => p.vence <= limiteV);
     const fechaLargaV = (iso: string) => new Date(iso + 'T12:00:00').toLocaleDateString('es-ES', { timeZone: ZONA, day: 'numeric', month: 'long', year: 'numeric' });
     const eur = (n: unknown) => (Number(n) || 0).toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' €';
-    const resultado: { avisados: string[]; sin_correo: string[]; fallos: string[] } = { avisados: [], sin_correo: [], fallos: [] };
+    const resultado: { avisados: string[]; sin_correo: string[]; ya_vencidos: string[]; fallos: string[] } = { avisados: [], sin_correo: [], ya_vencidos: [], fallos: [] };
+    // Al cliente se le avisa solo de lo que vence en estos dos días; lo que ya
+    // venció antes de hoy no se le recuerda (sale en el resumen interno). Y un
+    // solo correo por cliente aunque tenga varias opciones.
+    const porCliente = new Map<string, any[]>();
     for (const p of vencen) {
-      const cli = p.cliente || {};
+      if (p.vence < hoyV) { resultado.ya_vencidos.push((p.cliente?.nombre || 'Cliente') + ' — ' + (p.titulo || '')); continue; }
+      const k = String(p.cliente?.id || p.id);
+      if (!porCliente.has(k)) porCliente.set(k, []);
+      porCliente.get(k)!.push(p);
+    }
+    for (const lista of porCliente.values()) {
+      const cli = lista[0].cliente || {};
       const nombre = String(cli.nombre || 'cliente');
-      const num = p.tl_numero ? ' nº ' + String(p.tl_numero) : '';
       const email = esEmail(cli.email) ? String(cli.email).trim() : '';
+      const vence = lista.map((p) => p.vence).sort()[0];
+      const detalle = (p: any) => `«${p.titulo || ''}»${p.tl_numero ? ' (nº ' + p.tl_numero + ')' : ''}`;
+      const cual = lista.length === 1 ? 'el presupuesto ' + detalle(lista[0]) : 'los presupuestos ' + lista.map(detalle).join(', ');
       if (email && !soloVer) {
-        const asunto = 'Su presupuesto de Sysefen' + num + ' vence el ' + fechaLargaV(p.vence);
-        const texto = `Hola ${nombre},\n\nle recordamos que el presupuesto${num} «${p.titulo || ''}» tiene validez hasta el ${fechaLargaV(p.vence)}.\n\n`
+        const asunto = (lista.length === 1 ? 'Su presupuesto' : 'Sus presupuestos') + ' de Sysefen' + (lista.length === 1 && lista[0].tl_numero ? ' nº ' + lista[0].tl_numero : '') + ': validez hasta el ' + fechaLargaV(vence);
+        const texto = `Hola ${nombre},\n\nle recordamos que ${cual} ${lista.length === 1 ? 'tiene' : 'tienen'} validez hasta el ${fechaLargaV(vence)}.\n\n`
           + 'Si necesita más tiempo para decidir o quiere una prórroga, díganoslo' + (correoOficina ? ' respondiendo a este correo' : ' y la ampliamos sin problema') + '. Pasada esa fecha, los precios pueden cambiar.\n\nUn saludo,\nSysefen';
         const html = `<div style="font-family:Arial,sans-serif;color:#14170f;max-width:560px;margin:0 auto;padding:24px">
           <img src="${LOGO_URL}" alt="Sysefen" style="height:40px;margin-bottom:18px">
           <p>Hola ${nombre},</p>
-          <p>le recordamos que el presupuesto${num} <b>${(p.titulo || '').replace(/</g, '&lt;')}</b> tiene validez hasta el <b>${fechaLargaV(p.vence)}</b>.</p>
+          <p>le recordamos que ${cual.replace(/</g, '&lt;')} ${lista.length === 1 ? 'tiene' : 'tienen'} validez hasta el <b>${fechaLargaV(vence)}</b>.</p>
           <p>Si necesita más tiempo para decidir o quiere una prórroga, díganoslo${correoOficina ? ' respondiendo a este correo' : ' y la ampliamos sin problema'}. Pasada esa fecha, los precios pueden cambiar.</p>
           <p style="margin-top:22px">Un saludo,<br><b>Sysefen</b></p></div>`;
         try {
@@ -695,21 +707,21 @@ Deno.serve(async (req) => {
           });
           if (!r.ok) throw new Error(String(r.status));
           resultado.avisados.push(nombre);
-          try { await sb.from('cliente_bitacora').insert({ cliente_id: cli.id, tipo: 'email', texto: 'Aviso de vencimiento del presupuesto' + num + ' enviado al cliente: vence el ' + fechaLargaV(p.vence) + '. Si pide prórroga, darla desde el presupuesto.', por: null }); } catch (_) { /* sin bitácora */ }
+          try { await sb.from('cliente_bitacora').insert({ cliente_id: cli.id, tipo: 'email', texto: 'Aviso de vencimiento enviado al cliente: ' + cual + ', hasta el ' + fechaLargaV(vence) + '. Si pide prórroga, darla desde el presupuesto.', por: null }); } catch (_) { /* sin bitácora */ }
         } catch (e) { resultado.fallos.push(nombre + ': ' + (e as Error).message); continue; }
       } else if (!email) resultado.sin_correo.push(nombre);
-      if (!soloVer) await sb.from('presupuestos').update({ aviso_vencimiento_at: new Date().toISOString() }).eq('id', p.id);
     }
+    if (!soloVer && vencen.length) await sb.from('presupuestos').update({ aviso_vencimiento_at: new Date().toISOString() }).in('id', vencen.map((p) => p.id));
     // Resumen a presupuestos y Administración.
     if (vencen.length && !soloVer) {
       const { data: gente } = await sb.from('empleados').select('nombre, email_avisos, rol').in('rol', ['presupuestos', 'admin']).eq('activo', true);
       const lineasTxt = vencen.map((p) => `· ${p.cliente?.nombre || 'Cliente'} — ${p.titulo || ''}${p.tl_numero ? ' (nº ' + p.tl_numero + ')' : ''} — ${eur(p.total_venta)} — vence el ${fechaLargaV(p.vence)}`
-        + (esEmail(p.cliente?.email) ? '' : ' — SIN CORREO: avisar por teléfono' + (p.cliente?.telefono ? ' ' + p.cliente.telefono : ''))).join('\n');
+        + (p.vence < hoyV ? ' — YA VENCIDO, sin aviso al cliente' : esEmail(p.cliente?.email) ? ' — cliente avisado por correo' : ' — SIN CORREO: avisar por teléfono' + (p.cliente?.telefono ? ' ' + p.cliente.telefono : ''))).join('\n');
       // deno-lint-ignore no-explicit-any
       for (const g of (gente || []) as any[]) {
         if (!esEmail(g.email_avisos)) continue;
-        try { await mandar(String(g.email_avisos).trim(), `Presupuestos que vencen: ${vencen.length}`, `Hola ${g.nombre},\n\nestos presupuestos vencen en dos días o menos:\n\n${lineasTxt}\n\nAl cliente con correo ya se le ha avisado. La prórroga se da desde el presupuesto en la app: ${APP_URL}`,
-          `<div style="font-family:Arial,sans-serif;color:#14170f;max-width:600px;margin:0 auto;padding:24px"><img src="${LOGO_URL}" alt="Sysefen" style="height:40px;margin-bottom:18px"><p>Hola ${g.nombre},</p><p>estos presupuestos vencen en dos días o menos:</p><pre style="font:13px/1.5 Arial,sans-serif;white-space:pre-wrap">${lineasTxt.replace(/</g, '&lt;')}</pre><p>Al cliente con correo ya se le ha avisado. La prórroga se da desde el presupuesto en <a href="${APP_URL}">la app</a>.</p></div>`); }
+        try { await mandar(String(g.email_avisos).trim(), `Presupuestos que vencen: ${vencen.length}`, `Hola ${g.nombre},\n\nestos presupuestos vencen en dos días o menos, o ya vencieron sin respuesta:\n\n${lineasTxt}\n\nA los que vencen ahora y tienen correo ya se les ha avisado. La prórroga se da desde el presupuesto en la app: ${APP_URL}`,
+          `<div style="font-family:Arial,sans-serif;color:#14170f;max-width:600px;margin:0 auto;padding:24px"><img src="${LOGO_URL}" alt="Sysefen" style="height:40px;margin-bottom:18px"><p>Hola ${g.nombre},</p><p>estos presupuestos vencen en dos días o menos, o ya vencieron sin respuesta:</p><pre style="font:13px/1.5 Arial,sans-serif;white-space:pre-wrap">${lineasTxt.replace(/</g, '&lt;')}</pre><p>A los que vencen ahora y tienen correo ya se les ha avisado. La prórroga se da desde el presupuesto en <a href="${APP_URL}">la app</a>.</p></div>`); }
         catch (e) { resultado.fallos.push('oficina ' + g.nombre + ': ' + (e as Error).message); }
       }
     }
