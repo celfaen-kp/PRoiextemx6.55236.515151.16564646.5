@@ -466,7 +466,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '27.2'; // versión visible de la app (única fuente)
+const APP_VERSION = '27.3'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -7935,6 +7935,16 @@ A.presuOpcionInversor = (modelo) => {
   p.guardado = null; p.enTL = false; p.errTL = null;
   t.recalc();
 };
+/** Horas de camión grúa (26-10-2026): a 75 €/h, las que se pongan. */
+A.presuOpcionGrua = (h) => {
+  const t = fvObjetivo(); if (!t || V.presu.cargando) return; const p = t.holder;
+  const op = Object.assign({}, p.opcion || {});
+  const v = Number(String(h || '').replace(',', '.'));
+  if (v > 0) op.grua_horas = v; else op.grua_horas = 0;
+  p.opcion = op;
+  p.guardado = null; p.enTL = false; p.errTL = null;
+  t.recalc();
+};
 /** Número de paneles a mano ('' = los que calcula el motor). */
 A.presuOpcionPaneles = (n) => {
   const t = fvObjetivo(); if (!t || V.presu.cargando) return; const p = t.holder;
@@ -7993,6 +8003,8 @@ function opcionesMarcaHTML() {
       <span class="lbl" style="font-size:11px">Paneles</span>
       <input class="inp" data-f="presuOpcionPaneles" type="number" min="1" max="120" value="${esc(String(op.paneles_manual || ops.n_pan || ''))}" style="width:66px;padding:7px 9px;text-align:right">
       ${op.paneles_manual ? '<span class="tiny">a mano</span>' : '<span class="tiny">calculados</span>'}
+      <span class="lbl" style="font-size:11px">Grúa</span>
+      <input class="inp" data-f="presuOpcionGrua" type="number" min="0" max="48" step="0.5" value="${esc(String(op.grua_horas != null ? op.grua_horas : (fichaVisitaActual('solar') && fichaVisitaActual('solar').datos && fichaVisitaActual('solar').datos.grua_horas) || ''))}" placeholder="0" style="width:62px;padding:7px 9px;text-align:right"><span class="tiny">h a 75 €</span>
     </div>`; })()}
     ${(() => {
       const bat = opcionBateriaActual(p);
@@ -13102,6 +13114,7 @@ document.addEventListener('input', (e) => {
   if (f === 'presuOpcionInversor') return A.presuOpcionInversor(t.value);
   if (f === 'presuOpcionBateriaRef') return A.presuOpcionBateriaRef(t.value);
   if (f === 'presuOpcionPaneles') { clearTimeout(presuKwhT); presuKwhT = setTimeout(() => A.presuOpcionPaneles(t.value), 900); return; }
+  if (f === 'presuOpcionGrua') { clearTimeout(presuKwhT); presuKwhT = setTimeout(() => A.presuOpcionGrua(t.value), 900); return; }
   if (f === 'presuExtTl') { if (V.sheet) V.sheet.tl = t.value; return; }
   if (f === 'categoriaOtra') { if (V.draft) V.draft.categoriaOtra = t.value; return; }
   if (f === 'faseNota') { if (V.sheet) V.sheet.nota = t.value; return; }

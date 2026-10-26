@@ -134,7 +134,7 @@ PARTIDAS = [
     ('FV-09-004', 'Reparación / impermeabilización de cubierta', 'partida', {}, 'm² en visita: sale a 0 y con aviso'),
     ('FV-09-005', 'Desmontaje de instalación existente', 'partida', {}, ''),
     ('FV-10-001', 'Andamio (alquiler, montaje y desmontaje)', 'día', {}, ''),
-    ('FV-10-002', 'Camión grúa (alquiler por día)', 'día', {}, 'La plataforma elevadora no se usa (Ramón, 13-10-2026): si hace falta medio, es camión grúa'),
+    ('FV-10-002', 'Camión grúa (por horas)', 'h', {}, 'Enzo, 26-10-2026: 65 €/h de coste y 75 €/h de venta; las horas las pone quien presupuesta'),
     ('FV-10-003', 'Elevador / montacargas de paneles', 'día', {}, 'Sin regla: el elevador propio ya va en el presupuestador v2 a 65 €/h (Ramón, 13-10-2026)'),
     ('FV-10-004', 'Línea de vida / anclajes provisionales', 'ud', {}, ''),
     ('FV-10-005', 'Ocupación de vía pública (tasa y vallas)', 'ud', {}, ''),
@@ -256,6 +256,7 @@ def margen_de(ref):
     if ref.startswith(('FV-WECO-', 'FV-DEYE-')): return (RECARGO_REBACAS, False)                   # WECO y Deye: 50 % sobre venta
     if es_bateria_o_backup(ref): return (RECARGO_BATERIAS, False)                                 # baterías y backup: 22 % sobre venta
     if ref == 'FV-14-006': return (round(VENTA_JORNADA_CARGADOR / COSTE_JORNADA, 6), False)       # jornada del cargador: 330 → 450
+    if ref == 'FV-10-002': return (round(75 / 65, 6), False)                                       # camión grúa: 65 → 75 €/h (Enzo, 26-10-2026)
     if ref.startswith(('FV-FRONIUS-', 'FV-ENPHASE-', 'FV-BYD-')): return (RECARGO_EQUIPOS, False)  # equipos: +20 % sobre factura
     return (None, True)
 paneles = sorted([x for x in sysefen if x['referencia'].startswith('FV-01-001-') and num(x['atributos'].get('wp'))],
@@ -617,7 +618,10 @@ aviso({'fibrocemento': True}, 'Cubierta de fibrocemento: excluida o subcontratad
 
 # --- 10 · Medios auxiliares y seguridad
 regla('FV-10-001', {'medio_elevacion': 'andamio'}, 'dias_obra + 1', '10', sub=9, notas='Días de obra más uno de montaje.')
-regla('FV-10-002', {'medio_elevacion': 'grua'}, 'dias_obra', '10', sub=9, notas='Camión grúa los días de obra. La plataforma elevadora no se usa (Ramón, 13-10-2026).')
+# Camión grúa por horas (Enzo, 26-10-2026): las horas las pone quien presupuesta (grua_horas,
+# en la ficha o en las opciones del presupuesto). Marcar «grúa» sin horas solo avisa.
+regla('FV-10-002', {}, 'si(grua_horas > 0, grua_horas, 0)', '10', sub=9, notas='Camión grúa: las horas que se pongan (grua_horas), a 75 €/h.')
+aviso({'medio_elevacion': 'grua'}, 'Camión grúa marcado y sin horas: pon las horas de grúa en el presupuesto (75 €/h).', var='si(grua_horas > 0, 0, 1)', mn=1, mx=1)
 regla('FV-10-003', {'medio_elevacion': ['ninguno', 'escalera', '']}, 'si(plantas >= 2, dias_obra, 0)', '10', sub=8, activa=False,
       notas='Inactiva desde el 13-10-2026: el elevador propio ya va en el presupuestador v2 a 65 €/h (Ramón). Antes: más de una planta sin otro medio, elevador de paneles.')
 fuera('FV-10-004', {'tipo_estructura': ['teja', 'chapa']}, HAY, '10', sub=7, notas='Cubierta inclinada: línea de vida.')

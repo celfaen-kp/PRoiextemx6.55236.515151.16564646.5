@@ -263,8 +263,12 @@ r = calcular('solar', con({ medio_elevacion: 'escalera', plantas: 2 }), config);
 comprueba('dos plantas con escalera: el elevador antiguo ya no sale (va en el presupuestador v2 a 65 €/h, Ramón 13-10-2026)', !linea(r, 'FV-10-003'));
 igual('pero sí medio día más', r.variables.dias_obra, 2.5);
 r = calcular('solar', con({ medio_elevacion: 'grua' }), config);
-igual('camión grúa los días de obra', cant(r, 'FV-10-002'), 2);
+comprueba('grúa marcada sin horas: no sale la línea, solo el aviso (Enzo, 26-10-2026)', !linea(r, 'FV-10-002') && aviso(r, 'sin horas'));
+r = calcular('solar', con({ medio_elevacion: 'grua', grua_horas: 4 }), config);
+igual('camión grúa: las horas que se pongan', cant(r, 'FV-10-002'), 4);
 comprueba('y se llama camión grúa', /Camión grúa/.test(linea(r, 'FV-10-002').descripcion));
+igual('a 65 € de coste la hora', linea(r, 'FV-10-002').precio_coste, 65);
+igual('y 75 € de venta', linea(r, 'FV-10-002').precio_tarifa, 75);
 r = calcular('solar', con({ medio_elevacion: 'plataforma' }), config);
 comprueba('la plataforma elevadora no se usa: no sale nada', !linea(r, 'FV-10-002') && !linea(r, 'FV-10-003'));
 

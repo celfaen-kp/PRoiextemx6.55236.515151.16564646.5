@@ -303,6 +303,8 @@ const SOLAR = {
         { key: 'medio_elevacion', etiqueta: 'Cómo se sube el material', tipo: 'opcion', motor: true,
           opciones: ['ninguno', 'escalera', 'andamio', 'grua'],
           ayuda: 'El elevador propio va aparte por horas. La plataforma elevadora no se usa: si hace falta medio, camión grúa' },
+        { key: 'grua_horas', etiqueta: 'Horas de camión grúa', tipo: 'numero', unidad: 'h', motor: true,
+          ayuda: 'A 75 €/h. Se puede cambiar también desde el presupuesto' },
         { key: 'horas_elevador', etiqueta: 'Horas de elevador propio', tipo: 'numero', unidad: 'h', motor: true,
           ayuda: 'Se cobra aparte a 65 €/h. En cubierta plana son al menos 4' },
         { key: 'km_obra', etiqueta: 'Km de la nave a la obra', tipo: 'numero', unidad: 'km', motor: true,
