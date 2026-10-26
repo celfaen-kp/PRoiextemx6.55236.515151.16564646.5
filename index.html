@@ -466,7 +466,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '26.8'; // versión visible de la app (única fuente)
+const APP_VERSION = '26.9'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -7669,7 +7669,8 @@ function presupuestoHTML(v, fichas) {
  */
 // Quién ve costes y beneficio: Administración siempre; presupuestos en
 // fotovoltaica, para jugar con el descuento y ver el margen real (Enzo).
-const veMargenPresu = (cat) => esAdmin() || (rol() === 'presupuestos' && cat === 'solar');
+// Presupuestos ve coste y beneficio en todas las categorías (Enzo, 26-10-2026; antes solo en FV).
+const veMargenPresu = (_cat) => esAdmin() || rol() === 'presupuestos';
 // El margen objetivo del presupuestador FV v2 (Ramón): 50 % sobre la venta,
 // en verde si se mantiene y en rojo si el descuento lo baja de ahí.
 const MARGEN_OBJETIVO_FV = 50;

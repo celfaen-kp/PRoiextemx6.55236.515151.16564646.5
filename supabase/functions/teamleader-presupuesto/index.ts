@@ -615,7 +615,7 @@ Deno.serve(async (req) => {
   }
 
   const { data: lineas } = await sb.from('presupuesto_lineas')
-    .select('orden, seccion, descripcion, detalle_tecnico, cantidad, unidad, precio_tarifa, precio_venta, iva, producto_ref')
+    .select('orden, seccion, descripcion, detalle_tecnico, cantidad, unidad, precio_tarifa, precio_venta, precio_coste, iva, producto_ref')
     .eq('presupuesto_id', id).order('orden');
   if (!lineas || !lineas.length) return json({ error: 'Ese presupuesto no tiene líneas.' }, 400);
 
@@ -756,7 +756,13 @@ Deno.serve(async (req) => {
         // acabado en un tercio), se manda como una sola unidad con su importe.
         const unitario = dosDec(venta / cantidad);
         const cuadra = Math.round(unitario * cantidad * 100) === Math.round(venta * 100);
+        // El coste va a Teamleader como precio de compra (Enzo, 26-10-2026): así
+        // la oferta enseña allí el margen. Por unidad, o total si va como una unidad.
+        const costeUd = l.precio_coste == null || l.precio_coste === '' ? null : Number(l.precio_coste);
+        const compra = costeUd == null || !Number.isFinite(costeUd) ? undefined
+          : { amount: dosDec(cuadra ? costeUd : costeUd * cantidad), currency: 'EUR' };
         return {
+          purchase_price: compra,
           quantity: cuadra ? cantidad : 1,
           description: limpio(l.descripcion).slice(0, 255),
           extended_description: limpio(l.detalle_tecnico) || undefined,
