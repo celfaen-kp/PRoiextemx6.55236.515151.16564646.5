@@ -466,7 +466,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '27.3'; // versión visible de la app (única fuente)
+const APP_VERSION = '27.4'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -7781,6 +7781,7 @@ function presuPanelHTML() {
   });
   return `${d ? `
       ${opcionesMarcaHTML()}
+      ${opcionesAeroHTML()}
       ${(d.incidencias || []).concat(Object.keys(p.fusion || {}).flatMap((c) => p.fusion[c].incidencias || [])).length ? `<div style="margin-top:12px">${(d.incidencias || []).concat(Object.keys(p.fusion || {}).flatMap((c) => p.fusion[c].incidencias || [])).map((i) => `<div class="tiny" style="margin-top:6px;color:${i.nivel === 'error' ? 'var(--rojo)' : 'var(--ambar-o)'}">${i.nivel === 'error' ? '⚠' : '·'} ${esc(i.mensaje)}</div>`).join('')}</div>` : ''}
 
       ${grupos.map((g) => `${grupos.length > 1 ? `<div style="margin-top:24px;padding-top:12px;border-top:3px solid var(--tinta)"><div style="font:600 19px/1.1 var(--cond)">${esc(g.titulo)}</div>${g.total != null ? `<div class="tiny" style="margin-top:3px">${eur(g.total)} sin IVA</div>` : ''}</div>` : ''}${g.secciones.map((s) => `<div style="margin-top:16px">
@@ -7977,6 +7978,38 @@ function opcionBateriaActual(p) {
   const op = p.opcion || {};
   if (op.baterias != null) return { con: op.baterias === 'si', marca: op.bateria_marca || '', kwh: Number(op.baterias_kwh) || 0 };
   return bateriaBaseFV();
+}
+/* ---------- aerotermia: marca de la bomba de calor (26-10-2026) ---------- */
+const MARCAS_AE = [['vaillant', 'Vaillant'], ['midea', 'Midea']];
+function aeObjetivo() {
+  const p = V.presu;
+  if (p.cat === 'aerotermia') return { holder: p, recalc: () => A.presuCalcular('aerotermia'), conjunto: false };
+  const f = p.fusion && p.fusion.aerotermia;
+  if (f) return { holder: f, recalc: () => A.presuFusionar('aerotermia', true), conjunto: true };
+  return null;
+}
+A.presuOpcionMarcaAero = (m) => {
+  const t = aeObjetivo(); if (!t || V.presu.cargando) return; const p = t.holder;
+  if (!enSuelto() && !fichaVisitaActual('aerotermia')) { avisar('Esta visita no tiene ficha de aerotermia: no se puede cambiar la marca.'); return; }
+  const op = Object.assign({}, p.opcion || {});
+  op.marca_aerotermia = m || 'vaillant';
+  p.opcion = op;
+  p.guardado = null; p.enTL = false; p.errTL = null;
+  t.recalc();
+};
+function opcionesAeroHTML() {
+  const t = aeObjetivo(); if (!t) return '';
+  const p = t.holder;
+  const ficha = fichaVisitaActual('aerotermia');
+  const actual = (p.opcion && p.opcion.marca_aerotermia) || (ficha && ficha.datos && ficha.datos.marca_aerotermia) || (enSuelto() && V.suelto.marca_aerotermia) || 'vaillant';
+  return `<div style="margin-top:12px;padding:10px 12px;border-radius:12px;background:rgba(20,23,15,.045)">
+    ${t.conjunto ? '<div class="lbl" style="font-size:11px;margin-bottom:8px;color:var(--verde-o)">Aerotermia · dentro del conjunto</div>' : ''}
+    <div class="row g8" style="align-items:center;flex-wrap:wrap">
+      <span class="lbl" style="font-size:11px">Bomba de calor</span>
+      ${MARCAS_AE.map(([k, l]) => `<span class="chip ${actual === k ? 'on' : ''}" data-a="presuOpcionMarcaAero" data-m="${k}" style="cursor:pointer">${l}</span>`).join('')}
+      <span class="tiny">La máquina por tramo de potencia; el acumulador y el kit son los mismos.</span>
+    </div>
+  </div>`;
 }
 function opcionesMarcaHTML() {
   const t = fvObjetivo(); if (!t) return '';
@@ -12712,6 +12745,7 @@ document.addEventListener('click', (e) => {
   if (a === 'cliDocNuevo') { e.stopPropagation(); return A.cliDocNuevo(d.id, d.t); }
   if (a === 'cliDocBorrar') { e.stopPropagation(); return A.cliDocBorrar(d.id); }
   if (a === 'presuFusionar') return A.presuFusionar(d.c);
+  if (a === 'presuOpcionMarcaAero') return A.presuOpcionMarcaAero(d.m);
   if (a === 'presuFusionQuitar') return A.presuFusionQuitar(d.c);
   if (a === 'fotoVisorForm') return A.fotoVisorForm(d.c, d.k);
   if (a === 'fotoVisorAdj') return A.fotoVisorAdj(d.c, d.i);

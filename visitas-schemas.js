@@ -136,6 +136,10 @@ const AEROTERMIA = {
             { key: 'tipo', etiqueta: 'Tipo', tipo: 'opcion', opciones: ['pared', 'techo', 'conductos', 'suelo'] },
             { key: 'm2', etiqueta: 'm²', tipo: 'numero' },
           ] },
+        // Marca de la bomba de calor (26-10-2026): Vaillant aroTHERM o Midea. Sin
+        // marcar, Vaillant. Se puede cambiar también desde el presupuesto.
+        { key: 'marca_aerotermia', etiqueta: 'Marca de la bomba de calor', tipo: 'opcion', motor: true,
+          opciones: ['vaillant', 'midea'], ayuda: 'Sin marcar, Vaillant. El acumulador y el kit son los mismos' },
         { key: 'acs_acumulador_litros', etiqueta: 'Acumulador de ACS', tipo: 'entero', unidad: 'l',
           motor: true, ayuda: 'Se propone por ocupantes y baños. Se puede cambiar' },
       ],
@@ -603,6 +607,7 @@ export const ETIQUETAS = {
   calefaccion: 'Calefacción', acs: 'ACS', refrigeracion: 'Refrigeración', piscina: 'Piscina',
   caldera_gas: 'Caldera de gas', caldera_gasoleo: 'Caldera de gasóleo',
   caldera_pellets: 'Caldera de pellets', electrico: 'Eléctrico', bomba_calor: 'Bomba de calor',
+  vaillant: 'Vaillant', midea: 'Midea',
   radiadores: 'Radiadores', suelo_radiante: 'Suelo radiante', fancoils: 'Fancoils',
   radiadores_bt: 'Radiadores de baja temperatura', se_mantiene: 'Se mantiene',
   retirada_caldera: 'Retirar caldera', retirada_deposito_gasoleo: 'Retirar depósito de gasóleo',
