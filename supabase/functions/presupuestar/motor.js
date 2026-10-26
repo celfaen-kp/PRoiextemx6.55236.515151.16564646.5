@@ -29,8 +29,12 @@ function cumple(condicion, ambito) {
   return Object.keys(condicion).every((k) => {
     const esperado = condicion[k];
     const real = ambito[k];
-    if (Array.isArray(esperado)) return esperado.some((v) => mismo(v, real));
-    return mismo(esperado, real);
+    // Un campo de varias opciones (emisores_previstos: ['suelo_radiante',
+    // 'radiadores_bt']) cumple si CONTIENE lo esperado (26-10-2026; antes solo
+    // casaba con una única opción marcada).
+    const casa = (v) => (Array.isArray(real) ? real.some((x) => mismo(v, x)) : mismo(v, real));
+    if (Array.isArray(esperado)) return esperado.some(casa);
+    return casa(esperado);
   });
 }
 function mismo(a, b) {
