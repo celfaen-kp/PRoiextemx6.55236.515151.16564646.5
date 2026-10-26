@@ -397,7 +397,9 @@ export function entradaDesdeDatos(d, modelo) {
     : cub === 'chapa_sandwich' ? 'Chapa' : 'Otra';
   if (cub === 'pizarra') avisos.push('Cubierta de pizarra: se ha contado como teja (pinchos y taco químico). Revisar la fijación.');
   // Paneles: los de la ficha (los que caben, o a mano); si no, los kWp pedidos; si no, el consumo o la factura.
-  let paneles = Math.max(n('modulos_estimados'), n('paneles_manual'));
+  // Los paneles a mano mandan sobre los que «caben» de la ficha (26-10-2026: con
+  // 73 estimados y 14 a mano salían 73, porque se cogía el mayor).
+  let paneles = n('paneles_manual') > 0 ? n('paneles_manual') : n('modulos_estimados');
   if (!paneles && n('kwp_objetivo') > 0) paneles = Math.ceil(n('kwp_objetivo') * 1000 / wp);
   if (n('wp_manual') > 0 && Math.round(n('wp_manual')) !== wp) {
     avisos.push('El modelo presupuesta el panel de ' + wp + ' Wp (Trina Vertex S+); los ' + g(n('wp_manual')) + ' Wp de la ficha no se usan.');
