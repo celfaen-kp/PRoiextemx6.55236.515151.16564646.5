@@ -583,14 +583,23 @@ export async function apuntarCorreccion(fila) {
 export async function buscarProductos(texto, familia) {
   const q = String(texto || '').trim();
   if (q.length < 2) return [];
-  let consulta = supabase.from('productos')
-    .select('referencia, nombre, familia, unidad, precio_tarifa, detalle_tecnico, especificaciones, iva')
-    .eq('activo', true)
-    .or(`nombre.ilike.%${q}%,referencia.ilike.%${q}%`)
-    .order('nombre')
-    .limit(25);
-  if (familia) consulta = consulta.eq('familia', familia);
-  return unwrap(await consulta) || [];
+  // Cada palabra tiene que estar en el nombre, en cualquier orden («arotherm 8»
+  // encuentra «aroTHERM plus 8 básico…»). Antes se buscaba la frase entera y,
+  // además, el texto en la referencia: «8» casaba con casi todos los códigos y
+  // los 25 primeros por nombre tapaban lo que se buscaba (Enzo, 26-10-2026).
+  const COLS = 'referencia, nombre, familia, unidad, precio_tarifa, detalle_tecnico, especificaciones, iva';
+  const palabras = q.split(/\s+/).filter(Boolean);
+  let porNombre = supabase.from('productos').select(COLS).eq('activo', true);
+  palabras.forEach((w) => { porNombre = porNombre.ilike('nombre', '%' + w.replace(/[%_,]/g, '') + '%'); });
+  if (familia) porNombre = porNombre.eq('familia', familia);
+  const lista = unwrap(await porNombre.order('nombre').limit(60)) || [];
+  // Y por referencia, solo si lo escrito parece un código (sin espacios).
+  if (palabras.length === 1 && /^[\w.-]{3,}$/.test(q)) {
+    let porRef = supabase.from('productos').select(COLS).eq('activo', true).ilike('referencia', '%' + q + '%');
+    if (familia) porRef = porRef.eq('familia', familia);
+    (unwrap(await porRef.limit(20)) || []).forEach((x) => { if (!lista.some((y) => y.referencia === x.referencia)) lista.push(x); });
+  }
+  return lista.sort((a, b) => String(a.nombre).localeCompare(String(b.nombre), 'es', { sensitivity: 'base' }));
 }
 
 /* --- legalizaciones fotovoltaicas (sql/etapa55) ------------------------------- */
