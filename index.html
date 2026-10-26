@@ -466,7 +466,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '26.9'; // versión visible de la app (única fuente)
+const APP_VERSION = '27.0'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -8903,7 +8903,7 @@ function vPresupuestos() {
       <div class="row g8"><span class="badge" style="background:rgba(20,23,15,.06);color:var(--tinta)">${esc(nombreCat(x.categoria) || x.categoria)}</span>
         ${(() => { const sg = seguimientoPresu(x); return `<span class="badge" style="background:${sg.k === 'aceptado' ? '#e3efe5' : sg.k === 'rechazado' ? 'var(--rojo-cl)' : sg.k === 'esperando' ? '#f8efdc' : 'rgba(20,23,15,.06)'};color:${sg.color}">${esc(sg.txt)}</span>`; })()}
         <div class="grow"></div><span class="tiny">${fechaCorta(x.created_at)}</span></div>
-      <div class="h2" style="margin-top:9px">${esc(x.titulo || (x.cliente && x.cliente.nombre) || 'Sin título')}</div>
+      <div class="h2" style="margin-top:9px">${x.tl_numero ? '<span class="tiny" style="font-weight:600;margin-right:6px">Nº ' + esc(x.tl_numero) + '</span>' : ''}${esc(x.titulo || (x.cliente && x.cliente.nombre) || 'Sin título')}</div>
       <div class="row" style="align-items:baseline;justify-content:space-between;margin-top:8px">
         <div class="tiny">${x.visita && x.visita.codigo ? 'Visita ' + esc(x.visita.codigo) : 'Sin visita'}</div>
         <div class="num" style="font-size:19px">${eur(x.total_venta)}</div>
@@ -9416,7 +9416,7 @@ function imprimirPresupuestoHTML(d) {
         <span style="font:700 18px var(--cond)">${eur(total * (1 + iva / 100))}</span>
       </div>
     </div>
-    <div style="font:400 10px/1.5 var(--sans);color:#666;margin-top:14px">Presupuesto orientativo, válido 30 días. No incluye obra civil ni permisos que no se nombren arriba.</div>
+    <div style="font:400 10px/1.5 var(--sans);color:#666;margin-top:14px">Presupuesto orientativo, válido ${esc(String(d.validez_dias || 15))} días. No incluye obra civil ni permisos que no se nombren arriba.</div>
   </div>`;
 }
 
@@ -9558,6 +9558,29 @@ function vPresupuestoVer() {
 // El seguimiento del presupuesto, en su ficha: los pasos de crearlo a la
 // respuesta del cliente, y los botones para marcar cada uno (sql/etapa64).
 const CAT_A_OBRA = { aerotermia: 'AE', solar: 'FV', aire_acondicionado: 'AC', electricidad: 'EL' };
+/** Cuándo vence un presupuesto enviado: envío + validez (15 días) + prórroga. Null si no se ha enviado. */
+function vencePresu(d) {
+  if (!d || !d.enviado_cliente_at) return null;
+  const t = new Date(d.enviado_cliente_at); t.setDate(t.getDate() + (Number(d.validez_dias) || 15) + (Number(d.prorroga_dias) || 0));
+  return fechaLocal(t.toISOString());
+}
+A.presuProrrogar = async () => {
+  const d = V.presuVer && V.presuVer.datos; if (!d || V.presuSegBusy || !d.enviado_cliente_at) return;
+  V.presuSegBusy = true; render();
+  try {
+    Object.assign(d, await visitasDB.seguimientoPresupuesto(d.id, { prorroga_dias: (Number(d.prorroga_dias) || 0) + 15, aviso_vencimiento_at: null }));
+    toast('Prorrogado 15 días: vence el ' + fechaCorta(vencePresu(d) + 'T12:00') + '.');
+    anotar(d.cliente_id || (d.cliente && d.cliente.id), 'presupuesto', 'Prórroga de 15 días del presupuesto' + (d.tl_numero ? ' nº ' + d.tl_numero : '') + ': vence el ' + fechaCorta(vencePresu(d) + 'T12:00'));
+  } catch (e) { avisar(/prorroga_dias|schema cache/i.test(msgError(e)) ? 'Falta ejecutar sql/etapa88 en Supabase.' : 'No se pudo: ' + msgError(e)); }
+  V.presuSegBusy = false; render();
+};
+let presuTlNumT;
+A.presuTlNumero = async (v) => {
+  const d = V.presuVer && V.presuVer.datos; if (!d) return;
+  const num = String(v || '').trim() || null; if (num === (d.tl_numero || null)) return;
+  try { Object.assign(d, await visitasDB.seguimientoPresupuesto(d.id, { tl_numero: num })); toast(num ? 'Nº de Teamleader apuntado.' : 'Nº de Teamleader quitado.'); }
+  catch (e) { avisar(/tl_numero|schema cache/i.test(msgError(e)) ? 'Falta ejecutar sql/etapa88 en Supabase.' : 'No se pudo guardar: ' + msgError(e)); }
+};
 function seguimientoHTML(d) {
   const sg = seguimientoPresu(d);
   const ob = d.obra_id ? obraById(d.obra_id) : null;
@@ -9566,11 +9589,15 @@ function seguimientoHTML(d) {
     ['En Teamleader', d.tl_quotation_id ? 'subido' : 'sin subir', !!d.tl_quotation_id],
     ['Revisado', d.revisado_at ? fechaCorta(d.revisado_at) + (d.revisado_por ? ' · ' + agNombreEmp(d.revisado_por) : '') : 'pendiente de revisar', !!d.revisado_at],
     ['Enviado al cliente', d.enviado_cliente_at ? fechaCorta(d.enviado_cliente_at) + (d.enviado_cliente_por ? ' · ' + agNombreEmp(d.enviado_cliente_por) : '') : 'pendiente', !!d.enviado_cliente_at],
+    ['Validez', (() => { const v = vencePresu(d); if (!v) return (d.validez_dias || 15) + ' días desde el envío'; const vencido = v < hoyISO() && (d.respuesta_cliente || 'pendiente') === 'pendiente';
+      return (vencido ? 'Vencido el ' : 'Hasta el ') + fechaCorta(v + 'T12:00') + (d.prorroga_dias ? ' · prórroga ' + d.prorroga_dias + ' días' : '') + (d.aviso_vencimiento_at ? ' · cliente avisado ' + fechaCorta(d.aviso_vencimiento_at) : ''); })(),
+      !!d.enviado_cliente_at && !(vencePresu(d) < hoyISO() && (d.respuesta_cliente || 'pendiente') === 'pendiente')],
     ['Respuesta del cliente', d.respuesta_cliente && d.respuesta_cliente !== 'pendiente' ? { aceptado: 'Aceptado', rechazado: 'Rechazado', caducado: 'Caducado' }[d.respuesta_cliente] + (d.respondido_at ? ' · ' + fechaCorta(d.respondido_at) : '') : 'esperando', d.respuesta_cliente && d.respuesta_cliente !== 'pendiente'],
   ];
   const busy = V.presuSegBusy;
   return `<div class="card" style="margin-top:12px;padding:12px 15px">
     <div class="row g8" style="align-items:center"><span class="dot" style="width:10px;height:10px;background:${sg.color}"></span><span style="font:600 15px var(--sans)">${esc(sg.txt)}</span></div>
+    <div class="row g8" style="align-items:center;margin-top:10px"><span class="lbl" style="font-size:11px;flex:none">Nº Teamleader</span><input class="inp" data-f="presuTlNumero" value="${esc(d.tl_numero || '')}" placeholder="2026/634" style="width:120px;padding:7px 9px"><span class="tiny">La API no lo da: se apunta a mano y sale en la lista.</span></div>
     <div style="margin-top:10px">${pasos.map(([t, sub, ok]) => `<div class="row g10" style="align-items:center;padding:7px 0;border-bottom:1px solid var(--l1)">
       <span class="dot" style="width:9px;height:9px;background:${ok ? 'var(--verde)' : 'rgba(20,23,15,.15)'}"></span>
       <span class="grow" style="font:500 14px var(--sans);${ok ? '' : 'color:var(--t2)'}">${t}</span><span class="tiny">${esc(sub)}</span></div>`).join('')}</div>
@@ -9578,7 +9605,9 @@ function seguimientoHTML(d) {
       <div class="tiny" style="margin-top:6px;text-align:center">${d.tl_quotation_id ? 'Repásalo en Teamleader (precios, textos, descuento) y márcalo aquí.' : 'Lo normal: subirlo a Teamleader, repasarlo allí y marcarlo aquí.'}</div>`
     : !d.enviado_cliente_at ? `<button class="btn btn-verde" data-a="presuEnviadoCliente" style="margin-top:12px" ${busy ? 'disabled' : ''}>Ya se lo envié al cliente</button>
       <div class="tiny" style="margin-top:6px;text-align:center">Se lo mandas desde Teamleader; aquí solo se apunta la fecha.</div>`
-    : `<div class="lbl" style="margin:12px 0 6px">¿Qué dijo el cliente?</div>
+    : `${(d.respuesta_cliente || 'pendiente') === 'pendiente' ? `<button class="btn btn-gris" data-a="presuProrrogar" style="margin-top:12px;border-radius:99px" ${busy ? 'disabled' : ''}>Prorrogar 15 días${vencePresu(d) ? ' (hasta ' + fechaCorta(vencePresu(d) + 'T12:00') + ' ahora)' : ''}</button>
+      <div class="tiny" style="margin-top:6px;text-align:center">Dos días antes de vencer, el cliente recibe un aviso por correo y presupuestos un resumen.</div>` : ''}
+      <div class="lbl" style="margin:12px 0 6px">¿Qué dijo el cliente?</div>
       <div class="row g8" style="flex-wrap:wrap">${[['pendiente', 'Esperando'], ['aceptado', 'Aceptó'], ['rechazado', 'Rechazó'], ['caducado', 'Caducó']].map(([k, l]) => `<span class="chip ${(d.respuesta_cliente || 'pendiente') === k ? 'on' : ''}" data-a="presuRespuesta" data-r="${k}" style="cursor:pointer;${k === 'aceptado' && (d.respuesta_cliente || 'pendiente') === k ? 'background:var(--verde);border-color:var(--verde)' : ''}">${l}</span>`).join('')}</div>
       ${d.respuesta_cliente === 'rechazado' ? `<input class="inp" data-f="presuMotivoRechazo" value="${esc(d.motivo_rechazo || '')}" placeholder="Por qué (precio, otra empresa, lo aplaza…)" style="margin-top:10px">` : ''}
       ${d.respuesta_cliente === 'aceptado' ? (ob
@@ -12627,6 +12656,7 @@ document.addEventListener('click', (e) => {
   if (a === 'borrarVisita') return A.borrarVisita(d.id);
   if (a === 'presuBorrar') return A.presuBorrar(d.id);
   if (a === 'presuEnviadoCliente') return A.presuEnviadoCliente();
+  if (a === 'presuProrrogar') return A.presuProrrogar();
   if (a === 'presuRevisado') return A.presuRevisado();
   if (a === 'presuRespuesta') return A.presuRespuesta(d.r);
   if (a === 'presuCrearObra') return A.presuCrearObra();
@@ -12975,6 +13005,7 @@ document.addEventListener('input', (e) => {
   }
   if (!f) return;
   if (f.startsWith('vf')) return A.vf(f, t.dataset, t.value);
+  if (f === 'presuTlNumero') { clearTimeout(presuTlNumT); presuTlNumT = setTimeout(() => A.presuTlNumero(t.value), 900); return; }
   if (f === 'presuMotivoRechazo') { clearTimeout(V._tRech); V._tRech = setTimeout(() => A.presuMotivoRechazo(t.value), 800); return; }
   if (f === 'segTexto') { if (V.sheet) V.sheet.texto = t.value; return; }
   if (f === 'segFecha') { if (V.sheet) V.sheet.fecha = t.value; return; }

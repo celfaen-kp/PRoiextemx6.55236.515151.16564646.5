@@ -605,7 +605,7 @@ Deno.serve(async (req) => {
 
   // --- el presupuesto ---------------------------------------------------------
   const { data: p } = await sb.from('presupuestos')
-    .select('id, categoria, titulo, cliente_id, visita_id, total_venta, dto_global_pct, tl_quotation_id')
+    .select('id, categoria, titulo, cliente_id, visita_id, total_venta, dto_global_pct, tl_quotation_id, validez_dias')
     .eq('id', id).maybeSingle();
   if (!p) return json({ error: 'Ese presupuesto no existe.' }, 404);
   if (!(await clienteDeColaborador(sb, yo, p.cliente_id, p.visita_id))) return json({ error: SOLO_SUS_CLIENTES }, 403);
@@ -797,12 +797,24 @@ Deno.serve(async (req) => {
         text: '**' + nombreOferta + '**',
         grouped_lines: grupos.map((g) => ({ section: { title: g.titulo }, line_items: items(g) })),
       };
+      // Caducidad de la oferta en Teamleader (etapa88, 26-10-2026): la validez del
+      // presupuesto (15 días). Solo si la cuenta tiene esa opción; si la API la
+      // rechaza, se crea sin ella.
+      const validez = Number((p as { validez_dias?: number }).validez_dias) || 15;
+      const caduca = new Date(Date.now() + validez * 86400_000).toISOString().slice(0, 10);
+      const conCaducidad = { ...base, expiry: { expires_after: caduca, action_after_expiry: 'none' } };
       // deno-lint-ignore no-explicit-any
       let r: any;
-      try { r = await crm(token, 'quotations.create', { ...base, name: nombreOferta }); }
-      catch (e) {
-        if ((e as { status?: number }).status === 400 || /name|unknown|invalid/i.test((e as Error).message)) r = await crm(token, 'quotations.create', base);
-        else throw e;
+      const esRechazo = (e: unknown) => (e as { status?: number }).status === 400 || /name|unknown|invalid|expiry/i.test((e as Error).message);
+      try { r = await crm(token, 'quotations.create', { ...conCaducidad, name: nombreOferta }); }
+      catch (e1) {
+        if (!esRechazo(e1)) throw e1;
+        try { r = await crm(token, 'quotations.create', conCaducidad); }
+        catch (e2) {
+          if (!esRechazo(e2)) throw e2;
+          try { r = await crm(token, 'quotations.create', { ...base, name: nombreOferta }); }
+          catch (e3) { if (!esRechazo(e3)) throw e3; r = await crm(token, 'quotations.create', base); }
+        }
       }
       quotationId = r?.data?.id || '';
       if (!quotationId) throw new Error('El CRM no devolvió el id de la oferta.');
