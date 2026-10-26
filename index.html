@@ -466,7 +466,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '27.0'; // versión visible de la app (única fuente)
+const APP_VERSION = '27.1'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -7748,7 +7748,7 @@ function desgloseFV2HTML(oi) {
       <div class="tiny" style="color:var(--t3);padding-left:8px">${(dim.cable_cc.tabla || []).map((t) => `${t.seccion === dim.cable_cc.seccion ? '<b>' : ''}${t.seccion} mm²: ${String(t.caida_pct).replace('.', ',')} %${t.cumple ? ' ✓' : ' ✗'} · ${eur(t.coste_m)}/m${t.precio_estimado ? ' (est.)' : ''}${t.seccion === dim.cable_cc.seccion ? '</b>' : ''}`).join(' · ')}</div>` : ''}
     ${bloques.map((b) => `<div style="margin-top:8px"><div class="tiny" style="font-weight:600;color:var(--tinta)">${esc(b.nombre)} · ${eur(b.total)}</div>
       ${b.items.map((x) => `<div class="tiny" style="color:var(--t3);padding-left:8px">${esc(x.nombre)} · ${esc(String(x.cantidad))} ${esc(x.unidad || 'ud')} × ${eur(x.coste_ud)} = ${eur(x.coste)}${x.aviso ? ` <span style="color:var(--ambar-o)">⚠ ${esc(x.aviso)}</span>` : ''}</div>`).join('')}</div>`).join('')}
-    <div class="tiny" style="margin-top:8px;color:var(--tinta)">Coste total ${eur(p.coste_total)} · precio objetivo ${eur(p.precio_objetivo)} (margen ${pct(p.margen_objetivo)} sobre venta, redondeado a 10 €)${p.horas_elev ? ' · elevador ' + esc(String(p.horas_elev)) + ' h = ' + eur(p.elevador) : ''} · margen real sin descuento ${pct(p.margen_real_sin_dto)}</div>
+    <div class="tiny" style="margin-top:8px;color:var(--tinta)">Coste total ${eur(p.coste_total)} · precio objetivo ${eur(p.precio_objetivo)} (${p.mo_tabla ? 'mano de obra a ' + String(p.mo_tabla.eur_w).replace('.', ',') + ' €/W = ' + eur(p.mo_tabla.venta_mo) + ' con coste ' + eur(p.mo_tabla.coste_mo) + '; el resto al ' + pct(p.margen_objetivo) + ' sobre venta' : 'margen ' + pct(p.margen_objetivo) + ' sobre venta'}, redondeado a 10 €)${p.horas_elev ? ' · elevador ' + esc(String(p.horas_elev)) + ' h = ' + eur(p.elevador) : ''} · margen real sin descuento ${pct(p.margen_real_sin_dto)}</div>
     ${Array.isArray(oi.avisos) && oi.avisos.length ? `<div style="margin-top:6px">${oi.avisos.map((a) => `<div class="tiny" style="color:var(--ambar-o)">· ${esc(a)}</div>`).join('')}</div>` : ''}
     ${oi.pedido ? `<div class="tiny" style="margin-top:8px;font-weight:600;color:var(--tinta)">Pedido de material si acepta</div>
       ${Object.keys(oi.pedido).map((q) => `<div class="tiny" style="color:var(--t3);padding-left:8px">${esc(q)} · ${oi.pedido[q].lineas.length} líneas · ${eur(oi.pedido[q].total)}</div>`).join('')}` : ''}

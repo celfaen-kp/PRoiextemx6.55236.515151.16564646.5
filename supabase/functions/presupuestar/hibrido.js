@@ -71,7 +71,7 @@ export function presupuestarFV(datos, mod, cfg) {
   // que el modelo v2 no trae: lo elige el motor por capítulos (Ramón, 13-10-2026).
   const preparado = String(datos.baterias || '') === 'dejar_preparado';
   const inversorFuera = (conBateria || preparado) && fronius;
-  const r = calcularFV(m.entrada, modelo, { chapaAMedida: false, inversorFuera });
+  const r = calcularFV(m.entrada, modelo, { chapaAMedida: false, inversorFuera, jornadaBateria: conBateria });
   const avisosEntrada = m.avisos.slice();
   if (!estructuraNueva) avisosEntrada.push('Cubierta «' + m.cubierta_app + '»: el modelo v2 no la cubre; la estructura sale del motor por capítulos con sus precios (pendientes de confirmar). Revisar.');
   if (inversorFuera && conBateria) avisosEntrada.push('Con batería, el inversor Fronius Plus (o ninguno con Tesla), el Smart Meter y la batería salen del motor por capítulos con su margen; el modelo v2 aún no lleva baterías.');

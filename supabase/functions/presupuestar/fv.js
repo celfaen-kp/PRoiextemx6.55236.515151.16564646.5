@@ -78,6 +78,8 @@ export const BLOQUES_MATERIAL = ['MÓDULOS FOTOVOLTAICOS', 'INVERSOR', 'MEDICIÓ
  *     precio: sale sin estructura y la estructura la pone el motor antiguo.
  *   · inversorFuera: true → el inversor y el medidor no se cuentan aquí (los
  *     pone el motor antiguo: Fronius Plus con batería, o nada con Tesla).
+ *   · jornadaBateria: true → un día más de montaje (inversor híbrido y batería),
+ *     que se cobra a parametros.venta_jornada_bateria (450 €) aparte.
  */
 export function calcularFV(entrada, modelo, opciones) {
   const op = opciones || {};
@@ -120,7 +122,10 @@ export function calcularFV(entrada, modelo, opciones) {
   const largo_fila = pan_fila * (e.orient === 'Horizontal' ? P.largo_pan : P.ancho_pan) + 0.1;
   const m_perfil = filas * 2 * largo_fila;
   const anclajes = filas * 2 * (roundup(largo_fila / P.sep_anclaje) + 1);
-  const jornadas = n_pan <= 12 ? 2 : (n_pan <= 22 ? 3 : 4);
+  // Con batería, un día más de las dos personas (Enzo, 26-10-2026): se cobra a
+  // P.venta_jornada_bateria (450 €) aparte de la tabla €/W.
+  const jornadaBateria = op.jornadaBateria ? 1 : 0;
+  const jornadas = (n_pan <= 12 ? 2 : (n_pan <= 22 ? 3 : 4)) + jornadaBateria;
   const jornada = P.horas_jornada * (P.eur_h_oficial + P.eur_h_peon);
   const teja = e.cubierta === 'Teja' ? 1 : 0;
   const plana = e.cubierta === 'Plana' ? 1 : 0;
@@ -226,7 +231,16 @@ export function calcularFV(entrada, modelo, opciones) {
   const coste_total = partidas.reduce((s, x) => s + x.coste, 0);
 
   // ---------- precio
-  const precio_obj = bloqueo ? 0 : Math.ceil(Number((coste_total / (1 - P.margen_obj) / P.redondeo).toFixed(9))) * P.redondeo;
+  // Mano de obra vendida por tabla €/W (Enzo, 26-10-2026): si el modelo trae
+  // parametros.mo_venta_tramos, la mano de obra se cobra por vatio según los
+  // kWp y el resto del coste va al margen objetivo. Sin tramos, todo al margen.
+  const coste_mo = jornadas * jornada;
+  const tramosMO = Array.isArray(P.mo_venta_tramos) ? P.mo_venta_tramos : null;
+  const tramoMO = tramosMO ? (tramosMO.find((t) => t.hasta_kwp == null || kwp <= num(t.hasta_kwp)) || tramosMO[tramosMO.length - 1]) : null;
+  const venta_jornada_bat = jornadaBateria ? num(P.venta_jornada_bateria) || 450 : 0;
+  const venta_mo = tramoMO ? rnd(kwp * 1000 * num(tramoMO.eur_w) + venta_jornada_bat, 2) : 0;
+  const redondeaArriba = (n) => Math.ceil(Number((n / P.redondeo).toFixed(9))) * P.redondeo;
+  const precio_obj = bloqueo ? 0 : (tramoMO ? redondeaArriba((coste_total - coste_mo) / (1 - P.margen_obj)) + venta_mo : redondeaArriba(coste_total / (1 - P.margen_obj)));
   const horas_elev = Math.max(num(e.horas_elev), plana * P.horas_elev_plana);   // en cubierta plana, siempre elevador
   const elev = horas_elev * P.pvp_elev;
   const pvp_antes = precio_obj + elev;
@@ -252,6 +266,7 @@ export function calcularFV(entrada, modelo, opciones) {
     entrada: e, factura, consumo, n_pan, kwp, prod, n_str, kw_inv, mod_inv, coste_inv, cuadro_ac, jornadas, jornada, bloqueo,
     partidas, coste_total: rnd(coste_total, 2), precio_objetivo: precio_obj, elevador: elev, horas_elev, pvp_antes, dto_eur,
     pvp_final: rnd(pvp_final, 2), iva_eur, pvp_iva: rnd(pvp_iva, 2), margen_real, avisos,
+    mo_tabla: tramoMO ? { eur_w: num(tramoMO.eur_w), venta_mo, coste_mo: rnd(coste_mo, 2), jornada_bateria: jornadaBateria ? venta_jornada_bat : 0 } : null,
     pvp_elev: P.pvp_elev,
     cable_cc: cableCC,
   };
@@ -449,7 +464,7 @@ export function lineasPresupuesto(r, modelo, extra) {
         cuadro_ac: r.cuadro_ac ? r.cuadro_ac.descripcion : null, jornadas: r.jornadas,
         cable_cc: r.cable_cc ? { seccion: r.cable_cc.seccion, calculo: r.cable_cc.calculo, tabla: r.cable_cc.tabla } : null },
       desglose,
-      precio: { coste_total: r.coste_total, precio_objetivo: r.precio_objetivo, margen_objetivo: (modelo.parametros.margen_obj || {}).valor,
+      precio: { coste_total: r.coste_total, precio_objetivo: r.precio_objetivo, margen_objetivo: (modelo.parametros.margen_obj || {}).valor, mo_tabla: r.mo_tabla || null,
         horas_elev: r.horas_elev, elevador: r.elevador, pvp_antes: r.pvp_antes, margen_real_sin_dto: Math.round(r.margen_real * 10000) / 10000 },
       pedido: pedidoMaterial(r, modelo),
       // Lo que se puede cambiar a mano desde el presupuesto (21-10-2026): los

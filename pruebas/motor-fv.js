@@ -9,6 +9,9 @@ load(RUTA_TMP + '/fv.js');
 load(RUTA_TMP + '/cadena.js');
 
 var modelo = JSON.parse(read(RUTA_TARIFAS + '/modelo_fv.json'));
+// Los 23 casos del Excel de Ramón son con toda la mano de obra al margen: los
+// tramos €/W de Enzo (26-10-2026) se prueban aparte, abajo.
+var tramosMO = modelo.parametros.mo_venta_tramos; delete modelo.parametros.mo_venta_tramos;
 var casos = JSON.parse(read(RUTA_TARIFAS + '/casos_prueba_fv.json').replace(/^﻿/, ''));
 var cerca = function (a, b, tol) { return Math.abs(Number(a) - Number(b)) <= tol; };
 
@@ -116,3 +119,18 @@ comprueba('los internos no salen', !Object.keys(b).some(function (k) { return k 
 comprueba('la puesta en marcha sale aunque su cantidad sea 0', !!b['PUESTA EN MARCHA Y MONITORIZACIÓN']);
 
 resultado();
+
+titulo('mano de obra por tabla €/W (Enzo, 26-10-2026)');
+var modeloMO = JSON.parse(JSON.stringify(modelo)); modeloMO.parametros.mo_venta_tramos = tramosMO;
+var e10 = Object.assign({}, ent, { paneles_forzado: 10, sis: 'Fronius', sumi: 'Monofásico', cubierta: 'Teja', dto: 0, horas_elev: 0 });
+var rSin = calcularFV(e10, modelo), rCon = calcularFV(e10, modeloMO);
+igual('10 paneles · 5,1 kWp: 0,25 €/W = 1.275 € de mano de obra', rCon.mo_tabla.venta_mo, 1275);
+igual('y el resto al 50 %, redondeado a 10, más la mano de obra', rCon.precio_objetivo, Math.ceil((rSin.coste_total - rSin.jornadas * rSin.jornada) / 0.5 / 10) * 10 + 1275);
+var r4 = calcularFV(Object.assign({}, e10, { paneles_forzado: 4 }), modeloMO);
+igual('4 paneles · 2,04 kWp: tramo de 0,40', r4.mo_tabla.eur_w, 0.4);
+var r8 = calcularFV(Object.assign({}, e10, { paneles_forzado: 8 }), modeloMO);
+igual('8 paneles · 4,08 kWp: tramo de 0,30', r8.mo_tabla.eur_w, 0.3);
+comprueba('sin tramos en el modelo, todo sigue al margen (como el Excel)', rSin.mo_tabla === null);
+var rBat = calcularFV(e10, modeloMO, { jornadaBateria: true });
+igual('con batería: una jornada más de coste', rBat.jornadas, rCon.jornadas + 1);
+igual('y 450 € más de venta de mano de obra', rBat.mo_tabla.venta_mo, rCon.mo_tabla.venta_mo + 450);
