@@ -496,9 +496,10 @@ aviso({'marca_inversor': 'fronius', 'sombras': ['parcial', 'importante']}, 'Hay 
 # --- 04 · Almacenamiento
 regla(ref('ENPHASE IQ Battery 5P'), {'con_bateria': 1, 'marca_bateria': 'enphase', 'marca_inversor': 'enphase'}, 'max(1, techo(bat_kwh / 5))', '04', sub=9,
       notas='IQ Battery 5P de 5 kWh: las que hagan falta para los kWh pedidos.')
-regla(ref('TESLA Powerwall 3 | 13.5 kWh/11 kW'), {'con_bateria': 1, 'marca_bateria': 'tesla', 'fases': 1}, cap='04', sub=9, notas='Powerwall 3 (13,5 kWh), monofásico.')
-regla(ref('TESLA Powerwall 3P | 13.5 kWh/15.4 kW'), {'con_bateria': 1, 'marca_bateria': 'tesla', 'fases': 3}, cap='04', sub=9, notas='Powerwall 3P (13,5 kWh), trifásico.')
-regla(ref('TESLA Expansión Powerwall 3 13.5 kWh'), {'con_bateria': 1, 'marca_bateria': 'tesla'}, 'max(0, techo(bat_kwh / 13.5) - 1)', '04', sub=8,
+# Tesla solo con Fronius (sustituye al inversor) o Enphase; nunca con Deye (26-10-2026).
+regla(ref('TESLA Powerwall 3 | 13.5 kWh/11 kW'), {'con_bateria': 1, 'marca_bateria': 'tesla', 'fases': 1, 'marca_inversor': ['fronius', 'enphase']}, cap='04', sub=9, notas='Powerwall 3 (13,5 kWh), monofásico.')
+regla(ref('TESLA Powerwall 3P | 13.5 kWh/15.4 kW'), {'con_bateria': 1, 'marca_bateria': 'tesla', 'fases': 3, 'marca_inversor': ['fronius', 'enphase']}, cap='04', sub=9, notas='Powerwall 3P (13,5 kWh), trifásico.')
+regla(ref('TESLA Expansión Powerwall 3 13.5 kWh'), {'con_bateria': 1, 'marca_bateria': 'tesla', 'marca_inversor': ['fronius', 'enphase']}, 'max(0, techo(bat_kwh / 13.5) - 1)', '04', sub=8,
       notas='Una expansión por cada 13,5 kWh más (solo capacidad: no suma inversor).')
 aviso({'inversor_en_bateria': 1}, 'Más paneles de los que admite un Powerwall 3 en continua (tablas_lookup tesla_pv_max_kwp): revisar con la ficha técnica de Tesla o repartir en más de un Powerwall.',
       var="si(kwp > lookup('tesla_pv_max_kwp', 'defecto'), 1, 0)", mn=1, mx=1)
@@ -524,6 +525,7 @@ regla(ref('Enphase IQ System Controller'), {'con_bateria': 1, 'con_backup': 1, '
 regla('FV-04-006', {'backup_parcial': 1}, '1', '04', sub=4, notas='Backup parcial: cuadro de cargas críticas.')
 aviso({'con_bateria': 1, 'marca_inversor': 'enphase', 'marca_bateria': ['byd', 'fronius']}, 'Enphase solo va con baterías Enphase o Tesla: la batería elegida no se ha puesto.')
 aviso({'con_bateria': 1, 'marca_inversor': 'fronius', 'marca_bateria': 'enphase'}, 'Fronius va con baterías BYD, Tesla o Fronius Reserva: la Enphase no se ha puesto.')
+aviso({'con_bateria': 1, 'marca_inversor': 'deye', 'marca_bateria': ['byd', 'fronius', 'tesla', 'enphase']}, 'Deye solo va con baterías WECO o Deye (Rebacas): la batería elegida no se ha puesto.')
 aviso({'con_bateria': 0}, 'El backup necesita batería: no se ha puesto.', var='si(backup, 1, 0)', mn=1, mx=1)
 
 # --- 05 · Monitorización y medida

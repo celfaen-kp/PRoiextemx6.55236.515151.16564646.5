@@ -222,7 +222,23 @@ Deno.serve(async (req) => {
       .order('vigente_desde', { ascending: false }).limit(1).maybeSingle();
     if (mod && mod.datos) modeloFV = mod;
   }
+  // Batería compatible con el inversor (Enzo, 26-10-2026): Deye solo con WECO o
+  // Deye, Enphase con Enphase o Tesla, Fronius con BYD, Fronius Reserva o Tesla.
+  // Si la ficha o la opción traen otra, se cambia a la primera compatible y se avisa.
+  let avisoBateria: string | null = null;
+  if (modeloFV && datos) {
+    const COMPAT: Record<string, string[]> = { deye: ['weco', 'deye'], enphase: ['enphase', 'tesla'], fronius: ['byd', 'fronius', 'tesla'] };
+    const marcaInv = String(datos.inversor_marca || 'fronius').toLowerCase();
+    const conBat = String(datos.baterias || '') === 'si' || Number(datos.baterias_kwh) > 0;
+    const ok = COMPAT[marcaInv] || COMPAT.fronius;
+    const marcaBat = String(datos.bateria_marca || '').toLowerCase();
+    if (conBat && marcaBat && !ok.includes(marcaBat)) {
+      datos = Object.assign({}, datos, { bateria_marca: ok[0], bateria_ref: null });
+      avisoBateria = 'Batería ' + marcaBat.toUpperCase() + ' no va con inversor ' + marcaInv.toUpperCase() + ': se presupuesta con ' + ok[0].toUpperCase() + '. Las compatibles son ' + ok.map((x) => x.toUpperCase()).join(', ') + '.';
+    }
+  }
   const res = modeloFV ? presupuestarFV(datos, modeloFV, cfg) : calcular(categoria, datos, cfg);
+  if (avisoBateria) res.incidencias.unshift({ nivel: 'aviso', codigo: 'bateria_incompatible', mensaje: avisoBateria, campo: 'bateria_marca' });
   const motorVersion = modeloFV ? res.motor_version : MOTOR_VERSION;
 
   const dtoGlobal = b.dto_global_pct != null
@@ -331,8 +347,10 @@ Deno.serve(async (req) => {
   if (modeloFV && res.fv2) {
     const r = res.fv2;
     const MARCAS_BAT: Record<string, string> = { byd: 'BYD', fronius: 'Fronius Reserva', tesla: 'Tesla Powerwall', enphase: 'Enphase IQ Battery', weco: 'WECO', deye: 'Deye' };
-    const partes = [String(r.entrada.sis), String(r.kwp).replace('.', ',') + ' kWp'];
     const conBat = String(datos.baterias || '') === 'si' || Number(datos.baterias_kwh) > 0;
+    // Con Tesla y Fronius no hay inversor aparte: el Powerwall 3 lo lleva dentro.
+    const teslaSinInversor = conBat && String(datos.bateria_marca || '').toLowerCase() === 'tesla' && String(r.entrada.sis) === 'Fronius';
+    const partes = [teslaSinInversor ? 'Tesla Powerwall 3 (inversor integrado)' : String(r.entrada.sis), String(r.kwp).replace('.', ',') + ' kWp'];
     if (conBat) partes.push('batería ' + (MARCAS_BAT[String(datos.bateria_marca || '')] || String(datos.bateria_marca || '')).trim() + (Number(datos.baterias_kwh) > 0 ? ' ' + String(Number(datos.baterias_kwh)).replace('.', ',') + ' kWh' : ''));
     else if (String(datos.baterias || '') === 'dejar_preparado') partes.push('preparado para baterías');
     const detalle = partes.filter(Boolean).join(' · ');
