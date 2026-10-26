@@ -18,7 +18,7 @@
 // (herramientas/informe-fv.js) usen EXACTAMENTE el mismo cálculo.
 // =============================================================================
 
-import { calcular, MOTOR_VERSION } from './motor.js';
+import { calcular, preciosProducto, MOTOR_VERSION } from './motor.js';
 import { calcularFV, entradaDesdeDatos, lineasPresupuesto } from './fv.js';
 
 const FV_COMPLEMENTO = /^(04|09|10|14) · /;
@@ -61,6 +61,33 @@ export function agruparCargador(lineas) {
   return resto;
 }
 
+/** Con batería o «dejar preparado», el inversor lo pone el motor por capítulos
+ *  (Fronius Plus por kW). Si se eligió uno a mano en el presupuesto (26-10-2026),
+ *  sustituye al automático por la versión Plus de ese modelo, si está en el catálogo. */
+const normTxt = (t) => String(t || '').toLowerCase().replace(/\s+/g, ' ').trim();
+export function inversorAMano(lineas, datos, cfg, inversorFuera, incidencias) {
+  const modelo = String(datos.inversor_modelo || '').trim();
+  if (!modelo || !inversorFuera) return lineas;
+  const auto = lineas.find((l) => /^FV-FRONIUS-(PRIMO|SYMO)-GEN24.*PLUS/.test(String(l.producto_ref || '')));
+  if (!auto) { incidencias.push({ nivel: 'aviso', codigo: 'inversor_mano', mensaje: 'Inversor elegido a mano (' + modelo + '): con esta batería no hay inversor Fronius aparte (el Powerwall lo lleva dentro), así que no aplica.', campo: null }); return lineas; }
+  const buscado = normTxt(modelo) + ' plus';
+  const p = Object.values(cfg.productos || {}).find((x) => normTxt(x.nombre) === buscado)
+    || Object.values(cfg.productos || {}).find((x) => normTxt(x.nombre).replace(' sc ', ' ') === buscado.replace(' sc ', ' '));
+  if (!p) { incidencias.push({ nivel: 'aviso', codigo: 'inversor_mano', mensaje: 'Inversor elegido a mano (' + modelo + '): no está su versión Plus en el catálogo; se deja el automático (' + auto.descripcion + ').', campo: null }); return lineas; }
+  if (p.referencia === auto.producto_ref) return lineas;
+  const pr = preciosProducto(p.precio_tarifa, p, cfg.lookup);
+  const nueva = Object.assign({}, auto, {
+    producto_ref: p.referencia, descripcion: p.nombre, detalle_tecnico: p.detalle_tecnico || null, especificaciones: p.especificaciones || [],
+    precio_tarifa: pr.venta, precio_coste: pr.coste, confirmada: numHib(p.precio_tarifa) > 0,
+    origen_inputs: Object.assign({}, auto.origen_inputs || {}, { inversor_a_mano: modelo, sustituye_a: auto.descripcion }),
+  });
+  if ('precio_venta' in auto) nueva.precio_venta = r2(pr.venta * (Number(auto.cantidad) || 1));
+  if ('importe' in auto) nueva.importe = r2(pr.venta * (Number(auto.cantidad) || 1));
+  incidencias.push({ nivel: 'aviso', codigo: 'inversor_mano', mensaje: 'Inversor elegido a mano: ' + p.nombre + ' en vez del automático (' + auto.descripcion + ').', campo: null });
+  return lineas.map((l) => (l === auto ? nueva : l));
+}
+const numHib = (v) => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
+
 export function presupuestarFV(datos, mod, cfg) {
   const modelo = mod.datos;
   const m = entradaDesdeDatos(datos, modelo);
@@ -98,7 +125,7 @@ export function presupuestarFV(datos, mod, cfg) {
   const deViejo = viejo.incidencias.filter((i) => i.codigo !== 'sin_lineas' && !/^Faltan los metros/.test(String(i.mensaje || '')));
   // El cargador de coche va en UNA partida (equipo + cuadro + instalación) con
   // su desglose por dentro, como la línea principal (Enzo, 20-10-2026).
-  const lineasViejo = agruparCargador(viejo.lineas);
+  const lineasViejo = inversorAMano(agruparCargador(viejo.lineas), datos, cfg, inversorFuera, deViejo);
   return {
     lineas: lineas.concat(lineasViejo),
     incidencias: incidencias.concat(deViejo),

@@ -16,11 +16,15 @@ for f in "$AQUI"/${1:-*}.js; do
   nombre=$(basename "$f" .js)
   [ "$nombre" = "arnes" ] && continue
   echo "=============== $nombre ==============="
-  if ! "$JSC" -e "
+  # jsc sale con 0 aunque una excepción corte el archivo a medias (26-10-2026):
+  # se mira también la salida, y una «Exception:» cuenta como fallo.
+  salida=$("$JSC" -e "
     globalThis.RUTA_TMP = '$TMP'; globalThis.RUTA_TARIFAS = '$TARIFAS';
     load('$AQUI/arnes.js'); load('$TMP/modulos.js'); load('$TMP/app.js');
     load('$f');
-  "; then fallos=$((fallos+1)); fi
+  " 2>&1); codigo=$?
+  printf '%s\n' "$salida"
+  if [ $codigo -ne 0 ] || printf '%s' "$salida" | grep -q '^Exception:'; then fallos=$((fallos+1)); echo ">>> FALLO en $nombre (excepción o salida con error)"; fi
   echo
 done
 exit $fallos

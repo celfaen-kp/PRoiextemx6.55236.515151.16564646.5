@@ -237,6 +237,15 @@ Deno.serve(async (req) => {
       avisoBateria = 'Batería ' + marcaBat.toUpperCase() + ' no va con inversor ' + marcaInv.toUpperCase() + ': se presupuesta con ' + ok[0].toUpperCase() + '. Las compatibles son ' + ok.map((x) => x.toUpperCase()).join(', ') + '.';
     }
   }
+  // El inversor elegido a mano puede no estar entre los productos de las reglas
+  // (Primo 4.6 Plus…): se trae del catálogo por su nombre (26-10-2026).
+  if (modeloFV && datos && typeof datos.inversor_modelo === 'string' && datos.inversor_modelo.trim()) {
+    const base = datos.inversor_modelo.replace(/^fronius\s+/i, '').trim();
+    const colsInv = 'referencia, nombre, familia, unidad, precio_tarifa, descuento_proveedor, detalle_tecnico, especificaciones, iva, atributos, tarifa_id, activo';
+    let inv = (await sb.from('productos').select(colsInv + ', recargo, aplica_cdc').ilike('nombre', '%' + base + '%').eq('activo', true)).data;
+    if (!inv) inv = (await sb.from('productos').select(colsInv).ilike('nombre', '%' + base + '%').eq('activo', true)).data;
+    (inv || []).forEach((p) => { if (!cfg.productos[p.referencia]) cfg.productos[p.referencia] = p; });
+  }
   const res = modeloFV ? presupuestarFV(datos, modeloFV, cfg) : calcular(categoria, datos, cfg);
   if (avisoBateria) res.incidencias.unshift({ nivel: 'aviso', codigo: 'bateria_incompatible', mensaje: avisoBateria, campo: 'bateria_marca' });
   const motorVersion = modeloFV ? res.motor_version : MOTOR_VERSION;

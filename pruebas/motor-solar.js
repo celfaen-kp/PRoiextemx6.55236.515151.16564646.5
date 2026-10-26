@@ -447,3 +447,14 @@ igual('ninguna línea', r.lineas.length, 0);
 comprueba('y lo dice', r.incidencias.some(function (i) { return i.codigo === 'sin_lineas'; }));
 
 resultado();
+
+titulo('inversor elegido a mano con batería (Enzo, 26-10-2026): sustituye al Plus automático');
+load(RUTA_TMP + '/fv.js'); load(RUTA_TMP + '/hibrido.js');
+var modeloFVmano = JSON.parse(read(RUTA_TARIFAS + '/modelo_fv.json'));
+var modMano = { id: 'm', version: 'prueba', datos: modeloFVmano };
+var rAuto = presupuestarFV(con({ baterias: 'si', baterias_kwh: 10, bateria_marca: 'byd', paneles_manual: 10 }), modMano, config);
+var rMano = presupuestarFV(con({ baterias: 'si', baterias_kwh: 10, bateria_marca: 'byd', paneles_manual: 10, inversor_modelo: 'Fronius Primo GEN24 SC 4.6' }), modMano, config);
+var refsInv = function (r) { return r.lineas.map(function (l) { return String(l.producto_ref || ''); }).filter(function (x) { return /FRONIUS-(PRIMO|SYMO)-GEN24.*PLUS/.test(x); }); };
+comprueba('automático: un Fronius Plus por kW (' + refsInv(rAuto).join(',') + ')', refsInv(rAuto).length === 1 && refsInv(rAuto)[0] !== 'FV-FRONIUS-PRIMO-GEN24-SC-4.6-PLUS');
+comprueba('a mano: el 4.6 Plus en su lugar', refsInv(rMano).length === 1 && refsInv(rMano)[0] === 'FV-FRONIUS-PRIMO-GEN24-SC-4.6-PLUS');
+comprueba('y lo dice en las incidencias', rMano.incidencias.some(function (i) { return /Inversor elegido a mano/.test(i.mensaje); }));
