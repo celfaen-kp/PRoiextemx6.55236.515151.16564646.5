@@ -466,7 +466,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '27.4'; // versión visible de la app (única fuente)
+const APP_VERSION = '27.5'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -8031,7 +8031,7 @@ function opcionesMarcaHTML() {
       ${actual !== 'enphase' && ops.inversores && ops.inversores.length ? `<span class="lbl" style="font-size:11px">Inversor</span>
       <select class="inp" data-f="presuOpcionInversor" style="width:auto;max-width:100%;padding:7px 9px;font-size:13px">
         <option value="" ${sel ? '' : 'selected'}>Automático · ${esc(String(ops.inversor_elegido || ''))}</option>
-        ${ops.inversores.map((i) => `<option value="${esc(i.modelo)}" ${sel === i.modelo ? 'selected' : ''}>${esc(i.modelo)} · ${esc(String(i.kw))} kW</option>`).join('')}
+        ${ops.inversores.map((i) => `<option value="${esc(i.modelo)}" ${sel === i.modelo ? 'selected' : ''}>${esc(i.modelo)} · ${esc(String(i.kw))} kW${i.usar === false ? ' · no lo usa el automático' : ''}</option>`).join('')}
       </select>` : ''}
       <span class="lbl" style="font-size:11px">Paneles</span>
       <input class="inp" data-f="presuOpcionPaneles" type="number" min="1" max="120" value="${esc(String(op.paneles_manual || ops.n_pan || ''))}" style="width:66px;padding:7px 9px;text-align:right">

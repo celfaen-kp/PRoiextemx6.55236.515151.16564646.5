@@ -472,7 +472,9 @@ export function lineasPresupuesto(r, modelo, extra) {
       // Lo que se puede cambiar a mano desde el presupuesto (21-10-2026): los
       // inversores del modelo para este sistema y suministro, y los paneles.
       opciones: {
-        inversores: (modelo.inversores || []).filter((i) => i.usar && i.sistema === r.entrada.sis && i.suministro === r.entrada.sumi).map((i) => ({ modelo: i.modelo, kw: i.kw })),
+        // Todos los del sistema y suministro, también los que el automático no usa
+        // (Primo 4.6…): se eligen a mano si hacen falta (Enzo, 26-10-2026).
+        inversores: (modelo.inversores || []).filter((i) => i.sistema === r.entrada.sis && i.suministro === r.entrada.sumi).map((i) => ({ modelo: i.modelo, kw: i.kw, usar: !!i.usar })),
         inversor_elegido: r.mod_inv, inversor_forzado: !!r.entrada.inv_modelo,
         n_pan: r.n_pan, paneles_forzado: r.entrada.paneles_forzado || null,
       },
