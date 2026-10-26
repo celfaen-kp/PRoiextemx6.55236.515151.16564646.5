@@ -136,7 +136,9 @@ var malMargen = r.lineas.filter(function (l) {
   if (!l.precio_coste) return false;
   var ref = String(l.producto_ref);
   if (/^FV-13-/.test(ref)) return l.precio_tarifa !== l.precio_coste;
-  var f = /^FV-01-/.test(ref) ? 1.4375 : /^FV-TESLA-/.test(ref) ? 1.538462 : /^FV-(WECO|DEYE)-/.test(ref) ? 2 : /^FV-(FRONIUS|ENPHASE|BYD)-/.test(ref) ? 1.2 : ref === 'FV-14-006' ? 1.363636 : 1.3;
+  var pr = fv.productos[ref];
+  var f = pr && pr.recargo != null && pr.aplica_cdc === false ? Number(pr.recargo)
+    : /^FV-01-/.test(ref) ? 1.4375 : /^FV-TESLA-/.test(ref) ? 1.538462 : /^FV-(WECO|DEYE)-/.test(ref) ? 2 : /^FV-(FRONIUS|ENPHASE|BYD)-/.test(ref) ? 1.2 : ref === 'FV-14-006' ? 1.363636 : 1.3;
   // una partida agrupada suma renglones con el coste ya al céntimo: un céntimo de holgura
   if (l.origen === 'partida') return Math.abs(l.precio_tarifa - l.precio_coste * f) >= 0.011;
   return l.precio_tarifa !== Math.round(l.precio_coste * f * 100 + 1e-7) / 100;
@@ -223,7 +225,7 @@ r = calcular('solar', con({ suministro: 'trifasico', baterias: 'si', baterias_kw
 comprueba('Symo Plus', tiene(r, 'Fronius Symo GEN24 SC 5.0 Plus'));
 igual('4 módulos HVS en el 04', porNombre(r, 'BYD Premium HVS 2.56').cantidad, 4);
 igual('capítulo 04', porNombre(r, 'BYD Premium HVS 2.56').seccion, '04 · Almacenamiento');
-comprueba('BCU, Backup Switch, soporte y cuadro de cargas críticas', tiene(r, 'BCU+Base') && tiene(r, 'Backup Switch') && cant(r, 'FV-04-004') === 1 && cant(r, 'FV-04-006') === 1);
+comprueba('BCU, PV Point Comfort (el Backup Switch solo a mano, 26-10-2026), soporte y cuadro de cargas críticas', tiene(r, 'BCU+Base') && tiene(r, 'Pv Point') && !tiene(r, 'Backup Switch') && cant(r, 'FV-04-004') === 1 && cant(r, 'FV-04-006') === 1);
 comprueba('sin ampliación a toda la vivienda', !linea(r, 'FV-14-004'));
 igual('2 días + 0,5 batería + 0,5 backup', r.variables.dias_obra, 3);
 
@@ -283,7 +285,7 @@ comprueba('material de partida: coste × 1,10 (CDC) × 1,30 (' + cable.precio_co
 
 titulo('backup automático o manual (Ramón, 13-10-2026)');
 r = calcular('solar', con({ baterias: 'si', baterias_kwh: 10, backup: true, backup_modo: 'automatico' }), config);
-comprueba('automático = full backup: Backup Switch, toda la vivienda, sin cuadro de cargas críticas', tiene(r, 'Backup Switch') && !tiene(r, 'Pv Point') && !!linea(r, 'FV-14-004') && !linea(r, 'FV-04-006'));
+comprueba('automático = full backup: PV Point Comfort (el Backup Switch se añade a mano, 26-10-2026), toda la vivienda, sin cuadro de cargas críticas', tiene(r, 'Pv Point') && !tiene(r, 'Backup Switch') && !!linea(r, 'FV-14-004') && !linea(r, 'FV-04-006'));
 r = calcular('solar', con({ baterias: 'si', baterias_kwh: 10, backup: true, backup_modo: 'manual' }), config);
 comprueba('manual: PV Point Comfort y cuadro de cargas críticas, sin Backup Switch', tiene(r, 'Pv Point Comfort') && !tiene(r, 'Backup Switch') && cant(r, 'FV-04-006') === 1 && !linea(r, 'FV-14-004'));
 r = calcular('solar', con({ baterias: 'si', baterias_kwh: 13.5, bateria_marca: 'tesla', backup: true, backup_modo: 'manual' }), config);
@@ -352,7 +354,7 @@ comprueba('5,1 kWp: sin ese aviso', !aviso(r, 'admite un Powerwall 3'));
 r = calcular('solar', con({ baterias: 'si', baterias_kwh: 10, bateria_marca: 'byd' }), config);
 comprueba('BYD sigue con su Fronius Plus y su Smart Meter', tiene(r, 'GEN24 SC 5.0 Plus') && tiene(r, 'Smart Meter') && r.variables.inversor_en_bateria === 0);
 igual('módulo HVS 2,56 a 1.007,54 de coste', porNombre(r, 'BYD Premium HVS 2.56').precio_coste, 1007.54);
-igual('y 1.209,05 de venta', porNombre(r, 'BYD Premium HVS 2.56').precio_tarifa, 1209.05);
+igual('y 1.291,72 de venta (baterías al 22 % sobre venta, 26-10-2026)', porNombre(r, 'BYD Premium HVS 2.56').precio_tarifa, 1291.72);
 
 titulo('combinaciones que no van');
 r = calcular('solar', con({ inversor_marca: 'enphase', baterias: 'si', bateria_marca: 'byd' }), config);
