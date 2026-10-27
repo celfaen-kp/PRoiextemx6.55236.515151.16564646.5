@@ -466,7 +466,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '27.6'; // versión visible de la app (única fuente)
+const APP_VERSION = '27.7'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -9260,7 +9260,22 @@ A.presuEditarCancelar = () => { V.presuEdit = null; render(); };
 
 A.presuLineaCampo = (id, campo, valor) => {
   const e = V.presuEdit; if (!e) return;
-  (e.cambios[id] = e.cambios[id] || {})[campo] = valor;
+  const c = (e.cambios[id] = e.cambios[id] || {});
+  const d = V.presuVer && V.presuVer.datos; const l = d && (d.lineas || []).find((x) => x.id === id);
+  const num = (v) => Number(String(v == null ? '' : v).replace(',', '.'));
+  const pon = (k, v) => { const inp = document.querySelector(`[data-f="presuLinea"][data-id="${id}"][data-k="${k}"]`); if (inp && document.activeElement !== inp) inp.value = v; };
+  // El margen manda sobre el precio (27-10-2026): escribir un margen pone el precio
+  // que lo da; escribir coste o precio enseña el margen que sale.
+  if (campo === 'margen_pct') {
+    const coste = num(c.precio_coste != null ? c.precio_coste : l && l.precio_coste), m = num(valor);
+    if (coste > 0 && m < 100 && String(valor).trim() !== '') { c.precio_tarifa = Math.round(coste / (1 - m / 100) * 100) / 100; pon('precio_tarifa', c.precio_tarifa); }
+    return;
+  }
+  c[campo] = valor;
+  if (campo === 'precio_coste' || campo === 'precio_tarifa') {
+    const coste = num(c.precio_coste != null ? c.precio_coste : l && l.precio_coste), precio = num(c.precio_tarifa != null ? c.precio_tarifa : l && l.precio_tarifa);
+    pon('margen_pct', coste > 0 && precio > 0 ? Math.round((1 - coste / precio) * 1000) / 10 : '');
+  }
 };
 A.presuQuitarLinea = (id) => {
   const e = V.presuEdit; if (!e) return;
@@ -9294,6 +9309,9 @@ A.presuGuardarCambios = async () => {
       if (c.cantidad != null && num(c.cantidad) !== Number(l.cantidad)) cambios.cantidad = num(c.cantidad);
       if (c.precio_tarifa != null && num(c.precio_tarifa) !== Number(l.precio_tarifa)) cambios.precio_tarifa = num(c.precio_tarifa);
       if (c.descripcion != null && String(c.descripcion).trim() && c.descripcion !== l.descripcion) cambios.descripcion = String(c.descripcion).trim();
+      if (c.detalle_tecnico != null && String(c.detalle_tecnico).trim() !== String(l.detalle_tecnico || '').trim()) cambios.detalle_tecnico = String(c.detalle_tecnico).trim() || null;
+      if (c.dto_linea_pct != null && Math.max(0, Math.min(100, num(c.dto_linea_pct) || 0)) !== Number(l.dto_linea_pct || 0)) cambios.dto_linea_pct = Math.max(0, Math.min(100, num(c.dto_linea_pct) || 0));
+      if (c.precio_coste != null) { const pc = String(c.precio_coste).trim() === '' ? null : num(c.precio_coste); if (pc !== (l.precio_coste == null ? null : Number(l.precio_coste))) cambios.precio_coste = pc; }
       if (!Object.keys(cambios).length) continue;
       await visitasDB.guardarLineaPresupuesto(id, cambios);
       // Si esa línea la había propuesto una regla, queda apuntado el cambio.
@@ -9322,6 +9340,7 @@ A.presuGuardarCambios = async () => {
         cantidad: num(n.cantidad) || 1,
         unidad: 'ud',
         precio_tarifa: num(n.precio_tarifa) || 0,
+        precio_coste: String(n.precio_coste || '').trim() ? num(n.precio_coste) : null,
         precio_venta: 0,          // lo pone el recálculo
         origen: 'manual',
         confirmada: true,
@@ -9360,10 +9379,12 @@ function previaEditHTML(d) {
     if (e.quitadas.includes(l.id)) return;
     const c = e.cambios[l.id] || {};
     const cant = num(c.cantidad != null ? c.cantidad : l.cantidad), precio = num(c.precio_tarifa != null ? c.precio_tarifa : l.precio_tarifa);
-    bruto += cant * precio;
-    if (l.precio_coste == null || l.precio_coste === '') sinCoste++; else coste += cant * num(l.precio_coste);
+    const dtoL = num(c.dto_linea_pct != null ? c.dto_linea_pct : l.dto_linea_pct);
+    bruto += cant * precio * (1 - dtoL / 100);
+    const cRaw = c.precio_coste != null ? c.precio_coste : l.precio_coste;
+    if (cRaw == null || String(cRaw).trim() === '') sinCoste++; else coste += cant * num(cRaw);
   });
-  if (e.nueva && num(e.nueva.precio_tarifa) > 0) { bruto += num(e.nueva.cantidad || 1) * num(e.nueva.precio_tarifa); sinCoste++; }
+  if (e.nueva && num(e.nueva.precio_tarifa) > 0) { bruto += num(e.nueva.cantidad || 1) * num(e.nueva.precio_tarifa); if (String(e.nueva.precio_coste || '').trim()) coste += num(e.nueva.cantidad || 1) * num(e.nueva.precio_coste); else sinCoste++; }
   bruto = Math.round(bruto * 100) / 100; coste = Math.round(coste * 100) / 100;
   const total = Math.round(bruto * (1 - num(e.dto) / 100) * 100) / 100;
   return `<div class="row" style="justify-content:space-between;margin-top:12px">
@@ -9383,13 +9404,27 @@ function presuLineasEditHTML(d) {
     const c = e.cambios[l.id] || {}, fuera = e.quitadas.includes(l.id);
     return `<div style="padding:11px 0;border-bottom:1px solid var(--l1);${fuera ? 'opacity:.45' : ''}">
       <input class="inp" data-f="presuLinea" data-id="${l.id}" data-k="descripcion" value="${esc(c.descripcion != null ? c.descripcion : l.descripcion)}" style="padding:9px 11px;font-size:14px" ${fuera ? 'disabled' : ''}>
-      <div class="row g8" style="margin-top:7px;align-items:center">
+      <textarea class="inp" data-f="presuLinea" data-id="${l.id}" data-k="detalle_tecnico" rows="2" placeholder="Descripción larga para el cliente (opcional)" style="margin-top:6px;padding:8px 11px;font-size:13px" ${fuera ? 'disabled' : ''}>${esc(c.detalle_tecnico != null ? c.detalle_tecnico : (l.detalle_tecnico || ''))}</textarea>
+      <div class="row g8" style="margin-top:7px;align-items:center;flex-wrap:wrap">
         <input class="inp" data-f="presuLinea" data-id="${l.id}" data-k="cantidad" value="${esc(String(c.cantidad != null ? c.cantidad : l.cantidad))}" inputmode="decimal" style="width:74px;padding:8px;text-align:center" ${fuera ? 'disabled' : ''}>
         <span class="tiny">${esc(l.unidad || 'ud')} ×</span>
         <input class="inp" data-f="presuLinea" data-id="${l.id}" data-k="precio_tarifa" value="${esc(String(c.precio_tarifa != null ? c.precio_tarifa : l.precio_tarifa))}" inputmode="decimal" style="width:96px;padding:8px;text-align:right" ${fuera ? 'disabled' : ''}>
+        <span class="tiny">€ · dto</span>
+        <input class="inp" data-f="presuLinea" data-id="${l.id}" data-k="dto_linea_pct" value="${esc(String(c.dto_linea_pct != null ? c.dto_linea_pct : (l.dto_linea_pct || 0)))}" inputmode="decimal" style="width:60px;padding:8px;text-align:right" ${fuera ? 'disabled' : ''}>
+        <span class="tiny">%</span>
         <div class="grow"></div>
         <span class="tiny" data-a="presuQuitarLinea" data-id="${l.id}" style="cursor:pointer;color:${fuera ? 'var(--verde-o)' : 'var(--rojo)'}">${fuera ? 'Recuperar' : 'Quitar'}</span>
       </div>
+      ${veMargenPresu(d.categoria) ? (() => { const coste = c.precio_coste != null ? c.precio_coste : (l.precio_coste == null ? '' : l.precio_coste);
+        const precio = Number(String(c.precio_tarifa != null ? c.precio_tarifa : l.precio_tarifa).replace(',', '.')) || 0, cNum = Number(String(coste).replace(',', '.'));
+        const margen = coste !== '' && precio > 0 ? Math.round((1 - cNum / precio) * 1000) / 10 : '';
+        return `<div class="row g8" style="margin-top:7px;align-items:center;flex-wrap:wrap">
+        <span class="tiny" style="color:var(--t2)">Interno · coste</span>
+        <input class="inp" data-f="presuLinea" data-id="${l.id}" data-k="precio_coste" value="${esc(String(coste))}" inputmode="decimal" placeholder="€/ud" style="width:92px;padding:8px;text-align:right" ${fuera ? 'disabled' : ''}>
+        <span class="tiny" style="color:var(--t2)">€ · margen</span>
+        <input class="inp" data-f="presuLinea" data-id="${l.id}" data-k="margen_pct" value="${esc(String(margen))}" inputmode="decimal" placeholder="%" style="width:64px;padding:8px;text-align:right" ${fuera ? 'disabled' : ''}>
+        <span class="tiny" style="color:var(--t2)">% sobre venta</span>
+      </div>`; })() : ''}
       ${l.origen_regla_id ? '<div class="tiny" style="margin-top:5px;opacity:.7">La propuso el motor: si la cambias, queda apuntado.</div>' : ''}
     </div>`;
   }).join('')}
@@ -9399,6 +9434,7 @@ function presuLineasEditHTML(d) {
     <div class="row g8" style="margin-top:8px">
       <input class="inp" data-f="presuNueva" data-k="cantidad" value="${esc(e.nueva.cantidad)}" inputmode="decimal" style="width:80px;text-align:center">
       <input class="inp grow" data-f="presuNueva" data-k="precio_tarifa" value="${esc(e.nueva.precio_tarifa)}" inputmode="decimal" placeholder="Precio por unidad">
+      ${veMargenPresu(d.categoria) ? `<input class="inp" data-f="presuNueva" data-k="precio_coste" value="${esc(e.nueva.precio_coste || '')}" inputmode="decimal" placeholder="Coste" style="width:90px">` : ''}
     </div>
     <span class="tiny" data-a="presuLineaNueva" style="display:inline-block;margin-top:10px;cursor:pointer;text-decoration:underline">Quitar esta línea</span>
   </div>` : `<div class="dash" data-a="presuLineaNueva" style="margin-top:12px;display:block">+ Añadir una línea</div>`}
