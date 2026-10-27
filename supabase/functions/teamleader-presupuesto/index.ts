@@ -319,6 +319,52 @@ function lineasDeOferta(q: any, ivaPorId: Record<string, number>) {
   };
 }
 
+/** Los cambios hechos en Teamleader a una oferta de la app, línea a línea: se
+ *  casan por descripción; cantidad, precio y descuento se toman de allí; las
+ *  que ya no están se borran; las nuevas entran como añadidas. Las líneas que
+ *  no cambian conservan su coste y su desglose. Devuelve un resumen o '' si nada. */
+// deno-lint-ignore no-explicit-any
+async function traerCambiosOferta(sb: any, token: string, p: any, quotationId: string, ivaPorId: Record<string, number>) {
+  const r = await crm(token, 'quotations.info', { id: quotationId });
+  const q = r?.data; if (!q) throw new Error('no se pudo leer la oferta');
+  const { filas: deTL, totales } = lineasDeOferta(q, ivaPorId);
+  const { data: deApp } = await sb.from('presupuesto_lineas').select('id, descripcion, cantidad, precio_tarifa, dto_linea_pct, precio_venta, precio_coste, orden').eq('presupuesto_id', p.id).order('orden');
+  const norm = (t: unknown) => String(t || '').toLowerCase().replace(/\s+/g, ' ').trim();
+  const r2 = (n: number) => Math.round(n * 100) / 100;
+  const partes: string[] = [];
+  const usadas = new Set<number>();
+  // deno-lint-ignore no-explicit-any
+  for (const l of (deApp || []) as any[]) {
+    const i = deTL.findIndex((t, k) => !usadas.has(k) && norm(t.descripcion) === norm(l.descripcion));
+    if (i < 0) { await sb.from('presupuesto_lineas').delete().eq('id', l.id); partes.push('quitada «' + String(l.descripcion).slice(0, 40) + '»'); continue; }
+    usadas.add(i);
+    const t = deTL[i];
+    const cambio: Record<string, unknown> = {};
+    if (Math.abs(Number(l.cantidad) - t.cantidad) > 0.0005) cambio.cantidad = t.cantidad;
+    if (Math.abs(Number(l.precio_tarifa) - t.precio_tarifa) > 0.005) cambio.precio_tarifa = t.precio_tarifa;
+    if (Math.abs(Number(l.dto_linea_pct || 0) - t.dto_linea_pct) > 0.005) cambio.dto_linea_pct = t.dto_linea_pct;
+    if (Object.keys(cambio).length) {
+      cambio.precio_venta = t.precio_venta;
+      if (t.precio_coste != null && l.precio_coste == null) cambio.precio_coste = t.precio_coste;
+      const { error } = await sb.from('presupuesto_lineas').update(cambio).eq('id', l.id);
+      if (error) throw new Error(error.message);
+      partes.push('«' + String(l.descripcion).slice(0, 40) + '» ' + Object.keys(cambio).filter((k) => k !== 'precio_venta').join('/'));
+    }
+  }
+  let orden = ((deApp || []) as { orden?: number }[]).reduce((m, l) => Math.max(m, Number(l.orden) || 0), 0);
+  const nuevas = deTL.filter((_, k) => !usadas.has(k)).map((t) => Object.assign({ presupuesto_id: p.id }, t, { orden: ++orden, origen: 'manual', origen_inputs: { teamleader: true, cambio: 'añadida en Teamleader' } }));
+  if (nuevas.length) {
+    const { error } = await sb.from('presupuesto_lineas').insert(nuevas);
+    if (error) throw new Error(error.message);
+    partes.push(nuevas.length + ' nueva(s)');
+  }
+  if (!partes.length) return '';
+  const { error: e2 } = await sb.from('presupuestos').update(Object.assign({ updated_at: new Date().toISOString() }, totales)).eq('id', p.id);
+  if (e2) throw new Error(e2.message);
+  try { await sb.from('cliente_bitacora').insert({ cliente_id: p.cliente_id, tipo: 'presupuesto', texto: 'La oferta se cambió en Teamleader y la app la ha actualizado: ' + partes.join(', ') + '. Total ' + totales.total_venta + ' €.', por: null }); } catch (_) { /* sin cliente */ }
+  return partes.join(', ');
+}
+
 /** Pide la oferta entera (con líneas) y la deja en el presupuesto de la app. */
 // deno-lint-ignore no-explicit-any
 async function volcarOferta(sb: any, token: string, presupuestoId: string, quotationId: string, ivaPorId: Record<string, number>) {
@@ -360,7 +406,7 @@ async function sincronizar(sb: any, opciones: { cliente_id?: string } = {}) {
 
   // Lo nuestro: presupuestos con oferta y visitas con oportunidad.
   const { data: presus } = await sb.from('presupuestos')
-    .select('id, tl_quotation_id, visita_id, cliente_id, estado, revisado_at, enviado_cliente_at, respuesta_cliente, categoria, motor_version')
+    .select('id, tl_quotation_id, visita_id, cliente_id, estado, revisado_at, enviado_cliente_at, respuesta_cliente, categoria, motor_version, tl_updated_at, sync_at, dto_global_pct')
     .not('tl_quotation_id', 'is', null).gte('created_at', desde);
   // Los tipos de IVA por id (0.21 → 21), para traducir las líneas que vengan del CRM.
   const ivaPorId: Record<string, number> = {};
@@ -498,6 +544,18 @@ async function sincronizar(sb: any, opciones: { cliente_id?: string } = {}) {
     if (p.motor_version === 'teamleader' && !conLineas.has(p.id)) {
       try { const n = await volcarOferta(sb, token, p.id, q.id, ivaPorId); resumen.actualizados++; resumen.detalles.push('Líneas traídas (' + n + ') a ' + p.id.slice(0, 8)); }
       catch (e) { resumen.detalles.push('Líneas de ' + p.id.slice(0, 8) + ': ' + (e as Error).message); }
+    } else if (q.updated_at) {
+      // La oferta se tocó en Teamleader después de lo último que la app sabe
+      // (27-10-2026): se traen los cambios línea a línea, por descripción.
+      const tlUpd = new Date(q.updated_at).getTime();
+      const sabido = p.tl_updated_at ? new Date(p.tl_updated_at).getTime() : (p.sync_at ? new Date(p.sync_at).getTime() + 120_000 : 0);
+      if (tlUpd > sabido) {
+        try {
+          const cambios = await traerCambiosOferta(sb, token, p, q.id, ivaPorId);
+          await sb.from('presupuestos').update({ tl_updated_at: new Date(q.updated_at).toISOString() }).eq('id', p.id);
+          if (cambios) { resumen.actualizados++; resumen.detalles.push('Cambios de Teamleader en ' + p.id.slice(0, 8) + ': ' + cambios); }
+        } catch (e) { resumen.detalles.push('Cambios de ' + p.id.slice(0, 8) + ': ' + (e as Error).message); }
+      }
     }
     const d = deals[q.deal?.id];
     // deno-lint-ignore no-explicit-any
@@ -610,7 +668,7 @@ Deno.serve(async (req) => {
   if (!p) return json({ error: 'Ese presupuesto no existe.' }, 404);
   if (!(await clienteDeColaborador(sb, yo, p.cliente_id, p.visita_id))) return json({ error: SOLO_SUS_CLIENTES }, 403);
   const yaOferta = limpio(p.tl_quotation_id);
-  if (yaOferta && !pdfB64) {
+  if (yaOferta && !pdfB64 && b.actualizar !== true) {
     return json({ error: 'Ese presupuesto ya está en Teamleader.', tl_quotation_id: yaOferta }, 409);
   }
 
@@ -651,6 +709,67 @@ Deno.serve(async (req) => {
   // deno-lint-ignore no-explicit-any
   const ivaDe = (l: any) => Math.round(Number(l.iva == null ? 21 : l.iva) * 100) / 100;
   const iva = ivaDe(lineas[0]);
+  // Los renglones de un grupo tal como los quiere Teamleader (crear y actualizar).
+  // deno-lint-ignore no-explicit-any
+  const itemsDe = (g: any, ivas: Record<number, string>) => g.lineas.map((l: any) => {
+    const cantidad = Number(l.cantidad) || 1;
+    const venta = Number(l.precio_venta) || 0;
+    // El precio unitario tiene que cuadrar con el total de la línea al
+    // céntimo. Si al repartirlo entre las unidades no cuadra (3 uds de algo
+    // acabado en un tercio), se manda como una sola unidad con su importe.
+    const unitario = dosDec(venta / cantidad);
+    const cuadra = Math.round(unitario * cantidad * 100) === Math.round(venta * 100);
+    // El coste va a Teamleader como precio de compra (Enzo, 26-10-2026): así
+    // la oferta enseña allí el margen. Por unidad, o total si va como una unidad.
+    const costeUd = l.precio_coste == null || l.precio_coste === '' ? null : Number(l.precio_coste);
+    const compra = costeUd == null || !Number.isFinite(costeUd) ? undefined
+      : { amount: dosDec(cuadra ? costeUd : costeUd * cantidad), currency: 'EUR' };
+    return {
+      purchase_price: compra,
+      quantity: cuadra ? cantidad : 1,
+      description: limpio(l.descripcion).slice(0, 255),
+      extended_description: limpio(l.detalle_tecnico) || undefined,
+      // `tax: excluding` es obligatorio: el precio va sin IVA y Teamleader
+      // lo suma con el tipo de tax_rate_id.
+      unit_price: { amount: cuadra ? unitario : dosDec(venta), tax: 'excluding' },
+      tax_rate_id: ivas[ivaDe(l)],
+    };
+  });
+  // deno-lint-ignore no-explicit-any
+  const ivasPara = async (ivas: Record<number, string>, lineasIva: any[]) => {
+    const faltan = [...new Set(lineasIva.map(ivaDe))].filter((x) => !ivas[x]);
+    if (faltan.length) {
+      const hay = Object.keys(ivas).map((x) => x + ' %').join(', ') || 'ninguno';
+      throw new Error(`En Teamleader no hay un IVA del ${faltan.join(' % ni del ')} % en el departamento de la oportunidad (hay: ${hay}).`);
+    }
+  };
+
+  // --- la oferta ya existe y se ha editado en la app: se actualiza allí (27-10-2026) ---
+  if (yaOferta && b.actualizar === true) {
+    if (soloVer) return json({ ok: true, actualizar: true, lineas: lineas.length, total: p.total_venta });
+    try {
+      const info = await crm(token, 'quotations.info', { id: yaOferta });
+      const dealIdQ = limpio(info?.data?.deal?.id);
+      let departamentoId = '';
+      if (dealIdQ) { try { const d = await crm(token, 'deals.info', { id: dealIdQ }); departamentoId = limpio(d?.data?.department?.id); } catch (_) { /* sin departamento: todos los IVA */ } }
+      const ivas = await ivasDelDepartamento(token, departamentoId);
+      await ivasPara(ivas, lineas);
+      await crm(token, 'quotations.update', {
+        id: yaOferta, currency: { code: 'EUR', exchange_rate: 1 },
+        grouped_lines: grupos.map((g) => ({ section: { title: g.titulo }, line_items: itemsDe(g, ivas) })),
+        discounts: Number(p.dto_global_pct) > 0 ? [{ type: 'percentage', value: dosDec(Number(p.dto_global_pct)), description: 'Descuento' }] : [],
+      });
+      if (dealIdQ) { try { await crm(token, 'deals.update', { id: dealIdQ, estimated_value: { amount: dosDec(Number(p.total_venta) || 0), currency: 'EUR' } }); } catch (_) { /* el importe es lo de menos */ } }
+      // La fecha de la oferta tras nuestro cambio, para que la sincronización no lo traiga de vuelta.
+      let tlUpdated: string | null = null;
+      try { const info2 = await crm(token, 'quotations.info', { id: yaOferta }); tlUpdated = info2?.data?.updated_at ? new Date(info2.data.updated_at).toISOString() : null; } catch (_) { /* da igual */ }
+      await sb.from('presupuestos').update({ sync_estado: 'sincronizado', sync_error: null, sync_at: new Date().toISOString(), tl_updated_at: tlUpdated }).eq('id', id);
+      return json({ ok: true, actualizado: true, tl_quotation_id: yaOferta, lineas: lineas.length, total: p.total_venta });
+    } catch (e) {
+      await sb.from('presupuestos').update({ sync_estado: 'error', sync_error: 'Actualizar: ' + (e as Error).message }).eq('id', id);
+      return json({ error: 'No se pudo actualizar la oferta en Teamleader: ' + (e as Error).message, sin_permiso: e instanceof SinPermiso }, e instanceof SinPermiso ? 409 : 502);
+    }
+  }
 
   if (soloVer) {
     return json({ ok: true, cliente: cli?.nombre || null, deal_id: dealId || null, iva,
@@ -741,37 +860,9 @@ Deno.serve(async (req) => {
       // El IVA, del departamento de la oportunidad.
       const departamentoId = limpio(deal?.data?.department?.id);
       const ivas = await ivasDelDepartamento(token, departamentoId);
-      const faltan = [...new Set(lineas.map(ivaDe))].filter((x) => !ivas[x]);
-      if (faltan.length) {
-        const hay = Object.keys(ivas).map((x) => x + ' %').join(', ') || 'ninguno';
-        throw new Error(`En Teamleader no hay un IVA del ${faltan.join(' % ni del ')} % en el departamento de la oportunidad (hay: ${hay}).`);
-      }
-
+      await ivasPara(ivas, lineas);
       // deno-lint-ignore no-explicit-any
-      const items = (g: any) => g.lineas.map((l: any) => {
-        const cantidad = Number(l.cantidad) || 1;
-        const venta = Number(l.precio_venta) || 0;
-        // El precio unitario tiene que cuadrar con el total de la línea al
-        // céntimo. Si al repartirlo entre las unidades no cuadra (3 uds de algo
-        // acabado en un tercio), se manda como una sola unidad con su importe.
-        const unitario = dosDec(venta / cantidad);
-        const cuadra = Math.round(unitario * cantidad * 100) === Math.round(venta * 100);
-        // El coste va a Teamleader como precio de compra (Enzo, 26-10-2026): así
-        // la oferta enseña allí el margen. Por unidad, o total si va como una unidad.
-        const costeUd = l.precio_coste == null || l.precio_coste === '' ? null : Number(l.precio_coste);
-        const compra = costeUd == null || !Number.isFinite(costeUd) ? undefined
-          : { amount: dosDec(cuadra ? costeUd : costeUd * cantidad), currency: 'EUR' };
-        return {
-          purchase_price: compra,
-          quantity: cuadra ? cantidad : 1,
-          description: limpio(l.descripcion).slice(0, 255),
-          extended_description: limpio(l.detalle_tecnico) || undefined,
-          // `tax: excluding` es obligatorio: el precio va sin IVA y Teamleader
-          // lo suma con el tipo de tax_rate_id.
-          unit_price: { amount: cuadra ? unitario : dosDec(venta), tax: 'excluding' },
-          tax_rate_id: ivas[ivaDe(l)],
-        };
-      });
+      const items = (g: any) => itemsDe(g, ivas);
 
       // El nombre de la oferta (Enzo, 18-10-2026): con dos ofertas en la misma
       // oportunidad hay que abrirlas para saber cuál es cuál. En fotovoltaica el

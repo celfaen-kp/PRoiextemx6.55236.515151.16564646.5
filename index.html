@@ -466,7 +466,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '27.5'; // versión visible de la app (única fuente)
+const APP_VERSION = '27.6'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -9331,9 +9331,14 @@ A.presuGuardarCambios = async () => {
     // 4 · que el servidor vuelva a sumar
     await visitasDB.recalcularPresupuesto(v.datos.id, e.dto);
     V.presuEdit = null;
-    toast('Presupuesto actualizado.');
     V.presuLista.cargado = false; A.cargarPresupuestos();
     await A.presuAbrir(v.datos.id);
+    // 5 · si la oferta ya está en Teamleader, se actualiza allí con estas líneas (27-10-2026)
+    if (v.datos.tl_quotation_id) {
+      toast('Guardado. Actualizando la oferta en Teamleader…');
+      try { await visitasDB.actualizarPresupuestoEnTeamleader(v.datos.id); toast('Presupuesto actualizado, también en Teamleader.'); await A.presuAbrir(v.datos.id); }
+      catch (err) { avisar('Guardado en la app, pero no en Teamleader: ' + msgError(err)); }
+    } else toast('Presupuesto actualizado.');
   } catch (err) {
     e.guardando = false; render();
     avisar('No se pudieron guardar los cambios: ' + msgError(err));
@@ -9651,10 +9656,10 @@ function vPresupuestoVer() {
       ${avisoTeslaHTML(lineas, d.categoria)}
       ${d.motor_version === 'teamleader'
         ? (lineas.length
-          ? `<div class="tiny" style="margin-top:12px">Hecho en Teamleader: las líneas son las de la oferta de allí. Si cambia en el CRM, se vuelve a traer con ↻ Actualizar desde Teamleader.</div>
-      <div class="row g8" style="margin-top:14px"><button class="btn btn-gris" data-a="presuPdf" style="border-radius:99px">PDF</button></div>`
+          ? `<div class="tiny" style="margin-top:12px">Hecho en Teamleader: las líneas son las de la oferta de allí. Lo que se cambie allí llega solo; lo que se cambie aquí con «Modificar» se actualiza allí.</div>
+      <div class="row g8" style="margin-top:14px"><button class="btn btn-gris" data-a="presuPdf" style="border-radius:99px">PDF</button><button class="btn btn-gris" data-a="presuEditar" style="border-radius:99px">Modificar</button></div>`
           : '<div class="tiny" style="margin-top:12px">Hecho en Teamleader: las líneas aún no se han traído. Pulsa ↻ Actualizar desde Teamleader en Presupuestos.</div>')
-        : `<div class="tiny" style="margin-top:12px">Calculado con las reglas ${esc(d.motor_version || '')}. Queda congelado con la tarifa de ese día.</div>
+        : `<div class="tiny" style="margin-top:12px">Calculado con las reglas ${esc(d.motor_version || '')}. Queda congelado con la tarifa de ese día.${d.tl_quotation_id ? ' Lo que se cambie en Teamleader llega solo cada cuarto de hora; lo que se cambie aquí con «Modificar» se actualiza allí.' : ''}</div>
       <div class="row g8" style="margin-top:14px">
         <button class="btn btn-gris" data-a="presuPdf" style="border-radius:99px">PDF</button>
         <button class="btn btn-gris" data-a="presuEditar" style="border-radius:99px">Modificar</button>

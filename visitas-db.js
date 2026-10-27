@@ -592,6 +592,11 @@ export async function recalcularPresupuesto(presupuestoId, dtoGlobalPct) {
   });
 }
 
+/** Vuelca en la oferta de Teamleader las líneas tal como están en la app (tras editarlas aquí). */
+export async function actualizarPresupuestoEnTeamleader(presupuestoId) {
+  return invocar('teamleader-presupuesto', { presupuesto_id: presupuestoId, actualizar: true });
+}
+
 /** Sube el presupuesto a Teamleader: crea la oferta, no la manda al cliente. */
 export async function presupuestoATeamleader(presupuestoId, soloVer, pdf) {
   return invocar('teamleader-presupuesto', {
