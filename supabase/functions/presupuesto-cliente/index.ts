@@ -180,7 +180,7 @@ Deno.serve(async (req) => {
   if (b.accion === 'firmar') {
     const t = limpio(b.t);
     if (!/^[a-z0-9]{36,60}$/i.test(t)) return json({ error: 'Enlace no válido.' }, 404);
-    const { data: p } = await sb.from('presupuestos').select('*, cliente:clientes_cache(id, nombre, email)').eq('token_cliente', t).maybeSingle();
+    const { data: p } = await sb.from('presupuestos').select('*, cliente:clientes_cache(id, nombre, email, direccion, poblacion, tl_id, tl_tipo)').eq('token_cliente', t).maybeSingle();
     if (!p) return json({ error: 'Este enlace ya no está disponible.' }, 404);
     if (p.firmado_at) return json({ ok: true, ya: true });
     const nombre = limpio(b.nombre).slice(0, 120), dni = limpio(b.dni).slice(0, 20);
@@ -218,6 +218,24 @@ Deno.serve(async (req) => {
       firmado_at: cuando.toISOString(), firma_nombre: nombre, firma_dni: dni || null, firma_ip: ip || null, firma_ruta: base + '.png', pdf_firmado_ruta: rutaPdf, drive_firmado_url: driveUrl,
       updated_at: cuando.toISOString(),
     }).eq('id', p.id);
+    // La obra se crea sola con el presupuesto aceptado (Enzo, 27-10-2026), como
+    // «Crear la obra con este presupuesto» en la app. Las fases las pone la base.
+    let obraTxt = '';
+    if (!p.obra_id) {
+      try {
+        const CAT_A_OBRA: Record<string, string> = { aerotermia: 'AE', solar: 'FV', aire_acondicionado: 'AC', electricidad: 'EL' };
+        const c = p.cliente || {};
+        const { data: obra, error: errO } = await sb.from('obras').insert({
+          nombre: c.nombre || p.titulo || 'Obra', cliente: c.nombre || null, direccion: c.direccion || null, poblacion: c.poblacion || null, email_cliente: c.email || null,
+          categorias: CAT_A_OBRA[String(p.categoria)] ? [CAT_A_OBRA[String(p.categoria)]] : [], estado: 'planificada',
+          cliente_id: p.cliente_id || null, tl_id: c.tl_id || null, tl_tipo: c.tl_id ? (c.tl_tipo || 'contact') : null,
+        }).select('id, numero').single();
+        if (errO) throw new Error(errO.message);
+        await sb.from('presupuestos').update({ obra_id: obra.id }).eq('id', p.id);
+        obraTxt = obra.numero != null ? 'OB-' + String(obra.numero).padStart(3, '0') : 'creada';
+        try { await sb.from('cliente_bitacora').insert({ cliente_id: p.cliente_id, tipo: 'sistema', texto: 'Obra creada ' + obraTxt + ' al aceptar el presupuesto.', por: null }); } catch (_) { /* sin bitácora */ }
+      } catch (e) { avisos.push('Obra: ' + (e as Error).message); }
+    }
     // Teamleader: la oferta pasa a aceptada allí también (Enzo, 27-10-2026).
     if (p.tl_quotation_id) {
       try {
@@ -234,8 +252,8 @@ Deno.serve(async (req) => {
         const { data: gente } = await sb.from('empleados').select('nombre, email_avisos').in('rol', ['presupuestos', 'admin']).eq('activo', true);
         const paraOf = [...new Set(((gente || []) as { email_avisos?: string }[]).map((g) => limpio(g.email_avisos)).filter(esEmail))];
         if (paraOf.length) await mandar(RESEND, { to: paraOf, subject: '✓ Presupuesto aceptado y firmado: ' + (p.cliente?.nombre || '') + ' · ' + eur(p.total_venta),
-          text: `${p.cliente?.nombre || 'El cliente'} ha aceptado y firmado el presupuesto «${p.titulo || ''}» (${eur(p.total_venta)} sin IVA) el ${cuando.toLocaleString('es-ES', { timeZone: ZONA })}.\nFirmado por ${nombre}${dni ? ' · ' + dni : ''}.\n${driveUrl ? 'PDF firmado en Drive: ' + driveUrl + '\n' : ''}En la app ya figura como aceptado: ${APP_URL}`,
-          html: marco('Presupuesto aceptado y firmado', `<p><b>${esc(p.cliente?.nombre || 'El cliente')}</b> ha aceptado y firmado el presupuesto <b>${esc(p.titulo || '')}</b> (${eur(p.total_venta)} sin IVA) el ${esc(cuando.toLocaleString('es-ES', { timeZone: ZONA }))}.</p><p>Firmado por ${esc(nombre)}${dni ? ' · ' + esc(dni) : ''}. El PDF firmado va adjunto${driveUrl ? ` y está en <a href="${esc(driveUrl)}">Drive</a>` : ''}.</p><p>En la app ya figura como aceptado y se puede crear la obra.</p>`), attachments: adjunto });
+          text: `${p.cliente?.nombre || 'El cliente'} ha aceptado y firmado el presupuesto «${p.titulo || ''}» (${eur(p.total_venta)} sin IVA) el ${cuando.toLocaleString('es-ES', { timeZone: ZONA })}.\nFirmado por ${nombre}${dni ? ' · ' + dni : ''}.\n${driveUrl ? 'PDF firmado en Drive: ' + driveUrl + '\n' : ''}En la app ya figura como aceptado${obraTxt ? ' y la obra ' + obraTxt + ' está creada' : ''}: ${APP_URL}`,
+          html: marco('Presupuesto aceptado y firmado', `<p><b>${esc(p.cliente?.nombre || 'El cliente')}</b> ha aceptado y firmado el presupuesto <b>${esc(p.titulo || '')}</b> (${eur(p.total_venta)} sin IVA) el ${esc(cuando.toLocaleString('es-ES', { timeZone: ZONA }))}.</p><p>Firmado por ${esc(nombre)}${dni ? ' · ' + esc(dni) : ''}. El PDF firmado va adjunto${driveUrl ? ` y está en <a href="${esc(driveUrl)}">Drive</a>` : ''}.</p><p>En la app ya figura como aceptado${obraTxt ? ' y la obra <b>' + esc(obraTxt) + '</b> está creada' : ''}.</p>`), attachments: adjunto });
       } catch (e) { avisos.push('correo oficina: ' + (e as Error).message); }
       try {
         const emailCli = esEmail(p.enviado_correo_a) ? limpio(p.enviado_correo_a) : (esEmail(p.cliente?.email) ? limpio(p.cliente.email) : '');
