@@ -219,6 +219,8 @@ Deno.serve(async (req) => {
       firmado_at: cuando.toISOString(), firma_nombre: nombre, firma_dni: dni || null, firma_ip: ip || null, firma_ruta: base + '.png', pdf_firmado_ruta: rutaPdf, drive_firmado_url: driveUrl,
       updated_at: cuando.toISOString(),
     }).eq('id', p.id);
+    // Si el cliente estaba colocado a mano en Otros, Rechazados o No responden, sale de ahí.
+    if (p.cliente_id) { try { await sb.from('clientes_cache').update({ tablero_col: null, tablero_motivo: null }).eq('id', p.cliente_id).in('tablero_col', ['otros', 'rechazado', 'no_responde']); } catch (_) { /* da igual */ } }
     // La obra se crea sola con el presupuesto aceptado (Enzo, 27-10-2026), como
     // «Crear la obra con este presupuesto» en la app. Las fases las pone la base.
     let obraTxt = '';

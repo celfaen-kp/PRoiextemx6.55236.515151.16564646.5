@@ -466,7 +466,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '28.4'; // versión visible de la app (única fuente)
+const APP_VERSION = '28.5'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -9957,8 +9957,9 @@ A.presuRespuesta = async (r) => {
   V.presuSegBusy = true; render();
   try { Object.assign(d, await visitasDB.seguimientoPresupuesto(d.id, { respuesta_cliente: r, respondido_at: r === 'pendiente' ? null : new Date().toISOString() })); if (V.agenda.cargado) A.cargarAgenda();
     if (r === 'aceptado' && d.tl_quotation_id) visitasDB.aceptarEnTeamleader(d.id).then(() => toast('La oferta queda aceptada también en Teamleader.')).catch((e) => avisar('Aceptado en la app, pero no en Teamleader: ' + msgError(e)));
-    // Aceptado → la obra se crea sola (Enzo, 27-10-2026).
-    if (r === 'aceptado' && !d.obra_id) { try { await crearObraDePresupuesto(d); } catch (e) { avisar('Aceptado, pero no se pudo crear la obra: ' + msgError(e)); } } if (r !== 'pendiente') anotar(d.cliente && d.cliente.id, 'presupuesto', 'El cliente ' + ({ aceptado: 'aceptó', rechazado: 'rechazó', caducado: 'dejó caducar' })[r] + ' el presupuesto de ' + nombreCat(d.categoria)); }
+    // Aceptado → la obra se crea sola (Enzo, 27-10-2026) y el cliente sale de Otros/Rechazados si estaba colocado a mano.
+    if (r === 'aceptado' && !d.obra_id) { try { await crearObraDePresupuesto(d); } catch (e) { avisar('Aceptado, pero no se pudo crear la obra: ' + msgError(e)); } }
+    if (r === 'aceptado' && d.cliente_id) { const c = agCliente(d.cliente_id); if (c && c.tablero_col && c.tablero_col !== 'finalizado') { try { await visitasDB.guardarCliente({ id: c.id, tablero_col: null, tablero_motivo: null }); c.tablero_col = null; c.tablero_motivo = null; } catch (_) { /* da igual */ } } } if (r !== 'pendiente') anotar(d.cliente && d.cliente.id, 'presupuesto', 'El cliente ' + ({ aceptado: 'aceptó', rechazado: 'rechazó', caducado: 'dejó caducar' })[r] + ' el presupuesto de ' + nombreCat(d.categoria)); }
   catch (e) { avisar('No se pudo guardar: ' + msgError(e)); }
   V.presuSegBusy = false; render();
 };
@@ -10500,6 +10501,8 @@ function agEstadoCliente(c) {
   const sgm = pm ? seguimientoPresu(pm) : null;
   // Colocado a mano en el tablero (sql/etapa81, 20-10-2026): manda sobre todo
   // hasta que se mueve a otra columna.
+  // Un presupuesto aceptado saca al cliente de Otros, Rechazados o No responden (27-10-2026).
+  if (sgm && sgm.k === 'aceptado' && c.tablero_col !== 'finalizado') c = Object.assign({}, c, { tablero_col: null });
   if (c.tablero_col === 'otros') return { k: 'otros', color: 'var(--t3)', txt: 'Otros' + (c.tablero_motivo ? ' · ' + c.tablero_motivo : '') };
   if (c.tablero_col === 'rechazado') return { k: 'rechazado', color: 'var(--rojo)', txt: 'Rechazado' + (pm ? '' : ' · sin presupuesto') + (c.tablero_motivo ? ' · ' + c.tablero_motivo : '') };
   if (c.tablero_col === 'finalizado') return { k: 'finalizado', color: 'var(--verde-o)', txt: 'Finalizado' + (c.tablero_motivo ? ' · ' + c.tablero_motivo : '') };
