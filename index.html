@@ -466,7 +466,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '28.1'; // versión visible de la app (única fuente)
+const APP_VERSION = '28.2'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -6653,6 +6653,32 @@ A.descartarBorrador = () => {
   toast('Visita descartada.');
   render();
 };
+/* ---------- cancelar la visita desde dentro (Enzo, 27-10-2026) ---------- */
+A.visitaCancelarAbrir = () => {
+  const d = V.visitaDraft; if (!d) return;
+  const guardada = (V.visitas || []).find((x) => x.id === d.id) || null;
+  V.sheet = { tipo: 'visitaCancelar', id: d.id, guardada: !!guardada, estado: guardada ? guardada.estado : null, busy: false };
+  render();
+};
+A.visitaCancelarDescartar = () => {
+  const s = V.sheet; if (!s || s.tipo !== 'visitaCancelar') return;
+  limpiarBorradorVisita(); V.sheet = null;
+  V.view = esPresupuestos() ? 'agenda' : 'visitas'; render();
+  toast(s.guardada ? 'Cambios descartados: la visita sigue como estaba guardada.' : 'Visita cancelada.');
+  A.cargarVisitas(); if (esPresupuestos()) A.cargarAgenda();
+};
+A.visitaCancelarBorrar = async () => {
+  const s = V.sheet; if (!s || s.tipo !== 'visitaCancelar' || s.busy) return;
+  if (!navigator.onLine) { avisar('Sin conexión: no se puede borrar ahora. Descarta los cambios y bórrala luego desde Visitas.'); return; }
+  s.busy = true; render();
+  try {
+    await visitasDB.borrarVisitaConFotos(s.id);
+    limpiarBorradorVisita(); V.sheet = null;
+    V.view = esPresupuestos() ? 'agenda' : 'visitas'; render();
+    toast('Visita cancelada y borrada.');
+    A.cargarVisitas(); A.cargarAgenda();
+  } catch (e) { s.busy = false; render(); avisar(msgError(e)); }
+};
 A.visitaSalir = () => { guardarBorradorVisita(); V.view = esPresupuestos() ? 'agenda' : 'visitas'; render(); A.cargarVisitas(); if (esPresupuestos()) A.cargarAgenda(); };
 A.visitaPaso = (n) => {
   n = Number(n);
@@ -7486,7 +7512,13 @@ function vVisitaNueva() {
   }
 
   return `<div class="hdr-dark">
-    ${volver}
+    <div class="row" style="justify-content:space-between;align-items:center;gap:10px">
+      ${volver}
+      <div class="row g8" style="flex:none">
+        <span class="pill" data-a="visitaSalir" style="padding:8px 11px;background:rgba(255,255,255,.14);color:#fff" title="Se guarda lo que llevas y sales; la sigues desde la ficha del cliente o desde Visitas">Guardar y cerrar</span>
+        <span class="pill" data-a="visitaCancelarAbrir" style="padding:8px 11px;background:rgba(168,64,42,.35);color:#fff" title="Descartar esta visita">Cancelar</span>
+      </div>
+    </div>
     <div style="font:600 27px/1.1 var(--cond)">${esc(titulo)}</div>
     <div class="sub" style="color:rgba(255,255,255,.5);margin-top:6px">${esc(sub)}</div>
     <div class="pasos">${[1, 2, 3, 4, 5].map((i) => `<i class="${i <= p ? 'on' : ''}" data-a="visitaPaso" data-n="${i}" style="cursor:pointer"></i>`).join('')}</div>
@@ -12102,6 +12134,15 @@ function sheet() {
       </div>
     </div></div>`;
   }
+  if (s.tipo === 'visitaCancelar') {
+    return `<div class="sheet"><div>
+      <div style="font:600 23px/1.15 var(--cond)">Cancelar la visita</div>
+      <div class="sub" style="margin-top:8px">${s.guardada ? 'Esta visita está guardada como ' + (s.estado === 'completada' ? 'cerrada' : 'borrador') + '. Puedes descartar solo lo que has cambiado ahora, o borrarla del todo.' : 'Se pierde lo apuntado en esta visita (datos y fotos). Si solo quieres salir, usa «Guardar y cerrar».'}</div>
+      <button class="btn btn-gris" data-a="visitaCancelarDescartar" style="margin-top:16px;border-radius:14px" ${s.busy ? 'disabled' : ''}>${s.guardada ? 'Descartar los cambios de ahora' : 'Cancelar la visita'}</button>
+      ${s.guardada ? `<button class="btn" data-a="visitaCancelarBorrar" style="margin-top:8px;border-radius:14px;background:none;color:var(--rojo);box-shadow:inset 0 0 0 1.5px var(--rojo)" ${s.busy ? 'disabled' : ''}>${s.busy ? 'Borrando…' : 'Borrar la visita del todo (con sus fotos)'}</button>` : ''}
+      <button class="btn btn-gris" data-a="cerrarSheet" style="margin-top:8px;border-radius:99px">Volver a la visita</button>
+    </div></div>`;
+  }
   if (s.tipo === 'visitaAMedias') {
     const b = leerBorradorVisita(); const dr = (b && b.draft) || {};
     return `<div class="sheet"><div>
@@ -12979,6 +13020,9 @@ document.addEventListener('click', (e) => {
   if (a === 'descartarAparcada') return A.descartarAparcada(d.i);
   if (a === 'descartarBorrador') return A.descartarBorrador();
   if (a === 'visitaSalir') return A.visitaSalir();
+  if (a === 'visitaCancelarAbrir') return A.visitaCancelarAbrir();
+  if (a === 'visitaCancelarDescartar') return A.visitaCancelarDescartar();
+  if (a === 'visitaCancelarBorrar') return A.visitaCancelarBorrar();
   if (a === 'visitaPaso') return A.visitaPaso(d.n);
   if (a === 'visitaElegirCliente') return A.visitaElegirCliente(d.id);
   if (a === 'visitaClienteNuevo') return A.visitaClienteNuevo();
