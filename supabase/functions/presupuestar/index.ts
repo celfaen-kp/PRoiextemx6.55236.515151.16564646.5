@@ -93,6 +93,44 @@ Deno.serve(async (req) => {
   let b: any;
   try { b = await req.json(); } catch { return json({ error: 'Petición mal formada.' }, 400); }
 
+  // --- un producto nuevo en el catálogo propio (Enzo, 27-10-2026) ---------------
+  // Lo que no está en ninguna tarifa se crea aquí al añadirlo a un presupuesto y
+  // queda para el futuro: precio_tarifa = coste y recargo = venta ÷ coste (si no
+  // hay coste, precio_tarifa = venta sin recargo).
+  if (b.accion === 'crear_producto') {
+    if (yo.rol === 'colaborador') return json({ error: 'Crear productos es de presupuestos y Administración.' }, 403);
+    const nombre = String(b.nombre || '').trim().slice(0, 200);
+    const venta = Math.round((Number(b.venta) || 0) * 100) / 100;
+    const coste = b.coste == null || b.coste === '' ? null : Math.round((Number(b.coste) || 0) * 100) / 100;
+    const unidad = String(b.unidad || 'ud').trim().slice(0, 12) || 'ud';
+    const FAMILIAS = ['equipo', 'material', 'mano_obra', 'servicio', 'tramite', 'otro'];
+    const familia = FAMILIAS.includes(String(b.familia)) ? String(b.familia) : 'material';
+    const detalle = String(b.detalle_tecnico || '').trim().slice(0, 1000) || null;
+    if (nombre.length < 3) return json({ error: 'Pon un nombre de al menos 3 letras.' }, 400);
+    if (!(venta > 0)) return json({ error: 'Pon el precio de venta.' }, 400);
+    if (coste != null && coste > venta) return json({ error: 'El coste no puede ser mayor que la venta.' }, 400);
+    const { data: prov } = await sb.from('proveedores').select('id').ilike('nombre', 'Sysefen%').limit(1).maybeSingle();
+    if (!prov) return json({ error: 'No existe el proveedor Sysefen en el catálogo.' }, 500);
+    let { data: tarifa } = await sb.from('tarifas').select('id').eq('proveedor_id', prov.id).eq('nombre', 'Catálogo propio').maybeSingle();
+    if (!tarifa) {
+      const r = await sb.from('tarifas').insert({ proveedor_id: prov.id, nombre: 'Catálogo propio', vigente_desde: new Date().toISOString().slice(0, 10) }).select('id').single();
+      if (r.error) return json({ error: 'No se pudo crear la tarifa propia: ' + r.error.message }, 500);
+      tarifa = r.data;
+    }
+    const slug = nombre.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 28);
+    const referencia = 'SY-' + slug + '-' + Math.random().toString(36).slice(2, 6).toUpperCase();
+    const fila = {
+      tarifa_id: tarifa.id, referencia, nombre, familia, unidad,
+      precio_tarifa: coste != null && coste > 0 ? coste : venta, descuento_proveedor: 0, iva: 21,
+      detalle_tecnico: detalle, especificaciones: [],
+      atributos: coste != null && coste > 0 ? { propio: true } : { propio: true, sin_recargo: true },
+      recargo: coste != null && coste > 0 ? Math.round(venta / coste * 1e6) / 1e6 : null, aplica_cdc: false, activo: true,
+    };
+    const { data: prod, error: errProd } = await sb.from('productos').insert(fila).select('referencia, nombre, familia, unidad, precio_tarifa, detalle_tecnico, especificaciones, iva, recargo').single();
+    if (errProd) return json({ error: 'No se pudo crear el producto: ' + errProd.message }, 500);
+    return json({ ok: true, producto: Object.assign({}, prod, { venta, coste }) });
+  }
+
   // --- volver a sumar uno ya guardado ------------------------------------------
   if (b.recalcular === true) {
     const id = String(b.presupuesto_id || '');
@@ -292,6 +330,27 @@ Deno.serve(async (req) => {
   const quitar = new Set((Array.isArray(b.lineas_quitar) ? b.lineas_quitar : []).map((x) => String(x || '')).filter(Boolean));
   const claveLinea = (l: { producto_ref?: string | null; descripcion?: string }) => String(l.producto_ref || '') + '|' + String(l.descripcion || '');
   if (quitar.size) res.lineas = res.lineas.filter((l) => !quitar.has(claveLinea(l)));
+  // Líneas retocadas desde la pantalla antes de guardar (Enzo, 27-10-2026): por
+  // clave, y lo que se cambia se aplica encima de lo que calcula el motor.
+  // deno-lint-ignore no-explicit-any
+  const ajustes: any[] = Array.isArray(b.lineas_ajustar) ? b.lineas_ajustar : [];
+  if (ajustes.length) {
+    const numOk = (v: unknown) => { const n = Number(String(v == null ? '' : v).replace(',', '.')); return Number.isFinite(n) ? n : null; };
+    res.lineas.forEach((l) => {
+      const a = ajustes.find((x) => String(x.clave || '') === claveLinea(l));
+      if (!a) return;
+      const nuevo: Record<string, unknown> = {};
+      if (typeof a.descripcion === 'string' && a.descripcion.trim()) nuevo.descripcion = a.descripcion.trim().slice(0, 300);
+      if (a.detalle_tecnico != null) nuevo.detalle_tecnico = String(a.detalle_tecnico).trim().slice(0, 2000) || null;
+      if (numOk(a.cantidad) != null && numOk(a.cantidad)! > 0) nuevo.cantidad = numOk(a.cantidad);
+      if (numOk(a.precio_tarifa) != null && numOk(a.precio_tarifa)! >= 0) nuevo.precio_tarifa = Math.round(numOk(a.precio_tarifa)! * 100) / 100;
+      if (numOk(a.dto_linea_pct) != null) nuevo.dto_linea_pct = Math.max(0, Math.min(100, numOk(a.dto_linea_pct)!));
+      if (a.precio_coste === '' || a.precio_coste === null) nuevo.precio_coste = null;
+      else if (numOk(a.precio_coste) != null) nuevo.precio_coste = Math.round(numOk(a.precio_coste)! * 100) / 100;
+      Object.assign(l, nuevo);
+      l.origen_inputs = Object.assign({}, l.origen_inputs || {}, { ajustada: Object.keys(nuevo) });
+    });
+  }
   res.lineas.forEach((l, i) => { l.orden = i + 1; });
   // El resumen interno cuenta también lo añadido a mano (sin coste conocido).
   res.resumen = resumenDe(res.lineas);

@@ -427,6 +427,7 @@ export async function presupuestarVisita(visitaId, categoria, opciones) {
     dto_global_pct: o.dtoGlobalPct == null ? undefined : o.dtoGlobalPct,
     lineas_extra: o.lineasExtra && o.lineasExtra.length ? o.lineasExtra : undefined,
     lineas_quitar: o.lineasQuitar && o.lineasQuitar.length ? o.lineasQuitar : undefined,
+    lineas_ajustar: o.lineasAjustar && o.lineasAjustar.length ? o.lineasAjustar : undefined,
     // Otra opción del mismo presupuesto (otra marca de inversor): los datos de
     // la ficha con el cambio encima, sin tocar la ficha. Y un título que la
     // distinga en la lista y en Teamleader.
@@ -452,7 +453,12 @@ export async function presupuestarSuelto(categoria, datos, opciones) {
     dto_global_pct: o.dtoGlobalPct == null ? undefined : o.dtoGlobalPct,
     lineas_extra: o.lineasExtra && o.lineasExtra.length ? o.lineasExtra : undefined,
     lineas_quitar: o.lineasQuitar && o.lineasQuitar.length ? o.lineasQuitar : undefined,
+    lineas_ajustar: o.lineasAjustar && o.lineasAjustar.length ? o.lineasAjustar : undefined,
   });
+}
+/** Un producto nuevo en el catálogo propio (27-10-2026), para usarlo ahora y en el futuro. */
+export async function crearProductoCatalogo(datos) {
+  return invocar('presupuestar', Object.assign({ accion: 'crear_producto' }, datos));
 }
 
 /**
