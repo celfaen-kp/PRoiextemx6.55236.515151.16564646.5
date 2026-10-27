@@ -46,6 +46,9 @@ const eur = (n: unknown) => (Number(n) || 0).toLocaleString('es-ES', { minimumFr
 const fecha = (iso?: string | null) => iso ? new Date(iso).toLocaleDateString('es-ES', { timeZone: ZONA, day: 'numeric', month: 'long', year: 'numeric' }) : '';
 const esEmail = (s: unknown) => typeof s === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s.trim());
 const limpio = (v: unknown) => String(v == null ? '' : v).trim();
+// El título tal y como lo ve el cliente: sin la coletilla «Hecho en Teamleader» (V28.6).
+// deno-lint-ignore no-explicit-any
+const tituloCliente = (p: any) => limpio(String(p?.titulo || '').replace(/\s*[·\-–—(]?\s*Hecho en Teamleader\s*[)]?\s*/gi, ' ').replace(/\s{2,}/g, ' ').replace(/\s*[·\-–—]\s*$/, '').replace(/^\s*[·\-–—]\s*/, '')) || 'Presupuesto';
 const b64aBytes = (b64: string) => Uint8Array.from(atob(b64.replace(/^data:[^,]*,/, '')), (c) => c.charCodeAt(0));
 const bytesAb64 = (bytes: Uint8Array) => { let s = ''; for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, Array.from(bytes.subarray(i, i + 0x8000))); return btoa(s); };
 const token = () => crypto.randomUUID().replace(/-/g, '') + Math.random().toString(36).slice(2, 10);
@@ -273,14 +276,14 @@ Deno.serve(async (req) => {
         const paraOf = [...new Set(((gente || []) as { email_avisos?: string }[]).map((g) => limpio(g.email_avisos)).filter(esEmail))];
         if (paraOf.length) await mandar(RESEND, { to: paraOf, subject: '✓ Presupuesto aceptado y firmado: ' + (p.cliente?.nombre || '') + ' · ' + eur(p.total_venta),
           text: `${p.cliente?.nombre || 'El cliente'} ha aceptado y firmado el presupuesto «${tituloCliente(p)}» (${eur(p.total_venta)} sin IVA) el ${cuando.toLocaleString('es-ES', { timeZone: ZONA })}.\nFirmado por ${nombre}${dni ? ' · ' + dni : ''}.\n${driveUrl ? 'PDF firmado en Drive: ' + driveUrl + '\n' : ''}En la app ya figura como aceptado${obraTxt ? ' y la obra ' + obraTxt + ' está creada' : ''}: ${APP_URL}`,
-          html: marco('Presupuesto aceptado y firmado', `<p><b>${esc(p.cliente?.nombre || 'El cliente')}</b> ha aceptado y firmado el presupuesto <b>${esctituloCliente(p)}</b> (${eur(p.total_venta)} sin IVA) el ${esc(cuando.toLocaleString('es-ES', { timeZone: ZONA }))}.</p><p>Firmado por ${esc(nombre)}${dni ? ' · ' + esc(dni) : ''}. El PDF firmado va adjunto${driveUrl ? ` y está en <a href="${esc(driveUrl)}">Drive</a>` : ''}.</p><p>En la app ya figura como aceptado${obraTxt ? ' y la obra <b>' + esc(obraTxt) + '</b> está creada' : ''}.</p>`), attachments: adjunto });
+          html: marco('Presupuesto aceptado y firmado', `<p><b>${esc(p.cliente?.nombre || 'El cliente')}</b> ha aceptado y firmado el presupuesto <b>${esc(tituloCliente(p))}</b> (${eur(p.total_venta)} sin IVA) el ${esc(cuando.toLocaleString('es-ES', { timeZone: ZONA }))}.</p><p>Firmado por ${esc(nombre)}${dni ? ' · ' + esc(dni) : ''}. El PDF firmado va adjunto${driveUrl ? ` y está en <a href="${esc(driveUrl)}">Drive</a>` : ''}.</p><p>En la app ya figura como aceptado${obraTxt ? ' y la obra <b>' + esc(obraTxt) + '</b> está creada' : ''}.</p>`), attachments: adjunto });
       } catch (e) { avisos.push('correo oficina: ' + (e as Error).message); }
       try {
         const emailCli = esEmail(p.enviado_correo_a) ? limpio(p.enviado_correo_a) : (esEmail(p.cliente?.email) ? limpio(p.cliente.email) : '');
         let replyTo = ''; try { const { data: aj } = await sb.from('ajustes').select('valor').eq('clave', 'correo_oficina').maybeSingle(); replyTo = limpio(aj?.valor); } catch (_) { /* sin ajuste */ }
         if (emailCli) await mandar(RESEND, Object.assign({ to: [emailCli], subject: 'Copia de su presupuesto aceptado · Sysefen',
           text: `Hola ${p.cliente?.nombre || ''},\n\ngracias por aceptar el presupuesto «${tituloCliente(p)}». Le adjuntamos la copia firmada. Nos pondremos en contacto para organizar los trabajos.\n\nUn saludo,\nSysefen`,
-          html: marco('Gracias por su confianza', `<p>Hola ${esc(p.cliente?.nombre || '')},</p><p>gracias por aceptar el presupuesto <b>${esctituloCliente(p)}</b>. Le adjuntamos la copia firmada. Nos pondremos en contacto con usted para organizar los trabajos.</p><p>Un saludo,<br><b>Sysefen</b></p>`), attachments: adjunto }, replyTo ? { reply_to: replyTo } : {}));
+          html: marco('Gracias por su confianza', `<p>Hola ${esc(p.cliente?.nombre || '')},</p><p>gracias por aceptar el presupuesto <b>${esc(tituloCliente(p))}</b>. Le adjuntamos la copia firmada. Nos pondremos en contacto con usted para organizar los trabajos.</p><p>Un saludo,<br><b>Sysefen</b></p>`), attachments: adjunto }, replyTo ? { reply_to: replyTo } : {}));
       } catch (e) { avisos.push('correo cliente: ' + (e as Error).message); }
     }
     return json({ ok: true, avisos });
