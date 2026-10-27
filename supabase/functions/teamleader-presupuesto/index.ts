@@ -365,6 +365,19 @@ async function traerCambiosOferta(sb: any, token: string, p: any, quotationId: s
   return partes.join(', ');
 }
 
+/** La oferta pasa a aceptada en Teamleader (quotations.accept) cuando el cliente
+ *  acepta en la app o firma en línea (Enzo, 27-10-2026). */
+// deno-lint-ignore no-explicit-any
+async function aceptarEnTeamleader(sb: any, presupuestoId: string) {
+  const { data: p } = await sb.from('presupuestos').select('id, tl_quotation_id, total_venta').eq('id', presupuestoId).maybeSingle();
+  if (!p) throw new Error('Ese presupuesto no existe.');
+  if (!p.tl_quotation_id) return { ok: true, sin_oferta: true };
+  const token = await tokenValido(sb);
+  await crm(token, 'quotations.accept', { id: p.tl_quotation_id });
+  await sb.from('presupuestos').update({ sync_at: new Date().toISOString() }).eq('id', p.id);
+  return { ok: true, tl_quotation_id: p.tl_quotation_id };
+}
+
 /** Pide la oferta entera (con líneas) y la deja en el presupuesto de la app. */
 // deno-lint-ignore no-explicit-any
 async function volcarOferta(sb: any, token: string, presupuestoId: string, quotationId: string, ivaPorId: Record<string, number>) {
@@ -619,6 +632,13 @@ Deno.serve(async (req) => {
   const CLAVE = Deno.env.get('AVISOS_CLAVE') || '';
   if (CLAVE.length >= 24 && mismaClave(req.headers.get('x-clave') || '', CLAVE)) {
     const sbCron = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, { auth: { persistSession: false } });
+    // deno-lint-ignore no-explicit-any
+    let bc: any = {};
+    try { bc = await req.clone().json(); } catch { /* sin cuerpo: sincronizar */ }
+    if (bc && bc.accion === 'aceptar' && esUuid(bc.presupuesto_id)) {
+      try { return json(await aceptarEnTeamleader(sbCron, String(bc.presupuesto_id))); }
+      catch (e) { return json({ error: (e as Error).message, sin_permiso: e instanceof SinPermiso }, e instanceof SinPermiso ? 409 : 502); }
+    }
     try { return json(Object.assign({ ok: true, cron: true }, await sincronizar(sbCron))); }
     catch (e) { return json({ error: (e as Error).message, sin_permiso: e instanceof SinPermiso }, e instanceof SinPermiso ? 409 : 502); }
   }
@@ -643,6 +663,14 @@ Deno.serve(async (req) => {
   // deno-lint-ignore no-explicit-any
   let b: any;
   try { b = await req.json(); } catch { return json({ error: 'Petición mal formada.' }, 400); }
+
+  // --- desde la app: el cliente aceptó → aceptar la oferta en Teamleader ------------
+  if (b.accion === 'aceptar') {
+    const pid = esUuid(b.presupuesto_id) ? String(b.presupuesto_id) : '';
+    if (!pid) return json({ error: 'Falta el presupuesto.' }, 400);
+    try { return json(await aceptarEnTeamleader(sb, pid)); }
+    catch (e) { return json({ error: (e as Error).message, sin_permiso: e instanceof SinPermiso }, e instanceof SinPermiso ? 409 : 502); }
+  }
 
   // --- desde la app: «Actualizar desde Teamleader» ---------------------------------
   if (b.accion === 'sincronizar') {

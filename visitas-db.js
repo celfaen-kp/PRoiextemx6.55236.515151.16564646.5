@@ -608,6 +608,11 @@ export async function urlArchivoPresupuesto(ruta, segundos = 3600) {
   return data.signedUrl;
 }
 
+/** La oferta pasa a aceptada en Teamleader (cuando el cliente acepta en la app). */
+export async function aceptarEnTeamleader(presupuestoId) {
+  return invocar('teamleader-presupuesto', { accion: 'aceptar', presupuesto_id: presupuestoId });
+}
+
 /** Vuelca en la oferta de Teamleader las líneas tal como están en la app (tras editarlas aquí). */
 export async function actualizarPresupuestoEnTeamleader(presupuestoId) {
   return invocar('teamleader-presupuesto', { presupuesto_id: presupuestoId, actualizar: true });

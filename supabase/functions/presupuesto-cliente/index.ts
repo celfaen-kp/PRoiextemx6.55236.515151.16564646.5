@@ -22,8 +22,12 @@ const CORS = {
 };
 const json = (cuerpo: unknown, status = 200) =>
   new Response(JSON.stringify(cuerpo), { status, headers: { ...CORS, 'Content-Type': 'application/json' } });
-const html = (cuerpo: string, status = 200) =>
-  new Response(cuerpo, { status, headers: { ...CORS, 'Content-Type': 'text/html; charset=utf-8' } });
+const html = (cuerpo: string, status = 200) => {
+  const h = new Headers(CORS);
+  h.set('content-type', 'text/html; charset=utf-8');
+  h.set('cache-control', 'no-store');
+  return new Response(new TextEncoder().encode(cuerpo), { status, headers: h });
+};
 
 const ZONA = 'Europe/Madrid';
 const APP_URL = 'https://celfaen-kp.github.io/PRoiextemx6.55236.515151.16564646.5/';
@@ -94,72 +98,6 @@ async function subirADrive(tok: string, carpetaId: string, nombre: string, bytes
   return { id: d.id as string, url: (d.webViewLink as string) || ('https://drive.google.com/file/d/' + d.id + '/view') };
 }
 
-// ---------- la página pública ----------
-// deno-lint-ignore no-explicit-any
-function paginaCliente(p: any, lineas: any[], cli: any, t: string) {
-  const bruto = lineas.reduce((s, l) => s + (Number(l.precio_venta) || 0), 0);
-  const dtoG = Number(p.dto_global_pct) || 0;
-  const base = Number(p.total_venta) || Math.round(bruto * (1 - dtoG / 100) * 100) / 100;
-  const iva = Math.round(base * 0.21 * 100) / 100, total = Math.round((base + iva) * 100) / 100;
-  const secciones: { nombre: string; lineas: any[] }[] = [];
-  lineas.forEach((l) => { const n = l.seccion || 'Presupuesto'; let s = secciones.find((x) => x.nombre === n); if (!s) { s = { nombre: n, lineas: [] }; secciones.push(s); } s.lineas.push(l); });
-  const fv2 = lineas.map((l) => l.origen_inputs).find((o) => o && o.fv2);
-  const condiciones = fv2 ? [fv2.nota, fv2.condiciones].filter(Boolean).join(' ') : 'Presupuesto orientativo, válido ' + (p.validez_dias || 15) + ' días. No incluye obra civil ni permisos que no se nombren arriba.';
-  const v = vence(p);
-  const firmado = !!p.firmado_at;
-  return `<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Presupuesto · Sysefen</title>
-<style>
-body{margin:0;background:#f5f4ef;font-family:Arial,Helvetica,sans-serif;color:#14170f}
-.w{max-width:720px;margin:0 auto;padding:22px 14px 60px}
-.c{background:#fff;border-radius:18px;padding:22px 20px;margin-bottom:16px;box-shadow:0 2px 8px rgba(20,23,15,.06)}
-h1{font-size:24px;margin:0 0 6px}h2{font-size:15px;margin:18px 0 8px;color:#555;text-transform:uppercase;letter-spacing:.06em}
-.sub{color:#666;font-size:14px}.l{padding:10px 0;border-bottom:1px solid #eee}.l .n{font-weight:600;font-size:15px}.l .d{color:#555;font-size:13px;margin-top:3px;white-space:pre-wrap}
-.l .q{color:#777;font-size:12px;margin-top:4px}.l .p{float:right;font-weight:600;font-size:15px;margin-left:12px}
-.t{display:flex;justify-content:space-between;padding:6px 0;font-size:15px}.t.big{font-size:21px;font-weight:700;border-top:2px solid #14170f;padding-top:12px;margin-top:8px}
-.inp{width:100%;box-sizing:border-box;padding:13px 14px;border:1.5px solid #d9d8d2;border-radius:12px;font-size:16px;margin-top:8px}
-.firma{position:relative;margin-top:10px;border:1.5px dashed #b9b8b1;border-radius:14px;background:#fafaf7;height:190px}
-.firma canvas{width:100%;height:100%;display:block;touch-action:none}
-.firma .ph{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#999;pointer-events:none;font-size:14px}
-.btn{display:block;width:100%;padding:16px;border:0;border-radius:14px;background:#206028;color:#fff;font-size:17px;font-weight:600;margin-top:16px;cursor:pointer}
-.btn[disabled]{opacity:.5}.lnk{display:inline-block;margin-top:10px;color:#164a1d;font-weight:600}
-.ok{background:#eaf3ec;border:1.5px solid #206028;border-radius:14px;padding:16px;font-size:15px}
-.err{color:#a8402a;font-size:14px;margin-top:10px}
-small.cond{display:block;margin-top:14px;color:#666;font-size:12px;line-height:1.5}
-</style></head><body><div class="w">
-<div class="c"><img src="${LOGO_URL}" alt="Sysefen" style="height:40px"><h1 style="margin-top:14px">${esc(p.titulo || CATS[p.categoria] || 'Presupuesto')}</h1>
-<div class="sub">${esc(cli?.nombre || '')}${p.tl_numero ? ' · nº ' + esc(p.tl_numero) : ''}${p.enviado_correo_at ? ' · enviado el ' + fecha(p.enviado_correo_at) : ''}${v ? ' · válido hasta el ' + fecha(v) : ''}</div>
-<a class="lnk" href="?t=${esc(t)}&pdf=1">Descargar el PDF${firmado ? ' firmado' : ''}</a></div>
-${firmado ? `<div class="c"><div class="ok">✓ Este presupuesto ya está aceptado y firmado por <b>${esc(p.firma_nombre)}</b> el ${fecha(p.firmado_at)}. Gracias por confiar en Sysefen.</div></div>` : ''}
-<div class="c">${secciones.map((s) => `<h2>${esc(s.nombre)}</h2>${s.lineas.map((l) => `<div class="l"><span class="p">${eur(l.precio_venta)}</span><div class="n">${esc(l.descripcion)}</div>${l.detalle_tecnico ? `<div class="d">${esc(l.detalle_tecnico)}</div>` : ''}<div class="q">${esc(String(l.cantidad))} ${esc(l.unidad || 'ud')} × ${eur(l.precio_tarifa)}${Number(l.dto_linea_pct) ? ' · −' + esc(String(l.dto_linea_pct)) + ' %' : ''}</div></div>`).join('')}`).join('')}
-<div style="margin-top:14px">${dtoG ? `<div class="t"><span>Suma</span><span>${eur(bruto)}</span></div><div class="t"><span>Descuento ${esc(String(dtoG))} %</span><span>−${eur(bruto - base)}</span></div>` : ''}
-<div class="t"><span>Base imponible</span><span>${eur(base)}</span></div><div class="t"><span>IVA 21 %</span><span>${eur(iva)}</span></div><div class="t big"><span>Total</span><span>${eur(total)}</span></div></div>
-<small class="cond">${esc(condiciones)}</small></div>
-${firmado ? '' : `<div class="c" id="aceptar"><h1 style="font-size:20px">Aceptar y firmar</h1><div class="sub">Si está conforme, escriba su nombre, firme con el dedo o el ratón y pulse el botón. Recibirá copia por correo y nosotros el aviso.</div>
-<input class="inp" id="nombre" placeholder="Nombre y apellidos" autocomplete="name"><input class="inp" id="dni" placeholder="DNI / NIE (opcional)">
-<div class="firma"><canvas id="cv"></canvas><div class="ph" id="ph">Firme aquí</div></div><a class="lnk" href="#" id="borrar" style="font-weight:400;font-size:13px">Borrar la firma</a>
-<label style="display:block;margin-top:14px;font-size:14px"><input type="checkbox" id="acepto"> He leído el presupuesto y acepto sus condiciones.</label>
-<button class="btn" id="btn">Firmar y aceptar el presupuesto</button><div class="err" id="err"></div></div>
-<script>
-(function(){var cv=document.getElementById('cv'),ctx=cv.getContext('2d'),ph=document.getElementById('ph'),hay=false,dib=false;
-function tam(){var r=cv.getBoundingClientRect();cv.width=Math.round(r.width*2);cv.height=Math.round(r.height*2);ctx.lineWidth=4;ctx.lineCap='round';ctx.lineJoin='round';ctx.strokeStyle='#14170f';}
-tam();window.addEventListener('resize',tam);
-function pos(e){var r=cv.getBoundingClientRect();return [(e.clientX-r.left)*(cv.width/r.width),(e.clientY-r.top)*(cv.height/r.height)];}
-cv.addEventListener('pointerdown',function(e){e.preventDefault();dib=true;cv.setPointerCapture(e.pointerId);var p=pos(e);ctx.beginPath();ctx.moveTo(p[0],p[1]);});
-cv.addEventListener('pointermove',function(e){if(!dib)return;e.preventDefault();var p=pos(e);ctx.lineTo(p[0],p[1]);ctx.stroke();hay=true;ph.style.display='none';});
-['pointerup','pointercancel','pointerleave'].forEach(function(ev){cv.addEventListener(ev,function(){dib=false;});});
-document.getElementById('borrar').addEventListener('click',function(e){e.preventDefault();ctx.clearRect(0,0,cv.width,cv.height);hay=false;ph.style.display='';});
-document.getElementById('btn').addEventListener('click',function(){var err=document.getElementById('err');err.textContent='';
-var nombre=document.getElementById('nombre').value.trim();if(nombre.length<3){err.textContent='Escriba su nombre.';return;}
-if(!hay){err.textContent='Falta la firma.';return;}if(!document.getElementById('acepto').checked){err.textContent='Marque la casilla de aceptación.';return;}
-var b=document.getElementById('btn');b.disabled=true;b.textContent='Enviando…';
-fetch(location.pathname,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({accion:'firmar',t:${JSON.stringify(t)},nombre:nombre,dni:document.getElementById('dni').value.trim(),firma:cv.toDataURL('image/png')})})
-.then(function(r){return r.json().then(function(j){return {ok:r.ok,j:j};});}).then(function(x){if(!x.ok)throw new Error(x.j.error||'error');
-document.getElementById('aceptar').innerHTML='<div class="ok">✓ Presupuesto aceptado y firmado. Gracias, '+nombre.replace(/</g,'&lt;')+'. Le hemos enviado copia por correo y nos pondremos en contacto para empezar.</div>';window.scrollTo(0,0);})
-.catch(function(e){err.textContent='No se pudo enviar: '+e.message;b.disabled=false;b.textContent='Firmar y aceptar el presupuesto';});});})();
-</script>`}
-</div></body></html>`;
-}
-
 // ---------- el PDF firmado: el enviado + una página de aceptación ----------
 // deno-lint-ignore no-explicit-any
 async function pdfFirmado(original: Uint8Array | null, p: any, cli: any, nombre: string, dni: string, ip: string, firmaPng: Uint8Array, cuando: Date) {
@@ -213,7 +151,25 @@ Deno.serve(async (req) => {
       return new Response(f, { headers: { ...CORS, 'Content-Type': 'application/pdf', 'Content-Disposition': 'inline; filename="presupuesto-sysefen.pdf"' } });
     }
     const { data: lineas } = await sb.from('presupuesto_lineas').select('*').eq('presupuesto_id', p.id).order('orden');
-    return html(paginaCliente(p, lineas || [], p.cliente, t));
+    if (url.searchParams.get('json') !== '1') {
+      return new Response(null, { status: 302, headers: { ...CORS, Location: APP_URL + 'firmar.html?t=' + encodeURIComponent(t) } });
+    }
+    // Lo que ve el cliente: nada interno (costes, desgloses, reglas).
+    const ls = (lineas || []).map((l) => ({ descripcion: l.descripcion, detalle_tecnico: l.detalle_tecnico, cantidad: l.cantidad, unidad: l.unidad, precio_tarifa: l.precio_tarifa, dto_linea_pct: l.dto_linea_pct, precio_venta: l.precio_venta, seccion: l.seccion }));
+    const fv2 = (lineas || []).map((l) => l.origen_inputs).find((o) => o && o.fv2);
+    const condiciones = fv2 ? [fv2.nota, fv2.condiciones].filter(Boolean).join(' ') : 'Presupuesto orientativo, válido ' + (p.validez_dias || 15) + ' días. No incluye obra civil ni permisos que no se nombren arriba.';
+    const bruto = ls.reduce((a, l) => a + (Number(l.precio_venta) || 0), 0);
+    const dtoG = Number(p.dto_global_pct) || 0;
+    const base = Number(p.total_venta) || Math.round(bruto * (1 - dtoG / 100) * 100) / 100;
+    const iva = Math.round(base * 21) / 100;
+    let pdf_url: string | null = null;
+    const rutaPdf = p.pdf_firmado_ruta || p.pdf_enviado_ruta;
+    if (rutaPdf) { const { data: su } = await sb.storage.from(BUCKET).createSignedUrl(rutaPdf, 3600); pdf_url = su?.signedUrl || null; }
+    return json({
+      presupuesto: { titulo: p.titulo || CATS[p.categoria] || 'Presupuesto', categoria: CATS[p.categoria] || p.categoria, tl_numero: p.tl_numero, enviado_correo_at: p.enviado_correo_at, firmado_at: p.firmado_at, firma_nombre: p.firma_nombre, validez_dias: p.validez_dias },
+      cliente: p.cliente?.nombre || '', lineas: ls, condiciones, vence: vence(p),
+      totales: { bruto: Math.round(bruto * 100) / 100, dto_global_pct: dtoG, base, iva, total: Math.round((base + iva) * 100) / 100 }, pdf_url,
+    });
   }
   if (req.method !== 'POST') return json({ error: 'Método no permitido.' }, 405);
   // deno-lint-ignore no-explicit-any
@@ -262,6 +218,14 @@ Deno.serve(async (req) => {
       firmado_at: cuando.toISOString(), firma_nombre: nombre, firma_dni: dni || null, firma_ip: ip || null, firma_ruta: base + '.png', pdf_firmado_ruta: rutaPdf, drive_firmado_url: driveUrl,
       updated_at: cuando.toISOString(),
     }).eq('id', p.id);
+    // Teamleader: la oferta pasa a aceptada allí también (Enzo, 27-10-2026).
+    if (p.tl_quotation_id) {
+      try {
+        const CLAVE = Deno.env.get('AVISOS_CLAVE') || '';
+        const r = await fetch(Deno.env.get('SUPABASE_URL') + '/functions/v1/teamleader-presupuesto', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-clave': CLAVE }, body: JSON.stringify({ accion: 'aceptar', presupuesto_id: p.id }) });
+        if (!r.ok) avisos.push('Teamleader: ' + ((await r.json().catch(() => ({}))) as { error?: string }).error);
+      } catch (e) { avisos.push('Teamleader: ' + (e as Error).message); }
+    }
     try { await sb.from('cliente_bitacora').insert({ cliente_id: p.cliente_id, tipo: 'presupuesto', texto: 'Presupuesto ACEPTADO y firmado en línea por ' + nombre + (dni ? ' (' + dni + ')' : '') + ': ' + (p.titulo || '') + ' · ' + eur(p.total_venta) + (driveUrl ? ' · PDF firmado en Drive' : ''), por: null }); } catch (_) { /* sin bitácora */ }
     // Correos: oficina (presupuestos y Administración) y copia al cliente.
     if (RESEND) {
@@ -313,7 +277,6 @@ Deno.serve(async (req) => {
   // deno-lint-ignore no-explicit-any
   const pdfs: any[] = Array.isArray(b.pdfs) ? b.pdfs : [];
   const ahora = new Date().toISOString();
-  const base = url.origin + url.pathname;   // la propia función
   const tarjetas: string[] = [], textos: string[] = [], adjuntos: { filename: string; content: string }[] = [];
   const ordenados = ids.map((id) => ps.find((p) => p.id === id)!);
   for (const p of ordenados) {
@@ -329,7 +292,7 @@ Deno.serve(async (req) => {
       adjuntos.push({ filename: (limpio(pdf.nombre) || 'presupuesto-sysefen.pdf').replace(/[^\w.\- ()·áéíóúñÁÉÍÓÚÑ]+/g, '_').slice(0, 100), content: pdf.base64.replace(/^data:[^,]*,/, '') });
     }
     await sb.from('presupuestos').update(cambios).eq('id', p.id);
-    const enlace = base + '?t=' + t;
+    const enlace = APP_URL + 'firmar.html?t=' + t;
     const venceTxt = fecha(vence(Object.assign({}, p, { enviado_cliente_at: p.enviado_cliente_at || ahora })));
     const totalIva = Math.round(Number(p.total_venta) * 121) / 100;
     tarjetas.push(`<div style="border:1.5px solid #e6e5df;border-radius:14px;padding:16px 18px;margin:14px 0">
@@ -354,5 +317,5 @@ Deno.serve(async (req) => {
     await mandar(RESEND, Object.assign({ to: [para], subject: asunto, text: cuerpoTxt, html: marco(ps.length === 1 ? 'Su presupuesto' : 'Sus presupuestos', cuerpoHtml), attachments: adjuntos.length ? adjuntos : undefined }, cc.length ? { cc } : {}, replyTo ? { reply_to: replyTo } : {}));
   } catch (e) { return json({ error: 'No se pudo mandar el correo: ' + (e as Error).message }, 502); }
   try { await sb.from('cliente_bitacora').insert({ cliente_id: clienteId, tipo: 'email', texto: (ps.length === 1 ? 'Presupuesto enviado' : ps.length + ' presupuestos enviados') + ' por correo a ' + para + ': ' + ordenados.map((p) => p.titulo || CATS[p.categoria] || '').join(' · ') + (mensaje ? ' · Mensaje: ' + mensaje.slice(0, 200) : ''), por: yo.id }); } catch (_) { /* sin bitácora */ }
-  return json({ ok: true, enviados: ids.length, para, cc, enlaces: ordenados.map((p) => base + '?t=' + (p.token_cliente || '')) });
+  return json({ ok: true, enviados: ids.length, para, cc, enlaces: ordenados.map((p) => APP_URL + 'firmar.html?t=' + (p.token_cliente || '')) });
 });
