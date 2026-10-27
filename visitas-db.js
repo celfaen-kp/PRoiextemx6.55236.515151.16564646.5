@@ -598,6 +598,16 @@ export async function recalcularPresupuesto(presupuestoId, dtoGlobalPct) {
   });
 }
 
+/* --- el presupuesto al cliente por correo y su firma (sql/etapa93, 27-10-2026) --- */
+export async function enviarPresupuestoCliente(datos) {
+  return invocar('presupuesto-cliente', Object.assign({ accion: 'enviar' }, datos));
+}
+export async function urlArchivoPresupuesto(ruta, segundos = 3600) {
+  const { data, error } = await supabase.storage.from('presupuestos-cliente').createSignedUrl(ruta, segundos);
+  if (error) throw new Error(error.message);
+  return data.signedUrl;
+}
+
 /** Vuelca en la oferta de Teamleader las líneas tal como están en la app (tras editarlas aquí). */
 export async function actualizarPresupuestoEnTeamleader(presupuestoId) {
   return invocar('teamleader-presupuesto', { presupuesto_id: presupuestoId, actualizar: true });

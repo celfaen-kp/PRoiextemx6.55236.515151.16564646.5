@@ -466,7 +466,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '27.9'; // versión visible de la app (única fuente)
+const APP_VERSION = '28.0'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -9791,6 +9791,56 @@ function vPresupuestoVer() {
 // El seguimiento del presupuesto, en su ficha: los pasos de crearlo a la
 // respuesta del cliente, y los botones para marcar cada uno (sql/etapa64).
 const CAT_A_OBRA = { aerotermia: 'AE', solar: 'FV', aire_acondicionado: 'AC', electricidad: 'EL' };
+/* ---------- enviar el presupuesto al cliente por correo (Enzo, 27-10-2026) ---------- */
+A.presuEnviarAbrir = async () => {
+  const d = V.presuVer && V.presuVer.datos; if (!d) return;
+  if (!navigator.onLine) { avisar('Sin conexión.'); return; }
+  const cli = d.cliente_id ? agCliente(d.cliente_id) : null;
+  if (!V.presuLista.cargado) { try { await A.cargarPresupuestos(); } catch (_) { /* da igual */ } }
+  const otros = (V.presuLista.filas || []).filter((p) => p.cliente_id && p.cliente_id === d.cliente_id && p.id !== d.id && (p.respuesta_cliente || 'pendiente') === 'pendiente');
+  V.sheet = { tipo: 'presuEnviar', id: d.id, ids: [d.id], otros,
+    v: { para: (cli && cli.email) || d.enviado_correo_a || '', cc: '', asunto: '', mensaje: '' }, confirmar: false, busy: false, paso: '' };
+  render();
+};
+A.presuEnviarCampo = (k, v) => { const s = V.sheet; if (s && s.tipo === 'presuEnviar') s.v[k] = v; };
+A.presuEnviarToggle = (id) => {
+  const s = V.sheet; if (!s || s.tipo !== 'presuEnviar') return;
+  if (id === s.id) return;
+  const i = s.ids.indexOf(id); if (i >= 0) s.ids.splice(i, 1); else s.ids.push(id);
+  render();
+};
+A.presuEnviarRevisar = () => {
+  const s = V.sheet; if (!s || s.tipo !== 'presuEnviar') return;
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(s.v.para || '').trim())) { avisar('Pon un correo válido del cliente.'); return; }
+  s.confirmar = true; render();
+};
+A.presuEnviarVolver = () => { const s = V.sheet; if (s && s.tipo === 'presuEnviar') { s.confirmar = false; render(); } };
+A.presuEnviarConfirmado = async () => {
+  const s = V.sheet; if (!s || s.tipo !== 'presuEnviar' || s.busy) return;
+  s.busy = true; s.paso = 'Preparando los PDF…'; render();
+  try {
+    const pdfs = [];
+    for (const id of s.ids) {
+      const d = await visitasDB.verPresupuesto(id);
+      imprimirPresupuestoHTML(d);
+      const blob = await Promise.race([pdfDeImpresion(), new Promise((_, mal) => setTimeout(() => mal(new Error('el PDF tarda demasiado')), 40000))]);
+      const base64 = await new Promise((ok, mal) => { const fr = new FileReader(); fr.onload = () => ok(String(fr.result).replace(/^data:[^,]*,/, '')); fr.onerror = () => mal(fr.error); fr.readAsDataURL(blob); });
+      pdfs.push({ id, base64, nombre: nombrePdfPresu(d) });
+    }
+    s.paso = 'Enviando el correo…'; render();
+    const r = await visitasDB.enviarPresupuestoCliente({ ids: s.ids, para: String(s.v.para).trim(), cc: s.v.cc, asunto: s.v.asunto, mensaje: s.v.mensaje, pdfs });
+    V.sheet = null;
+    toast((r.enviados === 1 ? 'Presupuesto enviado' : r.enviados + ' presupuestos enviados') + ' a ' + r.para + '.');
+    V.presuLista.cargado = false; A.cargarPresupuestos();
+    if (V.presuVer && V.presuVer.datos) await A.presuAbrir(V.presuVer.datos.id);
+  } catch (e) { s.busy = false; s.paso = ''; render(); avisar('No se pudo enviar: ' + msgError(e)); }
+};
+A.presuFirmadoVer = async () => {
+  const d = V.presuVer && V.presuVer.datos; if (!d || !d.pdf_firmado_ruta) return;
+  try { const url = await visitasDB.urlArchivoPresupuesto(d.pdf_firmado_ruta); window.open(url, '_blank', 'noopener'); }
+  catch (e) { avisar('No se pudo abrir el PDF firmado: ' + msgError(e)); }
+};
+
 /** Cuándo vence un presupuesto enviado: envío + validez (15 días) + prórroga. Null si no se ha enviado. */
 function vencePresu(d) {
   if (!d || !d.enviado_cliente_at) return null;
@@ -9836,9 +9886,16 @@ function seguimientoHTML(d) {
       <span class="grow" style="font:500 14px var(--sans);${ok ? '' : 'color:var(--t2)'}">${t}</span><span class="tiny">${esc(sub)}</span></div>`).join('')}</div>
     ${!d.revisado_at && !d.enviado_cliente_at ? `<button class="btn btn-verde" data-a="presuRevisado" style="margin-top:12px" ${busy ? 'disabled' : ''}>Ya lo revisé</button>
       <div class="tiny" style="margin-top:6px;text-align:center">${d.tl_quotation_id ? 'Repásalo en Teamleader (precios, textos, descuento) y márcalo aquí.' : 'Lo normal: subirlo a Teamleader, repasarlo allí y marcarlo aquí.'}</div>`
-    : !d.enviado_cliente_at ? `<button class="btn btn-verde" data-a="presuEnviadoCliente" style="margin-top:12px" ${busy ? 'disabled' : ''}>Ya se lo envié al cliente</button>
-      <div class="tiny" style="margin-top:6px;text-align:center">Se lo mandas desde Teamleader; aquí solo se apunta la fecha.</div>`
-    : `${(d.respuesta_cliente || 'pendiente') === 'pendiente' ? `<button class="btn btn-gris" data-a="presuProrrogar" style="margin-top:12px;border-radius:99px" ${busy ? 'disabled' : ''}>Prorrogar 15 días${vencePresu(d) ? ' (hasta ' + fechaCorta(vencePresu(d) + 'T12:00') + ' ahora)' : ''}</button>
+    : !d.enviado_cliente_at ? `<button class="btn btn-verde" data-a="presuEnviarAbrir" style="margin-top:12px" ${busy ? 'disabled' : ''}>Enviar al cliente por correo</button>
+      <div class="tiny" style="margin-top:6px;text-align:center">Con el PDF, un mensaje tuyo y el enlace para que lo acepte y firme. Antes de mandarlo se pide confirmación.</div>
+      <button class="btn btn-gris" data-a="presuEnviadoCliente" style="margin-top:8px;border-radius:99px" ${busy ? 'disabled' : ''}>Ya se lo envié por otro lado</button>`
+    : `${d.firmado_at ? `<div style="margin-top:12px;padding:12px 14px;border-radius:12px;background:#eaf3ec;border:1.5px solid var(--verde)">
+        <div style="font:600 15px var(--sans);color:var(--verde-o)">✓ Aceptado y firmado en línea</div>
+        <div class="tiny" style="margin-top:4px">Por ${esc(d.firma_nombre || '')}${d.firma_dni ? ' · ' + esc(d.firma_dni) : ''} el ${fechaCorta(d.firmado_at)}</div>
+        <div class="row g8" style="margin-top:8px;flex-wrap:wrap">${d.pdf_firmado_ruta ? `<button class="pill pill-verde" data-a="presuFirmadoVer" style="padding:9px 12px">PDF firmado</button>` : ''}${d.drive_firmado_url ? `<a class="pill" href="${esc(d.drive_firmado_url)}" target="_blank" rel="noopener" style="padding:9px 12px;text-decoration:none;background:var(--l1);color:var(--tinta)">En Drive</a>` : ''}</div>
+      </div>` : ''}
+      ${d.enviado_correo_at ? `<div class="tiny" style="margin-top:10px">Enviado por correo a ${esc(d.enviado_correo_a || '')} el ${fechaCorta(d.enviado_correo_at)}. <span data-a="presuEnviarAbrir" style="color:var(--verde-o);cursor:pointer;text-decoration:underline">Reenviar</span></div>` : `<div class="tiny" style="margin-top:10px"><span data-a="presuEnviarAbrir" style="color:var(--verde-o);cursor:pointer;text-decoration:underline">Enviar por correo desde la app</span> (con enlace para aceptar y firmar)</div>`}
+      ${(d.respuesta_cliente || 'pendiente') === 'pendiente' ? `<button class="btn btn-gris" data-a="presuProrrogar" style="margin-top:12px;border-radius:99px" ${busy ? 'disabled' : ''}>Prorrogar 15 días${vencePresu(d) ? ' (hasta ' + fechaCorta(vencePresu(d) + 'T12:00') + ' ahora)' : ''}</button>
       <div class="tiny" style="margin-top:6px;text-align:center">Dos días antes de vencer, el cliente recibe un aviso por correo y presupuestos un resumen.</div>` : ''}
       <div class="lbl" style="margin:12px 0 6px">¿Qué dijo el cliente?</div>
       <div class="row g8" style="flex-wrap:wrap">${[['pendiente', 'Esperando'], ['aceptado', 'Aceptó'], ['rechazado', 'Rechazó'], ['caducado', 'Caducó']].map(([k, l]) => `<span class="chip ${(d.respuesta_cliente || 'pendiente') === k ? 'on' : ''}" data-a="presuRespuesta" data-r="${k}" style="cursor:pointer;${k === 'aceptado' && (d.respuesta_cliente || 'pendiente') === k ? 'background:var(--verde);border-color:var(--verde)' : ''}">${l}</span>`).join('')}</div>
@@ -12445,6 +12502,40 @@ function sheet() {
       </div>
     </div></div>`;
   }
+  if (s.tipo === 'presuEnviar') {
+    const d = V.presuVer && V.presuVer.datos; const v = s.v;
+    const todos = [d].concat(s.otros || []).filter(Boolean);
+    const elegidos = todos.filter((p) => s.ids.includes(p.id));
+    if (s.confirmar) return `<div class="sheet"><div>
+      <div style="font:600 23px/1.15 var(--cond)">¿Seguro que quieres enviarlo?</div>
+      <div class="sub" style="margin-top:8px">Se manda a <b>${esc(v.para)}</b>${String(v.cc || '').trim() ? ' con copia a ' + esc(v.cc) : ''}:</div>
+      <div style="margin-top:10px">${elegidos.map((p) => `<div class="row" style="justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--l1)"><span style="font:500 14px var(--sans)">${esc(p.titulo || nombreCat(p.categoria))}</span><span class="num">${eur(p.total_venta)}</span></div>`).join('')}</div>
+      ${String(v.mensaje || '').trim() ? `<div class="tiny" style="margin-top:10px;white-space:pre-wrap">${esc(v.mensaje)}</div>` : ''}
+      <div class="tiny" style="margin-top:10px">Cada presupuesto va con su PDF y un enlace para verlo, aceptarlo y firmarlo. Al firmar, queda aceptado en la app y el PDF firmado llega por correo y al Drive.</div>
+      ${s.paso ? `<div class="sub" style="margin-top:12px;color:var(--verde-o)">${esc(s.paso)}</div>` : ''}
+      <div class="row g8" style="margin-top:18px">
+        <button class="btn btn-gris" data-a="presuEnviarVolver" style="border-radius:99px" ${s.busy ? 'disabled' : ''}>Volver</button>
+        <button class="btn btn-verde" data-a="presuEnviarConfirmado" ${s.busy ? 'disabled' : ''}>${s.busy ? 'Enviando…' : 'Sí, enviar'}</button>
+      </div>
+    </div></div>`;
+    return `<div class="sheet"><div>
+      <div style="font:600 23px/1.15 var(--cond)">Enviar al cliente por correo</div>
+      <div class="sub" style="margin-top:6px">${esc((d && d.cliente && d.cliente.nombre) || '')}. Un correo con el PDF, tu mensaje y el enlace para aceptar y firmar.</div>
+      <div class="lbl" style="margin:12px 0 6px">Para</div><input class="inp" data-f="pe:para" type="email" inputmode="email" autocapitalize="off" value="${esc(v.para)}" placeholder="cliente@correo.es">
+      <div class="lbl" style="margin:12px 0 6px">Copia (opcional)</div><input class="inp" data-f="pe:cc" type="email" inputmode="email" autocapitalize="off" value="${esc(v.cc)}" placeholder="otro@correo.es">
+      <div class="lbl" style="margin:12px 0 6px">Asunto (opcional)</div><input class="inp" data-f="pe:asunto" value="${esc(v.asunto)}" placeholder="${esc((elegidos.length > 1 ? 'Sus presupuestos' : 'Su presupuesto') + ' de Sysefen')}">
+      <div class="lbl" style="margin:12px 0 6px">Mensaje para el cliente</div><textarea class="inp" data-f="pe:mensaje" rows="4" placeholder="Explica aquí lo que haga falta: qué incluye cada opción, plazos, qué le recomiendas…">${esc(v.mensaje)}</textarea>
+      ${(s.otros || []).length ? `<div class="lbl" style="margin:14px 0 6px">Qué va en el correo</div>
+      ${todos.map((p) => `<div class="row g8" data-a="presuEnviarToggle" data-id="${p.id}" style="align-items:center;padding:8px 0;border-bottom:1px solid var(--l1);cursor:${p.id === s.id ? 'default' : 'pointer'}">
+        <span class="chip ${s.ids.includes(p.id) ? 'on' : ''}" style="flex:none">${s.ids.includes(p.id) ? '✓' : '+'}</span>
+        <span class="grow" style="font:500 14px var(--sans)">${esc(p.titulo || nombreCat(p.categoria))}</span><span class="num" style="font-size:13px">${eur(p.total_venta)}</span></div>`).join('')}
+      <div class="tiny" style="margin-top:6px">Marca las opciones que quieras mandar juntas; cada una lleva su PDF y su enlace.</div>` : ''}
+      <div class="row g8" style="margin-top:18px">
+        <button class="btn btn-gris" data-a="cerrarSheet" style="border-radius:99px">Cancelar</button>
+        <button class="btn btn-verde" data-a="presuEnviarRevisar">Revisar y enviar</button>
+      </div>
+    </div></div>`;
+  }
   if (s.tipo === 'presuAjuste') {
     const v = s.v, num = (x) => Number(String(x == null ? '' : x).replace(',', '.'));
     const margen = String(v.precio_coste).trim() !== '' && num(v.precio_tarifa) > 0 ? Math.round((1 - num(v.precio_coste) / num(v.precio_tarifa)) * 1000) / 10 : '';
@@ -12937,6 +13028,12 @@ document.addEventListener('click', (e) => {
   if (a === 'presuQuitarExtra') return A.presuQuitarExtra(d.i);
   if (a === 'presuQuitarCalculada') return A.presuQuitarCalculada(d.clave);
   if (a === 'presuAjustarAbrir') return A.presuAjustarAbrir(d.clave);
+  if (a === 'presuEnviarAbrir') { e.stopPropagation(); return A.presuEnviarAbrir(); }
+  if (a === 'presuEnviarToggle') return A.presuEnviarToggle(d.id);
+  if (a === 'presuEnviarRevisar') return A.presuEnviarRevisar();
+  if (a === 'presuEnviarVolver') return A.presuEnviarVolver();
+  if (a === 'presuEnviarConfirmado') return A.presuEnviarConfirmado();
+  if (a === 'presuFirmadoVer') return A.presuFirmadoVer();
   if (a === 'presuAjusteGuardar') return A.presuAjusteGuardar();
   if (a === 'presuAjusteDeshacer') return A.presuAjusteDeshacer();
   if (a === 'presuProductoNuevoAbrir') return A.presuProductoNuevoAbrir();
@@ -13302,6 +13399,7 @@ document.addEventListener('input', (e) => {
   if (f === 'segOtro') { if (V.sheet) V.sheet.otro = t.value; return; }
   if (f === 'tbColocarMotivo') { if (V.sheet) V.sheet.motivo = t.value; return; }
   if (f.startsWith('paj:')) return A.presuAjusteCampo(f.slice(4), t.value);
+  if (f.startsWith('pe:')) return A.presuEnviarCampo(f.slice(3), t.value);
   if (f.startsWith('ppn:')) return A.presuProductoNuevoCampo(f.slice(4), t.value);
   if (f === 'horasObraFecha') { if (V.sheet) V.sheet.fecha = t.value; return; }
   if (f === 'horasObraHoras') { if (V.sheet) V.sheet.horas = t.value; return; }
