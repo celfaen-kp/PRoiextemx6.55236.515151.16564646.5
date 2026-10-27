@@ -109,7 +109,7 @@ async function pdfFirmado(original: Uint8Array | null, p: any, cli: any, nombre:
   const linea = (txt: string, size = 11, bold = false, color = rgb(0.08, 0.09, 0.06)) => { pagina.drawText(w(txt), { x: 56, y, size, font: bold ? negrita : fuente, color }); y -= size + 7; };
   linea('ACEPTACIÓN DEL PRESUPUESTO', 16, true);
   y -= 6;
-  linea('Presupuesto: ' + (p.titulo || CATS[p.categoria] || ''), 11, true);
+  linea('Presupuesto: ' + (tituloCliente(p)), 11, true);
   if (p.tl_numero) linea('Número: ' + p.tl_numero);
   linea('Cliente: ' + (cli?.nombre || ''));
   linea('Base imponible: ' + eur(p.total_venta) + ' · IVA 21 %: ' + eur(Math.round(Number(p.total_venta) * 21) / 100) + ' · Total: ' + eur(Math.round(Number(p.total_venta) * 121) / 100));
@@ -166,7 +166,7 @@ Deno.serve(async (req) => {
     const rutaPdf = p.pdf_firmado_ruta || p.pdf_enviado_ruta;
     if (rutaPdf) { const { data: su } = await sb.storage.from(BUCKET).createSignedUrl(rutaPdf, 3600); pdf_url = su?.signedUrl || null; }
     return json({
-      presupuesto: { titulo: p.titulo || CATS[p.categoria] || 'Presupuesto', categoria: CATS[p.categoria] || p.categoria, tl_numero: p.tl_numero, enviado_correo_at: p.enviado_correo_at, firmado_at: p.firmado_at, firma_nombre: p.firma_nombre, validez_dias: p.validez_dias },
+      presupuesto: { titulo: tituloCliente(p), categoria: CATS[p.categoria] || p.categoria, tl_numero: p.tl_numero, enviado_correo_at: p.enviado_correo_at, firmado_at: p.firmado_at, firma_nombre: p.firma_nombre, validez_dias: p.validez_dias },
       cliente: p.cliente?.nombre || '', lineas: ls, condiciones, vence: vence(p),
       totales: { bruto: Math.round(bruto * 100) / 100, dto_global_pct: dtoG, base, iva, total: Math.round((base + iva) * 100) / 100 }, pdf_url,
     });
@@ -210,7 +210,7 @@ Deno.serve(async (req) => {
       if (CID && CSEC && REF && RAIZ) {
         const tok = await tokenDeGoogle(CID, CSEC, REF);
         const carpeta = await carpetaDentro(tok, await carpetaDentro(tok, RAIZ, 'Presupuestos firmados'), (p.cliente?.nombre || 'Cliente').replace(/[\\/:*?"<>|]/g, ' ').slice(0, 80));
-        const nombrePdf = ('Presupuesto firmado · ' + (p.titulo || CATS[p.categoria] || '') + ' · ' + cuando.toISOString().slice(0, 10) + '.pdf').replace(/[\\/:*?"<>|]/g, ' ');
+        const nombrePdf = ('Presupuesto firmado · ' + (tituloCliente(p)) + ' · ' + cuando.toISOString().slice(0, 10) + '.pdf').replace(/[\\/:*?"<>|]/g, ' ');
         driveUrl = (await subirADrive(tok, carpeta, nombrePdf, pdf)).url;
       } else avisos.push('Drive: faltan los secretos de Google.');
     } catch (e) { avisos.push('Drive: ' + (e as Error).message); }
@@ -259,7 +259,7 @@ Deno.serve(async (req) => {
         if (!r.ok) avisos.push('Teamleader: ' + ((await r.json().catch(() => ({}))) as { error?: string }).error);
       } catch (e) { avisos.push('Teamleader: ' + (e as Error).message); }
     }
-    try { await sb.from('cliente_bitacora').insert({ cliente_id: p.cliente_id, tipo: 'presupuesto', texto: 'Presupuesto ACEPTADO y firmado en línea por ' + nombre + (dni ? ' (' + dni + ')' : '') + ': ' + (p.titulo || '') + ' · ' + eur(p.total_venta) + (driveUrl ? ' · PDF firmado en Drive' : ''), por: null }); } catch (_) { /* sin bitácora */ }
+    try { await sb.from('cliente_bitacora').insert({ cliente_id: p.cliente_id, tipo: 'presupuesto', texto: 'Presupuesto ACEPTADO y firmado en línea por ' + nombre + (dni ? ' (' + dni + ')' : '') + ': ' + tituloCliente(p) + ' · ' + eur(p.total_venta) + (driveUrl ? ' · PDF firmado en Drive' : ''), por: null }); } catch (_) { /* sin bitácora */ }
     // Correos: oficina (presupuestos y Administración) y copia al cliente.
     if (RESEND) {
       const adjunto = [{ filename: 'presupuesto-firmado.pdf', content: bytesAb64(pdf) }];
@@ -267,15 +267,15 @@ Deno.serve(async (req) => {
         const { data: gente } = await sb.from('empleados').select('nombre, email_avisos').in('rol', ['presupuestos', 'admin']).eq('activo', true);
         const paraOf = [...new Set(((gente || []) as { email_avisos?: string }[]).map((g) => limpio(g.email_avisos)).filter(esEmail))];
         if (paraOf.length) await mandar(RESEND, { to: paraOf, subject: '✓ Presupuesto aceptado y firmado: ' + (p.cliente?.nombre || '') + ' · ' + eur(p.total_venta),
-          text: `${p.cliente?.nombre || 'El cliente'} ha aceptado y firmado el presupuesto «${p.titulo || ''}» (${eur(p.total_venta)} sin IVA) el ${cuando.toLocaleString('es-ES', { timeZone: ZONA })}.\nFirmado por ${nombre}${dni ? ' · ' + dni : ''}.\n${driveUrl ? 'PDF firmado en Drive: ' + driveUrl + '\n' : ''}En la app ya figura como aceptado${obraTxt ? ' y la obra ' + obraTxt + ' está creada' : ''}: ${APP_URL}`,
-          html: marco('Presupuesto aceptado y firmado', `<p><b>${esc(p.cliente?.nombre || 'El cliente')}</b> ha aceptado y firmado el presupuesto <b>${esc(p.titulo || '')}</b> (${eur(p.total_venta)} sin IVA) el ${esc(cuando.toLocaleString('es-ES', { timeZone: ZONA }))}.</p><p>Firmado por ${esc(nombre)}${dni ? ' · ' + esc(dni) : ''}. El PDF firmado va adjunto${driveUrl ? ` y está en <a href="${esc(driveUrl)}">Drive</a>` : ''}.</p><p>En la app ya figura como aceptado${obraTxt ? ' y la obra <b>' + esc(obraTxt) + '</b> está creada' : ''}.</p>`), attachments: adjunto });
+          text: `${p.cliente?.nombre || 'El cliente'} ha aceptado y firmado el presupuesto «${tituloCliente(p)}» (${eur(p.total_venta)} sin IVA) el ${cuando.toLocaleString('es-ES', { timeZone: ZONA })}.\nFirmado por ${nombre}${dni ? ' · ' + dni : ''}.\n${driveUrl ? 'PDF firmado en Drive: ' + driveUrl + '\n' : ''}En la app ya figura como aceptado${obraTxt ? ' y la obra ' + obraTxt + ' está creada' : ''}: ${APP_URL}`,
+          html: marco('Presupuesto aceptado y firmado', `<p><b>${esc(p.cliente?.nombre || 'El cliente')}</b> ha aceptado y firmado el presupuesto <b>${esctituloCliente(p)}</b> (${eur(p.total_venta)} sin IVA) el ${esc(cuando.toLocaleString('es-ES', { timeZone: ZONA }))}.</p><p>Firmado por ${esc(nombre)}${dni ? ' · ' + esc(dni) : ''}. El PDF firmado va adjunto${driveUrl ? ` y está en <a href="${esc(driveUrl)}">Drive</a>` : ''}.</p><p>En la app ya figura como aceptado${obraTxt ? ' y la obra <b>' + esc(obraTxt) + '</b> está creada' : ''}.</p>`), attachments: adjunto });
       } catch (e) { avisos.push('correo oficina: ' + (e as Error).message); }
       try {
         const emailCli = esEmail(p.enviado_correo_a) ? limpio(p.enviado_correo_a) : (esEmail(p.cliente?.email) ? limpio(p.cliente.email) : '');
         let replyTo = ''; try { const { data: aj } = await sb.from('ajustes').select('valor').eq('clave', 'correo_oficina').maybeSingle(); replyTo = limpio(aj?.valor); } catch (_) { /* sin ajuste */ }
         if (emailCli) await mandar(RESEND, Object.assign({ to: [emailCli], subject: 'Copia de su presupuesto aceptado · Sysefen',
-          text: `Hola ${p.cliente?.nombre || ''},\n\ngracias por aceptar el presupuesto «${p.titulo || ''}». Le adjuntamos la copia firmada. Nos pondremos en contacto para organizar los trabajos.\n\nUn saludo,\nSysefen`,
-          html: marco('Gracias por su confianza', `<p>Hola ${esc(p.cliente?.nombre || '')},</p><p>gracias por aceptar el presupuesto <b>${esc(p.titulo || '')}</b>. Le adjuntamos la copia firmada. Nos pondremos en contacto con usted para organizar los trabajos.</p><p>Un saludo,<br><b>Sysefen</b></p>`), attachments: adjunto }, replyTo ? { reply_to: replyTo } : {}));
+          text: `Hola ${p.cliente?.nombre || ''},\n\ngracias por aceptar el presupuesto «${tituloCliente(p)}». Le adjuntamos la copia firmada. Nos pondremos en contacto para organizar los trabajos.\n\nUn saludo,\nSysefen`,
+          html: marco('Gracias por su confianza', `<p>Hola ${esc(p.cliente?.nombre || '')},</p><p>gracias por aceptar el presupuesto <b>${esctituloCliente(p)}</b>. Le adjuntamos la copia firmada. Nos pondremos en contacto con usted para organizar los trabajos.</p><p>Un saludo,<br><b>Sysefen</b></p>`), attachments: adjunto }, replyTo ? { reply_to: replyTo } : {}));
       } catch (e) { avisos.push('correo cliente: ' + (e as Error).message); }
     }
     return json({ ok: true, avisos });
@@ -329,13 +329,13 @@ Deno.serve(async (req) => {
     const venceTxt = fecha(vence(Object.assign({}, p, { enviado_cliente_at: p.enviado_cliente_at || ahora })));
     const totalIva = Math.round(Number(p.total_venta) * 121) / 100;
     tarjetas.push(`<div style="border:1.5px solid #e6e5df;border-radius:14px;padding:16px 18px;margin:14px 0">
-      <div style="font:700 17px/1.2 Arial,Helvetica,sans-serif">${esc(p.titulo || CATS[p.categoria] || 'Presupuesto')}</div>
+      <div style="font:700 17px/1.2 Arial,Helvetica,sans-serif">${esc(tituloCliente(p))}</div>
       <div style="font-size:14px;color:#555;margin-top:6px">${esc(CATS[p.categoria] || '')}${p.tl_numero ? ' · nº ' + esc(p.tl_numero) : ''}</div>
       <div style="font-size:15px;margin-top:10px">Base imponible <b>${eur(p.total_venta)}</b> · IVA 21 % · Total <b>${eur(totalIva)}</b></div>
       ${venceTxt ? `<div style="font-size:13px;color:#777;margin-top:4px">Válido hasta el ${esc(venceTxt)}</div>` : ''}
       <a href="${esc(enlace)}" style="display:inline-block;margin-top:14px;background:#206028;color:#fff;text-decoration:none;font-weight:700;padding:12px 18px;border-radius:12px">Ver y aceptar este presupuesto</a>
     </div>`);
-    textos.push(`· ${p.titulo || CATS[p.categoria] || 'Presupuesto'} — ${eur(p.total_venta)} sin IVA (${eur(totalIva)} con IVA)${venceTxt ? ' — válido hasta el ' + venceTxt : ''}\n  Ver y aceptar: ${enlace}`);
+    textos.push(`· ${tituloCliente(p)} — ${eur(p.total_venta)} sin IVA (${eur(totalIva)} con IVA)${venceTxt ? ' — válido hasta el ' + venceTxt : ''}\n  Ver y aceptar: ${enlace}`);
   }
   let replyTo = ''; try { const { data: aj } = await sb.from('ajustes').select('valor').eq('clave', 'correo_oficina').maybeSingle(); replyTo = limpio(aj?.valor); } catch (_) { /* sin ajuste */ }
   if (!replyTo && esEmail(yo.email_avisos)) replyTo = limpio(yo.email_avisos);
@@ -349,6 +349,6 @@ Deno.serve(async (req) => {
   try {
     await mandar(RESEND, Object.assign({ to: [para], subject: asunto, text: cuerpoTxt, html: marco(ps.length === 1 ? 'Su presupuesto' : 'Sus presupuestos', cuerpoHtml), attachments: adjuntos.length ? adjuntos : undefined }, cc.length ? { cc } : {}, replyTo ? { reply_to: replyTo } : {}));
   } catch (e) { return json({ error: 'No se pudo mandar el correo: ' + (e as Error).message }, 502); }
-  try { await sb.from('cliente_bitacora').insert({ cliente_id: clienteId, tipo: 'email', texto: (ps.length === 1 ? 'Presupuesto enviado' : ps.length + ' presupuestos enviados') + ' por correo a ' + para + ': ' + ordenados.map((p) => p.titulo || CATS[p.categoria] || '').join(' · ') + (mensaje ? ' · Mensaje: ' + mensaje.slice(0, 200) : ''), por: yo.id }); } catch (_) { /* sin bitácora */ }
+  try { await sb.from('cliente_bitacora').insert({ cliente_id: clienteId, tipo: 'email', texto: (ps.length === 1 ? 'Presupuesto enviado' : ps.length + ' presupuestos enviados') + ' por correo a ' + para + ': ' + ordenados.map((p) => tituloCliente(p)).join(' · ') + (mensaje ? ' · Mensaje: ' + mensaje.slice(0, 200) : ''), por: yo.id }); } catch (_) { /* sin bitácora */ }
   return json({ ok: true, enviados: ids.length, para, cc, enlaces: ordenados.map((p) => APP_URL + 'firmar.html?t=' + (p.token_cliente || '')) });
 });

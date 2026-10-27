@@ -268,6 +268,7 @@ function mismaClave(a: string, b: string) {
   return dif === 0;
 }
 const esUuid = (v: unknown) => /^[0-9a-f-]{36}$/i.test(String(v || ''));
+const CATEGORIAS_TITULO: Record<string, string> = { solar: 'Fotovoltaica', aerotermia: 'Aerotermia', aire_acondicionado: 'Aire acondicionado', electricidad: 'Electricidad' };
 /**
  * Las líneas de una oferta de Teamleader, tal cual, como líneas del presupuesto
  * de la app (19-10-2026, Heim Desarrollos): descripción, cantidad, precio,
@@ -605,7 +606,7 @@ async function sincronizar(sb: any, opciones: { cliente_id?: string } = {}) {
     const fila = {
       visita_id: v ? v.id : null, cliente_id: v ? v.cliente_id : dc!.cliente_id,
       categoria: fichas?.[0]?.categoria || categoriaDeTitulo((dc && dc.titulo) || (d && d.title) || (q.name || '')),
-      titulo: 'Hecho en Teamleader' + (q.name ? ' · ' + String(q.name).slice(0, 120) : ''),
+      titulo: q.name ? String(q.name).slice(0, 140) : (CATEGORIAS_TITULO[String(fichas?.[0]?.categoria || '')] || 'Presupuesto'),
       total_bruto: Number.isFinite(importe) ? importe : null, total_venta: Number.isFinite(importe) ? importe : null, total_dto_linea: 0, dto_global_pct: 0,
       tl_quotation_id: q.id, sync_estado: 'sincronizado', sync_at: ahora, motor_version: 'teamleader',
       estado: env || resp ? 'enviado' : 'aprobado', revisado_at: creada,
