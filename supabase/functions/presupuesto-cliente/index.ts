@@ -32,6 +32,11 @@ const html = (cuerpo: string, status = 200) => {
 const ZONA = 'Europe/Madrid';
 const APP_URL = 'https://celfaen-kp.github.io/PRoiextemx6.55236.515151.16564646.5/';
 const LOGO_URL = APP_URL + 'logo-email.png';
+// Dónde vive la página de «ver y aceptar» (Enzo, 27-10-2026): en el dominio
+// propio si está el secreto FIRMA_URL (p. ej. https://firma.sysefengroup.com/);
+// si no, la página firmar.html de la app.
+const FIRMA_URL = (Deno.env.get('FIRMA_URL') || (APP_URL + 'firmar.html')).replace(/\/$/, '');
+const enlaceFirma = (t: string) => (FIRMA_URL.endsWith('.html') ? FIRMA_URL : FIRMA_URL + '/') + '?t=' + encodeURIComponent(t);
 const REMITENTE = 'Sysefen <noreply@sysefen.com>';
 const BUCKET = 'presupuestos-cliente';
 const CATS: Record<string, string> = { solar: 'Fotovoltaica', aerotermia: 'Aerotermia', aire_acondicionado: 'Aire acondicionado', electricidad: 'Electricidad' };
@@ -152,7 +157,7 @@ Deno.serve(async (req) => {
     }
     const { data: lineas } = await sb.from('presupuesto_lineas').select('*').eq('presupuesto_id', p.id).order('orden');
     if (url.searchParams.get('json') !== '1') {
-      return new Response(null, { status: 302, headers: { ...CORS, Location: APP_URL + 'firmar.html?t=' + encodeURIComponent(t) } });
+      return new Response(null, { status: 302, headers: { ...CORS, Location: enlaceFirma(t) } });
     }
     // Lo que ve el cliente: nada interno (costes, desgloses, reglas).
     const ls = (lineas || []).map((l) => ({ descripcion: l.descripcion, detalle_tecnico: l.detalle_tecnico, cantidad: l.cantidad, unidad: l.unidad, precio_tarifa: l.precio_tarifa, dto_linea_pct: l.dto_linea_pct, precio_venta: l.precio_venta, seccion: l.seccion }));
@@ -325,7 +330,7 @@ Deno.serve(async (req) => {
       adjuntos.push({ filename: (limpio(pdf.nombre) || 'presupuesto-sysefen.pdf').replace(/[^\w.\- ()·áéíóúñÁÉÍÓÚÑ]+/g, '_').slice(0, 100), content: pdf.base64.replace(/^data:[^,]*,/, '') });
     }
     await sb.from('presupuestos').update(cambios).eq('id', p.id);
-    const enlace = APP_URL + 'firmar.html?t=' + t;
+    const enlace = enlaceFirma(t);
     const venceTxt = fecha(vence(Object.assign({}, p, { enviado_cliente_at: p.enviado_cliente_at || ahora })));
     const totalIva = Math.round(Number(p.total_venta) * 121) / 100;
     tarjetas.push(`<div style="border:1.5px solid #e6e5df;border-radius:14px;padding:16px 18px;margin:14px 0">
@@ -350,5 +355,5 @@ Deno.serve(async (req) => {
     await mandar(RESEND, Object.assign({ to: [para], subject: asunto, text: cuerpoTxt, html: marco(ps.length === 1 ? 'Su presupuesto' : 'Sus presupuestos', cuerpoHtml), attachments: adjuntos.length ? adjuntos : undefined }, cc.length ? { cc } : {}, replyTo ? { reply_to: replyTo } : {}));
   } catch (e) { return json({ error: 'No se pudo mandar el correo: ' + (e as Error).message }, 502); }
   try { await sb.from('cliente_bitacora').insert({ cliente_id: clienteId, tipo: 'email', texto: (ps.length === 1 ? 'Presupuesto enviado' : ps.length + ' presupuestos enviados') + ' por correo a ' + para + ': ' + ordenados.map((p) => tituloCliente(p)).join(' · ') + (mensaje ? ' · Mensaje: ' + mensaje.slice(0, 200) : ''), por: yo.id }); } catch (_) { /* sin bitácora */ }
-  return json({ ok: true, enviados: ids.length, para, cc, enlaces: ordenados.map((p) => APP_URL + 'firmar.html?t=' + (p.token_cliente || '')) });
+  return json({ ok: true, enviados: ids.length, para, cc, enlaces: ordenados.map((p) => enlaceFirma(p.token_cliente || '')) });
 });
