@@ -466,7 +466,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '27.7'; // versión visible de la app (única fuente)
+const APP_VERSION = '27.8'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -9264,11 +9264,11 @@ A.presuLineaCampo = (id, campo, valor) => {
   const d = V.presuVer && V.presuVer.datos; const l = d && (d.lineas || []).find((x) => x.id === id);
   const num = (v) => Number(String(v == null ? '' : v).replace(',', '.'));
   const pon = (k, v) => { const inp = document.querySelector(`[data-f="presuLinea"][data-id="${id}"][data-k="${k}"]`); if (inp && document.activeElement !== inp) inp.value = v; };
-  // El margen manda sobre el precio (27-10-2026): escribir un margen pone el precio
-  // que lo da; escribir coste o precio enseña el margen que sale.
+  // El PVP es fijo (Enzo, 27-10-2026): escribir un margen cambia el COSTE que lo
+  // da, coste = precio × (1 − margen); escribir coste o precio enseña el margen.
   if (campo === 'margen_pct') {
-    const coste = num(c.precio_coste != null ? c.precio_coste : l && l.precio_coste), m = num(valor);
-    if (coste > 0 && m < 100 && String(valor).trim() !== '') { c.precio_tarifa = Math.round(coste / (1 - m / 100) * 100) / 100; pon('precio_tarifa', c.precio_tarifa); }
+    const precio = num(c.precio_tarifa != null ? c.precio_tarifa : l && l.precio_tarifa), m = num(valor);
+    if (precio > 0 && m >= 0 && m < 100 && String(valor).trim() !== '') { c.precio_coste = Math.round(precio * (1 - m / 100) * 100) / 100; pon('precio_coste', c.precio_coste); }
     return;
   }
   c[campo] = valor;
