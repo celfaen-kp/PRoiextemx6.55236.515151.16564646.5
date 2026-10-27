@@ -183,8 +183,9 @@ Deno.serve(async (req) => {
     const { data: p } = await sb.from('presupuestos').select('*, cliente:clientes_cache(id, nombre, email, direccion, poblacion, tl_id, tl_tipo)').eq('token_cliente', t).maybeSingle();
     if (!p) return json({ error: 'Este enlace ya no está disponible.' }, 404);
     if (p.firmado_at) return json({ ok: true, ya: true });
-    const nombre = limpio(b.nombre).slice(0, 120), dni = limpio(b.dni).slice(0, 20);
+    const nombre = limpio(b.nombre).slice(0, 120), dni = limpio(b.dni).toUpperCase().replace(/[\s.-]/g, '').slice(0, 20);
     if (nombre.length < 3) return json({ error: 'Falta el nombre.' }, 400);
+    if (!/^([XYZ]?\d{7,8}[A-Z])$/.test(dni) && !/^[A-Z]\d{7}[A-Z0-9]$/.test(dni)) return json({ error: 'Falta un DNI, NIE o CIF válido.' }, 400);
     if (typeof b.firma !== 'string' || !/^data:image\/png;base64,/.test(b.firma) || b.firma.length > 600_000) return json({ error: 'Falta la firma.' }, 400);
     const ip = limpio(req.headers.get('x-forwarded-for') || '').split(',')[0] || limpio(req.headers.get('cf-connecting-ip'));
     const cuando = new Date();
@@ -225,6 +226,18 @@ Deno.serve(async (req) => {
       try {
         const CAT_A_OBRA: Record<string, string> = { aerotermia: 'AE', solar: 'FV', aire_acondicionado: 'AC', electricidad: 'EL' };
         const c = p.cliente || {};
+        const cat = CAT_A_OBRA[String(p.categoria)] || null;
+        // Si el cliente ya tiene una obra abierta, es la misma obra: el presupuesto
+        // se enlaza a ella y el proyecto crece con su categoría (Enzo, 27-10-2026).
+        const { data: abierta } = p.cliente_id ? await sb.from('obras').select('id, numero, categorias').eq('cliente_id', p.cliente_id).in('estado', ['planificada', 'en_curso']).order('creado_en', { ascending: false }).limit(1).maybeSingle() : { data: null };
+        if (abierta) {
+          const cats: string[] = Array.isArray(abierta.categorias) ? abierta.categorias.slice() : [];
+          if (cat && !cats.includes(cat)) { cats.push(cat); await sb.from('obras').update({ categorias: cats }).eq('id', abierta.id); try { await sb.rpc('generar_fases_obra', { p_obra: abierta.id }); } catch (_) { /* sin fases */ } }
+          await sb.from('presupuestos').update({ obra_id: abierta.id }).eq('id', p.id);
+          obraTxt = (abierta.numero != null ? 'OB-' + String(abierta.numero).padStart(3, '0') : 'existente') + ' (ya existía: se le añade este presupuesto)';
+          try { await sb.from('cliente_bitacora').insert({ cliente_id: p.cliente_id, tipo: 'sistema', texto: 'Presupuesto aceptado añadido a la obra ' + obraTxt, por: null }); } catch (_) { /* sin bitácora */ }
+          throw { salta: true };
+        }
         const { data: obra, error: errO } = await sb.from('obras').insert({
           nombre: c.nombre || p.titulo || 'Obra', cliente: c.nombre || null, direccion: c.direccion || null, poblacion: c.poblacion || null, email_cliente: c.email || null,
           categorias: CAT_A_OBRA[String(p.categoria)] ? [CAT_A_OBRA[String(p.categoria)]] : [], estado: 'planificada',
@@ -234,7 +247,7 @@ Deno.serve(async (req) => {
         await sb.from('presupuestos').update({ obra_id: obra.id }).eq('id', p.id);
         obraTxt = obra.numero != null ? 'OB-' + String(obra.numero).padStart(3, '0') : 'creada';
         try { await sb.from('cliente_bitacora').insert({ cliente_id: p.cliente_id, tipo: 'sistema', texto: 'Obra creada ' + obraTxt + ' al aceptar el presupuesto.', por: null }); } catch (_) { /* sin bitácora */ }
-      } catch (e) { avisos.push('Obra: ' + (e as Error).message); }
+      } catch (e) { if (!(e as { salta?: boolean }).salta) avisos.push('Obra: ' + (e as Error).message); }
     }
     // Teamleader: la oferta pasa a aceptada allí también (Enzo, 27-10-2026).
     if (p.tl_quotation_id) {

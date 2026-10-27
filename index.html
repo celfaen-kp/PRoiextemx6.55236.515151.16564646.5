@@ -466,7 +466,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '28.3'; // versión visible de la app (única fuente)
+const APP_VERSION = '28.4'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -9971,6 +9971,20 @@ A.presuMotivoRechazo = async (txt) => {
 async function crearObraDePresupuesto(d) {
   const cli = d.cliente || (d.cliente_id ? { id: d.cliente_id } : {});
   const cliFull = cli.id ? (agCliente(cli.id) || cli) : cli;
+  // Un cliente, una obra (Enzo, 27-10-2026): si ya tiene una abierta, el
+  // presupuesto se enlaza a ella y el proyecto crece con su categoría.
+  const abierta = cli.id ? (S.obras || []).filter((o) => o.clienteId === cli.id && (o.estado === 'planificada' || o.estado === 'en_curso')).sort((a, b) => String(b.creado_en || '').localeCompare(String(a.creado_en || '')))[0] : null;
+  if (abierta) {
+    const cat = CAT_A_OBRA[d.categoria] || null;
+    const cats = (abierta.categorias || []).slice();
+    if (cat && !cats.includes(cat)) { cats.push(cat); await Sysefen.db.actualizarObra(abierta.id, { categorias: cats }); await ajustarFasesAlCambiarCategorias(abierta.id, cats); }
+    await Sysefen.db.enlazarPresupuesto(d.id, abierta.id);
+    d.obra_id = abierta.id;
+    await sincronizarObras(); await sincronizarFases();
+    toast('Presupuesto añadido a la obra ' + (codigoObra(abierta) || abierta.titulo) + (cat && !(abierta.categorias || []).includes(cat) ? ' · ' + catObraNombre(cat, abierta) + ' añadida al proyecto' : ''));
+    anotar(cli.id, 'sistema', 'Presupuesto aceptado añadido a la obra ' + (codigoObra(abierta) || ''));
+    return abierta;
+  }
   const campos = { nombre: cliFull.nombre || d.titulo || 'Obra', cliente: cliFull.nombre || null, direccion: cliFull.direccion || null, email_cliente: cliFull.email || null };
   if (columnaObra('categorias')) { campos.categorias = CAT_A_OBRA[d.categoria] ? [CAT_A_OBRA[d.categoria]] : []; campos.poblacion = cliFull.poblacion || null; }
   if (columnaObra('cliente_id') && cli.id) campos.cliente_id = cli.id;
