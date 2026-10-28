@@ -408,6 +408,8 @@ body.con-captcha #captcha{display:block}
 /* Para generar el PDF hay que "fotografiar" el parte, y html2canvas no puede
    con un elemento oculto. Se saca fuera de la pantalla, con ancho de A4. */
 #print.capturando{display:block;position:fixed;left:-10000px;top:0;width:794px;background:#fff;padding:24px}
+/* El presupuesto va al cliente: márgenes de documento (15 mm a los lados). */
+#print.capturando.presu{padding:52px 57px 46px}
 @media print{
   html,body{overflow:visible;height:auto;background:#fff}
   #app,.toast,.sheet{display:none!important}
@@ -472,7 +474,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '29.6'; // versión visible de la app (única fuente)
+const APP_VERSION = '29.7'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -3796,6 +3798,7 @@ async function pdfDeImpresion() {
   paginasPdf = [];
   await cargarLibsPdf();
   const el = $('#print');
+  el.classList.toggle('presu', !!el.querySelector('[data-presu]'));
   el.classList.add('capturando');
   try {
     const escala = 2;
@@ -3960,6 +3963,17 @@ A.compartirParte = async (id) => {
   }
 };
 
+function descargarArchivo(blob, nombre) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href = url; a.download = nombre; a.rel = 'noopener';
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
+}
+// Guardar el PDF que se está viendo como archivo, con su nombre (Enzo, 28-10-2026).
+A.pdfDescargar = () => {
+  const c = pdfParaCompartir; if (!c || !c.archivo) { avisar('No hay PDF preparado.'); return; }
+  descargarArchivo(c.archivo, c.archivo.name || (V.sheet && V.sheet.nombre) || 'documento.pdf');
+};
 A.compartirListo = () => {
   const c = pdfParaCompartir; V.sheet = null; render();
   if (!c) return;
@@ -6003,7 +6017,7 @@ function imprimirHorasObra(obraId, rango) {
     .sort((a, b) => b.m - a.m);
   const totalMin = filas.reduce((t, f) => t + f.m, 0);
   const el = $('#print');
-  el.innerHTML = `<div style="font-family:var(--sans);color:#14170f;max-width:180mm;position:relative;z-index:0">
+  el.innerHTML = `<div data-presu style="font-family:var(--sans);color:#14170f;max-width:180mm;position:relative;z-index:0">
     <img src="logo-trans.png?v=3" alt="" style="position:absolute;top:110mm;left:50%;transform:translate(-50%,-50%);width:120mm;opacity:.11;z-index:-1;pointer-events:none">
     <div style="display:flex;justify-content:space-between;align-items:flex-start">
       <div><img src="logo-trans.png?v=3" alt="" style="height:15mm">
@@ -10027,9 +10041,13 @@ function imprimirPresupuestoHTML(d) {
  * desde el CRM, que es donde se ve cómo queda.
  */
 /** El nombre del PDF de un presupuesto: presupuesto-aerotermia-ana-ferrer.pdf */
-const nombrePdfPresu = (d) => ('presupuesto-' + [nombreCat(d.categoria) || 'sysefen', (d.cliente && d.cliente.nombre) || '']
-  .filter(Boolean).join('-')).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-  .replace(/[^a-z0-9]+/g, '-').replace(/-+$/, '') + '.pdf';
+// El archivo se llama como el presupuesto (Enzo, 28-10-2026): «Presupuesto Juanlu · Enphase · 5,1 kWp.pdf».
+const nombrePdfPresu = (d) => {
+  let t = String(d.titulo || [(d.cliente && d.cliente.nombre) || '', nombreCat(d.categoria) || ''].filter(Boolean).join(' · ') || 'Sysefen')
+    .replace(/\s*[·\-–—(]?\s*Hecho en Teamleader\s*[)]?\s*/gi, ' ').replace(/[\\/:*?"<>|\u0000-\u001f]+/g, '-').replace(/\s+/g, ' ').trim().slice(0, 120).replace(/[ .\-·]+$/, '');
+  if (!/^presupuesto\b/i.test(t)) t = 'Presupuesto ' + t;
+  return t + '.pdf';
+};
 
 /**
  * Sube un presupuesto GUARDADO a Teamleader: la oferta con sus líneas y,
@@ -10098,9 +10116,20 @@ A.presuPdf = async () => {
   toast('Preparando el PDF…');
   imprimirPresupuestoHTML(v.datos);
   const cli = (v.datos.cliente && v.datos.cliente.nombre) || '';
-  await salidaImpresion('presupuesto-' + (nombreCat(v.datos.categoria) || 'sysefen').toLowerCase().replace(/\s+/g, '-') + '.pdf',
+  await salidaImpresion(nombrePdfPresu(v.datos),
     'Presupuesto ' + (nombreCat(v.datos.categoria) || ''),
     S.empresa + ' · Presupuesto' + (cli ? ' · ' + cli : ''));
+};
+// Descargar el PDF como archivo, con el nombre del presupuesto (también en ordenador, donde «PDF» imprime).
+A.presuPdfDescargar = async () => {
+  const v = V.presuVer; if (!v || !v.datos || v.bajandoPdf) return;
+  v.bajandoPdf = true; render(); toast('Preparando el PDF…');
+  try {
+    imprimirPresupuestoHTML(v.datos);
+    const blob = await pdfDeImpresion();
+    descargarArchivo(blob, nombrePdfPresu(v.datos));
+  } catch (e) { avisar('No se pudo preparar el PDF: ' + msgError(e)); }
+  v.bajandoPdf = false; render();
 };
 
 function vPresupuestoVer() {
@@ -10142,11 +10171,12 @@ function vPresupuestoVer() {
       ${d.motor_version === 'teamleader'
         ? (lineas.length
           ? `<div class="tiny" style="margin-top:12px">Hecho en Teamleader: las líneas son las de la oferta de allí. Lo que se cambie allí llega solo; lo que se cambie aquí con «Modificar» se actualiza allí.</div>
-      <div class="row g8" style="margin-top:14px"><button class="btn btn-gris" data-a="presuPdf" style="border-radius:99px">PDF</button><button class="btn btn-gris" data-a="presuEditar" style="border-radius:99px">Modificar</button></div>`
+      <div class="row g8" style="margin-top:14px"><button class="btn btn-gris" data-a="presuPdf" style="border-radius:99px">PDF</button><button class="btn btn-gris" data-a="presuPdfDescargar" style="border-radius:99px" ${V.presuVer.bajandoPdf ? 'disabled' : ''}>Descargar PDF</button><button class="btn btn-gris" data-a="presuEditar" style="border-radius:99px">Modificar</button></div>`
           : '<div class="tiny" style="margin-top:12px">Hecho en Teamleader: las líneas aún no se han traído. Pulsa ↻ Actualizar desde Teamleader en Presupuestos.</div>')
         : `<div class="tiny" style="margin-top:12px">Calculado con las reglas ${esc(d.motor_version || '')}. Queda congelado con la tarifa de ese día.${d.tl_quotation_id ? ' Lo que se cambie en Teamleader llega solo cada cuarto de hora; lo que se cambie aquí con «Modificar» se actualiza allí.' : ''}</div>
       <div class="row g8" style="margin-top:14px">
         <button class="btn btn-gris" data-a="presuPdf" style="border-radius:99px">PDF</button>
+        <button class="btn btn-gris" data-a="presuPdfDescargar" style="border-radius:99px" ${V.presuVer.bajandoPdf ? 'disabled' : ''}>Descargar PDF</button>
         <button class="btn btn-gris" data-a="presuEditar" style="border-radius:99px">Modificar</button>
       </div>`}
       ${d.motor_version === 'teamleader' ? '' : d.tl_quotation_id
@@ -12581,6 +12611,7 @@ function sheet() {
       <div class="vista-pdf-barra">
         <button class="btn btn-gris" data-a="cerrarSheet" style="border-radius:99px">Cerrar</button>
         <div class="grow" style="min-width:0;font:600 13px var(--sans);color:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:center">${esc(s.nombre)}</div>
+        <button class="btn btn-gris" data-a="pdfDescargar" style="border-radius:99px">Descargar</button>
         <button class="btn btn-verde" data-a="compartirListo" style="font-size:14px;border-radius:99px">Compartir</button>
       </div>
       <div class="vista-pdf-hojas">${s.iframe ? `<iframe src="${esc(s.iframe)}" style="width:100%;height:100%;border:0;background:#fff;border-radius:6px"></iframe>` : (s.paginas || []).map((src) => `<img src="${src}" alt="">`).join('')}</div>
@@ -13558,6 +13589,8 @@ document.addEventListener('click', (e) => {
   if (a === 'reenviar') { e.stopPropagation(); return A.reenviar(d.id); }
   if (a === 'compartirParte') { e.stopPropagation(); V.sheet = null; return A.compartirParte(d.id); }
   if (a === 'compartirListo') return A.compartirListo();
+  if (a === 'pdfDescargar') return A.pdfDescargar();
+  if (a === 'presuPdfDescargar') return A.presuPdfDescargar();
   if (a === 'nuevoDocObra') return A.nuevoDocObra();
   if (a === 'parteVerPrevia') return A.parteVerPrevia();
   if (a === 'docTipo') return A.docTipo(d.t);
