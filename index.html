@@ -474,7 +474,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '29.7'; // versión visible de la app (única fuente)
+const APP_VERSION = '29.8'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -6017,7 +6017,7 @@ function imprimirHorasObra(obraId, rango) {
     .sort((a, b) => b.m - a.m);
   const totalMin = filas.reduce((t, f) => t + f.m, 0);
   const el = $('#print');
-  el.innerHTML = `<div data-presu style="font-family:var(--sans);color:#14170f;max-width:180mm;position:relative;z-index:0">
+  el.innerHTML = `<div style="font-family:var(--sans);color:#14170f;max-width:180mm;position:relative;z-index:0">
     <img src="logo-trans.png?v=3" alt="" style="position:absolute;top:110mm;left:50%;transform:translate(-50%,-50%);width:120mm;opacity:.11;z-index:-1;pointer-events:none">
     <div style="display:flex;justify-content:space-between;align-items:flex-start">
       <div><img src="logo-trans.png?v=3" alt="" style="height:15mm">
@@ -9982,7 +9982,7 @@ function imprimirPresupuestoHTML(d) {
   const total = Number(d.total_venta || 0);
 
   const el = $('#print');
-  el.innerHTML = `<div style="font-family:var(--sans);color:#14170f;max-width:180mm;position:relative;z-index:0">
+  el.innerHTML = `<div data-presu style="font-family:var(--sans);color:#14170f;max-width:180mm;position:relative;z-index:0">
     <img src="logo-trans.png?v=3" alt="" style="position:absolute;top:110mm;left:50%;transform:translate(-50%,-50%);width:120mm;opacity:.11;z-index:-1;pointer-events:none">
     <div style="display:flex;justify-content:space-between;align-items:flex-start">
       <div><img src="logo-trans.png?v=3" alt="" style="height:17mm">
