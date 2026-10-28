@@ -471,7 +471,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '29.1'; // versión visible de la app (única fuente)
+const APP_VERSION = '29.2'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -8137,6 +8137,7 @@ A.presuCalcular = async (categoria) => {
         });
     // Las líneas añadidas del catálogo vuelven con su precio de venta (recargo
     // aplicado): se refleja en la lista de añadidas para que no se vea el coste.
+    fv2Local(p, p.datos);
     const manuales = (p.datos && p.datos.lineas || []).filter((l) => l.origen === 'manual').slice(0, p.extra.length);
     if (manuales.length === p.extra.length) manuales.forEach((l, i) => { if (p.extra[i].producto_ref && Math.abs(Number(p.extra[i].precio_tarifa) - Number(p.extra[i].precio_catalogo)) < 0.005) p.extra[i].precio_tarifa = l.precio_tarifa; });
   } catch (e) {
@@ -8218,6 +8219,14 @@ A.presuGuardar = async () => {
           titulo: undefined,
         });
     p.datos = r; p.guardado = r.presupuesto_id || null; p.enTL = false; p.errTL = null;
+    fv2Local(p, r);
+    // Desglose FV editado: si la función no lo guardó (versión antigua), se apunta en la línea desde aquí.
+    if (p.guardado && Object.values(p.ajustes || {}).some((a) => a.fv2)) {
+      try {
+        const d = await visitasDB.verPresupuesto(p.guardado);
+        for (const l of (d && d.lineas) || []) { const a = ajusteFv2De(p, l), oi = l.origen_inputs; if (!a || !oi || !oi.fv2 || oi.desglose_editado) continue; await visitasDB.guardarLineaPresupuesto(l.id, { origen_inputs: oiConFv2(oi, a.fv2) }); }
+      } catch (err) { registrarError('fv2 desglose guardado', err); }
+    }
     toast('Presupuesto guardado. Subiéndolo a Teamleader…');
     V.presuLista.cargado = false; A.cargarPresupuestos();
     anotar(suelto ? V.suelto.clienteId : (vv.visita && vv.visita.cliente_id), 'presupuesto', 'Presupuesto de ' + nombreCat(p.cat) + sufijoOpcion() + ' creado' + (r && r.total_venta != null ? ' · ' + eur(r.total_venta) : ''));
@@ -8388,6 +8397,21 @@ function fv2Repreciar(oi, items) {
   const orden = FV2_ORDEN_CLIENTE.concat(Object.keys(bloques).filter((b) => !FV2_ORDEN_CLIENTE.includes(b)));
   const detalle_tecnico = orden.filter((b) => bloques[b] && bloques[b].length).map((b) => b + ': ' + bloques[b].join('; ')).join(' · ');
   return { desglose: its, coste_total, precio_objetivo: precio, margen_real_sin_dto: precio ? Math.round((precio - coste_total) / precio * 10000) / 10000 : 0, bloques, detalle_tecnico, completo };
+}
+/** El retoque FV de una línea devuelta por el motor (por su clave, o por la
+ *  descripción nueva si el retoque la cambió). */
+function ajusteFv2De(p, l) {
+  const aj = Object.values((p && p.ajustes) || {});
+  return aj.find((a) => a.fv2 && (a.clave === claveLineaPresu(l) || (a.descripcion && claveLineaPresu({ producto_ref: l.producto_ref, descripcion: a.descripcion }) === claveLineaPresu(l)))) || null;
+}
+function oiConFv2(oi, fv2) {
+  return Object.assign({}, oi, { desglose: fv2.desglose, desglose_editado: true, precio: Object.assign({}, oi.precio || {}, fv2.precio || {}), bloques: fv2.bloques || oi.bloques });
+}
+/** Si la función presupuestar aún no guarda el desglose editado (versión
+ *  antigua), la app lo pone ella en las líneas que devuelve, para que se vea. */
+function fv2Local(p, r) {
+  if (!r || !Array.isArray(r.lineas)) return;
+  r.lineas.forEach((l) => { const a = ajusteFv2De(p, l), oi = l.origen_inputs; if (!a || !oi || !oi.fv2 || oi.desglose_editado) return; l.origen_inputs = oiConFv2(oi, a.fv2); });
 }
 A.fv2DesgloseAbrir = (modo, ref) => {
   let oi = null, items = null, titulo = '';
