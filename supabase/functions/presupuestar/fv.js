@@ -447,6 +447,7 @@ export function lineasPresupuesto(r, modelo, extra) {
   const desglose = r.partidas.map((x) => ({
     bloque: x.bloque, nombre: x.partida, cantidad: Math.round(x.cantidad * 1000) / 1000, unidad: x.ud,
     coste_ud: x.coste_ud, coste: x.coste, aviso: x.aviso || null,
+    texto: x.texto || '',   // lo que ve el cliente de esta partida (la app lo necesita para rehacer el detalle si se edita el desglose)
   }));
   const lineas = [{
     producto_ref: null,
@@ -467,6 +468,7 @@ export function lineasPresupuesto(r, modelo, extra) {
         cable_cc: r.cable_cc ? { seccion: r.cable_cc.seccion, calculo: r.cable_cc.calculo, tabla: r.cable_cc.tabla } : null },
       desglose,
       precio: { coste_total: r.coste_total, precio_objetivo: r.precio_objetivo, margen_objetivo: (modelo.parametros.margen_obj || {}).valor, mo_tabla: r.mo_tabla || null,
+        redondeo: (modelo.parametros.redondeo || {}).valor || 10, pct_peq: (modelo.parametros.pct_peq || {}).valor,
         horas_elev: r.horas_elev, elevador: r.elevador, pvp_antes: r.pvp_antes, margen_real_sin_dto: Math.round(r.margen_real * 10000) / 10000 },
       pedido: pedidoMaterial(r, modelo),
       // Lo que se puede cambiar a mano desde el presupuesto (21-10-2026): los

@@ -349,6 +349,22 @@ Deno.serve(async (req) => {
       else if (numOk(a.precio_coste) != null) nuevo.precio_coste = Math.round(numOk(a.precio_coste)! * 100) / 100;
       Object.assign(l, nuevo);
       l.origen_inputs = Object.assign({}, l.origen_inputs || {}, { ajustada: Object.keys(nuevo) });
+      // Desglose FV v2 editado a mano en la app (28-10-2026): partidas cambiadas,
+      // quitadas o añadidas. La app ya ha repreciado (coste y PVP vienen arriba);
+      // aquí se guarda el desglose nuevo para que la ficha lo enseñe tal cual.
+      const oi = l.origen_inputs as Record<string, unknown>;
+      if (oi.fv2 && a.fv2 && typeof a.fv2 === 'object' && Array.isArray(a.fv2.desglose)) {
+        const txt = (v: unknown, n: number) => String(v == null ? '' : v).trim().slice(0, n);
+        const desglose = (a.fv2.desglose as unknown[]).slice(0, 300).filter((x) => x && typeof x === 'object').map((x) => { const d = x as Record<string, unknown>; return {
+          bloque: txt(d.bloque, 60) || 'OTROS', nombre: txt(d.nombre, 200), cantidad: numOk(d.cantidad) ?? 0, unidad: txt(d.unidad, 20) || 'ud',
+          coste_ud: numOk(d.coste_ud) ?? 0, coste: numOk(d.coste) ?? 0, aviso: txt(d.aviso, 200) || null, texto: txt(d.texto, 300), manual: d.manual === true,
+        }; });
+        const precioAnt = (oi.precio && typeof oi.precio === 'object' ? oi.precio : {}) as Record<string, unknown>;
+        const precioNuevo = (a.fv2.precio && typeof a.fv2.precio === 'object' ? a.fv2.precio : {}) as Record<string, unknown>;
+        l.origen_inputs = Object.assign({}, oi, { desglose, desglose_editado: true,
+          precio: Object.assign({}, precioAnt, { coste_total: numOk(precioNuevo.coste_total) ?? precioAnt.coste_total, precio_objetivo: numOk(precioNuevo.precio_objetivo) ?? precioAnt.precio_objetivo, margen_real_sin_dto: numOk(precioNuevo.margen_real_sin_dto) ?? precioAnt.margen_real_sin_dto }),
+          bloques: a.fv2.bloques && typeof a.fv2.bloques === 'object' ? a.fv2.bloques : oi.bloques });
+      }
     });
   }
   res.lineas.forEach((l, i) => { l.orden = i + 1; });
