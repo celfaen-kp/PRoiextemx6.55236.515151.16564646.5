@@ -471,7 +471,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '29.0'; // versión visible de la app (única fuente)
+const APP_VERSION = '29.1'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -8460,9 +8460,9 @@ function fv2DesgloseSheetHTML(s) {
       ${g.filas.map(([x, i]) => `<div style="padding:7px 0;border-bottom:1px solid var(--l1)">
         <div class="row g8" style="align-items:center"><input class="inp grow" data-f="fvd:${i}:nombre" value="${esc(x.nombre)}" style="padding:8px 10px;font-size:13px" ${x.bloque === 'PEQUEÑO MATERIAL' && !x.manual ? 'disabled' : ''}><span class="tiny" data-a="fv2DesgloseQuitar" data-i="${i}" style="color:var(--rojo);cursor:pointer;flex:none">Quitar</span></div>
         <div class="row g8" style="margin-top:5px;align-items:center;flex-wrap:wrap">
-          <input class="inp" data-f="fvd:${i}:cantidad" value="${esc(String(x.cantidad))}" inputmode="decimal" style="width:70px;padding:7px;text-align:center" ${x.bloque === 'PEQUEÑO MATERIAL' && !x.manual ? 'disabled' : ''}>
+          <input class="inp" data-f="fvd:${i}:cantidad" value="${esc(String(Math.round(Number(x.cantidad) * 1000) / 1000))}" inputmode="decimal" style="width:70px;padding:7px;text-align:center" ${x.bloque === 'PEQUEÑO MATERIAL' && !x.manual ? 'disabled' : ''}>
           <span class="tiny">${esc(x.unidad || 'ud')} ×</span>
-          <input class="inp" data-f="fvd:${i}:coste_ud" value="${esc(String(x.coste_ud))}" inputmode="decimal" style="width:90px;padding:7px;text-align:right" ${x.bloque === 'PEQUEÑO MATERIAL' && !x.manual ? 'disabled' : ''}>
+          <input class="inp" data-f="fvd:${i}:coste_ud" value="${esc(String(Math.round(Number(x.coste_ud) * 10000) / 10000))}" inputmode="decimal" style="width:90px;padding:7px;text-align:right" ${x.bloque === 'PEQUEÑO MATERIAL' && !x.manual ? 'disabled' : ''}>
           <span class="tiny">€ = <b id="fvd-c-${i}">${eur(x.coste)}</b></span>${x.aviso ? `<span class="tiny" style="color:var(--ambar-o)">⚠ ${esc(x.aviso)}</span>` : ''}${x.manual ? '<span class="tiny" style="opacity:.6">añadida a mano</span>' : ''}
         </div></div>`).join('')}`).join('')}
     <div class="card" style="margin-top:14px;background:rgba(20,23,15,.03)">
