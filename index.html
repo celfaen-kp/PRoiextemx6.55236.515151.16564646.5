@@ -471,7 +471,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '29.2'; // versión visible de la app (única fuente)
+const APP_VERSION = '29.3'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -8831,6 +8831,80 @@ A.presuSueltoCliente = (id) => {
   V.suelto.cliente = V.suelto.clienteId ? c.nombre : '';
   render();
 };
+/* ---------- elegir el cliente de un presupuesto (Enzo, 28-10-2026) ----------
+ * Busca entre los clientes de la app y, con el botón CRM, en Teamleader
+ * (particulares y empresas); el que se elija del CRM se trae a la app. Sirve
+ * para el presupuesto nuevo (suelto) y para asignar o cambiar el cliente de un
+ * presupuesto ya guardado. */
+A.presuCliAbrir = async (modo, id) => {
+  V.sheet = { tipo: 'presuCliente', modo, id: id || null, buscar: modo === 'suelto' && V.suelto ? String(V.suelto.cliente || '') : '', crm: null, crmBusy: false, busy: false };
+  render();
+  if (!V.agenda.cargado) { try { await A.cargarAgenda(); } catch (_) { /* sin red */ } if (V.sheet && V.sheet.tipo === 'presuCliente') render(); }
+};
+function presuCliListaHTML(s) {
+  const q = sinTildes(s.buscar || '');
+  const lista = q.length >= 2 ? (V.agenda.clientes || []).filter((c) => sinTildes([c.nombre, c.telefono, c.poblacion, c.nif].join(' ')).includes(q)).slice(0, 30) : [];
+  return `${(s.crm || []).map((c) => `<button class="fila-obra" data-a="presuCliCRM" data-tl="${esc(c.tl_id || c.id)}" data-tipo="${esc(c.tl_tipo || c.tipo || 'contact')}" ${s.busy ? 'disabled' : ''}>${esc(c.nombre)}<small>Teamleader · ${(c.tl_tipo || c.tipo) === 'company' ? 'Empresa' : 'Particular'}${c.cliente_id ? ' · ya está en la app' : ''}${[c.telefono, c.email].filter(Boolean).length ? ' · ' + esc([c.telefono, c.email].filter(Boolean).join(' · ')) : ''}</small></button>`).join('')}
+    ${lista.map((c) => `<button class="fila-obra" data-a="presuCliDe" data-id="${c.id}" ${s.busy ? 'disabled' : ''}>${esc(c.nombre)}<small>${esc([tipoCliente(c), c.nif, c.telefono, c.poblacion].filter(Boolean).join(' · '))}</small></button>`).join('')}
+    ${q.length >= 2 && !lista.length && !(s.crm || []).length ? '<div class="sub" style="padding:14px 4px">No está en la app. Pulsa CRM para buscarlo en Teamleader (también empresas).</div>' : ''}
+    ${s.crm && !s.crm.length ? '<div class="sub" style="padding:6px 4px">En Teamleader tampoco aparece con ese texto.</div>' : ''}`;
+}
+function presuClienteSheetHTML(s) {
+  return `<div class="sheet"><div>
+    <div style="font:600 25px/1.15 var(--cond)">${s.modo === 'suelto' ? 'Para quién es el presupuesto' : 'Cliente del presupuesto'}</div>
+    <div class="row g8" style="margin-top:14px">
+      <input class="inp grow" data-f="presuCliBuscar" value="${esc(s.buscar || '')}" placeholder="Nombre, empresa, NIF o teléfono" autocomplete="off">
+      <button class="pill" data-a="presuCliBuscarCRM" style="padding:13px 14px" ${s.crmBusy ? 'disabled' : ''}>${s.crmBusy ? '…' : 'CRM'}</button>
+    </div>
+    <div class="tiny" style="margin-top:6px">Abajo, los clientes de la app. El botón CRM busca en Teamleader, particulares y empresas, y se lo trae a la app.${s.modo === 'guardado' ? ' Si el presupuesto ya está en Teamleader, la oferta de allí no cambia de cliente.' : ''}</div>
+    <div class="lista-obras" id="presu-cli-lista">${presuCliListaHTML(s)}</div>
+    ${s.busy ? '<div class="sub" style="margin-top:8px;color:var(--verde-o)">Un momento…</div>' : ''}
+    <button class="btn btn-gris" data-a="cerrarSheet" style="border-radius:99px;margin-top:14px">Cancelar</button>
+  </div></div>`;
+}
+A.presuCliBuscar = (t) => {
+  const s = V.sheet; if (!s || s.tipo !== 'presuCliente') return;
+  s.buscar = t; s.crm = null;
+  const box = document.getElementById('presu-cli-lista'); if (box) box.innerHTML = presuCliListaHTML(s);
+};
+A.presuCliBuscarCRM = async () => {
+  const s = V.sheet; if (!s || s.tipo !== 'presuCliente' || s.crmBusy) return;
+  if (String(s.buscar || '').trim().length < 2) { avisar('Escribe al menos dos letras.'); return; }
+  s.crmBusy = true; render();
+  try { const r = await visitasDB.buscarEnCRM(s.buscar); s.crm = Array.isArray(r) ? r : (r && r.resultados) || []; } catch (e) { avisar(msgError(e)); }
+  s.crmBusy = false; render();
+};
+A.presuCliCRM = async (tlId, tipo) => {
+  const s = V.sheet; if (!s || s.tipo !== 'presuCliente' || s.busy) return;
+  s.busy = true; render();
+  try {
+    const r = await visitasDB.importarDelCRM(tlId, tipo);
+    const c = (r && r.cliente) || r;
+    V.agenda.cargado = false; await A.cargarAgenda();
+    await A.presuCliDe(c.id);
+  } catch (e) { s.busy = false; avisar('No se pudo traer del CRM: ' + msgError(e)); render(); }
+};
+A.presuCliDe = async (id) => {
+  const s = V.sheet; if (!s || s.tipo !== 'presuCliente') return;
+  const c = agCliente(id); if (!c) { avisar('No encuentro ese cliente.'); return; }
+  if (s.modo === 'suelto') {
+    if (V.suelto) { V.suelto.clienteId = c.id; V.suelto.cliente = c.nombre; }
+    V.sheet = null; render(); return;
+  }
+  const d = V.presuVer && V.presuVer.datos; if (!d || d.id !== s.id) { V.sheet = null; render(); return; }
+  s.busy = true; render();
+  try {
+    const cambios = { cliente_id: c.id };
+    // El título lleva delante el nombre del cliente, como los que nacen con él.
+    const t = String(d.titulo || '');
+    if (!sinTildes(t).includes(sinTildes(c.nombre))) cambios.titulo = (c.nombre + ' · ' + t).replace(/ · $/, '').slice(0, 200);
+    await visitasDB.seguimientoPresupuesto(d.id, cambios);
+    anotar(c.id, 'presupuesto', 'Presupuesto asignado: ' + (cambios.titulo || t) + (d.total_venta != null ? ' · ' + eur(d.total_venta) : ''));
+    V.sheet = null; V.presuLista.cargado = false;
+    toast('Presupuesto asignado a ' + c.nombre + '.');
+    await abrirPresuSinOrigen(d.id);
+  } catch (e) { s.busy = false; avisar('No se pudo asignar: ' + msgError(e)); render(); }
+};
 A.presuAbrir = (id) => { recordarOrigen(); return abrirPresuSinOrigen(id); };
 async function abrirPresuSinOrigen(id) {
   V.presuVer = { id, cargando: true, datos: null, error: null };
@@ -9336,6 +9410,7 @@ function vPresuNuevo() {
       <div class="lbl">Para quién (opcional)</div>
       <input class="inp" data-f="presuCliente" value="${esc(f.cliente)}" placeholder="Nombre del cliente" autocomplete="off" style="margin-top:8px">
       <div id="presu-sugerencias">${presuSugerenciasHTML(f)}</div>
+      <div class="tiny" style="margin-top:7px"><span data-a="presuCliAbrir" data-modo="suelto" style="color:var(--verde-o);cursor:pointer;text-decoration:underline">Buscar el cliente en la app o en Teamleader</span> (también empresas)</div>
 
       <div class="lbl" style="margin:16px 0 8px">Qué se presupuesta</div>
       <div class="wrap">${vSchemas.CATEGORIAS.map((c) => `<div class="chip ${f.cat === c.key ? 'sel' : ''}" data-a="presuSueltoChip" data-k="cat" data-v="${c.key}">${esc(c.nombre)}</div>`).join('')}</div>
@@ -9961,6 +10036,10 @@ function vPresupuestoVer() {
     ${v.error ? `<div class="card" style="background:var(--rojo-cl)"><div class="sub" style="color:var(--rojo)">${esc(v.error)}</div></div>` : ''}
     ${d && editando ? `<div class="card">${presuLineasEditHTML(d)}</div>` : ''}
     ${d && !editando ? `<div class="card">
+      <div class="row g8" style="align-items:center;justify-content:space-between;margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid var(--l1)">
+        <span style="font:500 14px var(--sans);${d.cliente ? '' : 'color:var(--ambar-o)'}">${d.cliente ? 'Cliente: <b>' + esc(d.cliente.nombre) + '</b>' : '⚠ Sin cliente'}</span>
+        <button class="pill ${d.cliente ? '' : 'pill-verde'}" data-a="presuCliAbrir" data-modo="guardado" data-id="${d.id}" style="padding:8px 12px;flex:none">${d.cliente ? 'Cambiar' : 'Asignar cliente'}</button>
+      </div>
       ${(d.incidencias || []).map((i) => `<div class="tiny" style="margin-bottom:6px;color:${i.nivel === 'error' ? 'var(--rojo)' : 'var(--ambar-o)'}">${i.nivel === 'error' ? '⚠' : '·'} ${esc(i.mensaje)}</div>`).join('')}
       ${lineas.map((l) => `<div style="padding:9px 0;border-bottom:1px solid var(--l1)">
         <div class="row" style="align-items:baseline;justify-content:space-between;gap:12px">
@@ -12814,6 +12893,7 @@ function sheet() {
     </div></div>`;
   }
   if (s.tipo === 'fv2Desglose') return fv2DesgloseSheetHTML(s);
+  if (s.tipo === 'presuCliente') return presuClienteSheetHTML(s);
   if (s.tipo === 'presuProductoNuevo') {
     const v = s.v, num = (x) => Number(String(x == null ? '' : x).replace(',', '.'));
     const margen = String(v.coste).trim() !== '' && num(v.venta) > 0 ? Math.round((1 - num(v.coste) / num(v.venta)) * 1000) / 10 : '';
@@ -13297,6 +13377,10 @@ document.addEventListener('click', (e) => {
   if (a === 'fv2DesgloseAnadir') return A.fv2DesgloseAnadir();
   if (a === 'fv2DesgloseVolver') return A.fv2DesgloseVolver();
   if (a === 'fv2DesgloseCeros') return A.fv2DesgloseCeros();
+  if (a === 'presuCliAbrir') { e.stopPropagation(); return A.presuCliAbrir(d.modo, d.id); }
+  if (a === 'presuCliBuscarCRM') return A.presuCliBuscarCRM();
+  if (a === 'presuCliCRM') return A.presuCliCRM(d.tl, d.tipo);
+  if (a === 'presuCliDe') return A.presuCliDe(d.id);
   if (a === 'fv2DesgloseAplicar') return A.fv2DesgloseAplicar();
   if (a === 'presuProductoNuevoAbrir') return A.presuProductoNuevoAbrir();
   if (a === 'presuProductoNuevoFamilia') return A.presuProductoNuevoFamilia(d.f);
@@ -13663,6 +13747,7 @@ document.addEventListener('input', (e) => {
   if (f.startsWith('paj:')) return A.presuAjusteCampo(f.slice(4), t.value);
   if (f.startsWith('fvd:')) { const [, i, k] = f.split(':'); return A.fv2DesgloseCampo(Number(i), k, t.value); }
   if (f.startsWith('fvdn:')) return A.fv2DesgloseNuevaCampo(f.slice(5), t.value);
+  if (f === 'presuCliBuscar') return A.presuCliBuscar(t.value);
   if (f.startsWith('pe:')) return A.presuEnviarCampo(f.slice(3), t.value);
   if (f.startsWith('ppn:')) return A.presuProductoNuevoCampo(f.slice(4), t.value);
   if (f === 'horasObraFecha') { if (V.sheet) V.sheet.fecha = t.value; return; }
