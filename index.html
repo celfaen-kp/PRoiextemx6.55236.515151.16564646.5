@@ -471,7 +471,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '28.9'; // versión visible de la app (única fuente)
+const APP_VERSION = '29.0'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -8427,6 +8427,7 @@ A.fv2DesgloseAnadir = () => {
   s.nueva = { bloque: n.bloque, nombre: '', cantidad: '1', unidad: 'ud', coste_ud: '' };
   render();
 };
+A.fv2DesgloseCeros = () => { const s = V.sheet; if (!s || s.tipo !== 'fv2Desglose') return; s.verCeros = !s.verCeros; render(); };
 A.fv2DesgloseVolver = () => { const s = V.sheet; if (!s || s.tipo !== 'fv2Desglose') return; V.sheet = s.modo === 'ajuste' ? s.volver : null; render(); };
 A.fv2DesgloseAplicar = () => {
   const s = V.sheet; if (!s || s.tipo !== 'fv2Desglose') return;
@@ -8446,7 +8447,10 @@ A.fv2DesgloseAplicar = () => {
 };
 function fv2DesgloseSheetHTML(s) {
   const r = fv2Repreciar(s.oi, s.items);
-  const grupos = []; r.desglose.forEach((x, i) => { let g = grupos.find((y) => y.b === x.bloque); if (!g) { g = { b: x.bloque, filas: [] }; grupos.push(g); } g.filas.push([x, i]); });
+  // Las partidas del modelo que salen a 0 (las de otro sistema, lo que no aplica)
+  // se esconden; un enlace las enseña por si hay que activar alguna.
+  const ceros = r.desglose.filter((x) => !(x.cantidad > 0) && !(x.coste > 0) && !x.manual).length;
+  const grupos = []; r.desglose.forEach((x, i) => { if (!s.verCeros && !(x.cantidad > 0) && !(x.coste > 0) && !x.manual) return; let g = grupos.find((y) => y.b === x.bloque); if (!g) { g = { b: x.bloque, filas: [] }; grupos.push(g); } g.filas.push([x, i]); });
   grupos.sort((a, b) => { const ia = FV2_ORDEN_BLOQUES.indexOf(a.b), ib = FV2_ORDEN_BLOQUES.indexOf(b.b); return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib); });
   const bloquesSel = FV2_ORDEN_BLOQUES.filter((b) => b !== 'PEQUEÑO MATERIAL' && b !== 'INTERNO').concat(grupos.map((g) => g.b).filter((b) => !FV2_ORDEN_BLOQUES.includes(b)));
   return `<div class="sheet"><div>
@@ -8473,6 +8477,7 @@ function fv2DesgloseSheetHTML(s) {
         <button class="pill pill-verde" data-a="fv2DesgloseAnadir" style="padding:10px 14px;flex:none">Añadir</button>
       </div>
     </div>
+    ${ceros ? `<div class="tiny" style="margin-top:10px"><span data-a="fv2DesgloseCeros" style="color:var(--verde-o);cursor:pointer;text-decoration:underline">${s.verCeros ? 'Ocultar' : 'Mostrar'} las ${ceros} partidas del modelo que salen a 0</span></div>` : ''}
     ${r.completo ? '' : '<div class="tiny" style="margin-top:10px;color:var(--ambar-o)">Esta línea es de antes de este cambio: lo que se quite seguirá en la descripción larga para el cliente. Retócala a mano si hace falta.</div>'}
     <div id="fvd-pie" class="tiny" style="margin-top:12px;color:var(--tinta);font-size:14px">${fv2PieHTML(r)}</div>
     <div class="row g8" style="margin-top:14px">
@@ -13267,6 +13272,7 @@ document.addEventListener('click', (e) => {
   if (a === 'fv2DesgloseQuitar') return A.fv2DesgloseQuitar(Number(d.i));
   if (a === 'fv2DesgloseAnadir') return A.fv2DesgloseAnadir();
   if (a === 'fv2DesgloseVolver') return A.fv2DesgloseVolver();
+  if (a === 'fv2DesgloseCeros') return A.fv2DesgloseCeros();
   if (a === 'fv2DesgloseAplicar') return A.fv2DesgloseAplicar();
   if (a === 'presuProductoNuevoAbrir') return A.presuProductoNuevoAbrir();
   if (a === 'presuProductoNuevoFamilia') return A.presuProductoNuevoFamilia(d.f);
