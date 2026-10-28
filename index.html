@@ -471,7 +471,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '28.7'; // versión visible de la app (única fuente)
+const APP_VERSION = '28.8'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -9933,7 +9933,7 @@ function seguimientoHTML(d) {
       </div>` : ''}
       ${d.enviado_correo_at ? `<div class="tiny" style="margin-top:10px">Enviado por correo a ${esc(d.enviado_correo_a || '')} el ${fechaCorta(d.enviado_correo_at)}.</div><span class="btn-reenviar" data-a="presuEnviarAbrir"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg>Reenviar al cliente</span>` : `<span class="btn-reenviar" data-a="presuEnviarAbrir"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg>Enviar al cliente por correo</span><div class="tiny" style="margin-top:6px">Con el PDF y el enlace para aceptar y firmar.</div>`}
       ${(d.respuesta_cliente || 'pendiente') === 'pendiente' ? `<button class="btn btn-gris" data-a="presuProrrogar" style="margin-top:12px;border-radius:99px" ${busy ? 'disabled' : ''}>Prorrogar 15 días${vencePresu(d) ? ' (hasta ' + fechaCorta(vencePresu(d) + 'T12:00') + ' ahora)' : ''}</button>
-      <div class="tiny" style="margin-top:6px;text-align:center">Dos días antes de vencer, el cliente recibe un aviso por correo y presupuestos un resumen.</div>` : ''}
+      <div class="tiny" style="margin-top:6px;text-align:center">Dos días laborables antes de vencer (si vence en lunes, el jueves anterior), el cliente recibe un aviso por correo con el enlace para aceptar, y presupuestos un resumen.</div>` : ''}
       <div class="lbl" style="margin:12px 0 6px">¿Qué dijo el cliente?</div>
       <div class="row g8" style="flex-wrap:wrap">${[['pendiente', 'Esperando'], ['aceptado', 'Aceptó'], ['rechazado', 'Rechazó'], ['caducado', 'Caducó']].map(([k, l]) => `<span class="chip ${(d.respuesta_cliente || 'pendiente') === k ? 'on' : ''}" data-a="presuRespuesta" data-r="${k}" style="cursor:pointer;${k === 'aceptado' && (d.respuesta_cliente || 'pendiente') === k ? 'background:var(--verde);border-color:var(--verde)' : ''}">${l}</span>`).join('')}</div>
       ${d.respuesta_cliente === 'rechazado' ? `<input class="inp" data-f="presuMotivoRechazo" value="${esc(d.motivo_rechazo || '')}" placeholder="Por qué (precio, otra empresa, lo aplaza…)" style="margin-top:10px">` : ''}
@@ -12597,6 +12597,8 @@ function sheet() {
       <div class="lbl" style="margin:12px 0 6px">Copia (opcional)</div><input class="inp" data-f="pe:cc" type="email" inputmode="email" autocapitalize="off" value="${esc(v.cc)}" placeholder="otro@correo.es">
       <div class="lbl" style="margin:12px 0 6px">Asunto (opcional)</div><input class="inp" data-f="pe:asunto" value="${esc(v.asunto)}" placeholder="${esc((elegidos.length > 1 ? 'Sus presupuestos' : 'Su presupuesto') + ' de Sysefen')}">
       <div class="lbl" style="margin:12px 0 6px">Mensaje para el cliente</div><textarea class="inp" data-f="pe:mensaje" rows="4" placeholder="Explica aquí lo que haga falta: qué incluye cada opción, plazos, qué le recomiendas…">${esc(v.mensaje)}</textarea>
+      <div class="lbl" style="margin:12px 0 6px">Debajo va siempre este texto</div>
+      <div class="tiny" style="padding:10px 12px;border-radius:10px;background:var(--l1);line-height:1.45">Cada presupuesto con su importe, validez y botón «Ver y aceptar este presupuesto». Y al final: «Puede ver cada presupuesto en el enlace y descargarlo en PDF (también va adjunto). Si está conforme, acéptelo y fírmelo ahí mismo. Si tiene dudas, prefiere cambiar algo o ha decidido no seguir adelante, díganoslo respondiendo a este correo: así sabremos su respuesta.»</div>
       ${(s.otros || []).length ? `<div class="lbl" style="margin:14px 0 6px">Qué va en el correo</div>
       ${todos.map((p) => `<div class="row g8" data-a="presuEnviarToggle" data-id="${p.id}" style="align-items:center;padding:8px 0;border-bottom:1px solid var(--l1);cursor:${p.id === s.id ? 'default' : 'pointer'}">
         <span class="chip ${s.ids.includes(p.id) ? 'on' : ''}" style="flex:none">${s.ids.includes(p.id) ? '✓' : '+'}</span>

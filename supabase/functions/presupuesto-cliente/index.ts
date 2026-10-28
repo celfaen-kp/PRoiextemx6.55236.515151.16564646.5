@@ -351,9 +351,9 @@ Deno.serve(async (req) => {
   const intro = ps.length === 1 ? 'le enviamos el presupuesto que hemos preparado para usted.' : 'le enviamos los ' + ps.length + ' presupuestos que hemos preparado para usted, para que elija la opción que mejor le encaje.';
   const cuerpoHtml = `<p>${esc(saludo)}</p><p>${esc(intro)}</p>${mensaje ? `<div style="background:#f5f4ef;border-radius:12px;padding:14px 16px;white-space:pre-wrap;font-size:15px;line-height:1.5">${esc(mensaje)}</div>` : ''}
     ${tarjetas.join('')}
-    <p style="font-size:14px;color:#555">Puede ver cada presupuesto en el enlace, descargarlo en PDF (también va adjunto) y, si está conforme, aceptarlo y firmarlo ahí mismo. Para cualquier duda, responda a este correo.</p>
+    <p style="font-size:14px;color:#555">Puede ver cada presupuesto en el enlace y descargarlo en PDF (también va adjunto). Si está conforme, acéptelo y fírmelo ahí mismo. Si tiene dudas, prefiere cambiar algo o ha decidido no seguir adelante, díganoslo respondiendo a este correo: así sabremos su respuesta.</p>
     <p>Un saludo,<br><b>${esc(yo.nombre || 'Sysefen')}</b><br>Sysefen</p>`;
-  const cuerpoTxt = `${saludo}\n\n${intro}\n\n${mensaje ? mensaje + '\n\n' : ''}${textos.join('\n\n')}\n\nPuede ver cada presupuesto en el enlace, descargarlo en PDF (también va adjunto) y, si está conforme, aceptarlo y firmarlo ahí mismo. Para cualquier duda, responda a este correo.\n\nUn saludo,\n${yo.nombre || 'Sysefen'}\nSysefen`;
+  const cuerpoTxt = `${saludo}\n\n${intro}\n\n${mensaje ? mensaje + '\n\n' : ''}${textos.join('\n\n')}\n\nPuede ver cada presupuesto en el enlace y descargarlo en PDF (también va adjunto). Si está conforme, acéptelo y fírmelo ahí mismo. Si tiene dudas, prefiere cambiar algo o ha decidido no seguir adelante, díganoslo respondiendo a este correo: así sabremos su respuesta.\n\nUn saludo,\n${yo.nombre || 'Sysefen'}\nSysefen`;
   try {
     await mandar(RESEND, Object.assign({ to: [para], subject: asunto, text: cuerpoTxt, html: marco(ps.length === 1 ? 'Su presupuesto' : 'Sus presupuestos', cuerpoHtml), attachments: adjuntos.length ? adjuntos : undefined }, cc.length ? { cc } : {}, replyTo ? { reply_to: replyTo } : {}));
   } catch (e) { return json({ error: 'No se pudo mandar el correo: ' + (e as Error).message }, 502); }
