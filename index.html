@@ -472,7 +472,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '29.5'; // versión visible de la app (única fuente)
+const APP_VERSION = '29.6'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -8846,6 +8846,9 @@ A.presuSueltoCliente = (id) => {
  * para el presupuesto nuevo (suelto) y para asignar o cambiar el cliente de un
  * presupuesto ya guardado. */
 A.presuCliAbrir = async (modo, id) => {
+  // Un presupuesto guardado que ya tiene cliente no se cambia de dueño: se copia
+  // para el otro cliente como presupuesto nuevo (Enzo, 28-10-2026).
+  if (modo === 'guardado' && V.presuVer && V.presuVer.datos && V.presuVer.datos.id === id && V.presuVer.datos.cliente) modo = 'copia';
   V.sheet = { tipo: 'presuCliente', modo, id: id || null, buscar: modo === 'suelto' && V.suelto ? String(V.suelto.cliente || '') : '', crm: null, crmBusy: false, busy: false };
   render();
   if (!V.agenda.cargado) { try { await A.cargarAgenda(); } catch (_) { /* sin red */ } if (V.sheet && V.sheet.tipo === 'presuCliente') render(); }
@@ -8860,12 +8863,12 @@ function presuCliListaHTML(s) {
 }
 function presuClienteSheetHTML(s) {
   return `<div class="sheet"><div>
-    <div style="font:600 25px/1.15 var(--cond)">${s.modo === 'suelto' ? 'Para quién es el presupuesto' : 'Cliente del presupuesto'}</div>
+    <div style="font:600 25px/1.15 var(--cond)">${s.modo === 'suelto' ? 'Para quién es el presupuesto' : s.modo === 'copia' ? 'Copiar el presupuesto para…' : 'Cliente del presupuesto'}</div>
     <div class="row g8" style="margin-top:14px">
       <input class="inp grow" data-f="presuCliBuscar" value="${esc(s.buscar || '')}" placeholder="Nombre, empresa, NIF o teléfono" autocomplete="off">
       <button class="pill" data-a="presuCliBuscarCRM" style="padding:13px 14px" ${s.crmBusy ? 'disabled' : ''}>${s.crmBusy ? '…' : 'CRM'}</button>
     </div>
-    <div class="tiny" style="margin-top:6px">Abajo, los clientes de la app. El botón CRM busca en Teamleader, particulares y empresas, y se lo trae a la app.${s.modo === 'guardado' ? ' Si el presupuesto ya está en Teamleader, la oferta de allí no cambia de cliente.' : ''}</div>
+    <div class="tiny" style="margin-top:6px">Abajo, los clientes de la app. El botón CRM busca en Teamleader, particulares y empresas, y se lo trae a la app.${s.modo === 'copia' ? ' Al elegirlo se crea un presupuesto <b>nuevo</b> para ese cliente con las mismas líneas, y se sube a Teamleader como oportunidad y oferta nuevas. El de ahora se queda como está.' : ''}</div>
     <div class="lista-obras" id="presu-cli-lista">${presuCliListaHTML(s)}</div>
     ${s.busy ? '<div class="sub" style="margin-top:8px;color:var(--verde-o)">Un momento…</div>' : ''}
     <button class="btn btn-gris" data-a="cerrarSheet" style="border-radius:99px;margin-top:14px">Cancelar</button>
@@ -8901,6 +8904,24 @@ A.presuCliDe = async (id) => {
     V.sheet = null; render(); return;
   }
   const d = V.presuVer && V.presuVer.datos; if (!d || d.id !== s.id) { V.sheet = null; render(); return; }
+  if (s.modo === 'copia') {
+    if (d.cliente && d.cliente.id === c.id) { avisar('Ese ya es el cliente de este presupuesto.'); return; }
+    s.busy = true; render();
+    try {
+      // El título lleva el nombre del nuevo cliente en vez del anterior.
+      let t = String(d.titulo || '');
+      const reAnt = d.cliente && d.cliente.nombre ? new RegExp(String(d.cliente.nombre).trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i') : null;
+      if (reAnt && reAnt.test(t)) t = t.replace(reAnt, c.nombre);
+      else if (!sinTildes(t).includes(sinTildes(c.nombre))) t = (c.nombre + ' · ' + t).replace(/ · $/, '');
+      const nuevo = await visitasDB.duplicarPresupuesto(d.id, { cliente_id: c.id, titulo: t.slice(0, 200) });
+      anotar(c.id, 'presupuesto', 'Presupuesto de ' + nombreCat(d.categoria) + ' creado (copia de otro)' + (d.total_venta != null ? ' · ' + eur(d.total_venta) : ''));
+      V.sheet = null; V.presuLista.cargado = false;
+      toast('Presupuesto nuevo para ' + c.nombre + '. Subiéndolo a Teamleader…');
+      await abrirPresuSinOrigen(nuevo.id);
+      if (V.presuVer && V.presuVer.datos && V.presuVer.datos.id === nuevo.id) A.presuATeamleader();
+    } catch (e) { s.busy = false; avisar('No se pudo copiar: ' + msgError(e)); render(); }
+    return;
+  }
   s.busy = true; render();
   try {
     const cambios = { cliente_id: c.id };
@@ -10099,7 +10120,7 @@ function vPresupuestoVer() {
     ${d && !editando ? `<div class="card">
       <div class="row g8" style="align-items:center;justify-content:space-between;margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid var(--l1)">
         <span style="font:500 14px var(--sans);${d.cliente ? '' : 'color:var(--ambar-o)'}">${d.cliente ? 'Cliente: <b>' + esc(d.cliente.nombre) + '</b>' : '⚠ Sin cliente'}</span>
-        <button class="pill ${d.cliente ? '' : 'pill-verde'}" data-a="presuCliAbrir" data-modo="guardado" data-id="${d.id}" style="padding:8px 12px;flex:none">${d.cliente ? 'Cambiar' : 'Asignar cliente'}</button>
+        <button class="pill ${d.cliente ? '' : 'pill-verde'}" data-a="presuCliAbrir" data-modo="guardado" data-id="${d.id}" style="padding:8px 12px;flex:none">${d.cliente ? 'Copiar para otro cliente' : 'Asignar cliente'}</button>
       </div>
       ${(d.incidencias || []).map((i) => `<div class="tiny" style="margin-bottom:6px;color:${i.nivel === 'error' ? 'var(--rojo)' : 'var(--ambar-o)'}">${i.nivel === 'error' ? '⚠' : '·'} ${esc(i.mensaje)}</div>`).join('')}
       ${lineas.map((l) => `<div style="padding:9px 0;border-bottom:1px solid var(--l1)">

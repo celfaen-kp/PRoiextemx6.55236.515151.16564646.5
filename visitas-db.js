@@ -579,6 +579,27 @@ export async function presupuestosDeVisita(visitaId) {
  * donde vive la aritmética de céntimos, para que no haya dos cuentas distintas.
  * ------------------------------------------------------------------------- */
 
+/**
+ * Copia de un presupuesto para OTRO cliente (Enzo, 28-10-2026): nace como un
+ * presupuesto nuevo (sin visita, sin oferta en Teamleader, sin revisar ni
+ * enviar), con las mismas líneas e incidencias. El original no se toca.
+ */
+export async function duplicarPresupuesto(id, { cliente_id, titulo }) {
+  const d = await verPresupuesto(id);
+  const copia = (o, campos) => { const r = {}; campos.forEach((k) => { if (o[k] !== undefined) r[k] = o[k]; }); return r; };
+  const fila = Object.assign(copia(d, ['categoria', 'conjunto_reglas_id', 'tarifa_id', 'motor_version', 'modelo_id', 'estimativo_min', 'estimativo_max', 'ratio_aplicado',
+    'total_bruto', 'total_dto_linea', 'dto_global_pct', 'total_coste', 'total_venta', 'confianza', 'validez_dias']),
+    { cliente_id, titulo: titulo || d.titulo || null, visita_id: null, ficha_id: null, estado: 'generado', sync_estado: 'pendiente' });
+  const nuevo = unwrap(await supabase.from('presupuestos').insert(fila).select().single());
+  const lineas = (d.lineas || []).slice().sort((a, b) => (a.orden || 0) - (b.orden || 0)).map((l) => Object.assign(
+    copia(l, ['orden', 'seccion', 'producto_ref', 'descripcion', 'detalle_tecnico', 'especificaciones', 'cantidad', 'unidad', 'precio_tarifa', 'dto_linea_pct', 'precio_coste', 'precio_venta', 'iva', 'origen', 'origen_regla_id', 'origen_inputs', 'confirmada']),
+    { presupuesto_id: nuevo.id }));
+  if (lineas.length) unwrap(await supabase.from('presupuesto_lineas').insert(lineas));
+  const inc = (d.incidencias || []).map((i) => Object.assign(copia(i, ['nivel', 'codigo', 'campo', 'mensaje']), { presupuesto_id: nuevo.id }));
+  if (inc.length) { try { unwrap(await supabase.from('presupuesto_incidencias').insert(inc)); } catch (_) { /* sin incidencias se sigue igual */ } }
+  return nuevo;
+}
+
 export async function guardarLineaPresupuesto(id, cambios) {
   return unwrap(await supabase.from('presupuesto_lineas').update(cambios).eq('id', id).select().single());
 }
