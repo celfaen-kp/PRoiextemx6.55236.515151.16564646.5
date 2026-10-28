@@ -471,7 +471,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '29.3'; // versión visible de la app (única fuente)
+const APP_VERSION = '29.4'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -3811,14 +3811,20 @@ async function pdfDeImpresion() {
     // que no se lea. El corte se hace al final de una fila o de un bloque, para
     // no partir una línea de horas por la mitad entre dos páginas.
     const arriba = el.getBoundingClientRect().top;
-    const cortes = [...el.querySelectorAll('tr, img, #print > div > *')]
+    const cortes = [...el.querySelectorAll('tr, img, #print > div > *, .corte')]
       .map((n) => Math.round((n.getBoundingClientRect().bottom - arriba) * escala))
+      .sort((a, b) => a - b);
+    // Un bloque con data-salto empieza siempre en hoja nueva (las condiciones del presupuesto).
+    const saltos = [...el.querySelectorAll('[data-salto]')]
+      .map((n) => Math.round((n.getBoundingClientRect().top - arriba) * escala))
       .sort((a, b) => a - b);
     const altoTotal = Math.min(lienzo.height, Math.max(altoUtil, altoPagina / 4));
     let y = 0;
     while (y < altoTotal) {
       let fin = Math.min(y + altoPagina, altoTotal);
-      if (fin < altoTotal) {
+      const salto = saltos.find((v) => v > y + 2 && v < fin);
+      if (salto) fin = salto;
+      else if (fin < altoTotal) {
         const c = cortes.filter((v) => v > y + altoPagina / 2 && v <= fin).pop();
         if (c) fin = c;
       }
@@ -9873,6 +9879,57 @@ function bloquesImpresion(categoria, secciones) {
   return salida;
 }
 
+/* ---------- condiciones generales del presupuesto (Enzo, 28-10-2026) ----------
+ * Las mismas páginas que lleva la plantilla de Teamleader (Presupuesto 2026/825):
+ * información de pago, plazos y validez, las 14 condiciones y el bloque de
+ * aceptación. Van SIEMPRE al final del PDF de la app: el que se descarga, el
+ * que se adjunta al cliente y el que se firma en línea. */
+const PRESU_IBAN = 'ES26 0182 4682 5202 0159 5817';
+const PRESU_PAGO = ['50 % a la aceptación del presupuesto', '30 % al iniciar la instalación', '20 % a su finalización'];
+const PRESU_CONDICIONES = [
+  ['1) Alcance y documentación', ['El alcance incluye únicamente lo descrito en el apartado Alcance técnico y en el Desglose económico. Cualquier partida no listada se considera excluida.', 'Planos, memorias y esquemas se entregarán en formato digital estándar. Documentación adicional o as-built detallado, si es necesario, podrá presupuestarse aparte.']],
+  ['2) Precios, impuestos y revisiones', ['Precios en euros. Salvo mención expresa, los importes incluyen IVA vigente.', 'Las variaciones por cambios de alcance, trabajos imprevistos, necesidades de medios auxiliares no contempladas (grúa, andamios, elevadores) o desvíos por condiciones de obra se tratarán mediante pedido adicional/contrato de modificación previo a su ejecución.']],
+  ['3) Licencias, legalización y subvenciones', ['Licencias/Comunicación previa: el presupuesto no incluye tasas municipales ni costes de licencia salvo que se indique expresamente.', 'Legalización y tramitación: se incluye únicamente si figura como partida. La legalización se realizará conforme a la normativa vigente aplicable al tipo de instalación.', 'Subvenciones (p. ej., programas autonómicos/estatales): Sysefen puede prestar asistencia en la presentación, pero no garantiza la concesión ni los plazos de resolución. Los costes de gestión se facturarán si están presupuestados; el cliente es responsable de aportar la documentación requerida en tiempo y forma.']],
+  ['4) Condiciones de obra y responsabilidades del cliente', ['Acceso y disponibilidad: el cliente facilitará accesos, acometidas eléctricas, agua, espacios de acopio y cortes programados.', 'Estructura/soporte: salvo estudio estructural contratado, se presume que la cubierta/forjado/cimentación admite las cargas de la instalación. Cualquier refuerzo o reparación será a cargo del cliente.', 'Suministro eléctrico: la adecuación del cuadro general, aumentos de potencia contratada y actuaciones de la distribuidora/comercializadora quedan fuera salvo partida específica.']],
+  ['5) Exclusiones habituales (no limitativas)', ['Obra civil (zanjas, rozas, soleras, zapatas de marquesinas/carports, albañilería y pintura).', 'Medios auxiliares especiales (grúa, andamios certificados, plataformas elevadoras) si no están en partidas.', 'Reposición de tejas/piezas especiales de cubierta más allá de lo estrictamente necesario para el montaje.', 'Canalizaciones externas no indicadas, perforaciones especiales, trabajos en zonas con amianto o materiales peligrosos.', 'Adecuaciones del CGP/CT y trámites de acceso y conexión no contemplados.', 'Monitorización avanzada, integraciones domóticas o SAI, salvo indicación.']],
+  ['6) Garantías', ['Mano de obra: 2 años desde la puesta en marcha, por defectos de ejecución.', 'Equipos: garantía del fabricante según sus términos (p. ej., paneles FV con garantía de producto y de rendimiento; inversores/baterías según condiciones específicas). La tramitación se realizará conforme a los procedimientos de cada marca.', 'Quedan excluidos desgastes normales, mal uso, manipulaciones de terceros, eventos climáticos extremos o fuerza mayor.']],
+  ['7) Puesta en marcha y formación', ['Tras la instalación, se realizará la puesta en marcha, ajustes básicos y una sesión de formación al usuario sobre el uso seguro y mantenimiento básico.']],
+  ['8) Mantenimiento', ['El mantenimiento preventivo/correctivo no está incluido salvo contratación específica. Sysefen ofrece planes de mantenimiento con visitas periódicas, limpieza de módulos y verificaciones eléctricas.']],
+  ['9) Seguridad y medio ambiente', ['Sysefen cumplirá con la normativa de PRL aplicable y llevará los EPIs necesarios.', 'La gestión de residuos se realizará conforme a la normativa vigente; tasas de gestor autorizado y transporte se incluyen solo si aparece como partida.']],
+  ['10) Limitación de responsabilidad', ['La responsabilidad de Sysefen por daños indirectos, lucro cesante o pérdida de producción queda excluida. La responsabilidad total, en cualquier caso, se limita al importe total efectivamente abonado por el cliente por los trabajos objeto del contrato, salvo dolo o negligencia grave.']],
+  ['11) Protección de datos (RGPD/LOPDGDD)', ['De conformidad con lo dispuesto en el Reglamento (UE) 2016/679, de 27 de abril de 2016 (RGPD) y la Ley Orgánica 3/2018, de 5 de diciembre de Protección de Datos Personales y garantía de los derechos digitales (LOPDGDD), le facilitamos la siguiente información del tratamiento: Responsable: Sysefen Group 2024 S.L, B55450407, Camí Can Calafat, 21 Polígono Son OMS, 07199 Palma (Illes Balears) ESPAÑA, info@sysefen.com. Fines del tratamiento: mantener una relación comercial y envío de comunicaciones de productos o servicios. Legitimación: obligación legal del responsable y consentimiento del interesado cuando proceda. Tipología y conservación: se tratan los datos mínimos necesarios para el fin y se conservan cumpliendo los plazos legales de prescripción. Destinatarios de cesiones: las necesarias para el fin del tratamiento y para el cumplimiento de obligaciones legales. Derechos que le asisten: acceso, rectificación, portabilidad, supresión, limitación y oposición. Más información del tratamiento: diríjase al responsable o a través de www.sysefen.com.']],
+  ['12) Derecho de desistimiento (solo consumidores)', ['Para contratos celebrados a distancia y fuera de establecimiento, el cliente consumidor dispone de 14 días naturales para desistir sin necesidad de justificación.', 'Si el servicio ha comenzado a petición del cliente durante el periodo de desistimiento, podrá exigirse el importe proporcional a la parte ya prestada.']],
+  ['13) Fuerza mayor', ['Ninguna de las partes será responsable por retrasos debidos a causas de fuerza mayor (temporales, huelgas generales, pandemias, indisponibilidad de suministros críticos, actos normativos sobrevenidos, etc.). Los plazos se prorrogarán por el tiempo de la incidencia.']],
+  ['14) Ley aplicable y jurisdicción', ['Este contrato se rige por el Derecho español. Para controversias se someten a los Juzgados y Tribunales de Palma de Mallorca. Si el cliente ostenta la condición de consumidor, serán competentes los juzgados de su domicilio.']],
+];
+function condicionesPresupuestoHTML(d) {
+  const cli = (d.cliente && d.cliente.nombre) || '';
+  const validez = Number(d.validez_dias || 15) + Number(d.prorroga_dias || 0);
+  const vence = typeof vencePresu === 'function' ? vencePresu(d) : null;
+  const h = (t) => `<div class="corte" style="font:600 10px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:#666;margin:14px 0 5px">${esc(t)}</div>`;
+  const parrafo = (t) => `<div class="corte" style="font:400 9.5px/1.4 var(--sans);color:#333;margin-top:3px">${esc(t)}</div>`;
+  const firma = (t) => `<div class="corte" style="margin-top:16px;font:400 10px var(--sans);color:#444">${esc(t)}: <span style="display:inline-block;width:80mm;border-bottom:1px dotted #777;vertical-align:bottom"></span></div>`;
+  return `<div data-salto="1" style="padding-top:4px">
+    <div class="corte" style="font:400 11px var(--sans);margin-top:6px">Ambas partes aceptan el contenido del presupuesto.</div>
+    <div class="corte" style="font:600 11px var(--sans);margin-top:3px">${esc(S.empresa)}${cli ? ' · ' + esc(cli) : ''}</div>
+    ${h('Información de pago')}
+    ${parrafo('IBAN: ' + PRESU_IBAN)}
+    <div class="corte" style="font:600 9.5px/1.4 var(--sans);color:#333;margin-top:5px">CONDICIONES DE PAGO:</div>
+    ${PRESU_PAGO.map(parrafo).join('')}
+    ${h('Plazos y validez')}
+    ${parrafo('Validez de la oferta: ' + validez + ' días naturales desde la fecha del presupuesto' + (vence ? ' (hasta el ' + fechaCorta(vence + 'T12:00') + ')' : '') + '.')}
+    ${parrafo('Plazo estimado de ejecución: desde la aceptación y el abono del anticipo; sujeto a disponibilidad de materiales y autorizaciones.')}
+    ${h('Condiciones generales y exclusiones')}
+    ${parrafo('Estas condiciones forman parte integrante del presupuesto. En caso de conflicto, prevalecerá el presupuesto firmado y sus anexos.')}
+    ${PRESU_CONDICIONES.map(([t, ps]) => `<div class="corte" style="font:600 10px/1.4 var(--sans);margin-top:9px">${esc(t)}</div>${ps.map(parrafo).join('')}`).join('')}
+    ${h('Aceptación del presupuesto')}
+    ${firma('Nombre y DNI/NIE del cliente')}
+    ${firma('Firma del cliente')}
+    ${firma('Fecha')}
+    ${firma('Firma Sysefen')}
+    ${firma('Fecha')}
+  </div>`;
+}
 function imprimirPresupuestoHTML(d) {
   const lineas = (d.lineas || []).slice().sort((a, b) => (a.orden || 0) - (b.orden || 0));
   const cli = d.cliente || null;
@@ -9935,7 +9992,8 @@ function imprimirPresupuestoHTML(d) {
         <span style="font:700 18px var(--cond)">${eur(total * (1 + iva / 100))}</span>
       </div>
     </div>
-    <div style="font:400 10px/1.5 var(--sans);color:#666;margin-top:14px">Presupuesto orientativo, válido ${esc(String(d.validez_dias || 15))} días. No incluye obra civil ni permisos que no se nombren arriba.</div>
+    <div style="font:400 10px/1.5 var(--sans);color:#666;margin-top:14px">Presupuesto válido ${esc(String(Number(d.validez_dias || 15) + Number(d.prorroga_dias || 0)))} días naturales. No incluye obra civil ni permisos que no se nombren arriba. Condiciones generales y de pago en las páginas siguientes.</div>
+    ${condicionesPresupuestoHTML(d)}
   </div>`;
 }
 

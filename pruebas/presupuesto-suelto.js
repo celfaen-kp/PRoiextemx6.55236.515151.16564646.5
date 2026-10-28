@@ -254,7 +254,10 @@ setTimeout(function () {
   imprimirPresupuestoHTML(guardado);
   var pdf = impreso.innerHTML;
   comprueba('el PDF dice PRESUPUESTO, no toma de datos', pdf.indexOf('PRESUPUESTO') > -1 && pdf.indexOf('TOMA DE DATOS') === -1);
-  comprueba('el PDF no lleva nada interno: ni coste, ni beneficio, ni margen, ni desglose', !/coste|beneficio|margen|origen_inputs|resumen|precio_coste|Interno/i.test(pdf));
+  // Las condiciones generales del final hablan de «costes de licencia»: se miran aparte.
+  var pdfSinCond = pdf.split('data-salto')[0];
+  comprueba('el PDF no lleva nada interno: ni coste, ni beneficio, ni margen, ni desglose', !/coste|beneficio|margen|origen_inputs|resumen|precio_coste|Interno/i.test(pdfSinCond));
+  comprueba('lleva las condiciones generales, el pago y el bloque de aceptación (V29.4)', pdf.indexOf('Condiciones generales y exclusiones') > -1 && pdf.indexOf('ES26 0182') > -1 && pdf.indexOf('14) Ley aplicable') > -1 && pdf.indexOf('Aceptación del presupuesto') > -1);
   comprueba('lleva el cliente', pdf.indexOf('Ana Ferrer') > -1);
   comprueba('la línea con su detalle técnico', pdf.indexOf('C100') > -1 && pdf.indexOf('cobre aislada') > -1);
   comprueba('el total sin IVA', pdf.indexOf('780,00') > -1);
