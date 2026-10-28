@@ -412,6 +412,7 @@ body.con-captcha #captcha{display:block}
   html,body{overflow:visible;height:auto;background:#fff}
   #app,.toast,.sheet{display:none!important}
   #print{display:block;padding:0}
+  #print .corte,#print tr{page-break-inside:avoid;break-inside:avoid}
   @page{size:A4;margin:14mm}
 }
 /* Fotos de la visita (19-10-2026): rejilla de miniaturas y visor de una en una. */
@@ -471,7 +472,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '29.4'; // versión visible de la app (única fuente)
+const APP_VERSION = '29.5'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -3822,7 +3823,9 @@ async function pdfDeImpresion() {
     let y = 0;
     while (y < altoTotal) {
       let fin = Math.min(y + altoPagina, altoTotal);
-      const salto = saltos.find((v) => v > y + 2 && v < fin);
+      // Un bloque con data-salto pasa a hoja nueva solo si empezaría en el último
+      // cuarto de la hoja; si no, sigue de corrido (evita una hoja casi vacía).
+      const salto = saltos.find((v) => v > y + altoPagina * 0.75 && v < fin);
       if (salto) fin = salto;
       else if (fin < altoTotal) {
         const c = cortes.filter((v) => v > y + altoPagina / 2 && v <= fin).pop();
@@ -9906,7 +9909,7 @@ function condicionesPresupuestoHTML(d) {
   const cli = (d.cliente && d.cliente.nombre) || '';
   const validez = Number(d.validez_dias || 15) + Number(d.prorroga_dias || 0);
   const vence = typeof vencePresu === 'function' ? vencePresu(d) : null;
-  const h = (t) => `<div class="corte" style="font:600 10px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:#666;margin:14px 0 5px">${esc(t)}</div>`;
+  const h = (t) => `<div style="font:600 10px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:#666;margin:14px 0 5px">${esc(t)}</div>`;
   const parrafo = (t) => `<div class="corte" style="font:400 9.5px/1.4 var(--sans);color:#333;margin-top:3px">${esc(t)}</div>`;
   const firma = (t) => `<div class="corte" style="margin-top:16px;font:400 10px var(--sans);color:#444">${esc(t)}: <span style="display:inline-block;width:80mm;border-bottom:1px dotted #777;vertical-align:bottom"></span></div>`;
   return `<div data-salto="1" style="padding-top:4px">
@@ -9914,14 +9917,14 @@ function condicionesPresupuestoHTML(d) {
     <div class="corte" style="font:600 11px var(--sans);margin-top:3px">${esc(S.empresa)}${cli ? ' · ' + esc(cli) : ''}</div>
     ${h('Información de pago')}
     ${parrafo('IBAN: ' + PRESU_IBAN)}
-    <div class="corte" style="font:600 9.5px/1.4 var(--sans);color:#333;margin-top:5px">CONDICIONES DE PAGO:</div>
+    <div style="font:600 9.5px/1.4 var(--sans);color:#333;margin-top:5px">CONDICIONES DE PAGO:</div>
     ${PRESU_PAGO.map(parrafo).join('')}
     ${h('Plazos y validez')}
     ${parrafo('Validez de la oferta: ' + validez + ' días naturales desde la fecha del presupuesto' + (vence ? ' (hasta el ' + fechaCorta(vence + 'T12:00') + ')' : '') + '.')}
     ${parrafo('Plazo estimado de ejecución: desde la aceptación y el abono del anticipo; sujeto a disponibilidad de materiales y autorizaciones.')}
     ${h('Condiciones generales y exclusiones')}
     ${parrafo('Estas condiciones forman parte integrante del presupuesto. En caso de conflicto, prevalecerá el presupuesto firmado y sus anexos.')}
-    ${PRESU_CONDICIONES.map(([t, ps]) => `<div class="corte" style="font:600 10px/1.4 var(--sans);margin-top:9px">${esc(t)}</div>${ps.map(parrafo).join('')}`).join('')}
+    ${PRESU_CONDICIONES.map(([t, ps]) => `<div style="font:600 10px/1.4 var(--sans);margin-top:9px">${esc(t)}</div>${ps.map(parrafo).join('')}`).join('')}
     ${h('Aceptación del presupuesto')}
     ${firma('Nombre y DNI/NIE del cliente')}
     ${firma('Firma del cliente')}
