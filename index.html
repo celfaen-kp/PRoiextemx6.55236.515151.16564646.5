@@ -474,7 +474,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '29.9'; // versión visible de la app (única fuente)
+const APP_VERSION = '30.0'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -553,6 +553,7 @@ async function restaurarSesion() {
         V.user = { id: local.id };
         try { sessionStorage.setItem('ch_user', JSON.stringify(V.user)); } catch (e) {}
         if (V.view === 'login' || V.view === 'pin') V.view = 'hoy';
+        abrirEnlaceInicial();
       } else {
         V.user = null; V.view = 'login';
         try { sessionStorage.removeItem('ch_user'); } catch (e) {}
@@ -565,7 +566,7 @@ async function restaurarSesion() {
     }
   } catch (e) { /* sin token y sin red: se queda en login */ }
   render();
-  refrescarDatos().then(() => { if (V.user && !/^p[123]$/.test(V.view)) restaurarBorradorParte(); render(); comprobarFirmaPendiente(); });
+  refrescarDatos().then(() => { if (V.user && !/^p[123]$/.test(V.view) && V.view !== 'presupuestoVer') restaurarBorradorParte(); render(); comprobarFirmaPendiente(); });
 }
 
 /* ---------- comprobación antirrobots (Cloudflare Turnstile) -----------------
@@ -1350,6 +1351,7 @@ A.pinTecla = (k) => {
       try { sessionStorage.setItem('ch_user', JSON.stringify(V.user)); } catch (e) {}
       V.pinUser = null; V.pin = ''; V.pinBusy = false; V.view = 'hoy';
       if (S.bienvenida) { S.bienvenida = false; save(); }
+      abrirEnlaceInicial();
       render();
       refrescarDatos().then(() => { render(); comprobarFirmaPendiente(); });
     }).catch((err) => {
@@ -4319,6 +4321,7 @@ function render() {
     V.view = 'agenda';
     if (!V.agenda.cargado) A.cargarAgenda();
   }
+  sincronizarEnlace();
   const app = $('#app');
   const v = V.view;
   let html = '';
@@ -8965,6 +8968,49 @@ async function abrirPresuSinOrigen(id) {
   V.presuVer.cargando = false; render();
 }
 
+/* ---------------------------------------------------------------------------
+ * Enlace directo a un presupuesto. Mientras se mira uno, la dirección de la
+ * app lleva «#presupuesto=<id>»: así se puede abrir en otra pestaña o ventana
+ * (botón «Abrir aparte») y poner dos presupuestos uno al lado del otro, cada
+ * uno con su «Modificar». La almohadilla no viaja al servidor ni al service
+ * worker, así que la caché no se entera. Al recargar la pestaña o entrar por
+ * ese enlace se abre el mismo presupuesto en cuanto hay sesión (y tras el PIN
+ * si no la había). El título de la pestaña lleva el nombre del presupuesto
+ * para distinguirlas.
+ * ------------------------------------------------------------------------- */
+const TITULO_APP = document.title;
+const PRESU_HASH = /^#presupuesto=([0-9a-f-]{36})$/i;
+let enlaceInicial = (() => { const m = PRESU_HASH.exec(location.hash || ''); return m ? m[1] : null; })();
+function abrirEnlaceInicial() {
+  const id = enlaceInicial;
+  if (!id || !V.user) return false;
+  enlaceInicial = null;
+  V.volverPila = []; V.volverA = null;
+  abrirPresuSinOrigen(id);
+  return true;
+}
+function sincronizarEnlace() {
+  try {
+    const abierto = V.user && V.view === 'presupuestoVer' && V.presuVer && V.presuVer.id ? V.presuVer.id : null;
+    const quiero = abierto ? '#presupuesto=' + abierto : '';
+    const hay = location.hash || '';
+    // Sin sesión no se toca: el enlace espera a que entre con el PIN.
+    if (V.user && !enlaceInicial && quiero !== hay && (quiero || PRESU_HASH.test(hay))) history.replaceState(history.state, '', location.pathname + location.search + quiero);
+    const d = abierto && V.presuVer.datos;
+    const nombre = d ? String(d.titulo || (d.cliente && d.cliente.nombre) || nombreCat(d.categoria) || '').trim() : '';
+    document.title = nombre ? 'Presupuesto · ' + nombre : TITULO_APP;
+  } catch (_) { /* sin history (vista embebida) se sigue igual */ }
+}
+const abrirAparteBtn = () => (window.innerWidth >= 600
+  ? '<button class="btn btn-gris" data-a="presuAbrirAparte" style="border-radius:99px" title="Abre este presupuesto en otra ventana, para ponerlo al lado de otro">Abrir aparte</button>'
+  : '');
+A.presuAbrirAparte = () => {
+  const v = V.presuVer; if (!v || !v.id) return;
+  const url = location.href.replace(/#.*$/, '') + '#presupuesto=' + v.id;
+  const w = window.open(url, '_blank');
+  if (!w) avisar('El navegador ha bloqueado la ventana nueva. Permite las ventanas emergentes para esta app y vuelve a probar.');
+};
+
 /* =============================================================================
  * LEGALIZACIÓN FOTOVOLTAICA (sql/etapa55)
  *
@@ -10178,13 +10224,14 @@ function vPresupuestoVer() {
       ${d.motor_version === 'teamleader'
         ? (lineas.length
           ? `<div class="tiny" style="margin-top:12px">Hecho en Teamleader: las líneas son las de la oferta de allí. Lo que se cambie allí llega solo; lo que se cambie aquí con «Modificar» se actualiza allí.</div>
-      <div class="row g8" style="margin-top:14px"><button class="btn btn-gris" data-a="presuPdf" style="border-radius:99px">PDF</button><button class="btn btn-gris" data-a="presuPdfDescargar" style="border-radius:99px" ${V.presuVer.bajandoPdf ? 'disabled' : ''}>Descargar PDF</button><button class="btn btn-gris" data-a="presuEditar" style="border-radius:99px">Modificar</button></div>`
+      <div class="row g8" style="margin-top:14px"><button class="btn btn-gris" data-a="presuPdf" style="border-radius:99px">PDF</button><button class="btn btn-gris" data-a="presuPdfDescargar" style="border-radius:99px" ${V.presuVer.bajandoPdf ? 'disabled' : ''}>Descargar PDF</button><button class="btn btn-gris" data-a="presuEditar" style="border-radius:99px">Modificar</button>${abrirAparteBtn()}</div>`
           : '<div class="tiny" style="margin-top:12px">Hecho en Teamleader: las líneas aún no se han traído. Pulsa ↻ Actualizar desde Teamleader en Presupuestos.</div>')
         : `<div class="tiny" style="margin-top:12px">Calculado con las reglas ${esc(d.motor_version || '')}. Queda congelado con la tarifa de ese día.${d.tl_quotation_id ? ' Lo que se cambie en Teamleader llega solo cada cuarto de hora; lo que se cambie aquí con «Modificar» se actualiza allí.' : ''}</div>
       <div class="row g8" style="margin-top:14px">
         <button class="btn btn-gris" data-a="presuPdf" style="border-radius:99px">PDF</button>
         <button class="btn btn-gris" data-a="presuPdfDescargar" style="border-radius:99px" ${V.presuVer.bajandoPdf ? 'disabled' : ''}>Descargar PDF</button>
         <button class="btn btn-gris" data-a="presuEditar" style="border-radius:99px">Modificar</button>
+        ${abrirAparteBtn()}
       </div>`}
       ${d.motor_version === 'teamleader' ? '' : d.tl_quotation_id
         ? '<div class="tiny" style="margin-top:10px;text-align:center;color:var(--verde-o)">✓ Está en Teamleader</div>'
@@ -13534,6 +13581,7 @@ document.addEventListener('click', (e) => {
   if (a === 'presuNuevo') return A.presuNuevo();
   if (a === 'presuAbrir') return A.presuAbrir(d.id);
   if (a === 'presuEditar') return A.presuEditar();
+  if (a === 'presuAbrirAparte') return A.presuAbrirAparte();
   if (a === 'presuPdf') return A.presuPdf();
   if (a === 'presuATeamleader') return A.presuATeamleader();
   if (a === 'presuGuardadoATL') return A.presuGuardadoATL();
