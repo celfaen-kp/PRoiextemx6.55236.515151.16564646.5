@@ -474,7 +474,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '30.3'; // versión visible de la app (única fuente)
+const APP_VERSION = '30.4'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -1194,9 +1194,15 @@ function avatarHTML(userId, estilo, attrs, clases) {
 }
 // Marca pequeña (logo oficial + "Sysefen") para cabeceras internas. Reutiliza
 // icon-512.png?v=2 (el mismo icono ya usado como icono de la app/PWA).
+// Junto a la marca, un icono para abrir la pantalla en otra pestaña (Enzo,
+// 30-10-2026): en ordenador, para poner dos presupuestos o dos clientes uno al
+// lado del otro. En la app instalada del móvil no sale (abriría el navegador).
+const abrirAparteIcono = (oscuro) => (window.innerWidth >= 600 || !enAppInstalada()
+  ? `<span data-a="abrirAparte" title="Abrir esta pantalla en otra pestaña" style="display:inline-flex;align-items:center;margin-left:4px;padding:2px 4px;cursor:pointer;color:${oscuro ? 'rgba(255,255,255,.5)' : 'var(--t3)'}"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3H3.5A1.5 1.5 0 0 0 2 4.5v8A1.5 1.5 0 0 0 3.5 14h8a1.5 1.5 0 0 0 1.5-1.5V10"/><path d="M9.5 2H14v4.5"/><path d="M14 2 7.5 8.5"/></svg></span>`
+  : '');
 const marcaSysefen = (oscuro) => `<div class="row g8" style="margin-bottom:9px">
     <img src="icon-512.png?v=2" alt="" style="width:16px;height:16px;border-radius:5px;flex:none">
-    <span style="font:700 10px/1 var(--mono);letter-spacing:.14em;text-transform:uppercase;color:${oscuro ? 'rgba(255,255,255,.5)' : 'var(--t3)'}">Sysefen</span>
+    <span style="font:700 10px/1 var(--mono);letter-spacing:.14em;text-transform:uppercase;color:${oscuro ? 'rgba(255,255,255,.5)' : 'var(--t3)'}">Sysefen</span>${abrirAparteIcono(oscuro)}
   </div>`;
 
 /* ---------- tiempo ---------- */
@@ -9023,37 +9029,57 @@ async function abrirPresuSinOrigen(id) {
  * para distinguirlas.
  * ------------------------------------------------------------------------- */
 const TITULO_APP = document.title;
-const PRESU_HASH = /^#presupuesto=([0-9a-f-]{36})$/i;
-let enlaceInicial = (() => { const m = PRESU_HASH.exec(location.hash || ''); return m ? m[1] : null; })();
+const ENLACE_HASH = /^#(presupuesto|cliente)=([0-9a-f-]{36})$/i;
+let enlaceInicial = (() => { const m = ENLACE_HASH.exec(location.hash || ''); return m ? { tipo: m[1].toLowerCase(), id: m[2] } : null; })();
+// El enlace de lo que hay en pantalla: un presupuesto o la ficha de un cliente; si no, nada.
+function enlaceDePantalla() {
+  if (!V.user) return '';
+  if (V.view === 'presupuestoVer' && V.presuVer && V.presuVer.id) return '#presupuesto=' + V.presuVer.id;
+  if (V.view === 'clienteVer' && V.clienteVerId) return '#cliente=' + V.clienteVerId;
+  return '';
+}
 function abrirEnlaceInicial() {
-  const id = enlaceInicial;
-  if (!id || !V.user) return false;
+  const e = enlaceInicial;
+  if (!e || !V.user) return false;
   enlaceInicial = null;
   V.volverPila = []; V.volverA = null;
-  abrirPresuSinOrigen(id);
+  if (e.tipo === 'cliente') {
+    V.clienteVerId = e.id; V.agenda.ultimoCliente = e.id; V.view = 'clienteVer'; scrollMemo.clienteVer = 0; render();
+    if (!V.agenda.cargado) A.cargarAgenda();
+    cargarVisitasCliente(e.id);
+    if (typeof A.cargarDocsCliente === 'function') A.cargarDocsCliente(e.id);
+    return true;
+  }
+  abrirPresuSinOrigen(e.id);
   return true;
 }
 function sincronizarEnlace() {
   try {
-    const abierto = V.user && V.view === 'presupuestoVer' && V.presuVer && V.presuVer.id ? V.presuVer.id : null;
-    const quiero = abierto ? '#presupuesto=' + abierto : '';
+    const quiero = enlaceDePantalla();
     const hay = location.hash || '';
     // Sin sesión no se toca: el enlace espera a que entre con el PIN.
-    if (V.user && !enlaceInicial && quiero !== hay && (quiero || PRESU_HASH.test(hay))) history.replaceState(history.state, '', location.pathname + location.search + quiero);
-    const d = abierto && V.presuVer.datos;
-    const nombre = d ? String(d.titulo || (d.cliente && d.cliente.nombre) || nombreCat(d.categoria) || '').trim() : '';
-    document.title = nombre ? 'Presupuesto · ' + nombre : TITULO_APP;
+    if (V.user && !enlaceInicial && quiero !== hay && (quiero || ENLACE_HASH.test(hay))) history.replaceState(history.state, '', location.pathname + location.search + quiero);
+    let titulo = '';
+    if (quiero.startsWith('#presupuesto=')) {
+      const d = V.presuVer && V.presuVer.datos;
+      const nombre = d ? String(d.titulo || (d.cliente && d.cliente.nombre) || nombreCat(d.categoria) || '').trim() : '';
+      if (nombre) titulo = 'Presupuesto · ' + nombre;
+    } else if (quiero.startsWith('#cliente=')) {
+      const c = agCliente(V.clienteVerId);
+      if (c && c.nombre) titulo = String(c.nombre).trim();
+    }
+    document.title = titulo || TITULO_APP;
   } catch (_) { /* sin history (vista embebida) se sigue igual */ }
 }
 const abrirAparteBtn = () => (window.innerWidth >= 600
   ? '<button class="btn btn-gris" data-a="presuAbrirAparte" style="border-radius:99px" title="Abre este presupuesto en otra ventana, para ponerlo al lado de otro">Abrir aparte</button>'
   : '');
-A.presuAbrirAparte = () => {
-  const v = V.presuVer; if (!v || !v.id) return;
-  const url = location.href.replace(/#.*$/, '') + '#presupuesto=' + v.id;
+A.abrirAparte = () => {
+  const url = location.href.replace(/#.*$/, '') + enlaceDePantalla();
   const w = window.open(url, '_blank');
   if (!w) avisar('El navegador ha bloqueado la ventana nueva. Permite las ventanas emergentes para esta app y vuelve a probar.');
 };
+A.presuAbrirAparte = A.abrirAparte;
 
 /* =============================================================================
  * LEGALIZACIÓN FOTOVOLTAICA (sql/etapa55)
@@ -13631,6 +13657,7 @@ document.addEventListener('click', (e) => {
   if (a === 'presuAbrir') return A.presuAbrir(d.id);
   if (a === 'presuEditar') return A.presuEditar();
   if (a === 'presuAbrirAparte') return A.presuAbrirAparte();
+  if (a === 'abrirAparte') return A.abrirAparte();
   if (a === 'presuPdf') return A.presuPdf();
   if (a === 'presuATeamleader') return A.presuATeamleader();
   if (a === 'presuGuardadoATL') return A.presuGuardadoATL();
