@@ -474,7 +474,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '30.0'; // versión visible de la app (única fuente)
+const APP_VERSION = '30.1'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -8722,7 +8722,7 @@ function datosDelSuelto(f) {
 
 /* --- traer de Teamleader lo que ha pasado allí (16-10-2026) -----------------
  * Ofertas enviadas (por la fase de la oportunidad), aceptadas, rechazadas y las
- * hechas directamente en el CRM. El cron lo hace cada cuarto de hora
+ * hechas directamente en el CRM. El cron lo hace cada cinco minutos
  * (sql/etapa78); esto es para no esperar. */
 /* ---------- documentos del cliente (sql/etapa90, 26-10-2026): la factura de la luz ---------- */
 Object.assign(V, { cliDocs: {}, cliDocsUrls: {}, cliDocsError: {}, cliDocBusy: null, confirmarBorrarCliDoc: null });
@@ -9466,7 +9466,7 @@ function vPresupuestos() {
         <button class="pill" data-a="presuNuevo" style="background:var(--tinta);color:#fff">+ Nuevo</button>
       </div>
     </div>
-    <div class="sub" style="margin-top:8px">Los de las visitas y los sueltos, juntos. Lo que pasa en Teamleader (enviado, aceptado, ofertas hechas allí) entra solo cada cuarto de hora, o con ↻.</div>
+    <div class="sub" style="margin-top:8px">Los de las visitas y los sueltos, juntos. Lo que pasa en Teamleader (enviado, aceptado, ofertas hechas allí) entra solo cada cinco minutos (y al volver a la app se refresca), o al momento con ↻.</div>
   </div>
   <div class="scroll pad pb-nav">
     ${l.error ? `<div class="card" style="background:var(--rojo-cl)"><div class="sub" style="color:var(--rojo)">${esc(l.error)}</div></div>` : ''}
@@ -10226,7 +10226,7 @@ function vPresupuestoVer() {
           ? `<div class="tiny" style="margin-top:12px">Hecho en Teamleader: las líneas son las de la oferta de allí. Lo que se cambie allí llega solo; lo que se cambie aquí con «Modificar» se actualiza allí.</div>
       <div class="row g8" style="margin-top:14px"><button class="btn btn-gris" data-a="presuPdf" style="border-radius:99px">PDF</button><button class="btn btn-gris" data-a="presuPdfDescargar" style="border-radius:99px" ${V.presuVer.bajandoPdf ? 'disabled' : ''}>Descargar PDF</button><button class="btn btn-gris" data-a="presuEditar" style="border-radius:99px">Modificar</button>${abrirAparteBtn()}</div>`
           : '<div class="tiny" style="margin-top:12px">Hecho en Teamleader: las líneas aún no se han traído. Pulsa ↻ Actualizar desde Teamleader en Presupuestos.</div>')
-        : `<div class="tiny" style="margin-top:12px">Calculado con las reglas ${esc(d.motor_version || '')}. Queda congelado con la tarifa de ese día.${d.tl_quotation_id ? ' Lo que se cambie en Teamleader llega solo cada cuarto de hora; lo que se cambie aquí con «Modificar» se actualiza allí.' : ''}</div>
+        : `<div class="tiny" style="margin-top:12px">Calculado con las reglas ${esc(d.motor_version || '')}. Queda congelado con la tarifa de ese día.${d.tl_quotation_id ? ' Lo que se cambie en Teamleader llega solo cada cinco minutos; lo que se cambie aquí con «Modificar» se actualiza allí.' : ''}</div>
       <div class="row g8" style="margin-top:14px">
         <button class="btn btn-gris" data-a="presuPdf" style="border-radius:99px">PDF</button>
         <button class="btn btn-gris" data-a="presuPdfDescargar" style="border-radius:99px" ${V.presuVer.bajandoPdf ? 'disabled' : ''}>Descargar PDF</button>
@@ -10989,7 +10989,7 @@ A.cargarAgenda = async () => {
     const [citas, clientes] = await Promise.all([visitasDB.listarCitas(), visitasDB.listarClientesAgenda()]);
     ag.citas = citas; ag.clientes = clientes; ag.error = null;
   } catch (e) { ag.error = msgError(e); }
-  finally { ag.cargando = false; ag.cargado = true; if (AG_VISTAS.includes(V.view)) render(); }
+  finally { ag.cargando = false; ag.cargado = true; ag.cargadoAt = Date.now(); if (AG_VISTAS.includes(V.view)) render(); }
   // La última llamada y la próxima acción se ven en la lista sin entrar.
   if (ag.vista === 'tablero') ag.clientes.forEach((c) => { if (!V.bitacora[c.id]) V.bitacora[c.id] = []; });
   if (puedeCitar()) cargarBitacoraTodos();
@@ -14112,8 +14112,19 @@ if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
       buscar();
     })
     .catch(() => {}));
-  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') buscar(); });
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { buscar(); refrescarAlVolver(); } });
   setInterval(buscar, 30 * 60 * 1000);
+}
+// Al volver a la app (30-10-2026): lo que el servidor ha traído de Teamleader
+// mientras tanto (ofertas nuevas, enviados, aceptados) se ve sin tocar nada.
+// Se recargan el tablero de clientes y la lista de presupuestos si lo que hay
+// en pantalla tiene más de dos minutos.
+function refrescarAlVolver() {
+  if (!V.user || !navigator.onLine) return;
+  const ag = V.agenda;
+  if (ag && ag.cargado && !ag.cargando && Date.now() - (ag.cargadoAt || 0) > 2 * 60_000) A.cargarAgenda();
+  const l = V.presuLista;
+  if (V.view === 'presupuestos' && l && l.cargado && !l.cargando) A.cargarPresupuestos();   // sin «cargando…»: se cambia la lista cuando llega
 }
 render();
 restaurarSesion();

@@ -673,6 +673,40 @@ Deno.serve(async (req) => {
     catch (e) { return json({ error: (e as Error).message, sin_permiso: e instanceof SinPermiso }, e instanceof SinPermiso ? 409 : 502); }
   }
 
+  // --- diagnóstico (Administración): qué ve la pasada general de un cliente ---------
+  if (b.accion === 'diagnostico') {
+    if (!['presupuestos', 'admin'].includes(String(yo.rol))) return json({ error: 'Solo presupuestos y Administración.' }, 403);
+    const cid = esUuid(b.cliente_id) ? String(b.cliente_id) : '';
+    try {
+      const token = await tokenValido(sb);
+      const { data: c } = await sb.from('clientes_cache').select('id, nombre, tl_id, tl_tipo').eq('id', cid).maybeSingle();
+      if (!c?.tl_id) return json({ error: 'Cliente sin Teamleader.' }, 400);
+      const desdeDeals = new Date(Date.now() - 60 * 86400_000).toISOString().replace(/\.\d{3}Z$/, '+00:00');
+      const recientes: Record<string, string> = {}; let nRec = 0; let paginas = 0;
+      for (let pag = 1; pag <= 5; pag++) {
+        const r = await crm(token, 'deals.list', { filter: { updated_since: desdeDeals }, page: { size: 100, number: pag } });
+        // deno-lint-ignore no-explicit-any
+        const lista = (r?.data || []) as any[]; paginas++; nRec += lista.length;
+        lista.forEach((d) => { recientes[d.id] = String(d?.lead?.customer?.id || '') + '/' + String(d?.lead?.customer?.type || '') + ' upd ' + d.updated_at; });
+        if (lista.length < 100) break;
+      }
+      const r = await crm(token, 'deals.list', { filter: { customer: { type: c.tl_tipo === 'company' ? 'company' : 'contact', id: String(c.tl_id) } }, page: { size: 100, number: 1 } });
+      // deno-lint-ignore no-explicit-any
+      const porCliente = [] as any[];
+      // deno-lint-ignore no-explicit-any
+      for (const d of ((r?.data || []) as any[])) {
+        // deno-lint-ignore no-explicit-any
+        let info: any = null;
+        try { info = (await crm(token, 'deals.info', { id: d.id }))?.data; } catch (e) { info = { error: (e as Error).message }; }
+        const qs = [] as unknown[];
+        const qids = (info?.quotations || []).map((q: { id: string }) => q.id);
+        if (qids.length) { try { const rq = await crm(token, 'quotations.list', { filter: { ids: qids }, page: { size: 50 } }); (rq?.data || []).forEach((q: { id: string; created_at: string; updated_at: string; status: string; name?: string }) => qs.push({ id: q.id, name: q.name, created_at: q.created_at, updated_at: q.updated_at, status: q.status })); } catch (e) { qs.push({ error: (e as Error).message }); } }
+        porCliente.push({ id: d.id, title: d.title, created_at: d.created_at, updated_at: d.updated_at, lista_updated_at: info?.updated_at, customer: d?.lead?.customer, en_recientes: recientes[d.id] || null, ofertas: qs });
+      }
+      return json({ ok: true, cliente: c, desde: desdeDeals, recientes_total: nRec, recientes_paginas: paginas, porCliente });
+    } catch (e) { return json({ error: (e as Error).message }, 502); }
+  }
+
   // --- desde la app: «Actualizar desde Teamleader» ---------------------------------
   if (b.accion === 'sincronizar') {
     if (!['presupuestos', 'admin'].includes(String(yo.rol))) return json({ error: 'Sincronizar con el CRM es de presupuestos y Administración.' }, 403);
