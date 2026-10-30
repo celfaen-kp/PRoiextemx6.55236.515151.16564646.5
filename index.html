@@ -474,7 +474,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '30.2'; // versión visible de la app (única fuente)
+const APP_VERSION = '30.3'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -9851,7 +9851,8 @@ A.presuGuardarCambios = async () => {
     }
 
     // 4 · que el servidor vuelva a sumar
-    await visitasDB.recalcularPresupuesto(v.datos.id, e.dto);
+    const rc = await visitasDB.recalcularPresupuesto(v.datos.id, e.dto);
+    if (rc && rc.catalogados) toast(rc.catalogados === 1 ? 'Producto nuevo guardado en el catálogo propio.' : rc.catalogados + ' productos nuevos guardados en el catálogo propio.');
     V.presuEdit = null;
     V.presuLista.cargado = false; A.cargarPresupuestos();
     await A.presuAbrir(v.datos.id);
@@ -9940,6 +9941,7 @@ function presuLineasEditHTML(d) {
       <input class="inp grow" data-f="presuNueva" data-k="precio_tarifa" value="${esc(e.nueva.precio_tarifa)}" inputmode="decimal" placeholder="Precio por unidad">
       ${veMargenPresu(d.categoria) ? `<input class="inp" data-f="presuNueva" data-k="precio_coste" value="${esc(e.nueva.precio_coste || '')}" inputmode="decimal" placeholder="Coste" style="width:90px">` : ''}
     </div>
+    <div class="tiny" style="margin-top:8px">Lo que añadas aquí se guarda también en el catálogo propio, para encontrarlo la próxima vez desde «Añadir del catálogo».</div>
     <span class="tiny" data-a="presuLineaNueva" style="display:inline-block;margin-top:10px;cursor:pointer;text-decoration:underline">Quitar esta línea</span>
   </div>` : `<div class="dash" data-a="presuLineaNueva" style="margin-top:12px;display:block">+ Añadir una línea</div>`}
 

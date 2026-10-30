@@ -68,6 +68,82 @@ async function clienteDeColaborador(sb: any, yo: any, clienteId: string | null, 
 }
 const SOLO_SUS_CLIENTES = 'Como colaborador solo puedes trabajar con los clientes que te han asignado.';
 
+
+/* =============================================================================
+ * Catálogo propio desde las líneas (Enzo, 30-10-2026). Lo que se añade a mano a
+ * un presupuesto, y lo que viene en las ofertas hechas en Teamleader, se da de
+ * alta como producto en la tarifa «Catálogo propio» para encontrarlo la próxima
+ * vez desde «Añadir del catálogo». Sin duplicar: si ya hay un producto activo
+ * con ese nombre (o con ese id de producto de Teamleader) se usa ese. La línea
+ * no cambia de precio ni de texto: solo se apunta en origen_inputs qué
+ * referencia le corresponde, para no volver a mirarla.
+ * ========================================================================== */
+const FAMILIA_DE_TEXTO = (t: string) => {
+  const s = String(t || '').toLowerCase();
+  if (/mano de obra|montaje|instalaci[oó]n el[eé]ctrica|desplazamiento|puesta en marcha|\bhoras?\b|retirada|desmontaje|conexionado|limpieza/.test(s)) return 'mano_obra';
+  if (/legalizaci|tr[aá]mite|certificad|bolet[ií]n|registro|industria|licencia|gesti[oó]n|subvenci|memoria t|proyecto|ingenier|documentaci/.test(s)) return 'tramite';
+  if (/inversor|bater[ií]a|bomba de calor|aerotermia|panel|m[oó]dulo|cargador|split|acumulador|dep[oó]sito|unidad (interior|exterior)|termo|caldera|optimizador|microinversor|powerwall|sonnen|enphase|deye|huawei|fronius|midea|daikin|vaillant|wallbox|unistor|arotherm/.test(s)) return 'equipo';
+  return 'material';
+};
+// deno-lint-ignore no-explicit-any
+async function tarifaCatalogoPropio(sb: any): Promise<string | null> {
+  const { data: prov } = await sb.from('proveedores').select('id').ilike('nombre', 'Sysefen%').limit(1).maybeSingle();
+  if (!prov) return null;
+  const { data: tarifa } = await sb.from('tarifas').select('id').eq('proveedor_id', prov.id).eq('nombre', 'Catálogo propio').maybeSingle();
+  if (tarifa) return tarifa.id;
+  const r = await sb.from('tarifas').insert({ proveedor_id: prov.id, nombre: 'Catálogo propio', vigente_desde: new Date().toISOString().slice(0, 10) }).select('id').single();
+  return r.data?.id || null;
+}
+// deno-lint-ignore no-explicit-any
+async function catalogarLineas(sb: any, lineas: any[], origen: 'presupuesto' | 'teamleader'): Promise<number> {
+  let tarifaId: string | null | undefined;
+  let creados = 0;
+  const r2 = (n: number) => Math.round(n * 100) / 100;
+  for (const l of lineas || []) {
+    try {
+      const nombre = String(l.descripcion || '').replace(/\s+/g, ' ').trim().slice(0, 200);
+      if (nombre.length < 3 || /^l[ií]nea de la oferta$/i.test(nombre)) continue;
+      const oi = l.origen_inputs && typeof l.origen_inputs === 'object' && !Array.isArray(l.origen_inputs) ? l.origen_inputs : {};
+      if (oi.producto_catalogo) continue;
+      const tlId = oi.producto_tl ? String(oi.producto_tl) : null;
+      let ref: string | null = null;
+      if (tlId) {
+        const { data } = await sb.from('productos').select('referencia').eq('tl_producto_id', tlId).eq('activo', true).limit(1).maybeSingle();
+        if (data) ref = data.referencia;
+      }
+      if (!ref) {
+        const patron = nombre.replace(/[\\%_]/g, (c) => '\\' + c);
+        const { data } = await sb.from('productos').select('referencia').ilike('nombre', patron).eq('activo', true).limit(1).maybeSingle();
+        if (data) ref = data.referencia;
+      }
+      if (!ref) {
+        if (tarifaId === undefined) tarifaId = await tarifaCatalogoPropio(sb);
+        if (!tarifaId) return creados;
+        const venta = r2(Number(l.precio_tarifa) || Number(l.precio_venta) || 0);
+        if (!(venta > 0)) continue;
+        const costeBruto = l.precio_coste != null && Number(l.precio_coste) > 0 ? r2(Number(l.precio_coste)) : null;
+        const coste = costeBruto != null && costeBruto <= venta ? costeBruto : null;
+        const slug = nombre.normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().replace(/[^A-Z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 28);
+        const referencia = 'SY-' + slug + '-' + Math.random().toString(36).slice(2, 6).toUpperCase();
+        const fila = {
+          tarifa_id: tarifaId, referencia, nombre, familia: FAMILIA_DE_TEXTO(nombre), unidad: String(l.unidad || 'ud').slice(0, 12) || 'ud',
+          precio_tarifa: coste != null ? coste : venta, descuento_proveedor: 0, iva: Number(l.iva) > 0 ? Number(l.iva) : 21,
+          detalle_tecnico: l.detalle_tecnico ? String(l.detalle_tecnico).slice(0, 1000) : null, especificaciones: [],
+          atributos: Object.assign({ propio: true, origen }, coste != null ? {} : { sin_recargo: true }),
+          recargo: coste != null ? Math.round(venta / coste * 1e6) / 1e6 : null, aplica_cdc: false, activo: true,
+          tl_producto_id: tlId,
+        };
+        const { error } = await sb.from('productos').insert(fila);
+        if (error) continue;
+        ref = referencia; creados++;
+      }
+      if (l.id) await sb.from('presupuesto_lineas').update({ origen_inputs: Object.assign({}, oi, { producto_catalogo: ref }) }).eq('id', l.id);
+    } catch (_) { /* una línea que no se puede catalogar no para el resto */ }
+  }
+  return creados;
+}
+const COLS_CATALOGAR = 'id, descripcion, detalle_tecnico, unidad, precio_tarifa, precio_venta, precio_coste, iva, origen_inputs';
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
   if (req.method !== 'POST') return json({ error: 'Método no permitido.' }, 405);
@@ -151,7 +227,13 @@ Deno.serve(async (req) => {
       total_bruto: t.total_bruto, total_dto_linea: t.total_dto_linea,
       dto_global_pct: dto, total_venta: t.total, total_coste: coste.total, updated_at: new Date().toISOString(),
     }).eq('id', id);
-    return json({ ok: true, presupuesto_id: id, dto_global_pct: dto, totales: {
+    // Las líneas añadidas a mano pasan al catálogo propio (30-10-2026).
+    let catalogados = 0;
+    try {
+      const { data: sueltas } = await sb.from('presupuesto_lineas').select(COLS_CATALOGAR).eq('presupuesto_id', id).eq('origen', 'manual').is('producto_ref', null);
+      catalogados = await catalogarLineas(sb, sueltas || [], 'presupuesto');
+    } catch (_) { /* el catálogo no para el recálculo */ }
+    return json({ ok: true, presupuesto_id: id, dto_global_pct: dto, catalogados, totales: {
       bruto: t.total_bruto, dto_linea: t.total_dto_linea, subtotal: t.subtotal,
       dto_global: t.total_dto_global, total: t.total, coste: coste.total, lineas_sin_coste: coste.lineas_sin_coste },
       // Interno (1.4): lo que gana Sysefen y el descuento que aguanta. Nunca al cliente.
