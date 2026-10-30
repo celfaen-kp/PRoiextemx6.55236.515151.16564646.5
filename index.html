@@ -474,7 +474,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '30.4'; // versión visible de la app (única fuente)
+const APP_VERSION = '30.5'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -10264,7 +10264,7 @@ function vPresupuestoVer() {
   const lineas = d ? (d.lineas || []).slice().sort((a, b) => (a.orden || 0) - (b.orden || 0)) : [];
   const editando = !!V.presuEdit;
   return `<div class="hdr-dark">
-    ${volverHTML('<div class="back" data-a="ir" data-v="presupuestos">‹ Presupuestos</div>')}
+    <div class="row" style="justify-content:space-between;align-items:center">${volverHTML('<div class="back" data-a="ir" data-v="presupuestos">‹ Presupuestos</div>')}${abrirAparteIcono(true)}</div>
     <div style="font:600 27px/1.1 var(--cond)">${esc((d && (d.titulo || (d.cliente && d.cliente.nombre))) || 'Presupuesto')}</div>
     <div class="sub" style="color:rgba(255,255,255,.5);margin-top:6px">${d ? `<span data-a="presuCatAbrir" style="cursor:pointer;text-decoration:underline dotted;text-underline-offset:3px" title="Cambiar la categoría">${esc(nombreCat(d.categoria) || d.categoria)}</span> · ${fechaCorta(d.created_at)}` : v.cargando ? 'Cargando…' : ''}</div>
   </div>
@@ -12260,7 +12260,7 @@ function vClienteVer() {
   };
 
   return `<div class="hdr-dark">
-    <div class="volver" data-a="ag_volver" data-v="clientes">‹ Clientes</div>
+    <div class="row" style="justify-content:space-between;align-items:center"><div class="volver" data-a="ag_volver" data-v="clientes">‹ Clientes</div>${abrirAparteIcono(true)}</div>
     <div style="font:600 27px/1.1 var(--cond)">${esc(c.nombre)}</div>
     <div class="sub" style="color:rgba(255,255,255,.5);margin-top:6px">${esc([agTipoNombre(c), c.poblacion, c.telefono].filter(Boolean).join(' · '))}</div>
     <div style="margin-top:14px">${caminoHTML(c, true)}</div>
