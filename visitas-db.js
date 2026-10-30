@@ -553,6 +553,12 @@ export async function seguimientoPresupuesto(id, cambios) {
   return unwrap(await supabase.from('presupuestos').update(cambios).eq('id', id).select().single());
 }
 
+/** Cambia la categoría (solar, aerotermia…) de un presupuesto guardado; si está
+ * en Teamleader, la función mueve la oportunidad al embudo de la nueva. */
+export async function cambiarCategoriaPresupuesto(id, categoria) {
+  return invocar('teamleader-presupuesto', { accion: 'categoria', presupuesto_id: id, categoria });
+}
+
 /** Un presupuesto guardado, con sus líneas y sus incidencias. */
 export async function verPresupuesto(id) {
   return unwrap(

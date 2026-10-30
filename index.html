@@ -474,7 +474,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '30.1'; // versión visible de la app (única fuente)
+const APP_VERSION = '30.2'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -8885,6 +8885,50 @@ function presuCliListaHTML(s) {
     ${q.length >= 2 && !lista.length && !(s.crm || []).length ? '<div class="sub" style="padding:14px 4px">No está en la app. Pulsa CRM para buscarlo en Teamleader (también empresas).</div>' : ''}
     ${s.crm && !s.crm.length ? '<div class="sub" style="padding:6px 4px">En Teamleader tampoco aparece con ese texto.</div>' : ''}`;
 }
+/* Cambiar la categoría de un presupuesto guardado (Enzo, 30-10-2026): se toca la
+ * categoría en la cabecera de la ficha. Cambia la cabecera del PDF, los bloques
+ * en que se agrupan las líneas y, si ya está en Teamleader, la oportunidad se
+ * mueve al embudo de la categoría nueva (lo hace la función). Si el título
+ * lleva el nombre de la categoría vieja, se cambia por la nueva. */
+A.presuCatAbrir = () => {
+  const v = V.presuVer; if (!v || !v.datos) return;
+  V.sheet = { tipo: 'presuCategoria', id: v.datos.id, busy: false }; render();
+};
+A.presuCatDe = async (cat) => {
+  const s = V.sheet; const v = V.presuVer;
+  if (!s || s.tipo !== 'presuCategoria' || s.busy || !v || !v.datos || v.datos.id !== s.id) return;
+  const d = v.datos;
+  if (cat === d.categoria) { V.sheet = null; render(); return; }
+  if (!navigator.onLine) { avisar('Sin conexión.'); return; }
+  s.busy = true; render();
+  try {
+    const r = await visitasDB.cambiarCategoriaPresupuesto(d.id, cat);
+    const antes = nombreCat(d.categoria) || d.categoria;
+    d.categoria = cat;
+    // El título «Cliente · Aerotermia» pasa a «Cliente · Electricidad».
+    const reAnt = antes ? new RegExp(String(antes).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i') : null;
+    if (d.titulo && reAnt && reAnt.test(d.titulo)) {
+      const t = d.titulo.replace(reAnt, nombreCat(cat)).slice(0, 200);
+      try { Object.assign(d, await visitasDB.seguimientoPresupuesto(d.id, { titulo: t })); } catch (_) { /* el título es lo de menos */ }
+    }
+    anotar(d.cliente && d.cliente.id, 'presupuesto', 'Presupuesto cambiado de ' + antes + ' a ' + nombreCat(cat));
+    V.sheet = null; V.presuLista.cargado = false;
+    toast('Ahora es de ' + nombreCat(cat) + (r && r.movida ? '. En Teamleader, la oportunidad va al embudo «' + (r.embudo || '') + '».' : '.'));
+    if (r && r.aviso) avisar(r.aviso);
+    if (V.agenda.cargado) A.cargarAgenda();
+  } catch (e) { s.busy = false; avisar('No se pudo cambiar la categoría: ' + msgError(e)); }
+  render();
+};
+function presuCategoriaSheetHTML(s) {
+  const d = V.presuVer && V.presuVer.datos;
+  return `<div class="sheet"><div>
+    <div style="font:600 25px/1.15 var(--cond)">Categoría del presupuesto</div>
+    <div class="tiny" style="margin-top:6px">Cambia la cabecera del PDF y cómo se agrupan las líneas. Las líneas y los precios no se tocan. Si ya está en Teamleader, la oportunidad se mueve al embudo de la categoría nueva.</div>
+    <div class="lista-obras" style="margin-top:12px">${vSchemas.CATEGORIAS.map((c) => `<button class="fila-obra" data-a="presuCatDe" data-cat="${c.key}" ${s.busy ? 'disabled' : ''}>${esc(c.nombre)}${d && d.categoria === c.key ? '<small>✓ la de ahora</small>' : ''}</button>`).join('')}</div>
+    ${s.busy ? '<div class="sub" style="margin-top:8px;color:var(--verde-o)">Cambiando…</div>' : ''}
+    <button class="btn btn-gris" data-a="cerrarSheet" style="border-radius:99px;margin-top:14px">Cancelar</button>
+  </div></div>`;
+}
 function presuClienteSheetHTML(s) {
   return `<div class="sheet"><div>
     <div style="font:600 25px/1.15 var(--cond)">${s.modo === 'suelto' ? 'Para quién es el presupuesto' : s.modo === 'copia' ? 'Copiar el presupuesto para…' : 'Cliente del presupuesto'}</div>
@@ -10194,7 +10238,7 @@ function vPresupuestoVer() {
   return `<div class="hdr-dark">
     ${volverHTML('<div class="back" data-a="ir" data-v="presupuestos">‹ Presupuestos</div>')}
     <div style="font:600 27px/1.1 var(--cond)">${esc((d && (d.titulo || (d.cliente && d.cliente.nombre))) || 'Presupuesto')}</div>
-    <div class="sub" style="color:rgba(255,255,255,.5);margin-top:6px">${d ? esc(nombreCat(d.categoria) || d.categoria) + ' · ' + fechaCorta(d.created_at) : v.cargando ? 'Cargando…' : ''}</div>
+    <div class="sub" style="color:rgba(255,255,255,.5);margin-top:6px">${d ? `<span data-a="presuCatAbrir" style="cursor:pointer;text-decoration:underline dotted;text-underline-offset:3px" title="Cambiar la categoría">${esc(nombreCat(d.categoria) || d.categoria)}</span> · ${fechaCorta(d.created_at)}` : v.cargando ? 'Cargando…' : ''}</div>
   </div>
   <div class="scroll pad pb-nav">
     ${v.error ? `<div class="card" style="background:var(--rojo-cl)"><div class="sub" style="color:var(--rojo)">${esc(v.error)}</div></div>` : ''}
@@ -13061,6 +13105,7 @@ function sheet() {
   }
   if (s.tipo === 'fv2Desglose') return fv2DesgloseSheetHTML(s);
   if (s.tipo === 'presuCliente') return presuClienteSheetHTML(s);
+  if (s.tipo === 'presuCategoria') return presuCategoriaSheetHTML(s);
   if (s.tipo === 'presuProductoNuevo') {
     const v = s.v, num = (x) => Number(String(x == null ? '' : x).replace(',', '.'));
     const margen = String(v.coste).trim() !== '' && num(v.venta) > 0 ? Math.round((1 - num(v.coste) / num(v.venta)) * 1000) / 10 : '';
@@ -13548,6 +13593,8 @@ document.addEventListener('click', (e) => {
   if (a === 'presuCliBuscarCRM') return A.presuCliBuscarCRM();
   if (a === 'presuCliCRM') return A.presuCliCRM(d.tl, d.tipo);
   if (a === 'presuCliDe') return A.presuCliDe(d.id);
+  if (a === 'presuCatAbrir') return A.presuCatAbrir();
+  if (a === 'presuCatDe') return A.presuCatDe(d.cat);
   if (a === 'fv2DesgloseAplicar') return A.fv2DesgloseAplicar();
   if (a === 'presuProductoNuevoAbrir') return A.presuProductoNuevoAbrir();
   if (a === 'presuProductoNuevoFamilia') return A.presuProductoNuevoFamilia(d.f);

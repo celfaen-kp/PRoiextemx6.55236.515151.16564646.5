@@ -673,6 +673,38 @@ Deno.serve(async (req) => {
     catch (e) { return json({ error: (e as Error).message, sin_permiso: e instanceof SinPermiso }, e instanceof SinPermiso ? 409 : 502); }
   }
 
+  // --- desde la app: cambiar la categoría del presupuesto (30-10-2026) --------------
+  // Se cambia en la base de datos y, si ya está en Teamleader, la oportunidad se
+  // mueve a la primera fase del embudo de esa categoría. La oferta no cambia.
+  if (b.accion === 'categoria') {
+    const pid = esUuid(b.presupuesto_id) ? String(b.presupuesto_id) : '';
+    const cat = String(b.categoria || '');
+    if (!pid) return json({ error: 'Falta el presupuesto.' }, 400);
+    if (!CATEGORIAS_TITULO[cat]) return json({ error: 'Categoría desconocida.' }, 400);
+    const { data: p } = await sb.from('presupuestos').select('id, categoria, cliente_id, visita_id, tl_quotation_id').eq('id', pid).maybeSingle();
+    if (!p) return json({ error: 'Ese presupuesto no existe.' }, 404);
+    if (!(await clienteDeColaborador(sb, yo, p.cliente_id, p.visita_id))) return json({ error: SOLO_SUS_CLIENTES }, 403);
+    const { error } = await sb.from('presupuestos').update({ categoria: cat, updated_at: new Date().toISOString() }).eq('id', pid);
+    if (error) return json({ error: 'No se pudo cambiar: ' + error.message }, 500);
+    const r: Record<string, unknown> = { ok: true, categoria: cat, antes: p.categoria, movida: false };
+    try {
+      let dealId = '';
+      if (p.visita_id) { const { data: v } = await sb.from('visitas').select('tl_deal_id').eq('id', p.visita_id).maybeSingle(); dealId = limpio(v?.tl_deal_id); }
+      if (!dealId && p.tl_quotation_id) {
+        const token = await tokenValido(sb);
+        const info = await crm(token, 'quotations.info', { id: p.tl_quotation_id });
+        dealId = limpio(info?.data?.deal?.id);
+      }
+      if (dealId) {
+        const token = await tokenValido(sb);
+        const fase = await faseDeEmbudo(token, [cat]);
+        if (fase?.fase) { await crm(token, 'deals.move', { id: dealId, phase_id: fase.fase }); r.movida = true; r.embudo = fase.embudo; }
+        else r.aviso = fase?.embudo ? 'Se sabe el embudo «' + fase.embudo + '» pero no su primera fase: muévela a mano en Teamleader.' : 'No hay un embudo en Teamleader para esa categoría: la oportunidad se queda donde está.';
+      }
+    } catch (e) { r.aviso = 'La categoría está cambiada, pero la oportunidad no se pudo mover en Teamleader: ' + (e as Error).message; }
+    return json(r);
+  }
+
   // --- diagnóstico (Administración): qué ve la pasada general de un cliente ---------
   if (b.accion === 'diagnostico') {
     if (!['presupuestos', 'admin'].includes(String(yo.rol))) return json({ error: 'Solo presupuestos y Administración.' }, 403);
