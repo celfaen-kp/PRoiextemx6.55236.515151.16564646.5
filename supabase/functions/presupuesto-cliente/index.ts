@@ -239,8 +239,15 @@ Deno.serve(async (req) => {
         const cat = CAT_A_OBRA[String(p.categoria)] || null;
         // Si el cliente ya tiene una obra abierta, es la misma obra: el presupuesto
         // se enlaza a ella y el proyecto crece con su categoría (Enzo, 27-10-2026).
-        const { data: abierta } = p.cliente_id ? await sb.from('obras').select('id, numero, categorias').eq('cliente_id', p.cliente_id).in('estado', ['planificada', 'en_curso']).order('creado_en', { ascending: false }).limit(1).maybeSingle() : { data: null };
+        // También por el contacto de Teamleader (1-11-2026): las obras antiguas tienen
+        // tl_id pero no cliente_id, y se creaba una segunda obra (Heim: OB-020 y OB-026).
+        const filtros = [p.cliente_id ? 'cliente_id.eq.' + p.cliente_id : '', c.tl_id ? 'tl_id.eq.' + c.tl_id : ''].filter(Boolean);
+        const { data: abierta } = filtros.length ? await sb.from('obras').select('id, numero, categorias, cliente_id, email_cliente').or(filtros.join(',')).in('estado', ['planificada', 'en_curso']).order('creado_en', { ascending: false }).limit(1).maybeSingle() : { data: null };
         if (abierta) {
+          const arreglo: Record<string, unknown> = {};
+          if (!abierta.cliente_id && p.cliente_id) arreglo.cliente_id = p.cliente_id;
+          if (!abierta.email_cliente && c.email) arreglo.email_cliente = c.email;
+          if (Object.keys(arreglo).length) await sb.from('obras').update(arreglo).eq('id', abierta.id);
           const cats: string[] = Array.isArray(abierta.categorias) ? abierta.categorias.slice() : [];
           if (cat && !cats.includes(cat)) { cats.push(cat); await sb.from('obras').update({ categorias: cats }).eq('id', abierta.id); try { await sb.rpc('generar_fases_obra', { p_obra: abierta.id }); } catch (_) { /* sin fases */ } }
           await sb.from('presupuestos').update({ obra_id: abierta.id }).eq('id', p.id);

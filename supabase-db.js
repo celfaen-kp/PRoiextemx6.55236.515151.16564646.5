@@ -163,7 +163,7 @@ export async function guardarPlantillaFase(fila) {
   return unwrap(await supabase.from('fase_plantillas').upsert(fila).select().single());
 }
 
-export async function borrarObra(id) {
+export async function borrarObra(id, destinoId) {
   const cuenta = async (tabla) => {
     const r = await supabase.from(tabla).select('id', { count: 'exact', head: true }).eq('obra_id', id);
     if (r.error) throw r.error;
@@ -173,6 +173,13 @@ export async function borrarObra(id) {
   if (partes || fichajes || imputaciones) {
     const que = [partes && `${partes} parte${partes > 1 ? 's' : ''}`, fichajes && `${fichajes} fichaje${fichajes > 1 ? 's' : ''}`, imputaciones && `${imputaciones} hora${imputaciones > 1 ? 's' : ''} imputada${imputaciones > 1 ? 's' : ''}`].filter(Boolean).join(', ');
     const e = new Error('Esta obra tiene ' + que + '. Ciérrala en vez de borrarla.'); e.conActividad = true; throw e;
+  }
+  // Los presupuestos que estuvieran enlazados pasan a la otra obra abierta del
+  // cliente si la hay (1-11-2026: obra duplicada al aceptar un segundo
+  // presupuesto); si no, quedan sueltos (la clave foránea los deja a null).
+  if (destinoId) {
+    const m = await supabase.from('presupuestos').update({ obra_id: destinoId }).eq('obra_id', id).select('id');
+    if (m.error) throw m.error;
   }
   await supabase.from('obra_empleados').delete().eq('obra_id', id);
   const r = await supabase.from('obras').delete().eq('id', id).select('id');

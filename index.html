@@ -474,7 +474,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '30.5'; // versión visible de la app (única fuente)
+const APP_VERSION = '30.6'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -3324,16 +3324,21 @@ const obraTieneActividad = (id) => {
   const imp = S.imputaciones.filter((i) => i.categoria === 'obra' && i.obraId === id).length;
   return [partes && `${partes} parte${partes > 1 ? 's' : ''}`, fich && `${fich} fichaje${fich > 1 ? 's' : ''}`, imp && 'horas imputadas'].filter(Boolean).join(', ');
 };
-A.borrarObra = (id) => { const o = obraById(id); if (!o) return; V.sheet = { tipo: 'borrarObra', id, actividad: obraTieneActividad(id), busy: false }; render(); };
+A.borrarObra = (id) => {
+  const o = obraById(id); if (!o) return;
+  // Si el cliente tiene otra obra abierta, sus presupuestos pasan a ella al borrar (1-11-2026).
+  const destino = obraAbiertaDelCliente(o.clienteId, o.tlId, id);
+  V.sheet = { tipo: 'borrarObra', id, actividad: obraTieneActividad(id), destino: destino ? { id: destino.id, codigo: codigoObra(destino) || nombreObra(destino) } : null, busy: false }; render();
+};
 A.confirmarBorrarObra = async () => {
   const s = V.sheet; if (!s || s.tipo !== 'borrarObra' || s.busy) return;
   if (!navigator.onLine) { avisar('Sin conexión: no se ha borrado.'); return; }
   s.busy = true; render();
   try {
-    await Sysefen.db.borrarObra(s.id);
+    await Sysefen.db.borrarObra(s.id, s.destino ? s.destino.id : null);
     V.sheet = null; V.view = 'obras';
     await sincronizarObras(); render();
-    toast('Obra borrada.');
+    toast('Obra borrada.' + (s.destino ? ' Sus presupuestos pasan a ' + s.destino.codigo + '.' : ''));
   } catch (e) {
     V.sheet = null; render();
     avisar(e && e.conActividad ? e.message : 'No se pudo borrar: ' + (e && e.message ? e.message : 'error'));
@@ -10464,16 +10469,30 @@ A.presuMotivoRechazo = async (txt) => {
   try { Object.assign(d, await visitasDB.seguimientoPresupuesto(d.id, { motivo_rechazo: (txt || '').trim() || null })); } catch (_) { /* se reintenta al escribir más */ }
 };
 // La obra nace del presupuesto aceptado: cliente, dirección y categoría ya puestos.
+/** La obra abierta (planificada o en curso) de un cliente: por su id en la app o por su
+ *  contacto de Teamleader. La más reciente si hubiera varias; null si no tiene. */
+function obraAbiertaDelCliente(clienteId, tlId, salvoId) {
+  return (S.obras || [])
+    .filter((o) => o.id !== salvoId && (o.estado === 'planificada' || o.estado === 'en_curso') && ((clienteId && o.clienteId === clienteId) || (tlId && o.tlId === tlId)))
+    .sort((a, b) => String(b.creado_en || '').localeCompare(String(a.creado_en || '')))[0] || null;
+}
 /** La obra a partir de un presupuesto aceptado: cliente, dirección y categoría; el presupuesto queda enlazado. */
 async function crearObraDePresupuesto(d) {
   const cli = d.cliente || (d.cliente_id ? { id: d.cliente_id } : {});
   const cliFull = cli.id ? (agCliente(cli.id) || cli) : cli;
   // Un cliente, una obra (Enzo, 27-10-2026): si ya tiene una abierta, el
   // presupuesto se enlaza a ella y el proyecto crece con su categoría.
-  const abierta = cli.id ? (S.obras || []).filter((o) => o.clienteId === cli.id && (o.estado === 'planificada' || o.estado === 'en_curso')).sort((a, b) => String(b.creado_en || '').localeCompare(String(a.creado_en || '')))[0] : null;
+  // La obra abierta se busca por el cliente de la app y también por su contacto de
+  // Teamleader (1-11-2026): las obras antiguas tienen tl_id pero no cliente_id, y
+  // al aceptar un segundo presupuesto se creaba otra obra (Heim: OB-020 y OB-026).
+  const abierta = obraAbiertaDelCliente(cli.id, cliFull.tl_id);
   if (abierta) {
     const cat = CAT_A_OBRA[d.categoria] || null;
     const cats = (abierta.categorias || []).slice();
+    const arreglo = {};
+    if (!abierta.clienteId && cli.id && columnaObra('cliente_id')) arreglo.cliente_id = cli.id;
+    if (!abierta.email && cliFull.email) arreglo.email_cliente = cliFull.email;
+    if (Object.keys(arreglo).length) await Sysefen.db.actualizarObra(abierta.id, arreglo);
     if (cat && !cats.includes(cat)) { cats.push(cat); await Sysefen.db.actualizarObra(abierta.id, { categorias: cats }); await ajustarFasesAlCambiarCategorias(abierta.id, cats); }
     await Sysefen.db.enlazarPresupuesto(d.id, abierta.id);
     d.obra_id = abierta.id;
@@ -13274,6 +13293,7 @@ function sheet() {
              ${!obraCerrada(o) ? `<button class="btn btn-verde" data-a="cerrarObraYSalir" data-id="${s.id}" style="font-size:14px">Marcar como cerrada</button>` : ''}
            </div>`
         : `<div class="sub" style="margin-top:10px">No tiene partes, fichajes ni horas. Se borra del todo, con los empleados asignados. <b>No se puede deshacer.</b></div>
+           ${s.destino ? `<div class="sub" style="margin-top:8px">Los presupuestos que tenga enlazados pasan a <b>${esc(s.destino.codigo)}</b>, la obra abierta de este cliente: su importe se suma a lo presupuestado allí.</div>` : ''}
            ${(o.driveId || o.drive_id) ? '<div class="sub" style="margin-top:8px">La carpeta de Drive NO se borra: quítala tú desde Drive si quieres.</div>' : ''}
            <div class="row g8" style="margin-top:20px">
              <button class="btn btn-gris" data-a="cerrarSheet" style="border-radius:99px">Cancelar</button>
