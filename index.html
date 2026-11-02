@@ -474,7 +474,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '30.9'; // versión visible de la app (única fuente)
+const APP_VERSION = '31.0'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -4500,7 +4500,6 @@ function vLogin() {
         ${avatarHTML(u.id, `width:42px;height:42px;font-size:17px;${avc(u.rol)}`)}
         <div class="grow">
           <div style="font:600 17px/1.1 var(--sans);color:#fff">${esc(u.nombre)}</div>
-          <div style="font:400 12px/1 var(--mono);letter-spacing:.06em;text-transform:uppercase;color:rgba(255,255,255,.55);margin-top:5px">${rolNombre(u.rol)}</div>
         </div>
         <div style="font:400 20px/1 var(--sans);color:rgba(255,255,255,.45)">›</div>
       </div>`).join('')}
