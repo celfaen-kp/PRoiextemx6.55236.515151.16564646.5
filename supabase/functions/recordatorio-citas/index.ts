@@ -728,20 +728,51 @@ Deno.serve(async (req) => {
       } else if (!email) resultado.sin_correo.push(nombre);
     }
     if (!soloVer && vencen.length) await sb.from('presupuestos').update({ aviso_vencimiento_at: new Date().toISOString() }).in('id', vencen.map((p) => p.id));
-    // Resumen a presupuestos y Administración.
-    if (vencen.length && !soloVer) {
-      const { data: gente } = await sb.from('empleados').select('nombre, email_avisos, rol').in('rol', ['presupuestos', 'admin']).eq('activo', true);
-      const lineasTxt = vencen.map((p) => `· ${p.cliente?.nombre || 'Cliente'} — ${p.titulo || ''}${p.tl_numero ? ' (nº ' + p.tl_numero + ')' : ''} — ${eur(p.total_venta)} — vence el ${fechaLargaV(p.vence)}`
-        + (p.vence < hoyV ? ' — YA VENCIDO, sin aviso al cliente' : esEmail(p.cliente?.email) ? ' — cliente avisado por correo' : ' — SIN CORREO: avisar por teléfono' + (p.cliente?.telefono ? ' ' + p.cliente.telefono : ''))).join('\n');
+    // Resumen a presupuestos y Administración: una vez a la semana (Enzo, 2-11-2026),
+    // el primer día laborable, con lo que vence en los próximos siete días y lo que
+    // venció en los últimos catorce sin respuesta. Antes salía cada día que algo
+    // llegaba a su día de aviso. Al cliente se le sigue avisando cada día que toque.
+    const primerLaborableSemana = (() => {
+      if (!esLaborable(hoyV, festV)) return false;
+      const dow = new Date(hoyV + 'T12:00:00Z').getUTCDay();   // 1 = lunes
+      for (let i = 1; i < dow; i++) if (esLaborable(sumaDias(hoyV, -i), festV)) return false;
+      return true;
+    })();
+    const resumenSemanal: { toca: boolean; presupuestos: number; enviados: number } = { toca: primerLaborableSemana || b.forzar_resumen === true, presupuestos: 0, enviados: 0 };
+    if (resumenSemanal.toca && !soloVer) {
+      const { data: todos } = await sb.from('presupuestos')
+        .select('id, titulo, total_venta, enviado_cliente_at, validez_dias, prorroga_dias, tl_numero, aviso_vencimiento_at, cliente:clientes_cache(id, nombre, email, telefono)')
+        .not('enviado_cliente_at', 'is', null)
+        .or('respuesta_cliente.is.null,respuesta_cliente.eq.pendiente');
+      const desde = sumaDias(hoyV, -14), hasta = sumaDias(hoyV, 7);
       // deno-lint-ignore no-explicit-any
-      for (const g of (gente || []) as any[]) {
-        if (!esEmail(g.email_avisos)) continue;
-        try { await mandar(String(g.email_avisos).trim(), `Presupuestos que vencen: ${vencen.length}`, `Hola ${g.nombre},\n\nestos presupuestos vencen en los próximos dos días laborables, o ya vencieron sin respuesta:\n\n${lineasTxt}\n\nA los que vencen ahora y tienen correo ya se les ha avisado. La prórroga se da desde el presupuesto en la app: ${APP_URL}`,
-          `<div style="font-family:Arial,sans-serif;color:#14170f;max-width:600px;margin:0 auto;padding:24px"><img src="${LOGO_URL}" alt="Sysefen" style="height:40px;margin-bottom:18px"><p>Hola ${g.nombre},</p><p>estos presupuestos vencen en los próximos dos días laborables, o ya vencieron sin respuesta:</p><pre style="font:13px/1.5 Arial,sans-serif;white-space:pre-wrap">${lineasTxt.replace(/</g, '&lt;')}</pre><p>A los que vencen ahora y tienen correo ya se les ha avisado. La prórroga se da desde el presupuesto en <a href="${APP_URL}">la app</a>.</p></div>`); }
-        catch (e) { resultado.fallos.push('oficina ' + g.nombre + ': ' + (e as Error).message); }
+      const semana = ((todos || []) as any[])
+        .map((p) => Object.assign({}, p, { vence: sumaDias(fechaEnZona(new Date(p.enviado_cliente_at)), (Number(p.validez_dias) || 15) + (Number(p.prorroga_dias) || 0)) }))
+        .filter((p) => p.vence >= desde && p.vence <= hasta)
+        .sort((a, b2) => a.vence.localeCompare(b2.vence));
+      resumenSemanal.presupuestos = semana.length;
+      if (semana.length) {
+        const { data: gente } = await sb.from('empleados').select('nombre, email_avisos, rol').in('rol', ['presupuestos', 'admin']).eq('activo', true);
+        const diasTxt = (n: number) => (n === 1 ? '1 día' : n + ' días');
+        const diffDias = (a: string, b2: string) => Math.round((new Date(b2 + 'T12:00:00Z').getTime() - new Date(a + 'T12:00:00Z').getTime()) / 86400_000);
+        const lineasTxt = semana.map((p) => `· ${p.cliente?.nombre || 'Cliente'} — ${p.titulo || ''}${p.tl_numero ? ' (nº ' + p.tl_numero + ')' : ''} — ${eur(p.total_venta)} — `
+          + (p.vence < hoyV ? `VENCIDO hace ${diasTxt(diffDias(p.vence, hoyV))} (${fechaLargaV(p.vence)}), sin respuesta` : p.vence === hoyV ? 'vence HOY' : `vence el ${fechaLargaV(p.vence)}`)
+          + (p.aviso_vencimiento_at ? ' — cliente avisado por correo' : esEmail(p.cliente?.email) ? '' : ' — SIN CORREO: avisar por teléfono' + (p.cliente?.telefono ? ' ' + p.cliente.telefono : ''))).join('\n');
+        const vencidos = semana.filter((p) => p.vence < hoyV).length;
+        const asunto = `Presupuestos de la semana: ${semana.length - vencidos} por vencer` + (vencidos ? `, ${vencidos} vencido${vencidos > 1 ? 's' : ''} sin respuesta` : '');
+        const intro = 'este es el resumen semanal de presupuestos enviados sin respuesta: los que vencen en los próximos siete días y los vencidos en las últimas dos semanas.';
+        // deno-lint-ignore no-explicit-any
+        for (const g of (gente || []) as any[]) {
+          if (!esEmail(g.email_avisos)) continue;
+          try {
+            await mandar(String(g.email_avisos).trim(), asunto, `Hola ${g.nombre},\n\n${intro}\n\n${lineasTxt}\n\nA los clientes con correo se les avisa dos días laborables antes de vencer. La prórroga se da desde el presupuesto en la app: ${APP_URL}`,
+              `<div style="font-family:Arial,sans-serif;color:#14170f;max-width:600px;margin:0 auto;padding:24px"><img src="${LOGO_URL}" alt="Sysefen" style="height:40px;margin-bottom:18px"><p>Hola ${g.nombre},</p><p>${intro}</p><pre style="font:13px/1.5 Arial,sans-serif;white-space:pre-wrap">${lineasTxt.replace(/</g, '&lt;')}</pre><p>A los clientes con correo se les avisa dos días laborables antes de vencer. La prórroga se da desde el presupuesto en <a href="${APP_URL}">la app</a>.</p></div>`);
+            resumenSemanal.enviados++;
+          } catch (e) { resultado.fallos.push('oficina ' + g.nombre + ': ' + (e as Error).message); }
+        }
       }
     }
-    return json(Object.assign({ modo: 'vencimientos', dia: hoyV, vencen: vencen.length, detalle: vencen.map((p) => ({ titulo: p.titulo, vence: p.vence, aviso: p.aviso })) }, resultado));
+    return json(Object.assign({ modo: 'vencimientos', dia: hoyV, vencen: vencen.length, detalle: vencen.map((p) => ({ titulo: p.titulo, vence: p.vence, aviso: p.aviso })), resumen_semanal: resumenSemanal }, resultado));
   }
 
   if (b.resumen_dia === true) {

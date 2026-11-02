@@ -704,6 +704,117 @@ async function catalogarLineas(sb: any, lineas: any[], origen: 'presupuesto' | '
 }
 const COLS_CATALOGAR = 'id, descripcion, detalle_tecnico, unidad, precio_tarifa, precio_venta, precio_coste, iva, origen_inputs';
 
+// =============================================================================
+// Líneas de la app → renglones de la oferta de Teamleader (crear y actualizar).
+// Antes vivía dentro del manejador; sale aquí (2-11-2026) para que la
+// actualización de una oferta ya existente se pueda reintentar desde el cron.
+// =============================================================================
+// deno-lint-ignore no-explicit-any
+const ivaDe = (l: any) => Math.round(Number(l.iva == null ? 21 : l.iva) * 100) / 100;
+// deno-lint-ignore no-explicit-any
+function agruparLineas(lineas: any[]) {
+  // deno-lint-ignore no-explicit-any
+  const grupos: any[] = [];
+  lineas.forEach((l) => {
+    const t = limpio(l.seccion) || 'Presupuesto';
+    let g = grupos.find((x) => x.titulo === t);
+    if (!g) { g = { titulo: t, lineas: [] }; grupos.push(g); }
+    g.lineas.push(l);
+  });
+  return grupos;
+}
+// Los renglones de un grupo tal como los quiere Teamleader.
+// deno-lint-ignore no-explicit-any
+const itemsDe = (g: any, ivas: Record<number, string>) => g.lineas.map((l: any) => {
+  const cantidad = Number(l.cantidad) || 1;
+  const venta = Number(l.precio_venta) || 0;
+  // El precio unitario tiene que cuadrar con el total de la línea al
+  // céntimo. Si al repartirlo entre las unidades no cuadra (3 uds de algo
+  // acabado en un tercio), se manda como una sola unidad con su importe.
+  const unitario = dosDec(venta / cantidad);
+  const cuadra = Math.round(unitario * cantidad * 100) === Math.round(venta * 100);
+  // El coste va a Teamleader como precio de compra (Enzo, 26-10-2026): así
+  // la oferta enseña allí el margen. Por unidad, o total si va como una unidad.
+  const costeUd = l.precio_coste == null || l.precio_coste === '' ? null : Number(l.precio_coste);
+  const compra = costeUd == null || !Number.isFinite(costeUd) ? undefined
+    : { amount: dosDec(cuadra ? costeUd : costeUd * cantidad), currency: 'EUR' };
+  return {
+    purchase_price: compra,
+    quantity: cuadra ? cantidad : 1,
+    description: limpio(l.descripcion).slice(0, 255),
+    extended_description: limpio(l.detalle_tecnico) || undefined,
+    // `tax: excluding` es obligatorio: el precio va sin IVA y Teamleader
+    // lo suma con el tipo de tax_rate_id.
+    unit_price: { amount: cuadra ? unitario : dosDec(venta), tax: 'excluding' },
+    tax_rate_id: ivas[ivaDe(l)],
+  };
+});
+// deno-lint-ignore no-explicit-any
+const ivasPara = async (ivas: Record<number, string>, lineasIva: any[]) => {
+  const faltan = [...new Set(lineasIva.map(ivaDe))].filter((x) => !ivas[x]);
+  if (faltan.length) {
+    const hay = Object.keys(ivas).map((x) => x + ' %').join(', ') || 'ninguno';
+    throw new Error(`En Teamleader no hay un IVA del ${faltan.join(' % ni del ')} % en el departamento de la oportunidad (hay: ${hay}).`);
+  }
+};
+const COLS_LINEAS_TL = 'orden, seccion, descripcion, detalle_tecnico, cantidad, unidad, precio_tarifa, precio_venta, precio_coste, iva, producto_ref';
+
+/** La oferta ya existe en Teamleader y se ha editado en la app: se vuelcan allí las
+ *  líneas tal como están aquí, y el importe de la oportunidad. Si falla, el
+ *  presupuesto queda en sync_estado 'error' con «Actualizar: …» y el cron lo reintenta. */
+// deno-lint-ignore no-explicit-any
+async function actualizarOfertaEnTl(sb: any, id: string) {
+  const { data: p } = await sb.from('presupuestos').select('id, total_venta, dto_global_pct, tl_quotation_id').eq('id', id).maybeSingle();
+  if (!p) throw new Error('Ese presupuesto no existe.');
+  const yaOferta = limpio(p.tl_quotation_id);
+  if (!yaOferta) throw new Error('Ese presupuesto no está en Teamleader.');
+  const { data: lineas } = await sb.from('presupuesto_lineas').select(COLS_LINEAS_TL).eq('presupuesto_id', id).order('orden');
+  if (!lineas || !lineas.length) throw new Error('Ese presupuesto no tiene líneas.');
+  const grupos = agruparLineas(lineas);
+  try {
+    const token = await tokenValido(sb);
+    const info = await crm(token, 'quotations.info', { id: yaOferta });
+    const dealIdQ = limpio(info?.data?.deal?.id);
+    let departamentoId = '';
+    if (dealIdQ) { try { const d = await crm(token, 'deals.info', { id: dealIdQ }); departamentoId = limpio(d?.data?.department?.id); } catch (_) { /* sin departamento: todos los IVA */ } }
+    const ivas = await ivasDelDepartamento(token, departamentoId);
+    await ivasPara(ivas, lineas);
+    await crm(token, 'quotations.update', {
+      id: yaOferta, currency: { code: 'EUR', exchange_rate: 1 },
+      grouped_lines: grupos.map((g) => ({ section: { title: g.titulo }, line_items: itemsDe(g, ivas) })),
+      discounts: Number(p.dto_global_pct) > 0 ? [{ type: 'percentage', value: dosDec(Number(p.dto_global_pct)), description: 'Descuento' }] : [],
+    });
+    if (dealIdQ) { try { await crm(token, 'deals.update', { id: dealIdQ, estimated_value: { amount: dosDec(Number(p.total_venta) || 0), currency: 'EUR' } }); } catch (_) { /* el importe es lo de menos */ } }
+    // La fecha de la oferta tras nuestro cambio, para que la sincronización no lo traiga de vuelta.
+    let tlUpdated: string | null = null;
+    try { const info2 = await crm(token, 'quotations.info', { id: yaOferta }); tlUpdated = info2?.data?.updated_at ? new Date(info2.data.updated_at).toISOString() : null; } catch (_) { /* da igual */ }
+    await sb.from('presupuestos').update({ sync_estado: 'sincronizado', sync_error: null, sync_at: new Date().toISOString(), tl_updated_at: tlUpdated }).eq('id', id);
+    return { ok: true, actualizado: true, tl_quotation_id: yaOferta, lineas: lineas.length, total: p.total_venta };
+  } catch (e) {
+    await sb.from('presupuestos').update({ sync_estado: 'error', sync_error: 'Actualizar: ' + (e as Error).message, sync_at: new Date().toISOString() }).eq('id', id);
+    throw e;
+  }
+}
+
+/** Las actualizaciones que se quedaron en error se reintentan desde el cron (hasta
+ *  cinco por pasada, y solo las de hace más de dos minutos, por no pisar una que
+ *  esté en marcha desde la app). */
+// deno-lint-ignore no-explicit-any
+async function reintentarActualizaciones(sb: any) {
+  const hace2min = new Date(Date.now() - 120_000).toISOString();
+  const { data: ps } = await sb.from('presupuestos').select('id, titulo, sync_at')
+    .eq('sync_estado', 'error').like('sync_error', 'Actualizar:%').not('tl_quotation_id', 'is', null)
+    .or('sync_at.is.null,sync_at.lt.' + hace2min).order('sync_at', { ascending: true }).limit(5);
+  const r = { reintentadas: 0, bien: [] as string[], mal: [] as string[] };
+  // deno-lint-ignore no-explicit-any
+  for (const p of ((ps || []) as any[])) {
+    r.reintentadas++;
+    try { await actualizarOfertaEnTl(sb, p.id); r.bien.push(limpio(p.titulo).slice(0, 60) || p.id); }
+    catch (e) { r.mal.push((limpio(p.titulo).slice(0, 60) || p.id) + ': ' + (e as Error).message); }
+  }
+  return r;
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
   if (req.method !== 'POST') return json({ error: 'Método no permitido.' }, 405);
@@ -719,7 +830,14 @@ Deno.serve(async (req) => {
       try { return json(await aceptarEnTeamleader(sbCron, String(bc.presupuesto_id))); }
       catch (e) { return json({ error: (e as Error).message, sin_permiso: e instanceof SinPermiso }, e instanceof SinPermiso ? 409 : 502); }
     }
-    try { return json(Object.assign({ ok: true, cron: true }, await sincronizar(sbCron))); }
+    if (bc && bc.accion === 'reintentar_actualizaciones') return json(Object.assign({ ok: true, cron: true }, await reintentarActualizaciones(sbCron)));
+    try {
+      const r = await sincronizar(sbCron);
+      // Las ediciones de la app que no llegaron a Teamleader se reintentan en cada pasada (2-11-2026).
+      let reintentos = null;
+      try { reintentos = await reintentarActualizaciones(sbCron); } catch (e) { reintentos = { error: (e as Error).message }; }
+      return json(Object.assign({ ok: true, cron: true, reintentos }, r));
+    }
     catch (e) { return json({ error: (e as Error).message, sin_permiso: e instanceof SinPermiso }, e instanceof SinPermiso ? 409 : 502); }
   }
 
@@ -871,78 +989,15 @@ Deno.serve(async (req) => {
   }
 
   // --- las líneas, agrupadas por sección ---------------------------------------
-  // deno-lint-ignore no-explicit-any
-  const grupos: any[] = [];
-  lineas.forEach((l) => {
-    const t = limpio(l.seccion) || 'Presupuesto';
-    let g = grupos.find((x) => x.titulo === t);
-    if (!g) { g = { titulo: t, lineas: [] }; grupos.push(g); }
-    g.lineas.push(l);
-  });
+  const grupos = agruparLineas(lineas);
 
-  // deno-lint-ignore no-explicit-any
-  const ivaDe = (l: any) => Math.round(Number(l.iva == null ? 21 : l.iva) * 100) / 100;
   const iva = ivaDe(lineas[0]);
-  // Los renglones de un grupo tal como los quiere Teamleader (crear y actualizar).
-  // deno-lint-ignore no-explicit-any
-  const itemsDe = (g: any, ivas: Record<number, string>) => g.lineas.map((l: any) => {
-    const cantidad = Number(l.cantidad) || 1;
-    const venta = Number(l.precio_venta) || 0;
-    // El precio unitario tiene que cuadrar con el total de la línea al
-    // céntimo. Si al repartirlo entre las unidades no cuadra (3 uds de algo
-    // acabado en un tercio), se manda como una sola unidad con su importe.
-    const unitario = dosDec(venta / cantidad);
-    const cuadra = Math.round(unitario * cantidad * 100) === Math.round(venta * 100);
-    // El coste va a Teamleader como precio de compra (Enzo, 26-10-2026): así
-    // la oferta enseña allí el margen. Por unidad, o total si va como una unidad.
-    const costeUd = l.precio_coste == null || l.precio_coste === '' ? null : Number(l.precio_coste);
-    const compra = costeUd == null || !Number.isFinite(costeUd) ? undefined
-      : { amount: dosDec(cuadra ? costeUd : costeUd * cantidad), currency: 'EUR' };
-    return {
-      purchase_price: compra,
-      quantity: cuadra ? cantidad : 1,
-      description: limpio(l.descripcion).slice(0, 255),
-      extended_description: limpio(l.detalle_tecnico) || undefined,
-      // `tax: excluding` es obligatorio: el precio va sin IVA y Teamleader
-      // lo suma con el tipo de tax_rate_id.
-      unit_price: { amount: cuadra ? unitario : dosDec(venta), tax: 'excluding' },
-      tax_rate_id: ivas[ivaDe(l)],
-    };
-  });
-  // deno-lint-ignore no-explicit-any
-  const ivasPara = async (ivas: Record<number, string>, lineasIva: any[]) => {
-    const faltan = [...new Set(lineasIva.map(ivaDe))].filter((x) => !ivas[x]);
-    if (faltan.length) {
-      const hay = Object.keys(ivas).map((x) => x + ' %').join(', ') || 'ninguno';
-      throw new Error(`En Teamleader no hay un IVA del ${faltan.join(' % ni del ')} % en el departamento de la oportunidad (hay: ${hay}).`);
-    }
-  };
 
   // --- la oferta ya existe y se ha editado en la app: se actualiza allí (27-10-2026) ---
   if (yaOferta && b.actualizar === true) {
     if (soloVer) return json({ ok: true, actualizar: true, lineas: lineas.length, total: p.total_venta });
-    try {
-      const info = await crm(token, 'quotations.info', { id: yaOferta });
-      const dealIdQ = limpio(info?.data?.deal?.id);
-      let departamentoId = '';
-      if (dealIdQ) { try { const d = await crm(token, 'deals.info', { id: dealIdQ }); departamentoId = limpio(d?.data?.department?.id); } catch (_) { /* sin departamento: todos los IVA */ } }
-      const ivas = await ivasDelDepartamento(token, departamentoId);
-      await ivasPara(ivas, lineas);
-      await crm(token, 'quotations.update', {
-        id: yaOferta, currency: { code: 'EUR', exchange_rate: 1 },
-        grouped_lines: grupos.map((g) => ({ section: { title: g.titulo }, line_items: itemsDe(g, ivas) })),
-        discounts: Number(p.dto_global_pct) > 0 ? [{ type: 'percentage', value: dosDec(Number(p.dto_global_pct)), description: 'Descuento' }] : [],
-      });
-      if (dealIdQ) { try { await crm(token, 'deals.update', { id: dealIdQ, estimated_value: { amount: dosDec(Number(p.total_venta) || 0), currency: 'EUR' } }); } catch (_) { /* el importe es lo de menos */ } }
-      // La fecha de la oferta tras nuestro cambio, para que la sincronización no lo traiga de vuelta.
-      let tlUpdated: string | null = null;
-      try { const info2 = await crm(token, 'quotations.info', { id: yaOferta }); tlUpdated = info2?.data?.updated_at ? new Date(info2.data.updated_at).toISOString() : null; } catch (_) { /* da igual */ }
-      await sb.from('presupuestos').update({ sync_estado: 'sincronizado', sync_error: null, sync_at: new Date().toISOString(), tl_updated_at: tlUpdated }).eq('id', id);
-      return json({ ok: true, actualizado: true, tl_quotation_id: yaOferta, lineas: lineas.length, total: p.total_venta });
-    } catch (e) {
-      await sb.from('presupuestos').update({ sync_estado: 'error', sync_error: 'Actualizar: ' + (e as Error).message }).eq('id', id);
-      return json({ error: 'No se pudo actualizar la oferta en Teamleader: ' + (e as Error).message, sin_permiso: e instanceof SinPermiso }, e instanceof SinPermiso ? 409 : 502);
-    }
+    try { return json(await actualizarOfertaEnTl(sb, id)); }
+    catch (e) { return json({ error: 'No se pudo actualizar la oferta en Teamleader: ' + (e as Error).message, sin_permiso: e instanceof SinPermiso }, e instanceof SinPermiso ? 409 : 502); }
   }
 
   if (soloVer) {
