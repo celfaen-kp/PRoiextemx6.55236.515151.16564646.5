@@ -315,7 +315,7 @@ export const PROVEEDOR_FV = {
   'Microinversor Enphase IQ8P': 'BayWa', 'Enphase Q Cable 2,5 mm 1,7 m': 'BayWa', 'Enphase tapón final': 'BayWa',
   'Enphase conectores de campo (2 machos + 2 hembras)': 'BayWa', 'Medidor Fronius Smart Meter': 'BayWa',
   'Enphase IQ Gateway Metered (Envoy)': 'BayWa', 'Enphase CT': 'BayWa', 'Enphase Q-Relay': 'BayWa',
-  'Medidor para Deye (antivertido)': 'Rebacas',
+  'Medidor para Deye (antivertido)': 'BayWa',
   'Cable de datos UTP Cat5e + 2 RJ45': 'Massanella', 'Conectores RJ45': 'Massanella',
   'Perfil G1 4,8 m': 'Electromat', 'Unión de perfiles UG1': 'Electromat', 'Presor final': 'Electromat',
   'Presor intermedio': 'Electromat', 'Pincho VR para teja 250 mm': 'Electromat',
@@ -342,7 +342,7 @@ export function pedidoMaterial(r, modelo) {
   r.partidas.forEach((x) => {
     if (!BLOQUES_MATERIAL.includes(x.bloque) || x.cantidad <= 0) return;
     let nombre, quien;
-    if (x.partida === 'Inversor') { nombre = r.mod_inv; quien = r.entrada.sis === 'Fronius' ? 'BayWa' : 'Rebacas'; }
+    if (x.partida === 'Inversor') { nombre = r.mod_inv; quien = 'BayWa'; }   // Fronius y Deye se compran a BayWa (Enzo, 2-11-2026)
     else if (x.partida === 'Cuadro AC Solver' && r.cuadro_ac) { nombre = r.cuadro_ac.descripcion + ' · ref. Saltoki ' + r.cuadro_ac.codigo; quien = 'Saltoki'; }
     else if (x.partida.indexOf('Caja de superficie Famatel') === 0) { nombre = (caja.descripcion || x.partida) + (caja.codigo ? ' · ref. Saltoki ' + caja.codigo : ''); quien = 'Saltoki'; }
     else if (x.partida.indexOf('Cable solar H1Z2Z2-K') === 0) { nombre = x.partida; quien = 'Electromat'; }
