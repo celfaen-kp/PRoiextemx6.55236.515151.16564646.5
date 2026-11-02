@@ -474,7 +474,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '30.8'; // versión visible de la app (única fuente)
+const APP_VERSION = '30.9'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -10934,9 +10934,9 @@ function tableroHTML() {
   let lista = ag.clientes;
   if (q) lista = lista.filter((c) => clienteCasa(c, q));
   const cols = tableroColumnas(lista);   // todas las columnas, también vacías (16-10-2026)
-  const importe = (c) => { const p = presuQueManda(c); return p && p.total_venta != null ? eur(p.total_venta) : ''; };
+  const importe = (c) => { const i = importeCliente(c); return i ? eur(i.total) + (i.n > 1 ? ' <small style="opacity:.6">(' + i.n + ')</small>' : '') : ''; };
   return `<div class="tb-wrap"><div class="tb-cols">${cols.map((col) => `<div class="tb-col" data-col="${col.k}" style="--col:${col.color}">
-    <div class="tb-cab"><span class="tb-tit">${esc(col.titulo)} <span class="tb-n">${col.clientes.length}</span></span><span class="row" style="gap:6px;align-items:baseline"><span class="tiny">${(() => { const t = col.clientes.reduce((s, x) => { const p = presuQueManda(x.c); return s + (p && p.total_venta ? Number(p.total_venta) : 0); }, 0); return t ? eur(t) : ''; })()}</span><span class="tb-ord ${(ag.tbOrden || {})[col.k] ? 'on' : ''}" data-a="tbOrden" data-col="${col.k}" title="Ordenar la columna por fecha de ingreso (pulsa otra vez para invertir o volver al orden a mano)">${TB_ORDEN_TXT[(ag.tbOrden || {})[col.k]] || '⇅ Fecha'}</span></span></div>
+    <div class="tb-cab"><span class="tb-tit">${esc(col.titulo)} <span class="tb-n">${col.clientes.length}</span></span><span class="row" style="gap:6px;align-items:baseline"><span class="tiny">${(() => { const t = col.clientes.reduce((s, x) => { const i = importeCliente(x.c); return s + (i ? i.total : 0); }, 0); return t ? eur(t) : ''; })()}</span><span class="tb-ord ${(ag.tbOrden || {})[col.k] ? 'on' : ''}" data-a="tbOrden" data-col="${col.k}" title="Ordenar la columna por fecha de ingreso (pulsa otra vez para invertir o volver al orden a mano)">${TB_ORDEN_TXT[(ag.tbOrden || {})[col.k]] || '⇅ Fecha'}</span></span></div>
     ${col.clientes.map(({ c, e }) => { const un = ultimaNota(c); const vencida = c.proxima_accion_at && c.proxima_accion_at < hoy; return `<div class="tb-card ${c.id === V.agenda.ultimoCliente ? 'ultimo' : ''}" data-a="ag_abrirCliente" data-id="${c.id}" ${c.id === V.agenda.ultimoCliente ? 'data-ultimo="1"' : ''} draggable="true" data-cli="${c.id}" style="border-left-color:${e.color}">
       ${fechaIngreso(c) ? `<div class="ing" title="Fecha de ingreso${c.lead_at ? ' (formulario de la web)' : ' (alta en la app)'}">Ingreso ${esc(fechaCorta(fechaIngreso(c) + 'T12:00'))}</div>` : ''}
       <div class="row" style="justify-content:space-between;align-items:baseline;gap:8px"><div class="n">${esc(c.nombre)}</div>${importe(c) ? `<span class="num" style="font-size:13px;white-space:nowrap">${importe(c)}</span>` : ''}<span class="tb-mas" data-a="tbMoverAbrir" data-id="${c.id}" title="Mover a otra fase">⋯</span></div>
@@ -10977,6 +10977,14 @@ function presuQueManda(c) {
   const vivos = ps.filter((p) => !['rechazado', 'caducado'].includes(p.respuesta_cliente));
   const lista = vivos.length ? vivos : ps;
   return lista.slice().sort((a, b) => seguimientoPresu(b).paso - seguimientoPresu(a).paso || String(b.created_at).localeCompare(String(a.created_at)))[0];
+}
+// Importe del cliente en el tablero: la suma de TODOS sus presupuestos aceptados
+// (Heim tenía dos y solo salía uno; Enzo, 2-11-2026). Sin aceptados, el que manda.
+function importeCliente(c) {
+  const ac = presupuestosDeCliente(c).filter((p) => p.respuesta_cliente === 'aceptado' && p.total_venta != null);
+  if (ac.length) return { total: ac.reduce((s, p) => s + (Number(p.total_venta) || 0), 0), n: ac.length };
+  const p = presuQueManda(c);
+  return p && p.total_venta != null ? { total: Number(p.total_venta) || 0, n: 1 } : null;
 }
 /* ---------- el camino del cliente ----------
  * Siete pasos, siempre los mismos: contacto, cita, visita, presupuesto,
