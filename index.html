@@ -474,7 +474,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '31.0'; // versión visible de la app (única fuente)
+const APP_VERSION = '31.1'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -4485,7 +4485,11 @@ const SVG_HOJA = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" ar
 function vLogin() {
   const avc = (r) => r === 'jefe' ? 'background:var(--verde-c);color:#fff' : 'background:rgba(255,255,255,.18);color:#fff';
   // Administración fuera de la lista: se entra por la tuerca.
-  const gente = S.users.filter((u) => u.activo !== false && u.rol !== 'admin');
+  // Orden fijo (Enzo, 2-11-2026): jefes de obra arriba, luego operarios, al final
+  // presupuestos (y colaboradores); dentro de cada grupo, por nombre.
+  const ORDEN_ROL = { jefe: 0, operario: 1, presupuestos: 2, colaborador: 3 };
+  const gente = S.users.filter((u) => u.activo !== false && u.rol !== 'admin')
+    .sort((a, b) => ((ORDEN_ROL[a.rol] ?? 9) - (ORDEN_ROL[b.rol] ?? 9)) || String(a.nombre || '').localeCompare(String(b.nombre || ''), 'es'));
   return `<div class="scroll login-fondo" style="padding:calc(50px + var(--safe-t)) 22px calc(22px + var(--safe-b))">
     <div class="login-marca">
       <img src="logo-blanco.png?v=3" alt="Sysefen" style="width:230px;max-width:70%;display:block">
