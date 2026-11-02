@@ -474,7 +474,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '30.7'; // versión visible de la app (única fuente)
+const APP_VERSION = '30.8'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -4771,6 +4771,7 @@ function vObra() {
     </div>` : ''}
     ${proyectoHTML(o)}
     ${veCostes() ? economiaHTML(o) : ''}
+    ${puedeObras() ? listaCompraObraHTML(o) : ''}
     ${puedeCrear() || veCostes() ? docsObraHTML(o) : ''}
     <div class="lbl" style="font-weight:600;font-size:12px;color:var(--t2);margin:22px 0 10px">Partes de esta obra</div>
     ${partes.length ? partes.map(cardParte).join('') : '<div class="card"><div class="sub">Todavía no hay partes en esta obra.</div></div>'}
@@ -6177,6 +6178,7 @@ function vAjustes() {
     </div>` : ''}
 
     ${esAdmin() ? vCopiasSeguridad() : ''}
+    ${esAdmin() ? vListaCompraAjustes() : ''}
 
     <button class="btn btn-gris" data-a="instalar" style="margin-top:20px;border-radius:99px">Instalar en la pantalla de inicio</button>
     <div class="lbl" style="text-align:center;margin-top:18px">Versión ${APP_VERSION} · datos sincronizados</div>
@@ -10330,13 +10332,14 @@ function vPresupuestoVer() {
       ${d.motor_version === 'teamleader'
         ? (lineas.length
           ? `<div class="tiny" style="margin-top:12px">Hecho en Teamleader: las líneas son las de la oferta de allí. Lo que se cambie allí llega solo; lo que se cambie aquí con «Modificar» se actualiza allí.</div>
-      <div class="row g8" style="margin-top:14px"><button class="btn btn-gris" data-a="presuPdf" style="border-radius:99px">PDF</button><button class="btn btn-gris" data-a="presuPdfDescargar" style="border-radius:99px" ${V.presuVer.bajandoPdf ? 'disabled' : ''}>Descargar PDF</button><button class="btn btn-gris" data-a="presuEditar" style="border-radius:99px">Modificar</button>${abrirAparteBtn()}</div>`
+      <div class="row g8" style="margin-top:14px"><button class="btn btn-gris" data-a="presuPdf" style="border-radius:99px">PDF</button><button class="btn btn-gris" data-a="presuPdfDescargar" style="border-radius:99px" ${V.presuVer.bajandoPdf ? 'disabled' : ''}>Descargar PDF</button><button class="btn btn-gris" data-a="presuEditar" style="border-radius:99px">Modificar</button>${listaCompraBtn(d)}${abrirAparteBtn()}</div>`
           : '<div class="tiny" style="margin-top:12px">Hecho en Teamleader: las líneas aún no se han traído. Pulsa ↻ Actualizar desde Teamleader en Presupuestos.</div>')
         : `<div class="tiny" style="margin-top:12px">Calculado con las reglas ${esc(d.motor_version || '')}. Queda congelado con la tarifa de ese día.${d.tl_quotation_id ? ' Lo que se cambie en Teamleader llega solo cada cinco minutos; lo que se cambie aquí con «Modificar» se actualiza allí.' : ''}</div>
       <div class="row g8" style="margin-top:14px">
         <button class="btn btn-gris" data-a="presuPdf" style="border-radius:99px">PDF</button>
         <button class="btn btn-gris" data-a="presuPdfDescargar" style="border-radius:99px" ${V.presuVer.bajandoPdf ? 'disabled' : ''}>Descargar PDF</button>
         <button class="btn btn-gris" data-a="presuEditar" style="border-radius:99px">Modificar</button>
+        ${listaCompraBtn(d)}
         ${abrirAparteBtn()}
       </div>`}
       ${d.motor_version === 'teamleader' ? '' : d.tl_quotation_id
@@ -11343,6 +11346,84 @@ Object.assign(V, { crm: { cargado: false, busy: false, conectado: false, expira:
 /* --- Copias de seguridad a Drive (Ajustes, solo Administración) ---
    La función `copia-seguridad` trabaja por pasadas de ~70 s. Al pedir una copia
    a mano, la app la va continuando hasta que termina, mostrando el progreso. */
+/* --- Lista de compra de la obra (sql/etapa96, función lista-compra, V30.8) ---------------
+   Al aceptarse un presupuesto, la base avisa a la función, que junta todos los presupuestos
+   aceptados de la obra, genera el PDF (material por proveedor, pendiente, no se compra) y lo
+   manda a Ramón y Fabrizio. Desde aquí solo se ABRE (o se regenera): el correo no sale nunca
+   desde la app. En un presupuesto no aceptado, el botón enseña una simulación con él dentro. */
+Object.assign(V, { listaCompra: { busy: null, correos: null, correosTxt: null, correosBusy: false, error: null } });
+const puedeListaCompra = () => ['presupuestos', 'jefe', 'admin'].includes(rol());
+function listaCompraBtn(d) {
+  if (!puedeListaCompra() || !d) return '';
+  const ocupado = V.listaCompra.busy === d.id;
+  const aceptado = d.respuesta_cliente === 'aceptado';
+  return `<button class="btn ${aceptado ? 'btn-verde' : 'btn-gris'}" data-a="listaCompraVer" data-id="${d.id}" style="border-radius:99px" ${ocupado ? 'disabled' : ''} title="${aceptado ? 'Qué hay que pedir y a quién: todos los presupuestos aceptados de la obra' : 'Simulación: qué habría que pedir si lo aceptan (no se guarda ni se manda)'}">${ocupado ? 'Preparando…' : aceptado ? 'Ver lista de compra' : 'Lista de compra (si lo aceptan)'}</button>`;
+}
+function listaCompraObraHTML(o) {
+  const ocupado = V.listaCompra.busy === o.id;
+  return `<div class="lbl" style="font-weight:600;font-size:12px;color:var(--t2);margin:22px 0 10px">Lista de compra</div>
+    <div class="card">
+      <div class="sub" style="font-size:13px">Qué hay que pedir y a quién, sumando todos los presupuestos aceptados de esta obra. Se genera sola al aceptarse cada presupuesto y llega por correo a presupuestos; aquí se abre la última versión.</div>
+      ${V.listaCompra.error && V.listaCompra.errorDe === o.id ? `<div class="sub" style="font-size:12px;margin-top:8px;color:var(--rojo)">${esc(V.listaCompra.error)}</div>` : ''}
+      <div class="row g8" style="margin-top:12px">
+        <button class="pill grow" data-a="listaCompraObra" data-id="${o.id}" style="padding:11px;text-align:center;background:var(--tinta);color:#fff" ${ocupado ? 'disabled' : ''}>${ocupado ? 'Preparando…' : 'Ver lista de compra'}</button>
+        <button class="pill" data-a="listaCompraRegenerar" data-id="${o.id}" style="padding:11px 14px;flex:none" ${ocupado ? 'disabled' : ''} title="Vuelve a calcularla con los presupuestos tal y como están ahora (sin mandar correo)">Regenerar</button>
+      </div>
+    </div>`;
+}
+function vListaCompraAjustes() {
+  const lc = V.listaCompra;
+  if (lc.correos === null && !lc.correosBusy) A.listaCompraCorreosCargar();
+  return `<div class="lbl" style="font-weight:600;font-size:12px;color:var(--t2);margin:22px 0 10px">Lista de compra · destinatarios</div>
+    <div class="card">
+      <div class="sub" style="font-size:12px">A quién llega el correo con la lista de compra cada vez que un cliente acepta un presupuesto. Correos separados por comas. Al cliente y a los operarios no les llega nunca.</div>
+      <input class="inp" data-f="listaCompraCorreosTxt" value="${esc(lc.correosTxt != null ? lc.correosTxt : (lc.correos || []).join(', '))}" placeholder="${lc.correosBusy && lc.correos === null ? 'Cargando…' : 'ramon@…, fabrizio@…'}" style="margin-top:10px" ${lc.correosBusy ? 'disabled' : ''}>
+      ${lc.error && lc.errorDe === 'correos' ? `<div class="sub" style="font-size:12px;margin-top:8px;color:var(--rojo)">${esc(lc.error)}</div>` : ''}
+      <button class="pill" data-a="listaCompraCorreosGuardar" style="margin-top:10px;padding:11px 16px;background:var(--tinta);color:#fff" ${lc.correosBusy ? 'disabled' : ''}>Guardar</button>
+    </div>`;
+}
+// Abre el PDF en otra pestaña. La ventana se abre ANTES de esperar a la función, que si no el
+// navegador la bloquea como emergente; si aun así no se abre, se avisa con el enlace.
+async function listaCompraAbrir(claveBusy, cuerpo) {
+  if (V.listaCompra.busy) return;
+  V.listaCompra.busy = claveBusy; V.listaCompra.error = null; render();
+  const w = window.open('', '_blank');
+  if (w) { try { w.document.write('<title>Lista de compra</title><p style="font:15px system-ui;padding:30px;color:#555">Preparando la lista de compra…</p>'); } catch (_) { /* da igual */ } }
+  try {
+    const r = await visitasDB.listaCompra(cuerpo);
+    if (!r || !r.url) throw new Error('La función no devolvió el PDF.');
+    if (w) w.location.href = r.url; else window.open(r.url, '_blank', 'noopener');
+    toast(r.simulacion ? 'Simulación: así quedaría la lista si aceptan este presupuesto.' : r.reutilizada ? 'Lista de compra · versión ' + r.version : 'Lista de compra regenerada · versión ' + r.version);
+  } catch (e) {
+    if (w) { try { w.close(); } catch (_) { /* nada */ } }
+    V.listaCompra.error = msgError(e); V.listaCompra.errorDe = claveBusy;
+    avisar(/lista-compra/.test(msgError(e)) ? 'La función lista-compra no está desplegada todavía.' : 'No se pudo preparar la lista de compra: ' + msgError(e));
+  }
+  V.listaCompra.busy = null; render();
+}
+A.listaCompraVer = (id) => { const d = V.presuVer && V.presuVer.datos; const pid = id || (d && d.id); if (!pid || !puedeListaCompra()) return; listaCompraAbrir(pid, { accion: 'ver', presupuesto_id: pid }); };
+A.listaCompraObra = (id) => { if (!id || !puedeListaCompra()) return; listaCompraAbrir(id, { accion: 'ver', obra_id: id }); };
+A.listaCompraRegenerar = (id) => { if (!id || !puedeListaCompra()) return; listaCompraAbrir(id, { accion: 'regenerar', obra_id: id }); };
+A.listaCompraCorreosCargar = async () => {
+  if (!esAdmin() || V.listaCompra.correosBusy) return;
+  V.listaCompra.correosBusy = true;
+  try { const r = await visitasDB.listaCompra({ accion: 'destinatarios' }); V.listaCompra.correos = r.correos || []; }
+  catch (e) { V.listaCompra.correos = []; V.listaCompra.error = msgError(e); V.listaCompra.errorDe = 'correos'; }
+  V.listaCompra.correosBusy = false; render();
+};
+A.listaCompraCorreosTxt = (txt) => { V.listaCompra.correosTxt = txt; };
+A.listaCompraCorreosGuardar = async () => {
+  if (!esAdmin() || V.listaCompra.correosBusy) return;
+  const txt = V.listaCompra.correosTxt != null ? V.listaCompra.correosTxt : (V.listaCompra.correos || []).join(', ');
+  V.listaCompra.correosBusy = true; V.listaCompra.error = null; render();
+  try {
+    const r = await visitasDB.listaCompra({ accion: 'destinatarios', correos: txt });
+    V.listaCompra.correos = r.correos || []; V.listaCompra.correosTxt = null;
+    toast(V.listaCompra.correos.length ? 'Destinatarios guardados: ' + V.listaCompra.correos.join(', ') : 'Sin destinatarios válidos: el correo no se mandará a nadie.');
+  } catch (e) { V.listaCompra.error = msgError(e); V.listaCompra.errorDe = 'correos'; }
+  V.listaCompra.correosBusy = false; render();
+};
+
 Object.assign(V, { copias: { cargado: false, busy: false, enCurso: null, lista: [], error: null } });
 
 A.copiasEstado = async () => {
@@ -13963,6 +14044,13 @@ document.addEventListener('click', (e) => {
   if (a === 'importarConfirmar') return A.importarConfirmar();
   if (a === 'salir') return A.salir();
   if (a === 'instalar') return A.instalar();
+  // Copias de seguridad (V30.7; faltaba engancharlos) y lista de compra (V30.8).
+  if (a === 'copiasEstado') return A.copiasEstado();
+  if (a === 'copiaAhora') return A.copiaAhora();
+  if (a === 'listaCompraVer') return A.listaCompraVer(d.id);
+  if (a === 'listaCompraObra') return A.listaCompraObra(d.id);
+  if (a === 'listaCompraRegenerar') return A.listaCompraRegenerar(d.id);
+  if (a === 'listaCompraCorreosGuardar') return A.listaCompraCorreosGuardar();
 });
 // Arrastrar tarjetas del tablero de clientes de una columna a otra (ratón y
 // tableta con puntero; en el móvil está el «⋯» de la tarjeta).
@@ -14070,6 +14158,7 @@ document.addEventListener('input', (e) => {
   if (f.startsWith('vf')) return A.vf(f, t.dataset, t.value);
   if (f === 'presuTlNumero') { clearTimeout(presuTlNumT); presuTlNumT = setTimeout(() => A.presuTlNumero(t.value), 900); return; }
   if (f === 'presuMotivoRechazo') { clearTimeout(V._tRech); V._tRech = setTimeout(() => A.presuMotivoRechazo(t.value), 800); return; }
+  if (f === 'listaCompraCorreosTxt') return A.listaCompraCorreosTxt(t.value);   // sin repintar, para no perder el foco
   if (f === 'segTexto') { if (V.sheet) V.sheet.texto = t.value; return; }
   if (f === 'segFecha') { if (V.sheet) V.sheet.fecha = t.value; return; }
   if (f === 'segOtro') { if (V.sheet) V.sheet.otro = t.value; return; }

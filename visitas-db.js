@@ -740,6 +740,12 @@ export async function copiaSeguridad(accion) {
   return invocar('copia-seguridad', { accion: accion || 'estado' });
 }
 
+/** Lista de compra de la obra (sql/etapa96, V30.8). cuerpo: { accion: 'ver' | 'regenerar' | 'destinatarios', presupuesto_id | obra_id | correos }.
+ *  'ver' devuelve { url } del PDF (la última versión, o una nueva si los presupuestos cambiaron; simulación si el presupuesto no está aceptado). */
+export async function listaCompra(cuerpo) {
+  return invocar('lista-compra', cuerpo || { accion: 'ver' });
+}
+
 /** Devuelve la dirección a la que hay que ir para autorizar la integración. */
 export async function teamleaderIniciar() {
   return invocar('teamleader-oauth', { accion: 'iniciar' });
