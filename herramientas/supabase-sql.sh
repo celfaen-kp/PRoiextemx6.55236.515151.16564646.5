@@ -10,8 +10,10 @@ TOKEN_FILE="$HOME/.config/sysefen/supabase.token"
 [ -f "$TOKEN_FILE" ] || { echo "Falta $TOKEN_FILE (token personal de Supabase: Dashboard → Account → Access Tokens)"; exit 2; }
 [ -f "${1:-}" ] || { echo "Uso: $0 archivo.sql"; exit 2; }
 TOKEN=$(tr -d '\n' < "$TOKEN_FILE")
-# La API quiere el SQL dentro de un JSON: se escapa con python.
-BODY=$(python3 -c 'import json,sys; print(json.dumps({"query": open(sys.argv[1]).read()}))' "$1")
+# La API quiere el SQL dentro de un JSON: se escapa con python y se manda desde
+# un archivo (como argumento, un SQL de varios MB —una restauración— no cabe).
+python3 -c 'import json,sys; open("/tmp/sysefen-sql.body","w").write(json.dumps({"query": open(sys.argv[1]).read()}))' "$1"
 HTTP=$(curl -sS -o /tmp/sysefen-sql.out -w '%{http_code}' -X POST "https://api.supabase.com/v1/projects/$REF/database/query" \
-  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" --data-binary "$BODY")
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" --data-binary @/tmp/sysefen-sql.body)
+rm -f /tmp/sysefen-sql.body
 if [ "$HTTP" -ge 200 ] && [ "$HTTP" -lt 300 ]; then echo "OK ($HTTP) $1"; head -c 600 /tmp/sysefen-sql.out; echo; else echo "ERROR ($HTTP) $1"; cat /tmp/sysefen-sql.out; echo; exit 1; fi

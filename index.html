@@ -474,7 +474,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '30.6'; // versión visible de la app (única fuente)
+const APP_VERSION = '30.7'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -1381,7 +1381,7 @@ A.salir = () => {
   V.view = 'login'; render();
   sysAuth.logout().catch(() => {});
 };
-A.ir = (v) => { if (/^p[123]$/.test(V.view) && !/^p[123]$/.test(v)) limpiarBorradorParte(); V.volverPila = []; V.volverA = null; V.view = v; render(); if (v === 'legalizaciones') A.cargarLegalizaciones(); if (v === 'presupuestos') A.cargarPresupuestos(); if (v === 'visitas') A.cargarVisitas(); if (AG_VISTAS.includes(v)) A.cargarAgenda(); if (v === 'ajustes' && verCRM() && !V.crm.cargado) A.crmEstado(); if (['hoy', 'obras', 'obra', 'partes', 'horas'].includes(v)) refrescarDatos().then(render); };
+A.ir = (v) => { if (/^p[123]$/.test(V.view) && !/^p[123]$/.test(v)) limpiarBorradorParte(); V.volverPila = []; V.volverA = null; V.view = v; render(); if (v === 'legalizaciones') A.cargarLegalizaciones(); if (v === 'presupuestos') A.cargarPresupuestos(); if (v === 'visitas') A.cargarVisitas(); if (AG_VISTAS.includes(v)) A.cargarAgenda(); if (v === 'ajustes' && verCRM() && !V.crm.cargado) A.crmEstado(); if (v === 'ajustes' && esAdmin() && !V.copias.cargado) A.copiasEstado(); if (['hoy', 'obras', 'obra', 'partes', 'horas'].includes(v)) refrescarDatos().then(render); };
 A.verObra = (id) => {
   V.obraId = id; V.obraRango = 'total'; V.view = 'obra'; render();
   // El total de una obra se cuenta desde que se abrió, que puede ser de antes
@@ -6176,9 +6176,38 @@ function vAjustes() {
       ${esAdmin() && V.crm.conectado ? `<button class="pill ${V.crm.confirmar ? 'pill-rojo' : ''}" data-a="crmDesconectar" style="margin-top:8px;padding:11px;width:100%;text-align:center">${V.crm.confirmar ? '¿Seguro? Toca otra vez' : 'Desconectar'}</button>` : ''}
     </div>` : ''}
 
+    ${esAdmin() ? vCopiasSeguridad() : ''}
+
     <button class="btn btn-gris" data-a="instalar" style="margin-top:20px;border-radius:99px">Instalar en la pantalla de inicio</button>
     <div class="lbl" style="text-align:center;margin-top:18px">Versión ${APP_VERSION} · datos sincronizados</div>
   </div>`;
+}
+
+/* --- Copias de seguridad: última copia buena, la que esté en marcha y botón para hacer una --- */
+function vCopiasSeguridad() {
+  const c = V.copias;
+  const ok = (c.lista || []).find((x) => x.estado === 'ok');
+  const fallo = (c.lista || [])[0] && c.lista[0].estado === 'error' ? c.lista[0] : null;
+  const mb = (b) => (Number(b || 0) / 1048576).toFixed(1).replace('.', ',') + ' MB';
+  const cuando = (iso) => { if (!iso) return '—'; const d = new Date(iso); const p2 = (n) => String(n).padStart(2, '0'); return `${p2(d.getDate())}/${p2(d.getMonth() + 1)}/${d.getFullYear()} ${hhmm(iso)}`; };
+  const enCurso = c.enCurso;
+  const progreso = enCurso ? (enCurso.paso === 'tablas' || enCurso.paso === 'preparar'
+    ? `Tablas ${enCurso.tablas}/${enCurso.tablas_total || '…'}`
+    : enCurso.paso === 'archivos' ? `Tablas listas · archivos ${enCurso.archivos}/${enCurso.archivos_total}` : 'Retirando copias antiguas…') : '';
+  return `<div class="lbl" style="font-weight:600;font-size:12px;color:var(--t2);margin:22px 0 10px">Copias de seguridad</div>
+    <div class="card">
+      <div class="row g8"><span class="dot" style="width:8px;height:8px;background:${fallo ? 'var(--rojo)' : ok ? 'var(--verde)' : 'var(--ambar)'}"></span>
+      <span class="lbl">${c.busy && !enCurso ? 'Comprobando…' : ok ? 'Última copia: ' + cuando(ok.terminada_en) : c.cargado ? 'Todavía no hay ninguna copia' : '—'}</span></div>
+      ${ok ? `<div class="sub" style="font-size:12px;margin-top:8px">${ok.tablas} tablas con ${Number(ok.filas).toLocaleString('es-ES')} filas y ${ok.archivos} archivos (${mb(ok.bytes)}), en Drive → SYSEFEN DATA → 09-Copias de seguridad → ${esc(ok.nombre || '')}.</div>` : ''}
+      <div class="sub" style="font-size:12px;margin-top:8px">Cada domingo de madrugada se copia todo: clientes, presupuestos, obras, partes, fichajes, horas, catálogo… y los PDF y fotos. Se guardan las 8 últimas semanas y la primera copia de cada mes para siempre. Si una falla, llega un correo.</div>
+      ${enCurso ? `<div class="sub" style="font-size:12px;margin-top:8px;color:var(--tinta)">En marcha (${esc(enCurso.nombre || '')}): ${progreso}${c.busy ? '' : ' · se seguirá sola en la próxima pasada del cron'}</div>` : ''}
+      ${fallo ? `<div class="sub" style="font-size:12px;margin-top:8px;color:var(--rojo)">La copia ${esc(fallo.nombre || '')} falló: ${esc(fallo.error || '')}</div>` : ''}
+      ${c.error ? `<div class="sub" style="font-size:12px;margin-top:8px;color:var(--rojo)">${esc(c.error)}</div>` : ''}
+      <div class="row g8" style="margin-top:14px">
+        <button class="pill grow" data-a="copiasEstado" style="padding:11px;text-align:center" ${c.busy ? 'disabled' : ''}>Comprobar</button>
+        <button class="pill grow" data-a="copiaAhora" style="padding:11px;text-align:center;background:var(--tinta);color:#fff" ${c.busy ? 'disabled' : ''}>${c.busy && enCurso ? 'Copiando…' : enCurso ? 'Continuar la copia' : 'Hacer una copia ahora'}</button>
+      </div>
+    </div>`;
 }
 
 /* --- Importar registro de jornada: qué va a entrar, antes de escribir nada --- */
@@ -11310,6 +11339,41 @@ A.leadsBuscar = async () => {
 
 /* ---------- conectar la app con Teamleader (una sola vez) ---------- */
 Object.assign(V, { crm: { cargado: false, busy: false, conectado: false, expira: null, error: null, confirmar: false } });
+
+/* --- Copias de seguridad a Drive (Ajustes, solo Administración) ---
+   La función `copia-seguridad` trabaja por pasadas de ~70 s. Al pedir una copia
+   a mano, la app la va continuando hasta que termina, mostrando el progreso. */
+Object.assign(V, { copias: { cargado: false, busy: false, enCurso: null, lista: [], error: null } });
+
+A.copiasEstado = async () => {
+  if (!esAdmin() || V.copias.busy) return;
+  V.copias.busy = true; render();
+  try {
+    const r = await visitasDB.copiaSeguridad('estado');
+    V.copias = { ...V.copias, cargado: true, enCurso: r.en_curso || null, lista: r.copias || [], error: null };
+  } catch (e) { V.copias = { ...V.copias, cargado: true, error: msgError(e) }; }
+  V.copias.busy = false; render();
+};
+
+A.copiaAhora = async () => {
+  if (!esAdmin() || V.copias.busy) return;
+  if (!navigator.onLine) { avisar('Sin conexión.'); return; }
+  V.copias.busy = true; V.copias.error = null; render();
+  let accion = V.copias.enCurso ? 'continuar' : 'iniciar';
+  try {
+    for (let i = 0; i < 40; i++) {
+      const r = await visitasDB.copiaSeguridad(accion);
+      V.copias.enCurso = r.en_curso || null;
+      if (r.copia && r.copia.estado === 'ok') { V.copias.enCurso = null; break; }
+      if (!r.en_curso) break;
+      accion = 'continuar'; render();
+    }
+    const e = await visitasDB.copiaSeguridad('estado');
+    V.copias = { ...V.copias, cargado: true, enCurso: e.en_curso || null, lista: e.copias || [] };
+    if (!V.copias.enCurso) toast('Copia de seguridad guardada en Drive.');
+  } catch (e) { V.copias.error = msgError(e); }
+  V.copias.busy = false; render();
+};
 const verCRM = () => esAdmin() || rol() === 'presupuestos';
 
 A.crmEstado = async () => {

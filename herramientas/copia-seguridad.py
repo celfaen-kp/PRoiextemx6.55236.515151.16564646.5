@@ -1,6 +1,12 @@
 #!/usr/bin/env python3
 """
-Sysefen · Copia de seguridad de los datos
+Sysefen · Copia de seguridad de los datos (MANUAL, desde un ordenador)
+
+DESDE EL 2-11-2026 HAY COPIA AUTOMÁTICA: la Edge Function `copia-seguridad`
+deja cada domingo TODAS las tablas y los archivos de Storage en Drive
+(SYSEFEN DATA / 09-Copias de seguridad), y se restaura con
+herramientas/restaurar-copia.py. Este script queda como recurso de emergencia:
+copia solo 8 tablas y entra con el PIN de una persona.
 
 POR QUÉ EXISTE:
   El plan gratuito de Supabase no hace copias automáticas. Si alguien borra algo

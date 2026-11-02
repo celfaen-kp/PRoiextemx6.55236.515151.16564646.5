@@ -735,6 +735,11 @@ export async function teamleaderEstado() {
   return invocar('teamleader-oauth', { accion: 'estado' });
 }
 
+/** Copias de seguridad a Drive (solo Administración). accion: estado · iniciar · continuar. */
+export async function copiaSeguridad(accion) {
+  return invocar('copia-seguridad', { accion: accion || 'estado' });
+}
+
 /** Devuelve la dirección a la que hay que ir para autorizar la integración. */
 export async function teamleaderIniciar() {
   return invocar('teamleader-oauth', { accion: 'iniciar' });
