@@ -2769,7 +2769,7 @@ function escenaObraHTML(o, grande) {
   const onYa = fin && !(antes && !antes.fin);
   escenaMemo[o.id] = { x, fin };
   const texto = noche ? 'Obra finalizada: la casa ya funciona' : fin ? 'Instalado: la casa se enciende' : pct === 0 ? 'Material preparado en el almacén' : ESCENA_TEXTOS[cat] + ' · ' + pct + ' %';
-  // La tira de la tarjeta (V31.4): la mitad de alto que antes, sin cielo, y la
+  // La tira de la tarjeta (ajuste dentro de la 31.3): la mitad de alto que antes, sin cielo, y la
   // escena más pequeña en el centro (el suelo y la carretera se alargan a los lados).
   return `<svg class="eo${grande ? '' : ' eo-mini'}${onYa ? ' eo-on' : ''}${noche ? ' eo-noche' : ''}" viewBox="${grande ? '0 0 640 220' : '-160 62 960 124'}" role="img" aria-label="${esc(texto)}" data-eo-on="${fin ? 1 : 0}">
     <defs><radialGradient id="eoHalo" cx="50%" cy="50%" r="50%"><stop offset="0" stop-color="#f2c14e" stop-opacity=".55"/><stop offset="1" stop-color="#f2c14e" stop-opacity="0"/></radialGradient></defs>
