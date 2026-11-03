@@ -474,7 +474,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '31.1'; // versión visible de la app (única fuente)
+const APP_VERSION = '31.2'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -6973,7 +6973,11 @@ A.guardarVisita = async (completar, trasGuardar) => {
     toast(completar ? 'Visita cerrada. Ya se puede enviar a Teamleader.' : 'Guardada. La sigues cuando quieras.');
     if (completar) {
       A.cargarVisitas(); await A.verVisita(guardada.id);
-      graciasVisita(guardada.id);
+      // El correo de gracias ya no sale solo (Enzo, 3-11-2026): a veces se
+      // rellena la ficha sin haber ido de verdad y el cliente no debe recibir
+      // nada. Se pregunta, y si se dice que no queda el botón en la ficha.
+      V.sheet = { tipo: 'graciasPregunta', id: guardada.id, nombre: (cli && cli.nombre) || '', email: (cli && cli.email) || '' };
+      render();
       return subirVisitaDrive();
     }
     V.view = esPresupuestos() ? 'agenda' : 'visitas'; render(); A.cargarVisitas();
@@ -7292,6 +7296,8 @@ async function graciasVisita(id, otraVez) {
   render();
 }
 A.graciasVisita = () => { const vv = V.visitaVer; if (vv) graciasVisita(vv.visita.id, true); };
+A.graciasSi = () => { const s = V.sheet; if (!s || s.tipo !== 'graciasPregunta') return; V.sheet = null; graciasVisita(s.id); };
+A.graciasNo = () => { const s = V.sheet; if (!s || s.tipo !== 'graciasPregunta') return; V.sheet = null; V.okGracias = { estado: 'no' }; render(); };
 
 /* ---------- borrar una visita ----------
  * No estaba en la app: solo se podía llevar por delante borrando al cliente
@@ -7329,8 +7335,9 @@ function graciasHTML(v) {
       : g && g.estado === 'ya' ? '✓ Ya se le dio las gracias'
       : g && g.estado === 'nada' ? 'No se le ha escrito: ' + esc(g.motivo || 'sin email')
       : g && g.estado === 'error' ? 'No se pudo escribir al cliente: ' + esc(g.error || '')
+      : g && g.estado === 'no' ? 'No se le ha escrito: lo dejaste sin enviar al cerrar. Puedes mandarlo cuando quieras.'
       : enviado ? '✓ Se le dio las gracias al cliente'
-      : 'Al cerrar la visita se le dan las gracias al cliente. Ese correo no lleva ninguno de los datos que has tomado.'}</div>
+      : 'Al cerrar la visita se te pregunta si se le dan las gracias al cliente. Ese correo no lleva ninguno de los datos que has tomado.'}</div>
     ${!g || g.estado !== 'enviando' ? `<button class="pill" data-a="graciasVisita" style="margin-top:8px;padding:10px;width:100%;text-align:center;font-size:13px">${enviado ? 'Volver a enviarlo' : 'Enviar el correo de gracias'}</button>` : ''}
   </div>`;
 }
@@ -12800,6 +12807,17 @@ function sheet() {
       </div>
     </div></div>`;
   }
+  if (s.tipo === 'graciasPregunta') {
+    return `<div class="sheet"><div>
+      <div style="font:600 23px/1.15 var(--cond)">¿Le mandamos el correo de gracias${s.nombre ? ' a ' + esc(s.nombre) : ' al cliente'}?</div>
+      <div class="sub" style="margin-top:8px">${s.email ? 'Le llegaría a ' + esc(s.email) + '. ' : ''}Es el correo de «gracias por la visita»: no lleva ninguno de los datos que has tomado.</div>
+      <div class="sub" style="margin-top:10px;font-size:13px">Si has rellenado la ficha sin haber ido de verdad, di que no: el botón queda en la ficha por si lo quieres mandar luego.</div>
+      <div class="row g8" style="margin-top:18px">
+        <button class="btn btn-gris" data-a="graciasNo" style="border-radius:99px">No, esta vez no</button>
+        <button class="btn" data-a="graciasSi" style="font-size:14px">Sí, enviar</button>
+      </div>
+    </div></div>`;
+  }
   if (s.tipo === 'borrarVisita') {
     return `<div class="sheet"><div>
       <div style="font:600 23px/1.15 var(--cond)">¿Borrar la visita${s.codigo ? ' ' + esc(s.codigo) : ''}?</div>
@@ -13767,6 +13785,8 @@ document.addEventListener('click', (e) => {
   if (a === 'compartirVisita') return A.compartirVisita();
   if (a === 'visitaDrive') return A.visitaDrive();
   if (a === 'graciasVisita') return A.graciasVisita();
+  if (a === 'graciasSi') return A.graciasSi();
+  if (a === 'graciasNo') return A.graciasNo();
   if (a === 'presuCalcular') return A.presuCalcular(d.c);
   if (a === 'tlSincronizar') return A.tlSincronizar();
   if (a === 'volverA') return A.volverA();
