@@ -249,7 +249,7 @@ const SOLO_SUS_CLIENTES = 'Como colaborador solo puedes trabajar con los cliente
 // hace el cron cada cuarto de hora (sql/etapa78, cabecera x-clave).
 //
 //   · Una oferta de Teamleader no tiene estado «enviada» (sus estados son open,
-//     accepted, rejected, expired, closed): el envío se ve en la FASE de la
+//     accepted, refused/rejected, expired, closed): el envío se ve en la FASE de la
 //     oportunidad. Si la oportunidad ha pasado a una fase cuyo nombre encaja
 //     con FASE_ENVIADO (ajustes.tl_fase_enviado, o la expresión por defecto),
 //     el presupuesto pasa a «enviado al cliente» con la fecha de ese cambio.
@@ -540,7 +540,9 @@ async function sincronizar(sb: any, opciones: { cliente_id?: string } = {}) {
   // deno-lint-ignore no-explicit-any
   const respuestaDe = (q: any, d: any): [string | null, string | null] => {
     if (q?.status === 'accepted' || d?.status === 'won') return ['aceptado', d?.closed_at || q?.updated_at || ahora];
-    if (q?.status === 'rejected' || d?.status === 'lost') return ['rechazado', d?.closed_at || q?.updated_at || ahora];
+    // Teamleader dice «refused» (comprobado 3-11-2026 con la oferta de Heim),
+    // aunque su documentación hable de «rejected»: se aceptan las dos.
+    if (q?.status === 'rejected' || q?.status === 'refused' || d?.status === 'lost') return ['rechazado', d?.closed_at || q?.updated_at || ahora];
     if (q?.status === 'expired') return ['caducado', q?.updated_at || ahora];
     return [null, null];
   };
