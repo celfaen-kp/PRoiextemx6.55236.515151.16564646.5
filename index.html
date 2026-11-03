@@ -457,6 +457,7 @@ body.con-captcha #captcha{display:block}
    obra finalizada, se queda de noche. Solo se mueve cuando cambia el avance. */
 .eo{display:block;width:100%;height:auto;border-radius:10px;background:#e8eef3;transition:background .8s}
 .eo.eo-noche{background:#2a3647}
+.eo-mini .eo-sol,.eo-mini .eo-luna,.eo-mini .eo-estrella{display:none}
 .eo-carga{transition:transform .9s cubic-bezier(.4,0,.2,1)}
 .eo-ventana{fill:#9aa6b1;transition:fill .6s}
 .eo-noche .eo-ventana{fill:#5c6a7a}
@@ -505,7 +506,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '31.3'; // versión visible de la app (única fuente)
+const APP_VERSION = '31.4'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -2768,13 +2769,15 @@ function escenaObraHTML(o, grande) {
   const onYa = fin && !(antes && !antes.fin);
   escenaMemo[o.id] = { x, fin };
   const texto = noche ? 'Obra finalizada: la casa ya funciona' : fin ? 'Instalado: la casa se enciende' : pct === 0 ? 'Material preparado en el almacén' : ESCENA_TEXTOS[cat] + ' · ' + pct + ' %';
-  return `<svg class="eo${onYa ? ' eo-on' : ''}${noche ? ' eo-noche' : ''}" viewBox="${grande ? '0 0 640 220' : '0 20 640 160'}" role="img" aria-label="${esc(texto)}" data-eo-on="${fin ? 1 : 0}">
+  // La tira de la tarjeta (V31.4): la mitad de alto que antes, sin cielo, y la
+  // escena más pequeña en el centro (el suelo y la carretera se alargan a los lados).
+  return `<svg class="eo${grande ? '' : ' eo-mini'}${onYa ? ' eo-on' : ''}${noche ? ' eo-noche' : ''}" viewBox="${grande ? '0 0 640 220' : '-160 62 960 124'}" role="img" aria-label="${esc(texto)}" data-eo-on="${fin ? 1 : 0}">
     <defs><radialGradient id="eoHalo" cx="50%" cy="50%" r="50%"><stop offset="0" stop-color="#f2c14e" stop-opacity=".55"/><stop offset="1" stop-color="#f2c14e" stop-opacity="0"/></radialGradient></defs>
     <g class="eo-sol"><circle cx="560" cy="48" r="18" fill="#f2c14e"/><g class="eo-rayo" stroke="#f2c14e" stroke-width="3" stroke-linecap="round"><line x1="560" y1="18" x2="560" y2="10"/><line x1="560" y1="78" x2="560" y2="86"/><line x1="530" y1="48" x2="522" y2="48"/><line x1="590" y1="48" x2="598" y2="48"/><line x1="539" y1="27" x2="533" y2="21"/><line x1="581" y1="69" x2="587" y2="75"/><line x1="539" y1="69" x2="533" y2="75"/><line x1="581" y1="27" x2="587" y2="21"/></g></g>
     <g class="eo-luna"><circle cx="560" cy="48" r="16" fill="#e9e4cf"/><circle cx="567" cy="42" r="14" fill="#2a3647"/></g>
     <g class="eo-estrella" fill="#fff"><circle cx="90" cy="30" r="1.6"/><circle cx="180" cy="52" r="1.2"/><circle cx="300" cy="24" r="1.6"/><circle cx="420" cy="60" r="1.2"/><circle cx="480" cy="22" r="1.4"/><circle cx="250" cy="70" r="1"/></g>
-    <rect x="0" y="150" width="640" height="70" fill="#d9d6c8"/><rect x="0" y="158" width="640" height="26" fill="#5f6366"/>
-    <line x1="0" y1="171" x2="640" y2="171" stroke="#f1efe6" stroke-width="2" stroke-dasharray="14 12"/>
+    <rect x="-200" y="150" width="1040" height="70" fill="#d9d6c8"/><rect x="-200" y="158" width="1040" height="26" fill="#5f6366"/>
+    <line x1="-200" y1="171" x2="840" y2="171" stroke="#f1efe6" stroke-width="2" stroke-dasharray="14 12"/>
     <rect x="24" y="96" width="96" height="62" fill="#8f8a7b"/><polygon points="18,98 72,70 126,98" fill="#6e695c"/><rect x="58" y="120" width="30" height="38" fill="#4d4a42"/>
     <text x="72" y="112" text-anchor="middle" font-family="Barlow, sans-serif" font-size="11" font-weight="600" fill="#f1efe6">ALMACÉN</text>
     <circle class="eo-halo" cx="548" cy="118" r="80" fill="url(#eoHalo)"/>
