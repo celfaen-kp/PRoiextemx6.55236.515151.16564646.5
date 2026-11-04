@@ -102,21 +102,41 @@ export function calcularFV(entrada, modelo, opciones) {
   else n_pan = Math.max(P.min_pan, roundup(consumo * P.cobertura / P.prod_kwp * 1000 / P.wp));
   const kwp = rnd(n_pan * P.wp / 1000, 2);
   const prod = rnd(kwp * P.prod_kwp, 0);
-  const n_str = n_pan <= 10 ? 1 : 2;
   let inv = null;
+  let n_inv = 1;            // inversores iguales en paralelo (1 salvo instalaciones grandes)
+  let kw_mayor = 0;         // el inversor mayor del modelo para este sistema y suministro
+  const kw_nec = kwp / P.ratio;
   if (fv) {
-    const candidatos = (modelo.inversores || []).filter((i) => i.sistema === e.sis && i.suministro === e.sumi && i.usar && i.kw >= kwp / P.ratio);
-    candidatos.forEach((i) => { if (!inv || i.kw < inv.kw) inv = i; });
+    const lista = (modelo.inversores || []).filter((i) => i.sistema === e.sis && i.suministro === e.sumi && i.usar);
+    lista.forEach((i) => { if (i.kw > kw_mayor) kw_mayor = i.kw; });
+    lista.filter((i) => i.kw >= kw_nec).forEach((i) => { if (!inv || i.kw < inv.kw) inv = i; });
     // Elegido a mano desde el presupuesto (Enzo, 21-10-2026): manda sobre el automático.
     if (e.inv_modelo) {
       const forzado = (modelo.inversores || []).find((i) => i.modelo === e.inv_modelo && i.sistema === e.sis);
       if (forzado) inv = forzado;
     }
+    // Más potencia que el inversor mayor del modelo (Enzo, 4-11-2026: 40 paneles,
+    // 20,4 kWp): en trifásico se ponen varios inversores iguales en paralelo, los
+    // menos posibles y el modelo más pequeño que entre todos cubra la potencia
+    // (2 × 10 kW antes que 2 × 12). En monofásico sigue siendo A MEDIDA: esa
+    // potencia no va en monofásico.
+    if (!inv && !e.inv_modelo && e.sumi === 'Trifásico' && kw_mayor > 0) {
+      n_inv = roundup(kw_nec / kw_mayor);
+      lista.filter((i) => i.kw * n_inv >= kw_nec).forEach((i) => { if (!inv || i.kw < inv.kw) inv = i; });
+    }
   }
-  const kw_inv = enp ? 0 : (inv ? inv.kw : null);          // null = A MEDIDA
+  // Strings: 1 hasta 10 paneles, 2 por inversor a partir de ahí.
+  const n_str = n_pan <= 10 ? 1 : 2 * n_inv;
+  const kw_inv = enp ? 0 : (inv ? rnd(inv.kw * n_inv, 2) : null);          // null = A MEDIDA (potencia total)
   const mod_inv = enp ? 'Microinversores Enphase IQ8P (uno por panel)' : (inv ? inv.modelo : 'A MEDIDA');
+  const txt_inv = n_inv > 1 ? n_inv + ' × ' + mod_inv : mod_inv;
   let coste_inv = 0;
   if (inv) coste_inv = inv.proveedor === 'BayWa' ? baywa(inv.coste_base) : rebacas(inv.coste_base);
+  const av_inv = (fv && kw_inv === null)
+    ? (e.sumi === 'Monofásico' && kw_mayor > 0 && kw_nec > kw_mayor
+      ? 'Inversor A MEDIDA: ' + fixed(kwp, 2) + ' kWp piden ' + fixed(kw_nec, 1) + ' kW y el inversor monofásico mayor del modelo es de ' + g(kw_mayor) + ' kW. Pasar a trifásico o a Ramón'
+      : 'Inversor A MEDIDA: no hay modelo tipo para esta potencia')
+    : '';
   const filas = Math.max(1, num(e.filas) || 1);
   const pan_fila = roundup(n_pan / filas);
   const largo_fila = pan_fila * (e.orient === 'Horizontal' ? P.largo_pan : P.ancho_pan) + 0.1;
@@ -125,7 +145,12 @@ export function calcularFV(entrada, modelo, opciones) {
   // Con batería, un día más de las dos personas (Enzo, 26-10-2026): se cobra a
   // P.venta_jornada_bateria (450 €) aparte de la tabla €/W.
   const jornadaBateria = op.jornadaBateria ? 1 : 0;
-  const jornadas = (n_pan <= 12 ? 2 : (n_pan <= 22 ? 3 : 4)) + jornadaBateria;
+  // Jornadas de las dos personas: 2 hasta 12 paneles, 3 hasta 22 (validado por
+  // Ramón) y, por encima, una más por cada 8 paneles extra (Enzo, 4-11-2026):
+  // 23-30 → 4, 31-38 → 5, 39-46 → 6… Antes de 22 paneles en adelante eran 4 fijas.
+  const pan_jornada_extra = num(P.paneles_por_jornada_extra) || 8;
+  const jornadas_extra = n_pan > P.max_pan ? roundup((n_pan - P.max_pan) / pan_jornada_extra) : 0;
+  const jornadas = (n_pan <= 12 ? 2 : 3) + jornadas_extra + jornadaBateria;
   const jornada = P.horas_jornada * (P.eur_h_oficial + P.eur_h_peon);
   const teja = e.cubierta === 'Teja' ? 1 : 0;
   const plana = e.cubierta === 'Plana' ? 1 : 0;
@@ -155,7 +180,7 @@ export function calcularFV(entrada, modelo, opciones) {
   // ---------- partidas: [bloque, partida, ud, cantidad, coste_ud, texto para el cliente, aviso]
   const L = [
     ['MÓDULOS FOTOVOLTAICOS', 'Panel Trina Vertex S+ 510 Wp', 'ud', n_pan, P.coste_panel, n_pan + ' módulos Trina Vertex S+ 510 Wp (' + fixed(kwp, 2) + ' kWp)', ''],
-    ['INVERSOR', 'Inversor', 'ud', fv * invAqui, coste_inv, mod_inv, (fv && kw_inv === null) ? 'Inversor A MEDIDA: no hay modelo tipo para esta potencia' : ''],
+    ['INVERSOR', 'Inversor', 'ud', fv * invAqui * n_inv, coste_inv, txt_inv, av_inv],
     ['INVERSOR', 'Microinversor Enphase IQ8P', 'ud', enp * n_pan, baywa(PR.enphase_iq8p.coste), 'Microinversores Enphase IQ8P, uno por panel (' + n_pan + ')', ''],
     ['INVERSOR', 'Enphase Q Cable 2,5 mm 1,7 m', 'ud', enp * n_pan, baywa(mt('enphase_qcable')), 'Cableado de bus Enphase Q Cable', ''],
     ['INVERSOR', 'Enphase tapón final', 'ud', enp, baywa(mt('enphase_tapon')), '', ''],
@@ -192,7 +217,7 @@ export function calcularFV(entrada, modelo, opciones) {
     ['MATERIAL ELÉCTRICO', 'Racores M25', 'ud', 4, PR.racor_m25.coste, '', ''],
     ['MATERIAL ELÉCTRICO', 'Cuadro CC Solver 1 string', 'ud', fv * (n_str === 1 ? 1 : 0), PR.cuadro_cc_1string.coste,
       fv ? 'Cuadro de protecciones de continua (fusibles y sobretensiones)' : '', ''],
-    ['MATERIAL ELÉCTRICO', 'Cuadro CC Solver 2 strings', 'ud', fv * (n_str === 2 ? 1 : 0), PR.cuadro_cc_2strings.coste,
+    ['MATERIAL ELÉCTRICO', 'Cuadro CC Solver 2 strings', 'ud', fv * (n_str >= 2 ? n_str / 2 : 0), PR.cuadro_cc_2strings.coste,
       fv ? 'Cuadro de protecciones de continua (fusibles y sobretensiones)' : '', ''],
     ['MATERIAL ELÉCTRICO', 'Cuadro AC Solver', 'ud', fv, c_ac,
       fv ? 'Cuadro de protecciones de alterna (magnetotérmico, diferencial y sobretensiones)' : '', av_ac],
@@ -238,7 +263,10 @@ export function calcularFV(entrada, modelo, opciones) {
   const tramosMO = Array.isArray(P.mo_venta_tramos) ? P.mo_venta_tramos : null;
   const tramoMO = tramosMO ? (tramosMO.find((t) => t.hasta_kwp == null || kwp <= num(t.hasta_kwp)) || tramosMO[tramosMO.length - 1]) : null;
   const venta_jornada_bat = jornadaBateria ? num(P.venta_jornada_bateria) || 450 : 0;
-  const venta_mo = tramoMO ? rnd(kwp * 1000 * num(tramoMO.eur_w) + venta_jornada_bat, 2) : 0;
+  // Las jornadas extra de más de 22 paneles se cobran como la de la batería:
+  // 450 € el día de las dos personas (P.venta_jornada_extra si el modelo lo trae).
+  const venta_jornadas_extra = jornadas_extra * (num(P.venta_jornada_extra) || num(P.venta_jornada_bateria) || 450);
+  const venta_mo = tramoMO ? rnd(kwp * 1000 * num(tramoMO.eur_w) + venta_jornada_bat + venta_jornadas_extra, 2) : 0;
   const redondeaArriba = (n) => Math.ceil(Number((n / P.redondeo).toFixed(9))) * P.redondeo;
   const precio_obj = bloqueo ? 0 : (tramoMO ? redondeaArriba((coste_total - coste_mo) / (1 - P.margen_obj)) + venta_mo : redondeaArriba(coste_total / (1 - P.margen_obj)));
   const horas_elev = Math.max(num(e.horas_elev), plana * P.horas_elev_plana);   // en cubierta plana, siempre elevador
@@ -252,7 +280,8 @@ export function calcularFV(entrada, modelo, opciones) {
 
   let avisos = [];
   if (bloqueo) avisos.push('CASO A MEDIDA: el presupuestador no da precio. Pasar a Ramón');
-  if (n_pan > P.max_pan) avisos.push('Más de ' + P.max_pan + ' paneles: revisar jornadas y estructura');
+  if (n_pan > P.max_pan) avisos.push('Más de ' + P.max_pan + ' paneles: ' + jornadas_extra + (jornadas_extra === 1 ? ' jornada más' : ' jornadas más') + ' de las dos personas (una por cada ' + pan_jornada_extra + ' paneles extra' + (tramoMO ? ', cobradas a ' + g(venta_jornadas_extra / jornadas_extra) + ' € cada una' : '') + '). Revisar estructura y medios de elevación');
+  if (n_inv > 1) avisos.push(n_inv + ' inversores ' + mod_inv + ' en paralelo (' + g(kw_inv) + ' kW): revisar con Ramón el reparto de strings y el cuadro AC');
   if (fv && e.inv_modelo && inv && inv.modelo === e.inv_modelo && inv.kw < kwp / P.ratio) avisos.push('Inversor elegido a mano (' + inv.modelo + ', ' + g(inv.kw) + ' kW) por debajo del ratio ' + g(P.ratio) + ' para ' + fixed(kwp, 2) + ' kWp: revisar.');
   if (fv && e.inv_modelo && (!inv || inv.modelo !== e.inv_modelo)) avisos.push('El inversor «' + e.inv_modelo + '» no está en el modelo para este sistema: se usa el automático.');
   if (!num(e.factura_exacta) && !num(e.consumo_real) && !num(e.paneles_forzado) && e.factura_rango === 'No lo sé') {
@@ -263,10 +292,10 @@ export function calcularFV(entrada, modelo, opciones) {
   avisos = avisos.filter((a, i) => avisos.indexOf(a) === i);
 
   return {
-    entrada: e, factura, consumo, n_pan, kwp, prod, n_str, kw_inv, mod_inv, coste_inv, cuadro_ac, jornadas, jornada, bloqueo,
+    entrada: e, factura, consumo, n_pan, kwp, prod, n_str, kw_inv, mod_inv, n_inv, txt_inv, coste_inv, cuadro_ac, jornadas, jornadas_extra, jornada, bloqueo,
     partidas, coste_total: rnd(coste_total, 2), precio_objetivo: precio_obj, elevador: elev, horas_elev, pvp_antes, dto_eur,
     pvp_final: rnd(pvp_final, 2), iva_eur, pvp_iva: rnd(pvp_iva, 2), margen_real, avisos,
-    mo_tabla: tramoMO ? { eur_w: num(tramoMO.eur_w), venta_mo, coste_mo: rnd(coste_mo, 2), jornada_bateria: jornadaBateria ? venta_jornada_bat : 0 } : null,
+    mo_tabla: tramoMO ? { eur_w: num(tramoMO.eur_w), venta_mo, coste_mo: rnd(coste_mo, 2), jornada_bateria: jornadaBateria ? venta_jornada_bat : 0, jornadas_extra, venta_jornadas_extra } : null,
     pvp_elev: P.pvp_elev,
     cable_cc: cableCC,
   };
@@ -463,7 +492,7 @@ export function lineasPresupuesto(r, modelo, extra) {
     origen_inputs: {
       fv2: true, modelo: ex.modelo_version || null,
       entrada: r.entrada,
-      dimensionado: { factura: r.factura, consumo: r.consumo, n_pan: r.n_pan, kwp: r.kwp, prod: r.prod, n_str: r.n_str, kw_inv: r.kw_inv, mod_inv: r.mod_inv,
+      dimensionado: { factura: r.factura, consumo: r.consumo, n_pan: r.n_pan, kwp: r.kwp, prod: r.prod, n_str: r.n_str, kw_inv: r.kw_inv, mod_inv: r.txt_inv || r.mod_inv, n_inv: r.n_inv || 1,
         cuadro_ac: r.cuadro_ac ? r.cuadro_ac.descripcion : null, jornadas: r.jornadas,
         cable_cc: r.cable_cc ? { seccion: r.cable_cc.seccion, calculo: r.cable_cc.calculo, tabla: r.cable_cc.tabla } : null },
       desglose,

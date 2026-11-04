@@ -134,3 +134,26 @@ comprueba('sin tramos en el modelo, todo sigue al margen (como el Excel)', rSin.
 var rBat = calcularFV(e10, modeloMO, { jornadaBateria: true });
 igual('con batería: una jornada más de coste', rBat.jornadas, rCon.jornadas + 1);
 igual('y 450 € más de venta de mano de obra', rBat.mo_tabla.venta_mo, rCon.mo_tabla.venta_mo + 450);
+
+titulo('instalaciones grandes (Enzo, 4-11-2026: 40 paneles)');
+var e40 = Object.assign({}, e10, { paneles_forzado: 40, sumi: 'Trifásico', filas: 4 });
+var r40 = calcularFV(e40, modeloMO);
+igual('40 paneles: no es A MEDIDA', r40.bloqueo, 0);
+igual('20,4 kWp ÷ 1,125 = 18,1 kW: 2 inversores en paralelo', r40.n_inv, 2);
+igual('el modelo más pequeño que cubre entre dos: Symo 10', r40.mod_inv, 'Fronius Symo GEN24 SC 10.0');
+igual('potencia total 20 kW', r40.kw_inv, 20);
+igual('la línea del inversor lleva 2 unidades', r40.partidas.filter(function (x) { return x.partida === 'Inversor'; })[0].cantidad, 2);
+igual('4 strings (2 por inversor)', r40.n_str, 4);
+igual('y 2 cuadros CC de 2 strings', r40.partidas.filter(function (x) { return x.partida === 'Cuadro CC Solver 2 strings'; })[0].cantidad, 2);
+igual('jornadas: 3 + 3 (18 paneles extra ÷ 8 = 2,25 → 3)', r40.jornadas, 6);
+igual('las 3 extra se cobran a 450 €', r40.mo_tabla.venta_jornadas_extra, 1350);
+igual('mano de obra: 20.400 W × 0,25 + 1.350', r40.mo_tabla.venta_mo, 20400 * 0.25 + 1350);
+comprueba('avisa de los dos inversores', r40.avisos.some(function (a) { return a.indexOf('2 inversores') === 0; }));
+var r30 = calcularFV(Object.assign({}, e40, { paneles_forzado: 30 }), modeloMO);
+igual('30 paneles: 4 jornadas (como antes) y una extra cobrada', r30.jornadas + '/' + r30.mo_tabla.venta_jornadas_extra, '4/450');
+var r22 = calcularFV(Object.assign({}, e40, { paneles_forzado: 22 }), modeloMO);
+igual('22 paneles: 3 jornadas, nada extra, un inversor', r22.jornadas + '/' + r22.mo_tabla.venta_jornadas_extra + '/' + r22.n_inv, '3/0/1');
+var r40m = calcularFV(Object.assign({}, e40, { sumi: 'Monofásico' }), modeloMO);
+igual('40 paneles en monofásico: sigue A MEDIDA', r40m.bloqueo, 1);
+comprueba('y lo explica', r40m.avisos.some(function (a) { return a.indexOf('Pasar a trifásico') > 0; }));
+resultado();
