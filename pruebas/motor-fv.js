@@ -156,4 +156,31 @@ igual('22 paneles: 3 jornadas, nada extra, un inversor', r22.jornadas + '/' + r2
 var r40m = calcularFV(Object.assign({}, e40, { sumi: 'Monofásico' }), modeloMO);
 igual('40 paneles en monofásico: sigue A MEDIDA', r40m.bloqueo, 1);
 comprueba('y lo explica', r40m.avisos.some(function (a) { return a.indexOf('Pasar a trifásico') > 0; }));
+titulo('inversores del catálogo (Enzo, 4-11-2026)');
+var cat = [
+  { referencia: 'FV-FRONIUS-VERTO-20.0-PLUS-SPD', nombre: 'Fronius Verto 20.0 Plus - (SPD 1+2)', precio_tarifa: 3206.56, descuento_proveedor: 0 },
+  { referencia: 'FV-FRONIUS-VERTO-20.0-SPD', nombre: 'Fronius Verto 20.0 - (SPD 1+2)', precio_tarifa: 2224.95, descuento_proveedor: 0 },
+  { referencia: 'FV-FRONIUS-SYMO-GEN24-SC-10.0', nombre: 'FRONIUS Symo GEN24 SC 10.0', precio_tarifa: 1821.58, descuento_proveedor: 0 },
+  { referencia: 'FV-FRONIUS-PRIMO-GEN24-10.0KW', nombre: 'Fronius Primo GEN24 10.0KW', precio_tarifa: 1553.3, descuento_proveedor: 0 },
+  { referencia: 'FV-FRONIUS-SYMO-GEN24-SC-12.0-PLUS', nombre: 'Fronius Symo GEN24 SC 12.0 Plus', precio_tarifa: 2388.02, descuento_proveedor: 0 },
+  { referencia: 'FV-DEYE-SUN-20K-SG05LP3-EU-SM2', nombre: 'Deye híbrido SUN-20K-SG05LP3-EU-SM2', precio_tarifa: 1969, descuento_proveedor: 0 },
+  { referencia: 'FV-DEYE-SUN-16K-SG01LP1-EU-AM3-P', nombre: 'Deye híbrido SUN-16K-SG01LP1-EU-AM3-P', precio_tarifa: 1750, descuento_proveedor: 0 },
+  { referencia: 'SY-INVERSOR-VICTRON', nombre: 'Inversor Victron multiplus II 48/5000', precio_tarifa: 1146, descuento_proveedor: 0 },
+];
+var v20p = inversorDeCatalogo(cat[0]);
+igual('Verto 20 Plus: Fronius, trifásico, 20 kW, híbrido', [v20p.sistema, v20p.suministro, v20p.kw, v20p.plus].join('/'), 'Fronius/Trifásico/20/true');
+igual('y sin la coletilla del SPD', v20p.modelo, 'Fronius Verto 20.0 Plus');
+igual('Primo GEN24 10.0KW: monofásico, 10 kW, no híbrido', [inversorDeCatalogo(cat[3]).suministro, inversorDeCatalogo(cat[3]).kw, inversorDeCatalogo(cat[3]).plus].join('/'), 'Monofásico/10/false');
+igual('Deye SUN-20K LP3: trifásico 20 kW híbrido', [inversorDeCatalogo(cat[5]).suministro, inversorDeCatalogo(cat[5]).kw, inversorDeCatalogo(cat[5]).plus].join('/'), 'Trifásico/20/true');
+igual('Deye SUN-16K LP1: monofásico', inversorDeCatalogo(cat[6]).suministro, 'Monofásico');
+comprueba('el Victron no se entiende: fuera', inversorDeCatalogo(cat[7]) === null);
+var modeloCat = conInversoresDelCatalogo(modeloMO, cat);
+igual('los que ya están en el modelo no se duplican (Symo 10 y Primo 10)', modeloCat.inversores.length, modeloMO.inversores.length + 5);
+var rV = calcularFV(e40, modeloCat);
+igual('40 paneles sin batería: un Verto 20.0 (no el Plus)', rV.mod_inv + ' ×' + rV.n_inv, 'Fronius Verto 20.0 ×1');
+var rVp = calcularFV(e40, modeloCat, { hibrido: true, jornadaBateria: true });
+igual('40 paneles con batería: el Verto 20.0 Plus', rVp.mod_inv, 'Fronius Verto 20.0 Plus');
+var r10p = calcularFV(Object.assign({}, e10, { sumi: 'Trifásico' }), modeloCat, { hibrido: true });
+igual('10 paneles trifásico con batería: Symo 12 Plus (el único Plus tri de la lista)', r10p.mod_inv, 'Fronius Symo GEN24 SC 12.0 Plus');
+igual('sin batería sigue el SC de Ramón', calcularFV(Object.assign({}, e10, { sumi: 'Trifásico' }), modeloCat).mod_inv, 'Fronius Symo GEN24 SC 5.0');
 resultado();

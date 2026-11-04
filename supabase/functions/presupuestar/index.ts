@@ -42,6 +42,7 @@ import { cadenaPrecios, totalCoste } from './cadena.js';
 // El cálculo híbrido de fotovoltaica (v2 de Ramón + capítulos) vive en
 // hibrido.js, compartido con las pruebas y los informes.
 import { presupuestarFV } from './hibrido.js';
+import { conInversoresDelCatalogo } from './fv.js';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -341,6 +342,14 @@ Deno.serve(async (req) => {
       .eq('categoria', 'solar').is('vigente_hasta', null)
       .order('vigente_desde', { ascending: false }).limit(1).maybeSingle();
     if (mod && mod.datos) modeloFV = mod;
+    // Los inversores del catálogo se suman a los del modelo (Enzo, 4-11-2026):
+    // así salen todos en el desplegable y el automático elige también entre
+    // ellos (Verto 20 Plus para 40 paneles con batería, Deye grandes…).
+    if (modeloFV) {
+      const { data: invs } = await sb.from('productos').select('referencia, nombre, familia, precio_tarifa, descuento_proveedor')
+        .eq('familia', 'inversor').eq('activo', true);
+      if (invs && invs.length) modeloFV = Object.assign({}, modeloFV, { datos: conInversoresDelCatalogo(modeloFV.datos, invs) });
+    }
   }
   // Batería compatible con el inversor (Enzo, 26-10-2026): Deye solo con WECO o
   // Deye, Enphase con Enphase o Tesla, Fronius con BYD, Fronius Reserva o Tesla.

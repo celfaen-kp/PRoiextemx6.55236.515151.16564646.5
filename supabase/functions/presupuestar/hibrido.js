@@ -97,10 +97,20 @@ export function presupuestarFV(datos, mod, cfg) {
   // Con batería, o «dejar preparado» para ella, Fronius va en Plus (híbrido),
   // que el modelo v2 no trae: lo elige el motor por capítulos (Ramón, 13-10-2026).
   const preparado = String(datos.baterias || '') === 'dejar_preparado';
-  const inversorFuera = (conBateria || preparado) && fronius;
-  const r = calcularFV(m.entrada, modelo, { chapaAMedida: false, inversorFuera, jornadaBateria: conBateria });
+  const tesla = conBateria && String(datos.bateria_marca || '').toLowerCase() === 'tesla';
+  let inversorFuera = (conBateria || preparado) && fronius;
+  let r = null;
+  // Si el modelo lleva inversores Plus (los del catálogo, 4-11-2026), el v2
+  // elige el híbrido él mismo y solo la batería sale del motor por capítulos.
+  // Con Tesla no hay inversor aparte (el Powerwall lo lleva dentro): como antes.
+  if (inversorFuera && !tesla) {
+    const r2 = calcularFV(m.entrada, modelo, { chapaAMedida: false, inversorFuera: false, hibrido: true, jornadaBateria: conBateria });
+    if (r2.kw_inv !== null) { r = r2; inversorFuera = false; }
+  }
+  if (!r) r = calcularFV(m.entrada, modelo, { chapaAMedida: false, inversorFuera, jornadaBateria: conBateria });
   const avisosEntrada = m.avisos.slice();
   if (!estructuraNueva) avisosEntrada.push('Cubierta «' + m.cubierta_app + '»: el modelo v2 no la cubre; la estructura sale del motor por capítulos con sus precios (pendientes de confirmar). Revisar.');
+  if (fronius && (conBateria || preparado) && !inversorFuera) avisosEntrada.push((conBateria ? 'Con batería: ' : 'Preparado para baterías: ') + 'inversor híbrido ' + r.txt_inv + ' (Plus, del catálogo) elegido por el presupuestador' + (conBateria ? '; la batería sale del motor por capítulos con su margen.' : '.'));
   if (inversorFuera && conBateria) avisosEntrada.push('Con batería, el inversor Fronius Plus (o ninguno con Tesla), el Smart Meter y la batería salen del motor por capítulos con su margen; el modelo v2 aún no lleva baterías.');
   if (inversorFuera && !conBateria) avisosEntrada.push('Preparado para baterías: el inversor Fronius Plus (híbrido) y el Smart Meter salen del motor por capítulos con su margen.');
   if (conBateria && m.entrada.sis === 'Deye' && !datos.bateria_ref) avisosEntrada.push('Batería con Deye: el presupuestador no la pone sola. Añádela desde «Añadir del catálogo» (WECO 5K0 LT, 5K3 EVO, 16K0 o Deye SE-F5 PRO, SE-F 16-C, con sus accesorios) y comprueba la compatibilidad en la ficha técnica.');
@@ -126,6 +136,12 @@ export function presupuestarFV(datos, mod, cfg) {
   // El cargador de coche va en UNA partida (equipo + cuadro + instalación) con
   // su desglose por dentro, como la línea principal (Enzo, 20-10-2026).
   const lineasViejo = inversorAMano(agruparCargador(viejo.lineas), datos, cfg, inversorFuera, deViejo);
+  // Cargador de coche en trifásico (Enzo, 4-11-2026): debería ir el Wallbox
+  // Pulsar Plus de 22 kW. Mientras no esté su precio en el catálogo se deja el
+  // de 7,4 kW y se avisa.
+  if (datos.cargador_ve && /^trif/i.test(String(datos.suministro || '')) && lineasViejo.some((l) => String(l.producto_ref || '') === 'FV-14-001')) {
+    deViejo.push({ nivel: 'aviso', codigo: 'cargador_22kw', mensaje: 'Suministro trifásico: el cargador debería ser el Wallbox Pulsar Plus de 22 kW. Falta su precio en el catálogo, así que va el de 7,4 kW: cámbialo a mano.', campo: null });
+  }
   return {
     lineas: lineas.concat(lineasViejo),
     incidencias: incidencias.concat(deViejo),

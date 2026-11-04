@@ -183,6 +183,11 @@ a:hover{color:var(--tinta)}
 .lista-obras{margin-top:12px;max-height:46vh;overflow-y:auto;-webkit-overflow-scrolling:touch;border-top:1px solid var(--l1)}
 .lista-obras .fila-obra{display:block;width:100%;text-align:left;padding:13px 4px;border-bottom:1px solid var(--l1);font:500 15px/1.3 var(--sans);color:var(--tinta);background:none;cursor:pointer}
 .lista-obras .fila-obra small{display:block;font:400 12px var(--sans);color:var(--t3);margin-top:2px}
+/* Selector de obra compacto en la imputación de horas (V31.4): dos líneas, nombre y dirección. */
+.sel-obra{display:block;width:100%;text-align:left;padding:9px 12px;border-radius:12px;border:1.5px solid var(--l2);background:#fff;font:500 14px/1.3 var(--sans);color:var(--tinta);cursor:pointer}
+.sel-obra small{display:block;font:400 12px/1.3 var(--sans);color:var(--t3);margin-top:1px}
+.sel-obra.vacio{color:var(--t2);border-style:dashed}
+.sel-obra[disabled]{cursor:default;opacity:.7}
 @keyframes fade{from{opacity:0}}
 @keyframes up{from{transform:translateY(18px)}}
 .toast{position:fixed;left:20px;right:20px;top:calc(56px + var(--safe-t));max-width:520px;margin:0 auto;background:var(--tinta);color:#fff;padding:14px 16px;border-radius:14px;font:500 14px/1.4 var(--sans);z-index:70;box-shadow:0 8px 24px rgba(0,0,0,.25);animation:toastIn .2s ease-out}
@@ -506,7 +511,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '31.3'; // versión visible de la app (única fuente)
+const APP_VERSION = '31.4'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -1795,6 +1800,28 @@ A.impCat = (i, cat) => {
   render();
 };
 A.impObra = (i, obraId) => { const l = V.impDraft[i]; if (l) { l.obraId = obraId || null; render(); } };
+/* El selector de obra de la imputación (Enzo, 4-11-2026): en vez de todas las
+   obras en chips, un botón con la elegida (nombre y dirección) que abre una
+   hoja con buscador y la lista ordenada por número, la más nueva arriba. */
+function selObraHTML(obraId, para, i, editable) {
+  const o = obraId ? obraById(obraId) : null;
+  const dir = o ? [o.dir, o.poblacion].filter(Boolean).join(' · ') : '';
+  return `<button class="sel-obra${o ? '' : ' vacio'}" ${editable ? `data-a="elegirObraAbrir" data-o="${para}" data-i="${i}"` : 'disabled'}>${
+    o ? esc(codigoObra(o) || o.titulo) + ' · ' + esc(o.cliente || o.titulo || '') + '<small>' + esc(dir || 'Sin dirección') + '</small>' : 'Elegir obra…<small>Toca para buscar por número, cliente o dirección</small>'}</button>`;
+}
+function elegirObraListaHTML(s) {
+  const q = sinTildes(s.buscar || ''); const num = numeroBuscado(s.buscar || '');
+  const obras = S.obras.filter((o) => !obraCerrada(o)).filter((o) => !q || (num != null && o.numero === num) || sinTildes([codigoObra(o), o.titulo, o.cliente, o.dir, o.poblacion].join(' ')).includes(q)).sort(porNumeroDesc);
+  if (!obras.length) return '<div class="sub">Ninguna obra con eso.</div>';
+  return obras.slice(0, 80).map((o) => `<button class="fila-obra" data-a="elegirObraOk" data-id="${o.id}">${esc(codigoObra(o) || o.titulo)} · ${esc(o.cliente || o.titulo || '')}<small>${esc([o.dir, o.poblacion].filter(Boolean).join(' · ') || 'Sin dirección')}</small></button>`).join('');
+}
+A.elegirObraAbrir = (para, i) => { V.sheet = { tipo: 'elegirObra', para, i, buscar: '' }; render(); };
+A.elegirObraOk = (id) => {
+  const s = V.sheet; if (!s || s.tipo !== 'elegirObra') return;
+  V.sheet = null;
+  if (s.para === 'impGrupo') return A.impGrupoObra(s.i, id);
+  return A.impObra(s.i, id);
+};
 // nuevo control tipo reloj: fija el valor en minutos (pasos de 15)
 A.impReloj = (i, minutos) => {
   const l = V.impDraft[i]; if (!l) return;
@@ -5749,7 +5776,7 @@ function vImputarGrupo() {
     ${lineas.map((l, i) => `<div class="card" style="margin-bottom:10px">
       <div class="wrap">${IMP_CATS.map(([c, lab]) => `<div class="chip ${l.categoria === c ? 'on' : ''}" data-a="impGrupoCat" data-i="${i}" data-c="${c}">${lab}</div>`).join('')}</div>
       ${l.categoria === 'obra' ? `<div class="lbl" style="margin:12px 0 7px">Obra</div>
-        <div class="wrap">${obras.map((o) => `<div class="chip ${l.obraId === o.id ? 'on' : ''}" data-a="impGrupoObra" data-i="${i}" data-id="${o.id}">${esc(nombreObra(o))}</div>`).join('')}<div class="chip" data-a="obraRapida" data-o="impGrupo" data-i="${i}" style="border:1.5px dashed var(--verde-o);color:var(--verde-o)">+ Nueva obra</div></div>` : ''}
+        ${selObraHTML(l.obraId, 'impGrupo', i, true)}<div class="wrap" style="margin-top:6px"><div class="chip" data-a="obraRapida" data-o="impGrupo" data-i="${i}" style="border:1.5px dashed var(--verde-o);color:var(--verde-o)">+ Nueva obra</div></div>` : ''}
       <input class="inp" data-f="impGrupoNota" data-i="${i}" value="${esc(l.nota || '')}" placeholder="Nota (opcional): ida, vuelta…" style="margin-top:10px;font-size:14px;padding:10px 12px">
       ${relojHTML('impGrupo', i, l.minutos || 0, RELOJ_MAX_DEFECTO, seleccionados.length > 0, 15)}
       ${lineas.length > 1 ? `<button class="pill pill-rojo" data-a="impGrupoDelLinea" data-i="${i}" style="display:block;margin:2px auto 0">Quitar línea</button>` : ''}
@@ -5793,7 +5820,7 @@ function vImputarEmpleado() {
     ${disp > 0 ? (draft.length ? draft.map((l, i) => `<div class="card" style="margin-bottom:10px">
       <div class="wrap">${IMP_CATS.map(([c, lab]) => `<div class="chip ${l.categoria === c ? 'on' : ''}" ${editable ? `data-a="impCat" data-i="${i}" data-c="${c}"` : ''}>${lab}</div>`).join('')}</div>
       ${l.categoria === 'obra' ? `<div class="lbl" style="margin:12px 0 7px">Obra</div>
-        <div class="wrap">${obras.map((o) => `<div class="chip ${l.obraId === o.id ? 'on' : ''}" ${editable ? `data-a="impObra" data-i="${i}" data-id="${o.id}"` : ''}>${esc(nombreObra(o))}</div>`).join('')}${editable ? `<div class="chip" data-a="obraRapida" data-o="imp" data-i="${i}" style="border:1.5px dashed var(--verde-o);color:var(--verde-o)">+ Nueva obra</div>` : ''}</div>` : ''}
+        ${selObraHTML(l.obraId, 'imp', i, editable)}${editable ? `<div class="wrap" style="margin-top:6px"><div class="chip" data-a="obraRapida" data-o="imp" data-i="${i}" style="border:1.5px dashed var(--verde-o);color:var(--verde-o)">+ Nueva obra</div></div>` : ''}` : ''}
       <input class="inp" data-f="impNota" data-i="${i}" value="${esc(l.nota || '')}" placeholder="Nota (opcional): ida, vuelta…" style="margin-top:10px;font-size:14px;padding:10px 12px" ${editable ? '' : 'disabled'}>
       ${relojHTML('imp', i, l.minutos || 0, RELOJ_MAX_DEFECTO, editable, 15)}
       ${editable ? `<button class="pill pill-rojo" data-a="impDelLinea" data-i="${i}" style="display:block;margin:2px auto 0">Quitar línea</button>` : ''}
@@ -8278,7 +8305,7 @@ function opcionesMarcaHTML() {
       ${actual !== 'enphase' && ops.inversores && ops.inversores.length ? `<span class="lbl" style="font-size:11px">Inversor</span>
       <select class="inp" data-f="presuOpcionInversor" style="width:auto;max-width:100%;padding:7px 9px;font-size:13px">
         <option value="" ${sel ? '' : 'selected'}>Automático · ${esc(String(ops.inversor_elegido || ''))}</option>
-        ${ops.inversores.map((i) => `<option value="${esc(i.modelo)}" ${sel === i.modelo ? 'selected' : ''}>${esc(i.modelo)} · ${esc(String(i.kw))} kW${i.usar === false ? ' · no lo usa el automático' : ''}</option>`).join('')}
+        ${ops.inversores.map((i) => `<option value="${esc(i.modelo)}" ${sel === i.modelo ? 'selected' : ''}>${esc(i.modelo)} · ${esc(String(i.kw))} kW${i.plus ? ' · híbrido' : ''}${i.usar === false ? ' · no lo usa el automático' : ''}</option>`).join('')}
       </select>` : ''}
       <span class="lbl" style="font-size:11px">Paneles</span>
       <input class="inp" data-f="presuOpcionPaneles" type="number" min="1" max="120" value="${esc(String(op.paneles_manual || ops.n_pan || ''))}" style="width:66px;padding:7px 9px;text-align:right">
@@ -9067,6 +9094,26 @@ function presuCliListaHTML(s) {
 A.presuCatAbrir = () => {
   const v = V.presuVer; if (!v || !v.datos) return;
   V.sheet = { tipo: 'presuCategoria', id: v.datos.id, busy: false }; render();
+};
+/* El nombre del presupuesto se puede cambiar (Enzo, 4-11-2026). */
+A.presuTituloAbrir = () => {
+  const v = V.presuVer; if (!v || !v.datos) return;
+  const d = v.datos;
+  V.sheet = { tipo: 'presuTitulo', id: d.id, texto: d.titulo || (d.cliente && d.cliente.nombre) || '', enTL: !!d.tl_quotation_id, busy: false }; render();
+};
+A.presuTituloGuardar = async () => {
+  const s = V.sheet; if (!s || s.tipo !== 'presuTitulo' || s.busy) return;
+  const v = V.presuVer; if (!v || !v.datos || v.datos.id !== s.id) return;
+  const t = String(s.texto || '').trim().slice(0, 200);
+  if (!t) { avisar('Pon un nombre.'); return; }
+  if (!navigator.onLine) { avisar('Sin conexión: no se ha guardado.'); return; }
+  s.busy = true; render();
+  try {
+    const fila = await visitasDB.seguimientoPresupuesto(s.id, { titulo: t });
+    v.datos.titulo = (fila && fila.titulo) || t;
+    if (V.presuLista) V.presuLista.cargado = false;
+    V.sheet = null; toast('Nombre cambiado.'); render();
+  } catch (e) { s.busy = false; render(); avisar('No se pudo cambiar el nombre: ' + msgError(e)); }
 };
 A.presuCatDe = async (cat) => {
   const s = V.sheet; const v = V.presuVer;
@@ -10009,6 +10056,10 @@ A.presuGuardarCambios = async () => {
       if (c.dto_linea_pct != null && Math.max(0, Math.min(100, num(c.dto_linea_pct) || 0)) !== Number(l.dto_linea_pct || 0)) cambios.dto_linea_pct = Math.max(0, Math.min(100, num(c.dto_linea_pct) || 0));
       if (c.precio_coste != null) { const pc = String(c.precio_coste).trim() === '' ? null : num(c.precio_coste); if (pc !== (l.precio_coste == null ? null : Number(l.precio_coste))) cambios.precio_coste = pc; }
       if (c.origen_inputs) cambios.origen_inputs = c.origen_inputs;
+      // Una línea «pendiente de confirmar» (el motor no tenía precio) queda
+      // confirmada en cuanto la persona le pone precio o coste (Enzo, 4-11-2026).
+      const precioFinal = cambios.precio_tarifa != null ? cambios.precio_tarifa : Number(l.precio_tarifa) || 0;
+      if (l.confirmada === false && precioFinal > 0 && (cambios.precio_tarifa != null || cambios.precio_coste != null)) cambios.confirmada = true;
       if (!Object.keys(cambios).length) continue;
       await visitasDB.guardarLineaPresupuesto(id, cambios);
       // Si esa línea la había propuesto una regla, queda apuntado el cambio.
@@ -10433,7 +10484,7 @@ function vPresupuestoVer() {
   const editando = !!V.presuEdit;
   return `<div class="hdr-dark">
     <div class="row" style="justify-content:space-between;align-items:center">${volverHTML('<div class="back" data-a="ir" data-v="presupuestos">‹ Presupuestos</div>')}${abrirAparteIcono(true)}</div>
-    <div style="font:600 27px/1.1 var(--cond)">${esc((d && (d.titulo || (d.cliente && d.cliente.nombre))) || 'Presupuesto')}</div>
+    <div ${d ? 'data-a="presuTituloAbrir" style="font:600 27px/1.1 var(--cond);cursor:pointer" title="Cambiar el nombre"' : 'style="font:600 27px/1.1 var(--cond)"'}>${esc((d && (d.titulo || (d.cliente && d.cliente.nombre))) || 'Presupuesto')}${d ? ' <span style="font-size:15px;opacity:.5;vertical-align:middle">✎</span>' : ''}</div>
     <div class="sub" style="color:rgba(255,255,255,.5);margin-top:6px">${d ? `<span data-a="presuCatAbrir" style="cursor:pointer;text-decoration:underline dotted;text-underline-offset:3px" title="Cambiar la categoría">${esc(nombreCat(d.categoria) || d.categoria)}</span> · ${fechaCorta(d.created_at)}` : v.cargando ? 'Cargando…' : ''}</div>
   </div>
   <div class="scroll pad pb-nav">
@@ -13262,6 +13313,25 @@ function sheet() {
       </div>
     </div></div>`;
   }
+  if (s.tipo === 'elegirObra') {
+    return `<div class="sheet"><div style="max-height:85vh;display:flex;flex-direction:column">
+      <div style="font:600 23px/1.15 var(--cond)">¿En qué obra?</div>
+      <input class="inp" data-f="elegirObraBuscar" value="${esc(s.buscar || '')}" placeholder="Número, cliente, obra o dirección" autocomplete="off" style="margin:12px 0 8px">
+      <div class="lista-obras" id="elegir-obras" style="overflow:auto;flex:1;min-height:0">${elegirObraListaHTML(s)}</div>
+      <button class="btn btn-gris" data-a="cerrarSheet" style="border-radius:99px;margin-top:12px">Cancelar</button>
+    </div></div>`;
+  }
+  if (s.tipo === 'presuTitulo') {
+    return `<div class="sheet"><div>
+      <div style="font:600 23px/1.15 var(--cond)">Nombre del presupuesto</div>
+      <div class="sub" style="margin-top:6px">Es el que sale en la lista, en el tablero y en la ficha del cliente.${s.enTL ? ' En Teamleader la oferta mantiene su nombre.' : ''}</div>
+      <input class="inp" data-f="presuTituloTxt" value="${esc(s.texto || '')}" maxlength="200" placeholder="Cliente · Fotovoltaica 10 paneles" style="margin-top:12px">
+      <div class="row g8" style="margin-top:18px">
+        <button class="btn btn-gris" data-a="cerrarSheet" style="border-radius:99px">Cancelar</button>
+        <button class="btn" data-a="presuTituloGuardar" style="font-size:14px" ${s.busy ? 'disabled' : ''}>${s.busy ? 'Guardando…' : 'Guardar'}</button>
+      </div>
+    </div></div>`;
+  }
   if (s.tipo === 'moverParte') {
     const desde = s.desdeObra ? obraById(s.desdeObra) : null;
     const n = s.ids.length;
@@ -13940,6 +14010,10 @@ document.addEventListener('click', (e) => {
   if (a === 'presuCliCRM') return A.presuCliCRM(d.tl, d.tipo);
   if (a === 'presuCliDe') return A.presuCliDe(d.id);
   if (a === 'presuCatAbrir') return A.presuCatAbrir();
+  if (a === 'presuTituloAbrir') return A.presuTituloAbrir();
+  if (a === 'presuTituloGuardar') return A.presuTituloGuardar();
+  if (a === 'elegirObraAbrir') return A.elegirObraAbrir(d.o, +d.i);
+  if (a === 'elegirObraOk') return A.elegirObraOk(d.id);
   if (a === 'presuCatDe') return A.presuCatDe(d.cat);
   if (a === 'fv2DesgloseAplicar') return A.fv2DesgloseAplicar();
   if (a === 'presuProductoNuevoAbrir') return A.presuProductoNuevoAbrir();
@@ -14333,6 +14407,8 @@ document.addEventListener('input', (e) => {
     if (!antes && o && t.value !== (o.comentarios || '')) render();
     return;
   }
+  if (f === 'elegirObraBuscar') { if (V.sheet) { V.sheet.buscar = t.value; const box = document.getElementById('elegir-obras'); if (box) box.innerHTML = elegirObraListaHTML(V.sheet); } return; }
+  if (f === 'presuTituloTxt') { if (V.sheet) V.sheet.texto = t.value; return; }
   if (f === 'moverBuscar') { if (V.sheet) { V.sheet.buscar = t.value; const box = document.getElementById('mover-obras'); if (box) box.innerHTML = moverParteListaHTML(V.sheet); } return; }
   if (f === 'sinCitaOtro') { if (V.sheet) V.sheet.otro = t.value; return; }
   if (f === 'presuExtImporte') { if (V.sheet) V.sheet.importe = t.value; return; }

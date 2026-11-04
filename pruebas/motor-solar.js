@@ -458,3 +458,20 @@ var refsInv = function (r) { return r.lineas.map(function (l) { return String(l.
 comprueba('automático: un Fronius Plus por kW (' + refsInv(rAuto).join(',') + ')', refsInv(rAuto).length === 1 && refsInv(rAuto)[0] !== 'FV-FRONIUS-PRIMO-GEN24-SC-4.6-PLUS');
 comprueba('a mano: el 4.6 Plus en su lugar', refsInv(rMano).length === 1 && refsInv(rMano)[0] === 'FV-FRONIUS-PRIMO-GEN24-SC-4.6-PLUS');
 comprueba('y lo dice en las incidencias', rMano.incidencias.some(function (i) { return /Inversor elegido a mano/.test(i.mensaje); }));
+
+titulo('inversores del catálogo en el v2 (Enzo, 4-11-2026): con batería, el Plus lo pone el v2');
+var catInv = [
+  { referencia: 'FV-FRONIUS-VERTO-20.0-PLUS-SPD', nombre: 'Fronius Verto 20.0 Plus - (SPD 1+2)', precio_tarifa: 3206.56, descuento_proveedor: 0 },
+  { referencia: 'FV-FRONIUS-VERTO-20.0-SPD', nombre: 'Fronius Verto 20.0 - (SPD 1+2)', precio_tarifa: 2224.95, descuento_proveedor: 0 },
+  { referencia: 'FV-FRONIUS-PRIMO-GEN24-SC-5.0-PLUS', nombre: 'Fronius Primo GEN24 SC 5.0 Plus', precio_tarifa: 1252.8, descuento_proveedor: 0 },
+];
+var modCat = { id: 'm', version: 'prueba', datos: conInversoresDelCatalogo(modeloFVmano, catInv) };
+var rCat = presupuestarFV(con({ baterias: 'si', baterias_kwh: 10, bateria_marca: 'byd', paneles_manual: 10 }), modCat, config);
+igual('10 paneles mono con batería: el v2 elige el Primo 5.0 Plus', rCat.fv2.mod_inv, 'Fronius Primo GEN24 SC 5.0 Plus');
+comprueba('la línea del inversor va dentro del v2 (no del motor por capítulos)', rCat.fv2.partidas.some(function (x) { return x.partida === 'Inversor' && x.cantidad === 1; }) && refsInv(rCat).length === 0);
+comprueba('y lo avisa', rCat.incidencias.some(function (i) { return /inversor híbrido Fronius Primo GEN24 SC 5.0 Plus/.test(i.mensaje); }));
+comprueba('la batería sigue saliendo del motor por capítulos', rCat.lineas.some(function (l) { return /^FV-/.test(String(l.producto_ref || '')) && /BYD|bater/i.test(String(l.descripcion || '')); }));
+var r40cat = presupuestarFV(con({ baterias: 'si', baterias_kwh: 10, bateria_marca: 'byd', paneles_manual: 40, suministro: 'trifasico', filas_paneles: [{ paneles: 10 }, { paneles: 10 }, { paneles: 10 }, { paneles: 10 }] }), modCat, config);
+igual('40 paneles trifásico con batería: Verto 20.0 Plus', r40cat.fv2.mod_inv, 'Fronius Verto 20.0 Plus');
+var rTesla = presupuestarFV(con({ baterias: 'si', baterias_kwh: 13.5, bateria_marca: 'tesla', paneles_manual: 10 }), modCat, config);
+comprueba('con Tesla no hay inversor del v2 (lo lleva el Powerwall)', !rTesla.fv2.partidas.some(function (x) { return x.partida === 'Inversor' && x.cantidad > 0; }));

@@ -103,16 +103,24 @@ export function calcularFV(entrada, modelo, opciones) {
   const kwp = rnd(n_pan * P.wp / 1000, 2);
   const prod = rnd(kwp * P.prod_kwp, 0);
   let inv = null;
+  const esForzado = (i) => !!i && !!e.inv_modelo && (normInv(i.modelo) === normInv(e.inv_modelo) || normInv(i.modelo) === normInv(e.inv_modelo) + ' plus');
   let n_inv = 1;            // inversores iguales en paralelo (1 salvo instalaciones grandes)
   let kw_mayor = 0;         // el inversor mayor del modelo para este sistema y suministro
   const kw_nec = kwp / P.ratio;
   if (fv) {
-    const lista = (modelo.inversores || []).filter((i) => i.sistema === e.sis && i.suministro === e.sumi && i.usar);
+    // Con batería (o preparado para ella) Fronius va en Plus (híbrido); sin
+    // batería, en el normal. Los Deye son todos híbridos. Los del catálogo
+    // traen `plus`; los del modelo de Ramón son todos sin Plus.
+    const lista = (modelo.inversores || []).filter((i) => i.sistema === e.sis && i.suministro === e.sumi && i.usar
+      && (e.sis !== 'Fronius' || !!i.plus === !!op.hibrido));
     lista.forEach((i) => { if (i.kw > kw_mayor) kw_mayor = i.kw; });
     lista.filter((i) => i.kw >= kw_nec).forEach((i) => { if (!inv || i.kw < inv.kw) inv = i; });
     // Elegido a mano desde el presupuesto (Enzo, 21-10-2026): manda sobre el automático.
+    // Con batería y un Fronius elegido sin Plus, vale su versión Plus si está
+    // (catálogo); si no está, no se fuerza nada y el inversor sale por el motor
+    // por capítulos, que ya hace ese cambio.
     if (e.inv_modelo) {
-      const forzado = (modelo.inversores || []).find((i) => i.modelo === e.inv_modelo && i.sistema === e.sis);
+      const forzado = (modelo.inversores || []).find((i) => i.sistema === e.sis && (e.sis !== 'Fronius' || !!i.plus === !!op.hibrido) && esForzado(i));
       if (forzado) inv = forzado;
     }
     // Más potencia que el inversor mayor del modelo (Enzo, 4-11-2026: 40 paneles,
@@ -282,8 +290,8 @@ export function calcularFV(entrada, modelo, opciones) {
   if (bloqueo) avisos.push('CASO A MEDIDA: el presupuestador no da precio. Pasar a Ramón');
   if (n_pan > P.max_pan) avisos.push('Más de ' + P.max_pan + ' paneles: ' + jornadas_extra + (jornadas_extra === 1 ? ' jornada más' : ' jornadas más') + ' de las dos personas (una por cada ' + pan_jornada_extra + ' paneles extra' + (tramoMO ? ', cobradas a ' + g(venta_jornadas_extra / jornadas_extra) + ' € cada una' : '') + '). Revisar estructura y medios de elevación');
   if (n_inv > 1) avisos.push(n_inv + ' inversores ' + mod_inv + ' en paralelo (' + g(kw_inv) + ' kW): revisar con Ramón el reparto de strings y el cuadro AC');
-  if (fv && e.inv_modelo && inv && inv.modelo === e.inv_modelo && inv.kw < kwp / P.ratio) avisos.push('Inversor elegido a mano (' + inv.modelo + ', ' + g(inv.kw) + ' kW) por debajo del ratio ' + g(P.ratio) + ' para ' + fixed(kwp, 2) + ' kWp: revisar.');
-  if (fv && e.inv_modelo && (!inv || inv.modelo !== e.inv_modelo)) avisos.push('El inversor «' + e.inv_modelo + '» no está en el modelo para este sistema: se usa el automático.');
+  if (fv && e.inv_modelo && esForzado(inv) && inv.kw < kwp / P.ratio) avisos.push('Inversor elegido a mano (' + inv.modelo + ', ' + g(inv.kw) + ' kW) por debajo del ratio ' + g(P.ratio) + ' para ' + fixed(kwp, 2) + ' kWp: revisar.');
+  if (fv && e.inv_modelo && !esForzado(inv)) avisos.push('El inversor «' + e.inv_modelo + '» no está en el modelo para este sistema: se usa el automático.');
   if (!num(e.factura_exacta) && !num(e.consumo_real) && !num(e.paneles_forzado) && e.factura_rango === 'No lo sé') {
     avisos.push('Factura desconocida: dimensionado poco fiable');
   }
@@ -299,6 +307,51 @@ export function calcularFV(entrada, modelo, opciones) {
     pvp_elev: P.pvp_elev,
     cable_cc: cableCC,
   };
+}
+
+/* --- Inversores del catálogo (Enzo, 4-11-2026) --------------------------------
+ * El modelo v2 trae los inversores que validó Ramón (hasta 12 kW, sin Plus). El
+ * catálogo (tarifa Fotovoltaica 2026) tiene muchos más: Fronius Primo/Symo GEN24
+ * con y sin Plus, Verto de 15 a 33 kW, Deye de 3 a 125 kW. Se suman al modelo
+ * los que no estén ya, leyendo del nombre el sistema, el suministro (Primo =
+ * monofásico; Symo y Verto = trifásico; Deye LP1 = mono, LP3/HP3 = tri), la
+ * potencia y si es híbrido (Plus en Fronius; todos los Deye). Así salen en el
+ * desplegable del presupuesto y el automático los puede elegir.
+ * --------------------------------------------------------------------------- */
+const normInv = (s) => String(s || '').toLowerCase().replace(/^fronius\s+/, '').replace(/\s*kw\b/g, '').replace(/\s+/g, ' ').trim();
+export function inversorDeCatalogo(p) {
+  const nombre = String((p && p.nombre) || '').trim();
+  const n = nombre.toLowerCase();
+  let sistema = null, suministro = null, kw = 0, plus = false;
+  if (/\b(primo|symo|verto)\b/.test(n)) {
+    sistema = 'Fronius';
+    suministro = /\bprimo\b/.test(n) ? 'Monofásico' : 'Trifásico';
+    const m = n.match(/(?:gen24(?:\s+sc)?|verto)\s+(\d+(?:\.\d+)?)/);
+    kw = m ? Number(m[1]) : 0;
+    plus = /\bplus\b/.test(n);
+  } else if (/\bsun-\d+(?:\.\d+)?k\b/.test(n)) {
+    sistema = 'Deye';
+    const m = n.match(/sun-(\d+(?:\.\d+)?)k\b/);
+    kw = m ? Number(m[1]) : 0;
+    suministro = /lp3|hp3/.test(n) ? 'Trifásico' : /lp1/.test(n) ? 'Monofásico' : null;
+    plus = true;
+  }
+  if (!sistema || !suministro || !(kw > 0)) return null;
+  let dto = num(p.descuento_proveedor); if (dto > 1) dto = dto / 100;
+  const coste_base = rnd(num(p.precio_tarifa) * (1 - dto), 2);
+  if (!(coste_base > 0)) return null;
+  const modelo = nombre.replace(/\s*-\s*\(SPD[^)]*\)\s*$/i, '').replace(/kw$/i, '').replace(/^FRONIUS\b/, 'Fronius').trim();
+  return { modelo, sistema, suministro, kw, plus, usar: true, proveedor: 'BayWa', coste_base, referencia: p.referencia || null, origen: 'catalogo' };
+}
+export function conInversoresDelCatalogo(modelo, productos) {
+  const base = ((modelo && modelo.inversores) || []).slice();
+  const vistos = new Set(base.map((i) => normInv(i.modelo)));
+  (productos || []).forEach((p) => {
+    const i = inversorDeCatalogo(p); if (!i) return;
+    const k = normInv(i.modelo); if (vistos.has(k)) return;
+    vistos.add(k); base.push(i);
+  });
+  return Object.assign({}, modelo, { inversores: base });
 }
 
 /* --- Sección del cable de continua por caída de tensión (v2.1) ---------------
@@ -505,7 +558,9 @@ export function lineasPresupuesto(r, modelo, extra) {
       opciones: {
         // Todos los del sistema y suministro, también los que el automático no usa
         // (Primo 4.6…): se eligen a mano si hacen falta (Enzo, 26-10-2026).
-        inversores: (modelo.inversores || []).filter((i) => i.sistema === r.entrada.sis && i.suministro === r.entrada.sumi).map((i) => ({ modelo: i.modelo, kw: i.kw, usar: !!i.usar })),
+        inversores: (modelo.inversores || []).filter((i) => i.sistema === r.entrada.sis && i.suministro === r.entrada.sumi)
+          .sort((a, b) => a.kw - b.kw || String(a.modelo).localeCompare(String(b.modelo)))
+          .map((i) => ({ modelo: i.modelo, kw: i.kw, usar: !!i.usar, plus: !!i.plus, catalogo: i.origen === 'catalogo' })),
         inversor_elegido: r.mod_inv, inversor_forzado: !!r.entrada.inv_modelo,
         n_pan: r.n_pan, paneles_forzado: r.entrada.paneles_forzado || null,
       },
