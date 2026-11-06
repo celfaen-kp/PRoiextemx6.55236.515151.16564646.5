@@ -631,6 +631,10 @@ export async function recalcularPresupuesto(presupuestoId, dtoGlobalPct, lineasN
 }
 
 /* --- el presupuesto al cliente por correo y su firma (sql/etapa93, 27-10-2026) --- */
+/** Traduce textos del presupuesto (líneas del catálogo) al idioma: {textos:{original: traducción}}. */
+export async function traducir(idioma, textos) {
+  return invocar('traducir', { idioma, textos });
+}
 export async function enviarPresupuestoCliente(datos) {
   return invocar('presupuesto-cliente', Object.assign({ accion: 'enviar' }, datos));
 }

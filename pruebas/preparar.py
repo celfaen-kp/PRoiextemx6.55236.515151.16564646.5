@@ -36,6 +36,10 @@ piezas = [
     "(function(){\n" + sin_modulos('visitas-schemas.js') +
     "\nMODULOS['visitas-schemas.js'] = { VERSION: VERSION, CATEGORIAS: CATEGORIAS, COMUN: COMUN,"
     " ESQUEMAS: ESQUEMAS, etiqueta: etiqueta, proponer: proponer, loQueFalta: loQueFalta };\n})();\n",
+    "(function(){\n" + sin_modulos('presu-idiomas.js') +
+    "\nMODULOS['presu-idiomas.js'] = { IDIOMAS: IDIOMAS, LOCALES: LOCALES, PDF: PDF, idiomaValido: idiomaValido, eurIdioma: eurIdioma,"
+    " fechaIdioma: fechaIdioma, fechaLargaIdioma: fechaLargaIdioma, categoriaIdioma: categoriaIdioma, unidadIdioma: unidadIdioma,"
+    " textosPDF: textosPDF, rellena: rellena, nombreIdioma: nombreIdioma };\n})();\n",
     "(function(){\n" + sin_modulos('visitas-schemas.js') + "\n" + sin_modulos('visitas-form.js') +
     "\nMODULOS['visitas-form.js'] = { resumenHTML: resumenHTML, resumenTexto: resumenTexto,"
     " resumenFilas: resumenFilas, fichaHTML: fichaHTML, seccionHTML: seccionHTML, manejar: manejar };\n})();\n",

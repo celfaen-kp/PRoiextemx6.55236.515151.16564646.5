@@ -505,6 +505,7 @@ import * as sysDB from './supabase-db.js';
 import * as vSchemas from './visitas-schemas.js';
 import * as vForm from './visitas-form.js';
 import * as visitasDB from './visitas-db.js';
+import * as idiomas from './presu-idiomas.js';
 
 // Capa Supabase disponible para la Etapa 3 (integración progresiva) y pruebas.
 // La app sigue funcionando con localStorage hasta que se enchufe pieza a pieza.
@@ -9287,7 +9288,7 @@ A.presuCliDe = async (id) => {
 };
 A.presuAbrir = (id) => { recordarOrigen(); return abrirPresuSinOrigen(id); };
 async function abrirPresuSinOrigen(id) {
-  V.presuVer = { id, cargando: true, datos: null, error: null };
+  V.presuVer = { id, cargando: true, datos: null, error: null, idioma: 'es' };
   V.view = 'presupuestoVer'; scrollMemo.presupuestoVer = 0; render();
   try { V.presuVer.datos = await visitasDB.verPresupuesto(id); }
   catch (e) { V.presuVer.error = msgError(e); }
@@ -10356,8 +10357,9 @@ const FV_GRUPOS = {
   '0608': 'Cableado, canalizaciones, protecciones y pequeño material',
   '1112': 'Mano de obra de instalación, transporte y gestión de residuos',
 };
-function bloquesImpresion(categoria, secciones) {
+function bloquesImpresion(categoria, secciones, T) {
   if (categoria !== 'solar') return secciones;
+  T = T || idiomas.PDF.es;
   const suma = (ls) => Math.round(ls.reduce((t, l) => t + Number(l.precio_venta || 0), 0) * 100) / 100;
   const unaLinea = (titulo, ls) => ({
     descripcion: titulo, resumen: true, precio_venta: suma(ls),
@@ -10372,15 +10374,15 @@ function bloquesImpresion(categoria, secciones) {
     if (!modo) { salida.push(s); return; }
     if (modo === 'una') { salida.push({ nombre: s.nombre, lineas: [unaLinea(m[2], s.lineas)] }); return; }
     if (modo === 'opcional') {
-      if (!opcionales) { opcionales = { nombre: 'Opcionales incluidos en el total', lineas: [] }; }
+      if (!opcionales) { opcionales = { nombre: T.opcionales, lineas: [] }; }
       opcionales.lineas = opcionales.lineas.concat(s.lineas);
       return;
     }
     const g = modo.split(':')[1];
-    if (!grupos[g]) { grupos[g] = { nombre: g.slice(0, 2) + ' · ' + FV_GRUPOS[g], lineas: [], fuente: [] }; salida.push(grupos[g]); }
+    if (!grupos[g]) { grupos[g] = { nombre: g.slice(0, 2) + ' · ' + (T['grupo_' + g] || FV_GRUPOS[g]), lineas: [], fuente: [] }; salida.push(grupos[g]); }
     grupos[g].fuente = grupos[g].fuente.concat(s.lineas);
   });
-  Object.keys(grupos).forEach((g) => { grupos[g].lineas = [unaLinea(FV_GRUPOS[g], grupos[g].fuente)]; });
+  Object.keys(grupos).forEach((g) => { grupos[g].lineas = [unaLinea(T['grupo_' + g] || FV_GRUPOS[g], grupos[g].fuente)]; });
   if (opcionales) salida.push(opcionales);
   return salida;
 }
@@ -10391,24 +10393,13 @@ function bloquesImpresion(categoria, secciones) {
  * aceptación. Van SIEMPRE al final del PDF de la app: el que se descarga, el
  * que se adjunta al cliente y el que se firma en línea. */
 const PRESU_IBAN = 'ES26 0182 4682 5202 0159 5817';
-const PRESU_PAGO = ['50 % a la aceptación del presupuesto', '30 % al iniciar la instalación', '20 % a su finalización'];
-const PRESU_CONDICIONES = [
-  ['1) Alcance y documentación', ['El alcance incluye únicamente lo descrito en el apartado Alcance técnico y en el Desglose económico. Cualquier partida no listada se considera excluida.', 'Planos, memorias y esquemas se entregarán en formato digital estándar. Documentación adicional o as-built detallado, si es necesario, podrá presupuestarse aparte.']],
-  ['2) Precios, impuestos y revisiones', ['Precios en euros. Salvo mención expresa, los importes incluyen IVA vigente.', 'Las variaciones por cambios de alcance, trabajos imprevistos, necesidades de medios auxiliares no contempladas (grúa, andamios, elevadores) o desvíos por condiciones de obra se tratarán mediante pedido adicional/contrato de modificación previo a su ejecución.']],
-  ['3) Licencias y legalización', ['Licencias/Comunicación previa: el presupuesto no incluye tasas municipales ni costes de licencia salvo que se indique expresamente.', 'Legalización y tramitación: se incluye únicamente si figura como partida. La legalización se realizará conforme a la normativa vigente aplicable al tipo de instalación.']],
-  ['4) Condiciones de obra y responsabilidades del cliente', ['Acceso y disponibilidad: el cliente facilitará accesos, acometidas eléctricas, agua, espacios de acopio y cortes programados.', 'Estructura/soporte: salvo estudio estructural contratado, se presume que la cubierta/forjado/cimentación admite las cargas de la instalación. Cualquier refuerzo o reparación será a cargo del cliente.', 'Suministro eléctrico: la adecuación del cuadro general, aumentos de potencia contratada y actuaciones de la distribuidora/comercializadora quedan fuera salvo partida específica.']],
-  ['5) Exclusiones habituales (no limitativas)', ['Obra civil (zanjas, rozas, soleras, zapatas de marquesinas/carports, albañilería y pintura).', 'Medios auxiliares especiales (grúa, andamios certificados, plataformas elevadoras) si no están en partidas.', 'Reposición de tejas/piezas especiales de cubierta más allá de lo estrictamente necesario para el montaje.', 'Canalizaciones externas no indicadas, perforaciones especiales, trabajos en zonas con amianto o materiales peligrosos.', 'Adecuaciones del CGP/CT y trámites de acceso y conexión no contemplados.', 'Monitorización avanzada, integraciones domóticas o SAI, salvo indicación.']],
-  ['6) Garantías', ['Mano de obra: 2 años desde la puesta en marcha, por defectos de ejecución.', 'Equipos: garantía del fabricante según sus términos (p. ej., paneles FV con garantía de producto y de rendimiento; inversores/baterías según condiciones específicas). La tramitación se realizará conforme a los procedimientos de cada marca.', 'Quedan excluidos desgastes normales, mal uso, manipulaciones de terceros, eventos climáticos extremos o fuerza mayor.']],
-  ['7) Puesta en marcha y formación', ['Tras la instalación, se realizará la puesta en marcha, ajustes básicos y una sesión de formación al usuario sobre el uso seguro y mantenimiento básico.']],
-  ['8) Mantenimiento', ['El mantenimiento preventivo/correctivo no está incluido salvo contratación específica. Sysefen ofrece planes de mantenimiento con visitas periódicas, limpieza de módulos y verificaciones eléctricas.']],
-  ['9) Seguridad y medio ambiente', ['Sysefen cumplirá con la normativa de PRL aplicable y llevará los EPIs necesarios.', 'La gestión de residuos se realizará conforme a la normativa vigente; tasas de gestor autorizado y transporte se incluyen solo si aparece como partida.']],
-  ['10) Limitación de responsabilidad', ['La responsabilidad de Sysefen por daños indirectos, lucro cesante o pérdida de producción queda excluida. La responsabilidad total, en cualquier caso, se limita al importe total efectivamente abonado por el cliente por los trabajos objeto del contrato, salvo dolo o negligencia grave.']],
-  ['11) Protección de datos (RGPD/LOPDGDD)', ['De conformidad con lo dispuesto en el Reglamento (UE) 2016/679, de 27 de abril de 2016 (RGPD) y la Ley Orgánica 3/2018, de 5 de diciembre de Protección de Datos Personales y garantía de los derechos digitales (LOPDGDD), le facilitamos la siguiente información del tratamiento: Responsable: Sysefen Group 2024 S.L, B55450407, Camí Can Calafat, 21 Polígono Son OMS, 07199 Palma (Illes Balears) ESPAÑA, info@sysefen.com. Fines del tratamiento: mantener una relación comercial y envío de comunicaciones de productos o servicios. Legitimación: obligación legal del responsable y consentimiento del interesado cuando proceda. Tipología y conservación: se tratan los datos mínimos necesarios para el fin y se conservan cumpliendo los plazos legales de prescripción. Destinatarios de cesiones: las necesarias para el fin del tratamiento y para el cumplimiento de obligaciones legales. Derechos que le asisten: acceso, rectificación, portabilidad, supresión, limitación y oposición. Más información del tratamiento: diríjase al responsable o a través de www.sysefen.com.']],
-  ['12) Derecho de desistimiento (solo consumidores)', ['Para contratos celebrados a distancia y fuera de establecimiento, el cliente consumidor dispone de 14 días naturales para desistir sin necesidad de justificación.', 'Si el servicio ha comenzado a petición del cliente durante el periodo de desistimiento, podrá exigirse el importe proporcional a la parte ya prestada.']],
-  ['13) Fuerza mayor', ['Ninguna de las partes será responsable por retrasos debidos a causas de fuerza mayor (temporales, huelgas generales, pandemias, indisponibilidad de suministros críticos, actos normativos sobrevenidos, etc.). Los plazos se prorrogarán por el tiempo de la incidencia.']],
-  ['14) Ley aplicable y jurisdicción', ['Este contrato se rige por el Derecho español. Para controversias se someten a los Juzgados y Tribunales de Palma de Mallorca. Si el cliente ostenta la condición de consumidor, serán competentes los juzgados de su domicilio.']],
-];
-function condicionesPresupuestoHTML(d) {
+// Los textos (pago, condiciones, aceptación) están en presu-idiomas.js, en los
+// cuatro idiomas del PDF (Enzo, 6-11-2026); en español son los de siempre.
+const PRESU_PAGO = idiomas.PDF.es.pago;
+const PRESU_CONDICIONES = idiomas.PDF.es.condiciones;
+function condicionesPresupuestoHTML(d, idioma) {
+  idioma = idiomas.idiomaValido(idioma);
+  const T = idiomas.textosPDF(idioma);
   const cli = (d.cliente && d.cliente.nombre) || '';
   const validez = Number(d.validez_dias || 15) + Number(d.prorroga_dias || 0);
   const vence = typeof vencePresu === 'function' ? vencePresu(d) : null;
@@ -10416,32 +10407,74 @@ function condicionesPresupuestoHTML(d) {
   const parrafo = (t) => `<div class="corte" style="font:400 9.5px/1.4 var(--sans);color:#333;margin-top:3px">${esc(t)}</div>`;
   const firma = (t) => `<div class="corte" style="margin-top:16px;font:400 10px var(--sans);color:#444">${esc(t)}: <span style="display:inline-block;width:80mm;border-bottom:1px dotted #777;vertical-align:bottom"></span></div>`;
   return `<div data-salto="1" style="padding-top:4px">
-    <div class="corte" style="font:400 11px var(--sans);margin-top:6px">Ambas partes aceptan el contenido del presupuesto.</div>
+    <div class="corte" style="font:400 11px var(--sans);margin-top:6px">${esc(T.ambas)}</div>
     <div class="corte" style="font:600 11px var(--sans);margin-top:3px">${esc(S.empresa)}${cli ? ' · ' + esc(cli) : ''}</div>
-    ${h('Información de pago')}
-    ${parrafo('IBAN: ' + PRESU_IBAN)}
-    <div style="font:600 9.5px/1.4 var(--sans);color:#333;margin-top:5px">CONDICIONES DE PAGO:</div>
-    ${PRESU_PAGO.map(parrafo).join('')}
-    ${h('Plazos y validez')}
-    ${parrafo('Validez de la oferta: ' + validez + ' días naturales desde la fecha del presupuesto' + (vence ? ' (hasta el ' + fechaCorta(vence + 'T12:00') + ')' : '') + '.')}
-    ${parrafo('Plazo estimado de ejecución: desde la aceptación y el abono del anticipo; sujeto a disponibilidad de materiales y autorizaciones.')}
-    ${h('Condiciones generales y exclusiones')}
-    ${parrafo('Estas condiciones forman parte integrante del presupuesto. En caso de conflicto, prevalecerá el presupuesto firmado y sus anexos.')}
-    ${PRESU_CONDICIONES.map(([t, ps]) => `<div style="font:600 10px/1.4 var(--sans);margin-top:9px">${esc(t)}</div>${ps.map(parrafo).join('')}`).join('')}
-    ${h('Aceptación del presupuesto')}
-    ${firma('Nombre y DNI/NIE del cliente')}
-    ${firma('Firma del cliente')}
-    ${firma('Fecha')}
-    ${firma('Firma Sysefen')}
-    ${firma('Fecha')}
+    ${h(T.info_pago)}
+    ${parrafo(T.iban + ': ' + PRESU_IBAN)}
+    <div style="font:600 9.5px/1.4 var(--sans);color:#333;margin-top:5px">${esc(T.cond_pago)}</div>
+    ${T.pago.map(parrafo).join('')}
+    ${h(T.plazos)}
+    ${parrafo(idiomas.rellena(T.validez, { n: validez, hasta: vence ? idiomas.rellena(T.hasta, { f: idiomas.fechaIdioma(vence + 'T12:00', idioma) }) : '' }))}
+    ${parrafo(T.plazo)}
+    ${h(T.cond_gen)}
+    ${parrafo(T.integrante)}
+    ${T.condiciones.map(([t, ps]) => `<div style="font:600 10px/1.4 var(--sans);margin-top:9px">${esc(t)}</div>${ps.map(parrafo).join('')}`).join('')}
+    ${h(T.aceptacion)}
+    ${firma(T.f_nombre)}
+    ${firma(T.f_cliente)}
+    ${firma(T.f_fecha)}
+    ${firma(T.f_sysefen)}
+    ${firma(T.f_fecha)}
   </div>`;
 }
-function imprimirPresupuestoHTML(d) {
+/* ---------- el presupuesto en otro idioma (Enzo, 6-11-2026) ----------
+ * Los textos fijos salen de presu-idiomas.js; las líneas (catálogo, en
+ * español) las traduce la función «traducir» y se guardan aquí por sesión. */
+const TRAD = { en: {}, ca: {}, de: {} };
+/** Quita el «NN · » de delante de una sección para traducir solo el nombre. */
+const partesSeccion = (nombre) => { const m = /^(\d\d) · (.+)$/.exec(String(nombre || '')); return m ? [m[1] + ' · ', m[2]] : ['', String(nombre || '')]; };
+/** Los textos de un presupuesto que hay que traducir (líneas, secciones, notas, título). */
+function textosDelPresu(d) {
+  const t = [];
+  (d.lineas || []).forEach((l) => {
+    t.push(l.descripcion, l.detalle_tecnico, partesSeccion(l.seccion)[1]);
+    if (l.origen_inputs && l.origen_inputs.fv2) t.push(l.origen_inputs.nota, l.origen_inputs.condiciones);
+  });
+  t.push(d.titulo);
+  return [...new Set(t.map((x) => String(x == null ? '' : x).trim()).filter(Boolean))];
+}
+/** Trae (y guarda) las traducciones del presupuesto; devuelve la función que traduce un texto. */
+async function traduccionesPresu(d, idioma) {
+  idioma = idiomas.idiomaValido(idioma);
+  if (idioma === 'es') return (x) => x;
+  const cache = TRAD[idioma];
+  const faltan = textosDelPresu(d).filter((x) => !cache[x]);
+  if (faltan.length) {
+    if (!navigator.onLine) throw new Error('sin conexión no se puede traducir');
+    const r = await visitasDB.traducir(idioma, faltan);
+    Object.assign(cache, (r && r.textos) || {});
+  }
+  return (x) => { const k = String(x == null ? '' : x).trim(); return (k && cache[k]) || x; };
+}
+/** Una copia del presupuesto con las líneas traducidas, lista para el PDF. */
+function presuTraducido(d, tr) {
+  const trSec = (n) => { const [pre, nombre] = partesSeccion(n); return nombre ? pre + tr(nombre) : n; };
+  return Object.assign({}, d, { titulo: d.titulo ? tr(d.titulo) : d.titulo, lineas: (d.lineas || []).map((l) => Object.assign({}, l, {
+    descripcion: tr(l.descripcion), detalle_tecnico: l.detalle_tecnico ? tr(l.detalle_tecnico) : l.detalle_tecnico, seccion: trSec(l.seccion),
+    origen_inputs: l.origen_inputs && l.origen_inputs.fv2 ? Object.assign({}, l.origen_inputs, { nota: l.origen_inputs.nota ? tr(l.origen_inputs.nota) : l.origen_inputs.nota, condiciones: l.origen_inputs.condiciones ? tr(l.origen_inputs.condiciones) : l.origen_inputs.condiciones }) : l.origen_inputs,
+  })) });
+}
+function imprimirPresupuestoHTML(d, idioma, tr) {
+  idioma = idiomas.idiomaValido(idioma);
+  if (idioma !== 'es') d = presuTraducido(d, tr || ((x) => x));
+  const T = idiomas.textosPDF(idioma);
+  const eur = (n) => idiomas.eurIdioma(n, idioma);
+  const fechaCorta = (iso) => idiomas.fechaIdioma(iso, idioma);
   const lineas = (d.lineas || []).slice().sort((a, b) => (a.orden || 0) - (b.orden || 0));
   const cli = d.cliente || null;
   const secciones = [];
   lineas.forEach((l) => {
-    const nombre = l.seccion || 'Otros';
+    const nombre = l.seccion || T.otros;
     let s = secciones.find((x) => x.nombre === nombre);
     if (!s) { s = { nombre, lineas: [] }; secciones.push(s); }
     s.lineas.push(l);
@@ -10455,24 +10488,24 @@ function imprimirPresupuestoHTML(d) {
     <div style="display:flex;justify-content:space-between;align-items:flex-start">
       <div><img src="logo-trans.png?v=3" alt="" style="height:17mm">
       ${S.cif ? `<div style="font:400 10px var(--mono);color:#666;margin-top:2px">${esc(S.empresa)} · ${esc(S.cif)}</div>` : ''}</div>
-      <div style="text-align:right"><div style="font:600 11px var(--mono);letter-spacing:.1em">PRESUPUESTO</div>
-      <div style="font:700 16px var(--cond);margin-top:2px">${esc(nombreCat(d.categoria) || d.categoria)}</div>
+      <div style="text-align:right"><div style="font:600 11px var(--mono);letter-spacing:.1em">${esc(T.presupuesto)}</div>
+      <div style="font:700 16px var(--cond);margin-top:2px">${esc(idiomas.categoriaIdioma(d.categoria, idioma) || nombreCat(d.categoria) || d.categoria)}</div>
       <div style="font:400 10px var(--mono);color:#666;margin-top:2px">${d.created_at ? fechaCorta(d.created_at) : ''}</div></div>
     </div>
     <div style="height:2px;background:#14170f;margin:10px 0 14px"></div>
     <table style="width:100%;font:400 12px var(--sans);border-collapse:collapse">
-      <tr><td style="padding:3px 0;color:#666;width:32%">Cliente</td><td style="font-weight:600">${esc((cli && cli.nombre) || d.titulo || '—')}</td></tr>
-      ${d.visita && d.visita.codigo ? `<tr><td style="padding:3px 0;color:#666">Visita</td><td>${esc(d.visita.codigo)}</td></tr>` : ''}
+      <tr><td style="padding:3px 0;color:#666;width:32%">${esc(T.cliente)}</td><td style="font-weight:600">${esc((cli && cli.nombre) || d.titulo || '—')}</td></tr>
+      ${d.visita && d.visita.codigo ? `<tr><td style="padding:3px 0;color:#666">${esc(T.visita)}</td><td>${esc(d.visita.codigo)}</td></tr>` : ''}
     </table>
 
-    ${bloquesImpresion(d.categoria, secciones).map((s) => `<div style="margin-top:18px">
+    ${bloquesImpresion(d.categoria, secciones, T).map((s) => `<div style="margin-top:18px">
       <div style="font:600 10px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:#666;margin-bottom:5px">${esc(s.nombre)}</div>
       <table style="width:100%;font:400 12px var(--sans);border-collapse:collapse">
         ${s.lineas.map((l) => `<tr>
           <td style="padding:6px 0;border-bottom:1px solid #eee;vertical-align:top">
             <div style="font-weight:600">${esc(l.descripcion)}</div>
             ${l.detalle_tecnico ? `<div style="font:400 10px/1.4 var(--sans);color:#666;margin-top:2px">${esc(l.detalle_tecnico)}</div>` : ''}
-            ${l.resumen || (l.origen_inputs && l.origen_inputs.fv2 && Number(l.cantidad) === 1) ? '' : `<div style="font:400 10px var(--mono);color:#666;margin-top:2px">${esc(String(l.cantidad))} ${esc(l.unidad || 'ud')} × ${eur(l.precio_tarifa)}${l.dto_linea_pct ? ' · −' + l.dto_linea_pct + '%' : ''}</div>`}
+            ${l.resumen || (l.origen_inputs && l.origen_inputs.fv2 && Number(l.cantidad) === 1) ? '' : `<div style="font:400 10px var(--mono);color:#666;margin-top:2px">${esc(String(l.cantidad))} ${esc(idiomas.unidadIdioma(l.unidad, idioma))} × ${eur(l.precio_tarifa)}${l.dto_linea_pct ? ' · −' + l.dto_linea_pct + '%' : ''}</div>`}
           </td>
           <td style="padding:6px 0;border-bottom:1px solid #eee;text-align:right;white-space:nowrap;vertical-align:top;font-family:var(--cond);font-weight:600">${eur(l.precio_venta)}</td>
         </tr>`).join('')}
@@ -10485,21 +10518,21 @@ function imprimirPresupuestoHTML(d) {
     })()}
 
     <div style="margin-top:16px;padding-top:8px;border-top:2px solid #14170f">
-      ${d.dto_global_pct ? `<div style="display:flex;justify-content:space-between;font:400 11px var(--sans);color:#666"><span>Incluye descuento de −${d.dto_global_pct} %</span></div>` : ''}
+      ${d.dto_global_pct ? `<div style="display:flex;justify-content:space-between;font:400 11px var(--sans);color:#666"><span>${esc(idiomas.rellena(T.incluye_dto, { n: d.dto_global_pct }))}</span></div>` : ''}
       <div style="display:flex;justify-content:space-between;align-items:baseline;margin-top:4px">
-        <span style="font:600 13px var(--sans)">Total sin IVA</span>
+        <span style="font:600 13px var(--sans)">${esc(T.total_sin_iva)}</span>
         <span style="font:700 18px var(--cond)">${eur(total)}</span>
       </div>
       <div style="display:flex;justify-content:space-between;font:400 11px var(--sans);color:#666;margin-top:3px">
-        <span>IVA ${iva} %</span><span>${eur(total * iva / 100)}</span>
+        <span>${esc(T.iva)} ${iva} %</span><span>${eur(total * iva / 100)}</span>
       </div>
       <div style="display:flex;justify-content:space-between;align-items:baseline;margin-top:3px">
-        <span style="font:600 13px var(--sans)">Total con IVA</span>
+        <span style="font:600 13px var(--sans)">${esc(T.total_con_iva)}</span>
         <span style="font:700 18px var(--cond)">${eur(total * (1 + iva / 100))}</span>
       </div>
     </div>
-    <div style="font:400 10px/1.5 var(--sans);color:#666;margin-top:14px">Presupuesto válido ${esc(String(Number(d.validez_dias || 15) + Number(d.prorroga_dias || 0)))} días naturales. No incluye obra civil ni permisos que no se nombren arriba. Condiciones generales y de pago en las páginas siguientes.</div>
-    ${condicionesPresupuestoHTML(d)}
+    <div style="font:400 10px/1.5 var(--sans);color:#666;margin-top:14px">${esc(idiomas.rellena(T.pie, { n: Number(d.validez_dias || 15) + Number(d.prorroga_dias || 0) }))}</div>
+    ${condicionesPresupuestoHTML(d, idioma)}
   </div>`;
 }
 
@@ -10510,10 +10543,13 @@ function imprimirPresupuestoHTML(d) {
  */
 /** El nombre del PDF de un presupuesto: presupuesto-aerotermia-ana-ferrer.pdf */
 // El archivo se llama como el presupuesto (Enzo, 28-10-2026): «Presupuesto Juanlu · Enphase · 5,1 kWp.pdf».
-const nombrePdfPresu = (d) => {
+const PDF_PREFIJO = { es: 'Presupuesto', en: 'Quotation', ca: 'Pressupost', de: 'Angebot' };
+const nombrePdfPresu = (d, idioma) => {
+  idioma = idiomas.idiomaValido(idioma);
   let t = String(d.titulo || [(d.cliente && d.cliente.nombre) || '', nombreCat(d.categoria) || ''].filter(Boolean).join(' · ') || 'Sysefen')
     .replace(/\s*[·\-–—(]?\s*Hecho en Teamleader\s*[)]?\s*/gi, ' ').replace(/[\\/:*?"<>|\u0000-\u001f]+/g, '-').replace(/\s+/g, ' ').trim().slice(0, 120).replace(/[ .\-·]+$/, '');
-  if (!/^presupuesto\b/i.test(t)) t = 'Presupuesto ' + t;
+  if (idioma !== 'es') t = PDF_PREFIJO[idioma] + ' · ' + t.replace(/^presupuesto\s*[·\-–—]?\s*/i, '');
+  else if (!/^presupuesto\b/i.test(t)) t = 'Presupuesto ' + t;
   return t + '.pdf';
 };
 
@@ -10579,27 +10615,37 @@ A.presuATeamleader = async () => {
   }
 };
 
+A.presuIdioma = (k) => { const v = V.presuVer; if (!v) return; v.idioma = idiomas.idiomaValido(k); render(); };
 A.presuPdf = async () => {
   const v = V.presuVer; if (!v || !v.datos) return;
-  toast('Preparando el PDF…');
-  imprimirPresupuestoHTML(v.datos);
+  toast(v.idioma && v.idioma !== 'es' ? 'Traduciendo y preparando el PDF…' : 'Preparando el PDF…');
+  let tr;
+  try { tr = await traduccionesPresu(v.datos, v.idioma); } catch (e) { avisar('No se pudo traducir el presupuesto: ' + msgError(e)); return; }
+  imprimirPresupuestoHTML(v.datos, v.idioma, tr);
   const cli = (v.datos.cliente && v.datos.cliente.nombre) || '';
-  await salidaImpresion(nombrePdfPresu(v.datos),
+  await salidaImpresion(nombrePdfPresu(v.datos, v.idioma),
     'Presupuesto ' + (nombreCat(v.datos.categoria) || ''),
     S.empresa + ' · Presupuesto' + (cli ? ' · ' + cli : ''));
 };
 // Descargar el PDF como archivo, con el nombre del presupuesto (también en ordenador, donde «PDF» imprime).
 A.presuPdfDescargar = async () => {
   const v = V.presuVer; if (!v || !v.datos || v.bajandoPdf) return;
-  v.bajandoPdf = true; render(); toast('Preparando el PDF…');
+  v.bajandoPdf = true; render(); toast(v.idioma && v.idioma !== 'es' ? 'Traduciendo y preparando el PDF…' : 'Preparando el PDF…');
   try {
-    imprimirPresupuestoHTML(v.datos);
+    const tr = await traduccionesPresu(v.datos, v.idioma);
+    imprimirPresupuestoHTML(v.datos, v.idioma, tr);
     const blob = await pdfDeImpresion();
-    descargarArchivo(blob, nombrePdfPresu(v.datos));
+    descargarArchivo(blob, nombrePdfPresu(v.datos, v.idioma));
   } catch (e) { avisar('No se pudo preparar el PDF: ' + msgError(e)); }
   v.bajandoPdf = false; render();
 };
 
+/** Los chips de idioma del PDF (español por defecto; inglés, catalán y alemán). */
+function presuIdiomaChipsHTML() {
+  const k = idiomas.idiomaValido(V.presuVer && V.presuVer.idioma);
+  return `<div class="tiny" style="margin-top:14px;margin-bottom:6px">Idioma del PDF${k !== 'es' ? ' · las líneas se traducen al preparar el PDF' : ''}</div>
+      <div class="wrap">${idiomas.IDIOMAS.map(([key, nombre]) => `<span class="chip ${k === key ? 'on' : ''}" data-a="presuIdioma" data-k="${key}" style="cursor:pointer">${nombre}</span>`).join('')}</div>`;
+}
 function vPresupuestoVer() {
   const v = V.presuVer;
   if (!v) { V.view = 'presupuestos'; return vPresupuestos(); }
@@ -10639,10 +10685,12 @@ function vPresupuestoVer() {
       ${d.motor_version === 'teamleader'
         ? (lineas.length
           ? `<div class="tiny" style="margin-top:12px">Hecho en Teamleader: las líneas son las de la oferta de allí. Lo que se cambie allí llega solo; lo que se cambie aquí con «Modificar» se actualiza allí.</div>
-      <div class="row g8" style="margin-top:14px"><button class="btn btn-gris" data-a="presuPdf" style="border-radius:99px">PDF</button><button class="btn btn-gris" data-a="presuPdfDescargar" style="border-radius:99px" ${V.presuVer.bajandoPdf ? 'disabled' : ''}>Descargar PDF</button><button class="btn btn-gris" data-a="presuEditar" style="border-radius:99px">Modificar</button>${listaCompraBtn(d)}${abrirAparteBtn()}</div>`
+      ${presuIdiomaChipsHTML()}
+      <div class="row g8" style="margin-top:10px"><button class="btn btn-gris" data-a="presuPdf" style="border-radius:99px">PDF</button><button class="btn btn-gris" data-a="presuPdfDescargar" style="border-radius:99px" ${V.presuVer.bajandoPdf ? 'disabled' : ''}>Descargar PDF</button><button class="btn btn-gris" data-a="presuEditar" style="border-radius:99px">Modificar</button>${listaCompraBtn(d)}${abrirAparteBtn()}</div>`
           : '<div class="tiny" style="margin-top:12px">Hecho en Teamleader: las líneas aún no se han traído. Pulsa ↻ Actualizar desde Teamleader en Presupuestos.</div>')
         : `<div class="tiny" style="margin-top:12px">Calculado con las reglas ${esc(d.motor_version || '')}. Queda congelado con la tarifa de ese día.${d.tl_quotation_id ? ' Lo que se cambie en Teamleader llega solo cada cinco minutos; lo que se cambie aquí con «Modificar» se actualiza allí.' : ''}</div>
-      <div class="row g8" style="margin-top:14px">
+      ${presuIdiomaChipsHTML()}
+      <div class="row g8" style="margin-top:10px">
         <button class="btn btn-gris" data-a="presuPdf" style="border-radius:99px">PDF</button>
         <button class="btn btn-gris" data-a="presuPdfDescargar" style="border-radius:99px" ${V.presuVer.bajandoPdf ? 'disabled' : ''}>Descargar PDF</button>
         <button class="btn btn-gris" data-a="presuEditar" style="border-radius:99px">Modificar</button>
@@ -10671,36 +10719,59 @@ A.presuEnviarAbrir = async () => {
   if (!V.presuLista.cargado) { try { await A.cargarPresupuestos(); } catch (_) { /* da igual */ } }
   const otros = (V.presuLista.filas || []).filter((p) => p.cliente_id && p.cliente_id === d.cliente_id && p.id !== d.id && (p.respuesta_cliente || 'pendiente') === 'pendiente');
   V.sheet = { tipo: 'presuEnviar', id: d.id, ids: [d.id], otros,
-    v: { para: (cli && cli.email) || d.enviado_correo_a || '', cc: '', asunto: '', mensaje: '' }, confirmar: false, busy: false, paso: '' };
+    v: { para: (cli && cli.email) || d.enviado_correo_a || '', cc: '', asunto: '', mensaje: '', idioma: idiomas.idiomaValido(V.presuVer.idioma) }, confirmar: false, busy: false, paso: '', trad: null };
   render();
 };
 A.presuEnviarCampo = (k, v) => { const s = V.sheet; if (s && s.tipo === 'presuEnviar') s.v[k] = v; };
+A.presuEnviarIdioma = (k) => { const s = V.sheet; if (!s || s.tipo !== 'presuEnviar') return; s.v.idioma = idiomas.idiomaValido(k); s.trad = null; render(); };
 A.presuEnviarToggle = (id) => {
   const s = V.sheet; if (!s || s.tipo !== 'presuEnviar') return;
   if (id === s.id) return;
   const i = s.ids.indexOf(id); if (i >= 0) s.ids.splice(i, 1); else s.ids.push(id);
   render();
 };
-A.presuEnviarRevisar = () => {
-  const s = V.sheet; if (!s || s.tipo !== 'presuEnviar') return;
+A.presuEnviarRevisar = async () => {
+  const s = V.sheet; if (!s || s.tipo !== 'presuEnviar' || s.busy) return;
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(s.v.para || '').trim())) { avisar('Pon un correo válido del cliente.'); return; }
+  // En otro idioma, el asunto y el mensaje se traducen antes de confirmar,
+  // para verlos tal como le llegarán al cliente (Enzo, 6-11-2026).
+  s.trad = null;
+  if (s.v.idioma !== 'es') {
+    const textos = [String(s.v.asunto || '').trim(), String(s.v.mensaje || '').trim()].filter(Boolean);
+    if (textos.length) {
+      s.busy = true; s.paso = 'Traduciendo el mensaje…'; render();
+      try { const r = await visitasDB.traducir(s.v.idioma, textos); s.trad = (r && r.textos) || {}; }
+      catch (e) { s.busy = false; s.paso = ''; render(); avisar('No se pudo traducir el mensaje: ' + msgError(e)); return; }
+      s.busy = false; s.paso = '';
+    }
+  }
   s.confirmar = true; render();
+};
+/** El asunto y el mensaje tal como van en el correo: traducidos si el idioma no es español. */
+const presuEnviarTextos = (s) => {
+  const t = s.trad || {};
+  const asunto = String(s.v.asunto || '').trim(), mensaje = String(s.v.mensaje || '').trim();
+  return { asunto: (asunto && t[asunto]) || asunto, mensaje: (mensaje && t[mensaje]) || mensaje };
 };
 A.presuEnviarVolver = () => { const s = V.sheet; if (s && s.tipo === 'presuEnviar') { s.confirmar = false; render(); } };
 A.presuEnviarConfirmado = async () => {
   const s = V.sheet; if (!s || s.tipo !== 'presuEnviar' || s.busy) return;
-  s.busy = true; s.paso = 'Preparando los PDF…'; render();
+  const idioma = idiomas.idiomaValido(s.v.idioma);
+  s.busy = true; s.paso = idioma === 'es' ? 'Preparando los PDF…' : 'Traduciendo y preparando los PDF…'; render();
   try {
-    const pdfs = [];
+    const pdfs = [], titulos = {};
     for (const id of s.ids) {
       const d = await visitasDB.verPresupuesto(id);
-      imprimirPresupuestoHTML(d);
+      const tr = await traduccionesPresu(d, idioma);
+      if (idioma !== 'es' && d.titulo) titulos[id] = tr(d.titulo);
+      imprimirPresupuestoHTML(d, idioma, tr);
       const blob = await Promise.race([pdfDeImpresion(), new Promise((_, mal) => setTimeout(() => mal(new Error('el PDF tarda demasiado')), 40000))]);
       const base64 = await new Promise((ok, mal) => { const fr = new FileReader(); fr.onload = () => ok(String(fr.result).replace(/^data:[^,]*,/, '')); fr.onerror = () => mal(fr.error); fr.readAsDataURL(blob); });
-      pdfs.push({ id, base64, nombre: nombrePdfPresu(d) });
+      pdfs.push({ id, base64, nombre: nombrePdfPresu(d, idioma) });
     }
     s.paso = 'Enviando el correo…'; render();
-    const r = await visitasDB.enviarPresupuestoCliente({ ids: s.ids, para: String(s.v.para).trim(), cc: s.v.cc, asunto: s.v.asunto, mensaje: s.v.mensaje, pdfs });
+    const textos = presuEnviarTextos(s);
+    const r = await visitasDB.enviarPresupuestoCliente({ ids: s.ids, para: String(s.v.para).trim(), cc: s.v.cc, asunto: textos.asunto, mensaje: textos.mensaje, pdfs, idioma, titulos });
     V.sheet = null;
     toast((r.enviados === 1 ? 'Presupuesto enviado' : r.enviados + ' presupuestos enviados') + ' a ' + r.para + '.');
     V.presuLista.cargado = false; A.cargarPresupuestos();
@@ -13611,9 +13682,9 @@ function sheet() {
     const elegidos = todos.filter((p) => s.ids.includes(p.id));
     if (s.confirmar) return `<div class="sheet"><div>
       <div style="font:600 23px/1.15 var(--cond)">¿Seguro que quieres enviarlo?</div>
-      <div class="sub" style="margin-top:8px">Se manda a <b>${esc(v.para)}</b>${String(v.cc || '').trim() ? ' con copia a ' + esc(v.cc) : ''}:</div>
+      <div class="sub" style="margin-top:8px">Se manda a <b>${esc(v.para)}</b>${String(v.cc || '').trim() ? ' con copia a ' + esc(v.cc) : ''}${v.idioma !== 'es' ? ', en <b>' + esc(idiomas.nombreIdioma(v.idioma)) + '</b> (PDF y correo)' : ''}:</div>
       <div style="margin-top:10px">${elegidos.map((p) => `<div class="row" style="justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--l1)"><span style="font:500 14px var(--sans)">${esc(p.titulo || nombreCat(p.categoria))}</span><span class="num">${eur(p.total_venta)}</span></div>`).join('')}</div>
-      ${String(v.mensaje || '').trim() ? `<div class="tiny" style="margin-top:10px;white-space:pre-wrap">${esc(v.mensaje)}</div>` : ''}
+      ${(() => { const t = presuEnviarTextos(s); return (t.asunto && v.idioma !== 'es' ? `<div class="tiny" style="margin-top:10px"><b>Asunto:</b> ${esc(t.asunto)}</div>` : '') + (t.mensaje ? `<div class="tiny" style="margin-top:10px;white-space:pre-wrap">${esc(t.mensaje)}</div>` : '') + (v.idioma !== 'es' && (t.asunto || t.mensaje) ? '<div class="tiny" style="margin-top:4px;opacity:.7">Así va traducido tu mensaje. Si no te convence, vuelve y cámbialo.</div>' : ''); })()}
       <div class="tiny" style="margin-top:10px">Cada presupuesto va con su PDF y un enlace para verlo, aceptarlo y firmarlo. Al firmar, queda aceptado en la app y el PDF firmado llega por correo y al Drive.</div>
       ${s.paso ? `<div class="sub" style="margin-top:12px;color:var(--verde-o)">${esc(s.paso)}</div>` : ''}
       <div class="row g8" style="margin-top:18px">
@@ -13624,6 +13695,9 @@ function sheet() {
     return `<div class="sheet"><div>
       <div style="font:600 23px/1.15 var(--cond)">Enviar al cliente por correo</div>
       <div class="sub" style="margin-top:6px">${esc((d && d.cliente && d.cliente.nombre) || '')}. Un correo con el PDF, tu mensaje y el enlace para aceptar y firmar.</div>
+      <div class="lbl" style="margin:12px 0 6px">Idioma del PDF y del correo</div>
+      <div class="wrap">${idiomas.IDIOMAS.map(([key, nombre]) => `<span class="chip ${v.idioma === key ? 'on' : ''}" data-a="presuEnviarIdioma" data-k="${key}" style="cursor:pointer">${nombre}</span>`).join('')}</div>
+      ${v.idioma !== 'es' ? '<div class="tiny" style="margin-top:6px">Las líneas del presupuesto, tu asunto y tu mensaje se traducen al revisar; el texto fijo del correo va en ese idioma.</div>' : ''}
       <div class="lbl" style="margin:12px 0 6px">Para</div><input class="inp" data-f="pe:para" type="email" inputmode="email" autocapitalize="off" value="${esc(v.para)}" placeholder="cliente@correo.es">
       <div class="lbl" style="margin:12px 0 6px">Copia (opcional)</div><input class="inp" data-f="pe:cc" type="email" inputmode="email" autocapitalize="off" value="${esc(v.cc)}" placeholder="otro@correo.es">
       <div class="lbl" style="margin:12px 0 6px">Asunto (opcional)</div><input class="inp" data-f="pe:asunto" value="${esc(v.asunto)}" placeholder="${esc((elegidos.length > 1 ? 'Sus presupuestos' : 'Su presupuesto') + ' de Sysefen')}">
@@ -13637,7 +13711,7 @@ function sheet() {
       <div class="tiny" style="margin-top:6px">Marca las opciones que quieras mandar juntas; cada una lleva su PDF y su enlace.</div>` : ''}
       <div class="row g8" style="margin-top:18px">
         <button class="btn btn-gris" data-a="cerrarSheet" style="border-radius:99px">Cancelar</button>
-        <button class="btn btn-verde" data-a="presuEnviarRevisar">Revisar y enviar</button>
+        <button class="btn btn-verde" data-a="presuEnviarRevisar" ${s.busy ? 'disabled' : ''}>${s.busy ? esc(s.paso || 'Un momento…') : 'Revisar y enviar'}</button>
       </div>
     </div></div>`;
   }
@@ -14149,6 +14223,7 @@ document.addEventListener('click', (e) => {
   if (a === 'presuEnviarAbrir') { e.stopPropagation(); return A.presuEnviarAbrir(); }
   if (a === 'presuEnviarToggle') return A.presuEnviarToggle(d.id);
   if (a === 'presuEnviarRevisar') return A.presuEnviarRevisar();
+  if (a === 'presuEnviarIdioma') return A.presuEnviarIdioma(d.k);
   if (a === 'presuEnviarVolver') return A.presuEnviarVolver();
   if (a === 'presuEnviarConfirmado') return A.presuEnviarConfirmado();
   if (a === 'presuFirmadoVer') return A.presuFirmadoVer();
@@ -14207,6 +14282,7 @@ document.addEventListener('click', (e) => {
   if (a === 'presuAbrirAparte') return A.presuAbrirAparte();
   if (a === 'abrirAparte') return A.abrirAparte();
   if (a === 'presuPdf') return A.presuPdf();
+  if (a === 'presuIdioma') return A.presuIdioma(d.k);
   if (a === 'presuATeamleader') return A.presuATeamleader();
   if (a === 'presuGuardadoATL') return A.presuGuardadoATL();
   if (a === 'abrirLegalizaciones') return A.abrirLegalizaciones();

@@ -292,7 +292,32 @@ setTimeout(function () {
   comprueba('el total sin IVA', pdf.indexOf('780,00') > -1);
   comprueba('y el total con IVA (943,80)', pdf.indexOf('943,80') > -1);
 
-  igual('el PDF se llama por oficio y cliente, sin tildes', nombrePdfPresu(guardado), 'presupuesto-aire-acondicionado-ana-ferrer.pdf');
+  // Desde el 28-10-2026 el archivo se llama como el presupuesto (título o cliente · categoría).
+  igual('el PDF se llama como el presupuesto', nombrePdfPresu(guardado), 'Presupuesto Aire · Casa de Ana.pdf');
+  igual('y en inglés lleva Quotation delante', nombrePdfPresu(guardado, 'en'), 'Quotation · Aire · Casa de Ana.pdf');
+
+  titulo('el PDF en otro idioma (6-11-2026)');
+  comprueba('la ficha ofrece el idioma del PDF, español marcado', h.indexOf('data-a="presuIdioma" data-k="en"') > -1 && /chip on" data-a="presuIdioma" data-k="es"/.test(h));
+  comprueba('los textos fijos están en los cuatro idiomas', ['es', 'en', 'ca', 'de'].every(function (k) { return idiomas.PDF[k] && idiomas.PDF[k].condiciones.length === 14 && idiomas.PDF[k].pago.length === 3; }));
+  var trad = { 'Instalación de aire acondicionado': 'Air conditioning installation', 'Equipos': 'Equipment' };
+  var tr = function (x) { return trad[String(x || '').trim()] || x; };
+  imprimirPresupuestoHTML(guardado, 'en', tr);
+  var pdfEn = impreso.innerHTML;
+  comprueba('dice QUOTATION y no PRESUPUESTO', pdfEn.indexOf('QUOTATION') > -1 && pdfEn.indexOf('PRESUPUESTO') === -1);
+  comprueba('la categoría en inglés', pdfEn.indexOf('Air conditioning') > -1);
+  comprueba('totales y condiciones en inglés', pdfEn.indexOf('Total excl. VAT') > -1 && pdfEn.indexOf('General terms and exclusions') > -1 && pdfEn.indexOf('14) Governing law') > -1 && pdfEn.indexOf('Total sin IVA') === -1);
+  comprueba('los importes con punto decimal (780.00)', pdfEn.indexOf('780.00 €') > -1 && pdfEn.indexOf('943.80 €') > -1);
+  comprueba('el cliente y el detalle técnico siguen', pdfEn.indexOf('Ana Ferrer') > -1 && pdfEn.indexOf('C100') > -1);
+  comprueba('los textos a traducir salen de las líneas, sin repetir ni vacíos', (function () { var t = textosDelPresu(guardado); return t.length > 0 && t.indexOf('') === -1 && t.length === new Set(t).size; })());
+  imprimirPresupuestoHTML(guardado, 'de');
+  var pdfDe = impreso.innerHTML;
+  comprueba('en alemán: ANGEBOT y Summe ohne MwSt.', pdfDe.indexOf('ANGEBOT') > -1 && pdfDe.indexOf('Summe ohne MwSt.') > -1 && pdfDe.indexOf('Klimaanlage') > -1);
+  imprimirPresupuestoHTML(guardado, 'ca');
+  comprueba('en catalán: PRESSUPOST', impreso.innerHTML.indexOf('PRESSUPOST') > -1 && impreso.innerHTML.indexOf('Aire condicionat') > -1);
+  imprimirPresupuestoHTML(guardado, 'xx');
+  comprueba('un idioma desconocido cae al español', impreso.innerHTML.indexOf('PRESUPUESTO') > -1);
+  igual('la unidad en inglés', idiomas.unidadIdioma('ud', 'en'), 'pcs');
+  igual('y la que no se conoce se queda', idiomas.unidadIdioma('rollo', 'de'), 'rollo');
 
   // Aquí no se pueden bajar las librerías del PDF: que fallen en vez de
   // quedarse esperando, como pasaría sin conexión.

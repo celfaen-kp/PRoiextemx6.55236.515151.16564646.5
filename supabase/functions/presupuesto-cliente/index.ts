@@ -41,6 +41,83 @@ const REMITENTE = 'Sysefen <noreply@sysefen.com>';
 const BUCKET = 'presupuestos-cliente';
 const CATS: Record<string, string> = { solar: 'Fotovoltaica', aerotermia: 'Aerotermia', aire_acondicionado: 'Aire acondicionado', electricidad: 'Electricidad' };
 
+// ---------- el correo y el PDF firmado en el idioma del cliente (Enzo, 6-11-2026) ----------
+// El idioma lo elige quien manda el presupuesto desde la app (es, en, ca, de) y se
+// guarda en presupuestos.idioma_cliente para el PDF firmado y el correo de después.
+const LOCALES: Record<string, string> = { es: 'es-ES', en: 'en-GB', ca: 'ca-ES', de: 'de-DE' };
+const idiomaValido = (x: unknown) => (typeof x === 'string' && LOCALES[x] ? x : 'es');
+type Textos = Record<string, string>;
+const TXT: Record<string, Textos> = {
+  es: {
+    cat_solar: 'Fotovoltaica', cat_aerotermia: 'Aerotermia', cat_aire_acondicionado: 'Aire acondicionado', cat_electricidad: 'Electricidad',
+    asunto1: 'Su presupuesto de Sysefen', asuntoN: 'Sus presupuestos de Sysefen', titulo1: 'Su presupuesto', tituloN: 'Sus presupuestos',
+    hola: 'Hola {n},', intro1: 'le enviamos el presupuesto que hemos preparado para usted.', introN: 'le enviamos los {k} presupuestos que hemos preparado para usted, para que elija la opción que mejor le encaje.',
+    base: 'Base imponible', iva: 'IVA 21 %', total: 'Total', valido: 'Válido hasta el {f}', ver: 'Ver y aceptar este presupuesto', ver_txt: 'Ver y aceptar', sin_iva: 'sin IVA', con_iva: 'con IVA', num: 'nº',
+    pie: 'Puede ver cada presupuesto en el enlace y descargarlo en PDF (también va adjunto). Si está conforme, acéptelo y fírmelo ahí mismo. Si tiene dudas, prefiere cambiar algo o ha decidido no seguir adelante, díganoslo respondiendo a este correo: así sabremos su respuesta.',
+    saludo: 'Un saludo,', presupuesto: 'Presupuesto',
+    orientativo: 'Presupuesto orientativo, válido {n} días. No incluye obra civil ni permisos que no se nombren arriba.',
+    acep_titulo: 'ACEPTACIÓN DEL PRESUPUESTO', acep_presu: 'Presupuesto: ', acep_num: 'Número: ', acep_cliente: 'Cliente: ', acep_importes: 'Base imponible: {b} · IVA 21 %: {i} · Total: {t}',
+    acep_declara: 'El cliente declara haber leído el presupuesto adjunto y aceptar su contenido y condiciones.', acep_firmado: 'Firmado por: ', acep_fecha: 'Fecha y hora: {f} (hora de Madrid)',
+    acep_ip: 'Firma electrónica recogida en la página de aceptación de Sysefen · IP {ip}', acep_ip_desc: 'desconocida', acep_ilegible: '(firma no legible)',
+    copia_asunto: 'Copia de su presupuesto aceptado · Sysefen', copia_titulo: 'Gracias por su confianza',
+    copia_txt: 'Hola {n},\n\ngracias por aceptar el presupuesto «{t}». Le adjuntamos la copia firmada. Nos pondremos en contacto para organizar los trabajos.\n\nUn saludo,\nSysefen',
+    copia_html: '<p>Hola {n},</p><p>gracias por aceptar el presupuesto <b>{t}</b>. Le adjuntamos la copia firmada. Nos pondremos en contacto con usted para organizar los trabajos.</p><p>Un saludo,<br><b>Sysefen</b></p>',
+    pdf_firmado: 'presupuesto-firmado.pdf',
+  },
+  en: {
+    cat_solar: 'Solar PV', cat_aerotermia: 'Aerothermal heat pump', cat_aire_acondicionado: 'Air conditioning', cat_electricidad: 'Electrical installation',
+    asunto1: 'Your quotation from Sysefen', asuntoN: 'Your quotations from Sysefen', titulo1: 'Your quotation', tituloN: 'Your quotations',
+    hola: 'Dear {n},', intro1: 'please find the quotation we have prepared for you.', introN: 'please find the {k} quotations we have prepared for you, so you can choose the option that suits you best.',
+    base: 'Net amount', iva: 'VAT 21 %', total: 'Total', valido: 'Valid until {f}', ver: 'View and accept this quotation', ver_txt: 'View and accept', sin_iva: 'excl. VAT', con_iva: 'incl. VAT', num: 'no.',
+    pie: 'You can view each quotation at the link and download it as a PDF (it is also attached). If you agree, you can accept and sign it right there. If you have any questions, would prefer to change something or have decided not to go ahead, just let us know by replying to this email.',
+    saludo: 'Kind regards,', presupuesto: 'Quotation',
+    orientativo: 'Indicative quotation, valid for {n} days. It does not include civil works or permits not listed above.',
+    acep_titulo: 'ACCEPTANCE OF THE QUOTATION', acep_presu: 'Quotation: ', acep_num: 'Number: ', acep_cliente: 'Customer: ', acep_importes: 'Net amount: {b} · VAT 21 %: {i} · Total: {t}',
+    acep_declara: 'The customer declares that they have read the attached quotation and accept its contents and conditions.', acep_firmado: 'Signed by: ', acep_fecha: 'Date and time: {f} (Madrid time)',
+    acep_ip: 'Electronic signature collected on the Sysefen acceptance page · IP {ip}', acep_ip_desc: 'unknown', acep_ilegible: '(signature not legible)',
+    copia_asunto: 'Copy of your accepted quotation · Sysefen', copia_titulo: 'Thank you for your trust',
+    copia_txt: 'Dear {n},\n\nthank you for accepting the quotation “{t}”. Please find the signed copy attached. We will contact you to organise the works.\n\nKind regards,\nSysefen',
+    copia_html: '<p>Dear {n},</p><p>thank you for accepting the quotation <b>{t}</b>. Please find the signed copy attached. We will contact you to organise the works.</p><p>Kind regards,<br><b>Sysefen</b></p>',
+    pdf_firmado: 'signed-quotation.pdf',
+  },
+  ca: {
+    cat_solar: 'Plaques solars', cat_aerotermia: 'Aerotèrmia', cat_aire_acondicionado: 'Aire condicionat', cat_electricidad: 'Electricitat',
+    asunto1: 'El seu pressupost de Sysefen', asuntoN: 'Els seus pressupostos de Sysefen', titulo1: 'El seu pressupost', tituloN: 'Els seus pressupostos',
+    hola: 'Hola {n},', intro1: 'li enviem el pressupost que hem preparat per a vostè.', introN: 'li enviem els {k} pressupostos que hem preparat per a vostè, perquè triï l’opció que més li convingui.',
+    base: 'Base imposable', iva: 'IVA 21 %', total: 'Total', valido: 'Vàlid fins al {f}', ver: 'Veure i acceptar aquest pressupost', ver_txt: 'Veure i acceptar', sin_iva: 'sense IVA', con_iva: 'amb IVA', num: 'núm.',
+    pie: 'Pot veure cada pressupost a l’enllaç i descarregar-lo en PDF (també va adjunt). Si hi està conforme, accepti’l i signi’l allà mateix. Si té dubtes, prefereix canviar alguna cosa o ha decidit no tirar endavant, digui’ns-ho responent a aquest correu: així sabrem la seva resposta.',
+    saludo: 'Salutacions cordials,', presupuesto: 'Pressupost',
+    orientativo: 'Pressupost orientatiu, vàlid {n} dies. No inclou obra civil ni permisos que no s’esmentin més amunt.',
+    acep_titulo: 'ACCEPTACIÓ DEL PRESSUPOST', acep_presu: 'Pressupost: ', acep_num: 'Número: ', acep_cliente: 'Client: ', acep_importes: 'Base imposable: {b} · IVA 21 %: {i} · Total: {t}',
+    acep_declara: 'El client declara haver llegit el pressupost adjunt i acceptar-ne el contingut i les condicions.', acep_firmado: 'Signat per: ', acep_fecha: 'Data i hora: {f} (hora de Madrid)',
+    acep_ip: 'Signatura electrònica recollida a la pàgina d’acceptació de Sysefen · IP {ip}', acep_ip_desc: 'desconeguda', acep_ilegible: '(signatura no llegible)',
+    copia_asunto: 'Còpia del seu pressupost acceptat · Sysefen', copia_titulo: 'Gràcies per la seva confiança',
+    copia_txt: 'Hola {n},\n\ngràcies per acceptar el pressupost «{t}». Li adjuntem la còpia signada. Ens posarem en contacte amb vostè per organitzar els treballs.\n\nSalutacions cordials,\nSysefen',
+    copia_html: '<p>Hola {n},</p><p>gràcies per acceptar el pressupost <b>{t}</b>. Li adjuntem la còpia signada. Ens posarem en contacte amb vostè per organitzar els treballs.</p><p>Salutacions cordials,<br><b>Sysefen</b></p>',
+    pdf_firmado: 'pressupost-signat.pdf',
+  },
+  de: {
+    cat_solar: 'Photovoltaik', cat_aerotermia: 'Luft-Wasser-Wärmepumpe', cat_aire_acondicionado: 'Klimaanlage', cat_electricidad: 'Elektroinstallation',
+    asunto1: 'Ihr Angebot von Sysefen', asuntoN: 'Ihre Angebote von Sysefen', titulo1: 'Ihr Angebot', tituloN: 'Ihre Angebote',
+    hola: 'Guten Tag {n},', intro1: 'anbei erhalten Sie das Angebot, das wir für Sie erstellt haben.', introN: 'anbei erhalten Sie die {k} Angebote, die wir für Sie erstellt haben, damit Sie die passende Option wählen können.',
+    base: 'Nettobetrag', iva: 'MwSt. 21 %', total: 'Gesamt', valido: 'Gültig bis {f}', ver: 'Dieses Angebot ansehen und annehmen', ver_txt: 'Ansehen und annehmen', sin_iva: 'ohne MwSt.', con_iva: 'inkl. MwSt.', num: 'Nr.',
+    pie: 'Über den Link können Sie jedes Angebot ansehen und als PDF herunterladen (es ist auch angehängt). Wenn Sie einverstanden sind, können Sie es dort direkt annehmen und unterschreiben. Bei Fragen, Änderungswünschen oder falls Sie sich dagegen entschieden haben, antworten Sie einfach auf diese E-Mail.',
+    saludo: 'Mit freundlichen Grüßen,', presupuesto: 'Angebot',
+    orientativo: 'Unverbindliches Angebot, {n} Tage gültig. Bauarbeiten und Genehmigungen, die oben nicht aufgeführt sind, sind nicht enthalten.',
+    acep_titulo: 'ANNAHME DES ANGEBOTS', acep_presu: 'Angebot: ', acep_num: 'Nummer: ', acep_cliente: 'Kunde: ', acep_importes: 'Nettobetrag: {b} · MwSt. 21 %: {i} · Gesamt: {t}',
+    acep_declara: 'Der Kunde erklärt, das beigefügte Angebot gelesen zu haben und dessen Inhalt und Bedingungen zu akzeptieren.', acep_firmado: 'Unterschrieben von: ', acep_fecha: 'Datum und Uhrzeit: {f} (Madrider Zeit)',
+    acep_ip: 'Elektronische Unterschrift, erfasst auf der Annahmeseite von Sysefen · IP {ip}', acep_ip_desc: 'unbekannt', acep_ilegible: '(Unterschrift nicht lesbar)',
+    copia_asunto: 'Kopie Ihres angenommenen Angebots · Sysefen', copia_titulo: 'Vielen Dank für Ihr Vertrauen',
+    copia_txt: 'Guten Tag {n},\n\nvielen Dank für die Annahme des Angebots „{t}“. Anbei erhalten Sie die unterschriebene Kopie. Wir melden uns bei Ihnen, um die Arbeiten zu organisieren.\n\nMit freundlichen Grüßen\nSysefen',
+    copia_html: '<p>Guten Tag {n},</p><p>vielen Dank für die Annahme des Angebots <b>{t}</b>. Anbei erhalten Sie die unterschriebene Kopie. Wir melden uns bei Ihnen, um die Arbeiten zu organisieren.</p><p>Mit freundlichen Grüßen<br><b>Sysefen</b></p>',
+    pdf_firmado: 'angebot-unterschrieben.pdf',
+  },
+};
+const txt = (idioma: string) => TXT[idiomaValido(idioma)];
+const rellena = (t: string, v: Record<string, unknown>) => String(t).replace(/\{(\w+)\}/g, (_, k) => (v[k] == null ? '' : String(v[k])));
+const eurI = (n: unknown, idioma: string) => (Number(n) || 0).toLocaleString(LOCALES[idiomaValido(idioma)], { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' €';
+const fechaI = (iso: string | null | undefined, idioma: string) => iso ? new Date(iso).toLocaleDateString(LOCALES[idiomaValido(idioma)], { timeZone: ZONA, day: 'numeric', month: 'long', year: 'numeric' }) : '';
+
 const esc = (s: unknown) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] as string));
 const eur = (n: unknown) => (Number(n) || 0).toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' €';
 const fecha = (iso?: string | null) => iso ? new Date(iso).toLocaleDateString('es-ES', { timeZone: ZONA, day: 'numeric', month: 'long', year: 'numeric' }) : '';
@@ -108,25 +185,27 @@ async function subirADrive(tok: string, carpetaId: string, nombre: string, bytes
 
 // ---------- el PDF firmado: el enviado + una página de aceptación ----------
 // deno-lint-ignore no-explicit-any
-async function pdfFirmado(original: Uint8Array | null, p: any, cli: any, nombre: string, dni: string, ip: string, firmaPng: Uint8Array, cuando: Date) {
+async function pdfFirmado(original: Uint8Array | null, p: any, cli: any, nombre: string, dni: string, ip: string, firmaPng: Uint8Array, cuando: Date, idioma = 'es') {
+  const T = txt(idioma);
   const doc = original ? await PDFDocument.load(original, { ignoreEncryption: true }) : await PDFDocument.create();
   const pagina = doc.addPage([595.28, 841.89]);
   const fuente = await doc.embedFont(StandardFonts.Helvetica), negrita = await doc.embedFont(StandardFonts.HelveticaBold);
-  const w = (s: string) => s.replace(/[^\x00-\xff]/g, '?');
+  // Las fuentes estándar solo saben Latin-1: el € y las comillas tipográficas se cambian antes.
+  const w = (s: string) => s.replace(/€/g, 'EUR').replace(/[“”„«»]/g, '"').replace(/[‘’]/g, "'").replace(/[^\x00-\xff]/g, '?');
   let y = 790;
   const linea = (txt: string, size = 11, bold = false, color = rgb(0.08, 0.09, 0.06)) => { pagina.drawText(w(txt), { x: 56, y, size, font: bold ? negrita : fuente, color }); y -= size + 7; };
-  linea('ACEPTACIÓN DEL PRESUPUESTO', 16, true);
+  linea(T.acep_titulo, 16, true);
   y -= 6;
-  linea('Presupuesto: ' + (tituloCliente(p)), 11, true);
-  if (p.tl_numero) linea('Número: ' + p.tl_numero);
-  linea('Cliente: ' + (cli?.nombre || ''));
-  linea('Base imponible: ' + eur(p.total_venta) + ' · IVA 21 %: ' + eur(Math.round(Number(p.total_venta) * 21) / 100) + ' · Total: ' + eur(Math.round(Number(p.total_venta) * 121) / 100));
+  linea(T.acep_presu + (tituloCliente(p)), 11, true);
+  if (p.tl_numero) linea(T.acep_num + p.tl_numero);
+  linea(T.acep_cliente + (cli?.nombre || ''));
+  linea(rellena(T.acep_importes, { b: eurI(p.total_venta, idioma), i: eurI(Math.round(Number(p.total_venta) * 21) / 100, idioma), t: eurI(Math.round(Number(p.total_venta) * 121) / 100, idioma) }));
   y -= 10;
-  linea('El cliente declara haber leído el presupuesto adjunto y aceptar su contenido y condiciones.', 11);
+  linea(T.acep_declara, 11);
   y -= 6;
-  linea('Firmado por: ' + nombre + (dni ? ' · ' + dni : ''), 12, true);
-  linea('Fecha y hora: ' + cuando.toLocaleString('es-ES', { timeZone: ZONA }) + ' (hora de Madrid)');
-  linea('Firma electrónica recogida en la página de aceptación de Sysefen · IP ' + (ip || 'desconocida'), 9, false, rgb(0.4, 0.4, 0.4));
+  linea(T.acep_firmado + nombre + (dni ? ' · ' + dni : ''), 12, true);
+  linea(rellena(T.acep_fecha, { f: cuando.toLocaleString(LOCALES[idiomaValido(idioma)], { timeZone: ZONA }) }));
+  linea(rellena(T.acep_ip, { ip: ip || T.acep_ip_desc }), 9, false, rgb(0.4, 0.4, 0.4));
   y -= 14;
   try {
     const img = await doc.embedPng(firmaPng);
@@ -134,7 +213,7 @@ async function pdfFirmado(original: Uint8Array | null, p: any, cli: any, nombre:
     pagina.drawRectangle({ x: 56, y: y - alto - 10, width: ancho + 20, height: alto + 20, borderColor: rgb(0.75, 0.75, 0.72), borderWidth: 1 });
     pagina.drawImage(img, { x: 66, y: y - alto, width: ancho, height: alto });
     y -= alto + 24;
-  } catch (_) { linea('(firma no legible)', 10); }
+  } catch (_) { linea(T.acep_ilegible, 10); }
   linea('Sysefen · Eficiencia Energética', 9, false, rgb(0.4, 0.4, 0.4));
   return await doc.save();
 }
@@ -165,7 +244,8 @@ Deno.serve(async (req) => {
     // Lo que ve el cliente: nada interno (costes, desgloses, reglas).
     const ls = (lineas || []).map((l) => ({ descripcion: l.descripcion, detalle_tecnico: l.detalle_tecnico, cantidad: l.cantidad, unidad: l.unidad, precio_tarifa: l.precio_tarifa, dto_linea_pct: l.dto_linea_pct, precio_venta: l.precio_venta, seccion: l.seccion }));
     const fv2 = (lineas || []).map((l) => l.origen_inputs).find((o) => o && o.fv2);
-    const condiciones = fv2 ? [fv2.nota, fv2.condiciones].filter(Boolean).join(' ') : 'Presupuesto orientativo, válido ' + (p.validez_dias || 15) + ' días. No incluye obra civil ni permisos que no se nombren arriba.';
+    const idiomaP = idiomaValido(p.idioma_cliente);
+    const condiciones = fv2 ? [fv2.nota, fv2.condiciones].filter(Boolean).join(' ') : rellena(txt(idiomaP).orientativo, { n: p.validez_dias || 15 });
     const bruto = ls.reduce((a, l) => a + (Number(l.precio_venta) || 0), 0);
     const dtoG = Number(p.dto_global_pct) || 0;
     const base = Number(p.total_venta) || Math.round(bruto * (1 - dtoG / 100) * 100) / 100;
@@ -174,7 +254,8 @@ Deno.serve(async (req) => {
     const rutaPdf = p.pdf_firmado_ruta || p.pdf_enviado_ruta;
     if (rutaPdf) { const { data: su } = await sb.storage.from(BUCKET).createSignedUrl(rutaPdf, 3600); pdf_url = su?.signedUrl || null; }
     return json({
-      presupuesto: { titulo: tituloCliente(p), categoria: CATS[p.categoria] || p.categoria, tl_numero: p.tl_numero, enviado_correo_at: p.enviado_correo_at, firmado_at: p.firmado_at, firma_nombre: p.firma_nombre, validez_dias: p.validez_dias },
+      idioma: idiomaP,
+      presupuesto: { titulo: tituloCliente(p), categoria: txt(idiomaP)['cat_' + p.categoria] || CATS[p.categoria] || p.categoria, tl_numero: p.tl_numero, enviado_correo_at: p.enviado_correo_at, firmado_at: p.firmado_at, firma_nombre: p.firma_nombre, validez_dias: p.validez_dias },
       cliente: p.cliente?.nombre || '', lineas: ls, condiciones, vence: vence(p),
       totales: { bruto: Math.round(bruto * 100) / 100, dto_global_pct: dtoG, base, iva, total: Math.round((base + iva) * 100) / 100 }, pdf_url,
     });
@@ -193,7 +274,9 @@ Deno.serve(async (req) => {
     if (p.firmado_at) return json({ ok: true, ya: true });
     const nombre = limpio(b.nombre).slice(0, 120), dni = limpio(b.dni).toUpperCase().replace(/[\s.-]/g, '').slice(0, 20);
     if (nombre.length < 3) return json({ error: 'Falta el nombre.' }, 400);
-    if (!/^([XYZ]?\d{7,8}[A-Z])$/.test(dni) && !/^[A-Z]\d{7}[A-Z0-9]$/.test(dni)) return json({ error: 'Falta un DNI, NIE o CIF válido.' }, 400);
+    // Con el presupuesto en otro idioma vale también un pasaporte o documento extranjero (6-11-2026).
+    const extranjero = idiomaValido(p.idioma_cliente) !== 'es' && /^[A-Z0-9]{5,20}$/.test(dni);
+    if (!/^([XYZ]?\d{7,8}[A-Z])$/.test(dni) && !/^[A-Z]\d{7}[A-Z0-9]$/.test(dni) && !extranjero) return json({ error: 'Falta un DNI, NIE o CIF válido.' }, 400);
     if (typeof b.firma !== 'string' || !/^data:image\/png;base64,/.test(b.firma) || b.firma.length > 600_000) return json({ error: 'Falta la firma.' }, 400);
     const ip = limpio(req.headers.get('x-forwarded-for') || '').split(',')[0] || limpio(req.headers.get('cf-connecting-ip'));
     const cuando = new Date();
@@ -204,7 +287,8 @@ Deno.serve(async (req) => {
     let original: Uint8Array | null = null;
     if (p.pdf_enviado_ruta) { const { data: f } = await sb.storage.from(BUCKET).download(p.pdf_enviado_ruta); if (f) original = new Uint8Array(await f.arrayBuffer()); }
     let pdf: Uint8Array;
-    try { pdf = await pdfFirmado(original, p, p.cliente, nombre, dni, ip, firmaPng, cuando); }
+    const idiomaF = idiomaValido(p.idioma_cliente);
+    try { pdf = await pdfFirmado(original, p, p.cliente, nombre, dni, ip, firmaPng, cuando, idiomaF); }
     catch (e) { return json({ error: 'No se pudo componer el PDF firmado: ' + (e as Error).message }, 500); }
     const rutaPdf = base + '.pdf';
     const s2 = await sb.storage.from(BUCKET).upload(rutaPdf, pdf, { contentType: 'application/pdf', upsert: false });
@@ -278,6 +362,8 @@ Deno.serve(async (req) => {
     // Correos: oficina (presupuestos y Administración) y copia al cliente.
     if (RESEND) {
       const adjunto = [{ filename: 'presupuesto-firmado.pdf', content: bytesAb64(pdf) }];
+      const TF = txt(idiomaF);
+      const adjuntoCli = [{ filename: TF.pdf_firmado, content: adjunto[0].content }];
       try {
         const { data: gente } = await sb.from('empleados').select('nombre, email_avisos').in('rol', ['presupuestos', 'admin']).eq('activo', true);
         const paraOf = [...new Set(((gente || []) as { email_avisos?: string }[]).map((g) => limpio(g.email_avisos)).filter(esEmail))];
@@ -288,9 +374,9 @@ Deno.serve(async (req) => {
       try {
         const emailCli = esEmail(p.enviado_correo_a) ? limpio(p.enviado_correo_a) : (esEmail(p.cliente?.email) ? limpio(p.cliente.email) : '');
         let replyTo = ''; try { const { data: aj } = await sb.from('ajustes').select('valor').eq('clave', 'correo_oficina').maybeSingle(); replyTo = limpio(aj?.valor); } catch (_) { /* sin ajuste */ }
-        if (emailCli) await mandar(RESEND, Object.assign({ to: [emailCli], subject: 'Copia de su presupuesto aceptado · Sysefen',
-          text: `Hola ${p.cliente?.nombre || ''},\n\ngracias por aceptar el presupuesto «${tituloCliente(p)}». Le adjuntamos la copia firmada. Nos pondremos en contacto para organizar los trabajos.\n\nUn saludo,\nSysefen`,
-          html: marco('Gracias por su confianza', `<p>Hola ${esc(p.cliente?.nombre || '')},</p><p>gracias por aceptar el presupuesto <b>${esc(tituloCliente(p))}</b>. Le adjuntamos la copia firmada. Nos pondremos en contacto con usted para organizar los trabajos.</p><p>Un saludo,<br><b>Sysefen</b></p>`), attachments: adjunto }, replyTo ? { reply_to: replyTo } : {}));
+        if (emailCli) await mandar(RESEND, Object.assign({ to: [emailCli], subject: TF.copia_asunto,
+          text: rellena(TF.copia_txt, { n: p.cliente?.nombre || '', t: tituloCliente(p) }),
+          html: marco(TF.copia_titulo, rellena(TF.copia_html, { n: esc(p.cliente?.nombre || ''), t: esc(tituloCliente(p)) })), attachments: adjuntoCli }, replyTo ? { reply_to: replyTo } : {}));
       } catch (e) { avisos.push('correo cliente: ' + (e as Error).message); }
     }
     return json({ ok: true, avisos });
@@ -321,7 +407,14 @@ Deno.serve(async (req) => {
   if (!esEmail(para)) return json({ error: 'Falta un correo válido del cliente.' }, 400);
   const cc = String(b.cc || '').split(/[,;\s]+/).map(limpio).filter(esEmail);
   const mensaje = limpio(b.mensaje).slice(0, 4000);
-  const asunto = limpio(b.asunto).slice(0, 150) || ((ps.length === 1 ? 'Su presupuesto' : 'Sus presupuestos') + ' de Sysefen' + (cli?.nombre ? ' · ' + cli.nombre : ''));
+  // El idioma del correo y del PDF (Enzo, 6-11-2026): lo eligió quien lo manda; los
+  // títulos traducidos vienen de la app (titulos: {id: título}).
+  const idioma = idiomaValido(b.idioma);
+  const T = txt(idioma);
+  const titulosTrad: Record<string, string> = (b.titulos && typeof b.titulos === 'object') ? b.titulos : {};
+  // deno-lint-ignore no-explicit-any
+  const tituloEnIdioma = (p: any) => (idioma !== 'es' && limpio(titulosTrad[p.id]).slice(0, 200)) || tituloCliente(p);
+  const asunto = limpio(b.asunto).slice(0, 150) || ((ps.length === 1 ? T.asunto1 : T.asuntoN) + (cli?.nombre ? ' · ' + cli.nombre : ''));
   // deno-lint-ignore no-explicit-any
   const pdfs: any[] = Array.isArray(b.pdfs) ? b.pdfs : [];
   const ahora = new Date().toISOString();
@@ -329,7 +422,7 @@ Deno.serve(async (req) => {
   const ordenados = ids.map((id) => ps.find((p) => p.id === id)!);
   for (const p of ordenados) {
     const t = p.token_cliente || token();
-    const cambios: Record<string, unknown> = { token_cliente: t, enviado_correo_at: ahora, enviado_correo_a: para, updated_at: ahora };
+    const cambios: Record<string, unknown> = { token_cliente: t, enviado_correo_at: ahora, enviado_correo_a: para, updated_at: ahora, idioma_cliente: idioma };
     if (!p.enviado_cliente_at) { cambios.enviado_cliente_at = ahora; cambios.enviado_cliente_por = yo.id; cambios.estado = 'enviado'; if (!p.revisado_at) { cambios.revisado_at = ahora; cambios.revisado_por = yo.id; } }
     const pdf = pdfs.find((x) => String(x.id) === p.id);
     if (pdf && typeof pdf.base64 === 'string' && pdf.base64.length > 100 && pdf.base64.length < 14_000_000) {
@@ -341,29 +434,31 @@ Deno.serve(async (req) => {
     }
     await sb.from('presupuestos').update(cambios).eq('id', p.id);
     const enlace = enlaceFirma(t);
-    const venceTxt = fecha(vence(Object.assign({}, p, { enviado_cliente_at: p.enviado_cliente_at || ahora })));
+    const venceTxt = fechaI(vence(Object.assign({}, p, { enviado_cliente_at: p.enviado_cliente_at || ahora })), idioma);
     const totalIva = Math.round(Number(p.total_venta) * 121) / 100;
+    const tit = tituloEnIdioma(p);
     tarjetas.push(`<div style="border:1.5px solid #e6e5df;border-radius:14px;padding:16px 18px;margin:14px 0">
-      <div style="font:700 17px/1.2 Arial,Helvetica,sans-serif">${esc(tituloCliente(p))}</div>
-      <div style="font-size:14px;color:#555;margin-top:6px">${esc(CATS[p.categoria] || '')}${p.tl_numero ? ' · nº ' + esc(p.tl_numero) : ''}</div>
-      <div style="font-size:15px;margin-top:10px">Base imponible <b>${eur(p.total_venta)}</b> · IVA 21 % · Total <b>${eur(totalIva)}</b></div>
-      ${venceTxt ? `<div style="font-size:13px;color:#777;margin-top:4px">Válido hasta el ${esc(venceTxt)}</div>` : ''}
-      <a href="${esc(enlace)}" style="display:inline-block;margin-top:14px;background:#206028;color:#fff;text-decoration:none;font-weight:700;padding:12px 18px;border-radius:12px">Ver y aceptar este presupuesto</a>
+      <div style="font:700 17px/1.2 Arial,Helvetica,sans-serif">${esc(tit)}</div>
+      <div style="font-size:14px;color:#555;margin-top:6px">${esc(T['cat_' + p.categoria] || CATS[p.categoria] || '')}${p.tl_numero ? ' · ' + T.num + ' ' + esc(p.tl_numero) : ''}</div>
+      <div style="font-size:15px;margin-top:10px">${T.base} <b>${eurI(p.total_venta, idioma)}</b> · ${T.iva} · ${T.total} <b>${eurI(totalIva, idioma)}</b></div>
+      ${venceTxt ? `<div style="font-size:13px;color:#777;margin-top:4px">${esc(rellena(T.valido, { f: venceTxt }))}</div>` : ''}
+      <a href="${esc(enlace)}" style="display:inline-block;margin-top:14px;background:#206028;color:#fff;text-decoration:none;font-weight:700;padding:12px 18px;border-radius:12px">${T.ver}</a>
     </div>`);
-    textos.push(`· ${tituloCliente(p)} — ${eur(p.total_venta)} sin IVA (${eur(totalIva)} con IVA)${venceTxt ? ' — válido hasta el ' + venceTxt : ''}\n  Ver y aceptar: ${enlace}`);
+    textos.push(`· ${tit} — ${eurI(p.total_venta, idioma)} ${T.sin_iva} (${eurI(totalIva, idioma)} ${T.con_iva})${venceTxt ? ' — ' + rellena(T.valido, { f: venceTxt }) : ''}\n  ${T.ver_txt}: ${enlace}`);
   }
   let replyTo = ''; try { const { data: aj } = await sb.from('ajustes').select('valor').eq('clave', 'correo_oficina').maybeSingle(); replyTo = limpio(aj?.valor); } catch (_) { /* sin ajuste */ }
   if (!replyTo && esEmail(yo.email_avisos)) replyTo = limpio(yo.email_avisos);
-  const saludo = 'Hola ' + (cli?.nombre || '') + ',';
-  const intro = ps.length === 1 ? 'le enviamos el presupuesto que hemos preparado para usted.' : 'le enviamos los ' + ps.length + ' presupuestos que hemos preparado para usted, para que elija la opción que mejor le encaje.';
+  const saludo = rellena(T.hola, { n: cli?.nombre || '' }).replace(/\s+,/, ',');
+  const intro = ps.length === 1 ? T.intro1 : rellena(T.introN, { k: ps.length });
   const cuerpoHtml = `<p>${esc(saludo)}</p><p>${esc(intro)}</p>${mensaje ? `<div style="background:#f5f4ef;border-radius:12px;padding:14px 16px;white-space:pre-wrap;font-size:15px;line-height:1.5">${esc(mensaje)}</div>` : ''}
     ${tarjetas.join('')}
-    <p style="font-size:14px;color:#555">Puede ver cada presupuesto en el enlace y descargarlo en PDF (también va adjunto). Si está conforme, acéptelo y fírmelo ahí mismo. Si tiene dudas, prefiere cambiar algo o ha decidido no seguir adelante, díganoslo respondiendo a este correo: así sabremos su respuesta.</p>
-    <p>Un saludo,<br><b>${esc(yo.nombre || 'Sysefen')}</b><br>Sysefen</p>`;
-  const cuerpoTxt = `${saludo}\n\n${intro}\n\n${mensaje ? mensaje + '\n\n' : ''}${textos.join('\n\n')}\n\nPuede ver cada presupuesto en el enlace y descargarlo en PDF (también va adjunto). Si está conforme, acéptelo y fírmelo ahí mismo. Si tiene dudas, prefiere cambiar algo o ha decidido no seguir adelante, díganoslo respondiendo a este correo: así sabremos su respuesta.\n\nUn saludo,\n${yo.nombre || 'Sysefen'}\nSysefen`;
+    <p style="font-size:14px;color:#555">${esc(T.pie)}</p>
+    <p>${esc(T.saludo)}<br><b>${esc(yo.nombre || 'Sysefen')}</b><br>Sysefen</p>`;
+  const cuerpoTxt = `${saludo}\n\n${intro}\n\n${mensaje ? mensaje + '\n\n' : ''}${textos.join('\n\n')}\n\n${T.pie}\n\n${T.saludo}\n${yo.nombre || 'Sysefen'}\nSysefen`;
   try {
-    await mandar(RESEND, Object.assign({ to: [para], subject: asunto, text: cuerpoTxt, html: marco(ps.length === 1 ? 'Su presupuesto' : 'Sus presupuestos', cuerpoHtml), attachments: adjuntos.length ? adjuntos : undefined }, cc.length ? { cc } : {}, replyTo ? { reply_to: replyTo } : {}));
+    await mandar(RESEND, Object.assign({ to: [para], subject: asunto, text: cuerpoTxt, html: marco(ps.length === 1 ? T.titulo1 : T.tituloN, cuerpoHtml), attachments: adjuntos.length ? adjuntos : undefined }, cc.length ? { cc } : {}, replyTo ? { reply_to: replyTo } : {}));
   } catch (e) { return json({ error: 'No se pudo mandar el correo: ' + (e as Error).message }, 502); }
-  try { await sb.from('cliente_bitacora').insert({ cliente_id: clienteId, tipo: 'email', texto: (ps.length === 1 ? 'Presupuesto enviado' : ps.length + ' presupuestos enviados') + ' por correo a ' + para + ': ' + ordenados.map((p) => tituloCliente(p)).join(' · ') + (mensaje ? ' · Mensaje: ' + mensaje.slice(0, 200) : ''), por: yo.id }); } catch (_) { /* sin bitácora */ }
+  const NOMBRE_IDIOMA: Record<string, string> = { en: 'en inglés', ca: 'en catalán', de: 'en alemán' };
+  try { await sb.from('cliente_bitacora').insert({ cliente_id: clienteId, tipo: 'email', texto: (ps.length === 1 ? 'Presupuesto enviado' : ps.length + ' presupuestos enviados') + ' por correo a ' + para + (NOMBRE_IDIOMA[idioma] ? ' ' + NOMBRE_IDIOMA[idioma] : '') + ': ' + ordenados.map((p) => tituloCliente(p)).join(' · ') + (mensaje ? ' · Mensaje: ' + mensaje.slice(0, 200) : ''), por: yo.id }); } catch (_) { /* sin bitácora */ }
   return json({ ok: true, enviados: ids.length, para, cc, enlaces: ordenados.map((p) => enlaceFirma(p.token_cliente || '')) });
 });
