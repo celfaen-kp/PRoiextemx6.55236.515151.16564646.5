@@ -762,6 +762,10 @@ export async function teamleaderDesconectar() {
  * repetirlo. Va con la sesión de quien usa la app; la clave del cron no sale
  * nunca del servidor.
  */
+/** Aviso de vencimiento al cliente, a mano desde el presupuesto (6-11-2026). */
+export async function avisarVencimientoPresupuesto(id) {
+  return invocar('recordatorio-citas', { vencimiento_presupuesto_id: id });
+}
 export async function avisarCita(citaId, otraVez) {
   return invocar('recordatorio-citas', { cita_id: citaId, otra_vez: otraVez === true ? true : undefined });
 }

@@ -511,7 +511,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '31.5'; // versión visible de la app (única fuente)
+const APP_VERSION = '31.6'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -10624,6 +10624,22 @@ function vencePresu(d) {
   const t = new Date(d.enviado_cliente_at); t.setDate(t.getDate() + (Number(d.validez_dias) || 15) + (Number(d.prorroga_dias) || 0));
   return fechaLocal(t.toISOString());
 }
+/* Aviso de vencimiento al cliente, a mano (Enzo, 6-11-2026): antes salía solo. */
+A.presuAvisoVencAbrir = () => {
+  const d = V.presuVer && V.presuVer.datos; if (!d || !d.enviado_cliente_at) return;
+  V.sheet = { tipo: 'presuAvisoVenc', id: d.id, nombre: (d.cliente && d.cliente.nombre) || '', vence: vencePresu(d), otraVez: !!d.aviso_vencimiento_at, busy: false }; render();
+};
+A.presuAvisoVencEnviar = async () => {
+  const s = V.sheet; if (!s || s.tipo !== 'presuAvisoVenc' || s.busy) return;
+  const d = V.presuVer && V.presuVer.datos; if (!d || d.id !== s.id) return;
+  if (!navigator.onLine) { avisar('Sin conexión: no se ha enviado.'); return; }
+  s.busy = true; render();
+  try {
+    const r = await visitasDB.avisarVencimientoPresupuesto(d.id);
+    d.aviso_vencimiento_at = new Date().toISOString();
+    V.sheet = null; toast('Aviso enviado a ' + (r && r.para ? r.para : 'el cliente') + '.'); render();
+  } catch (e) { s.busy = false; render(); avisar(msgError(e)); }
+};
 A.presuProrrogar = async () => {
   const d = V.presuVer && V.presuVer.datos; if (!d || V.presuSegBusy || !d.enviado_cliente_at) return;
   V.presuSegBusy = true; render();
@@ -10672,8 +10688,11 @@ function seguimientoHTML(d) {
         <div class="row g8" style="margin-top:8px;flex-wrap:wrap">${d.pdf_firmado_ruta ? `<button class="pill pill-verde" data-a="presuFirmadoVer" style="padding:9px 12px">PDF firmado</button>` : ''}${d.drive_firmado_url ? `<a class="pill" href="${esc(d.drive_firmado_url)}" target="_blank" rel="noopener" style="padding:9px 12px;text-decoration:none;background:var(--l1);color:var(--tinta)">En Drive</a>` : ''}</div>
       </div>` : ''}
       ${d.enviado_correo_at ? `<div class="tiny" style="margin-top:10px">Enviado por correo a ${esc(d.enviado_correo_a || '')} el ${fechaCorta(d.enviado_correo_at)}.</div><span class="btn-reenviar" data-a="presuEnviarAbrir"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg>Reenviar al cliente</span>` : `<span class="btn-reenviar" data-a="presuEnviarAbrir"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg>Enviar al cliente por correo</span><div class="tiny" style="margin-top:6px">Con el PDF y el enlace para aceptar y firmar.</div>`}
-      ${(d.respuesta_cliente || 'pendiente') === 'pendiente' ? `<button class="btn btn-gris" data-a="presuProrrogar" style="margin-top:12px;border-radius:99px" ${busy ? 'disabled' : ''}>Prorrogar 15 días${vencePresu(d) ? ' (hasta ' + fechaCorta(vencePresu(d) + 'T12:00') + ' ahora)' : ''}</button>
-      <div class="tiny" style="margin-top:6px;text-align:center">Dos días laborables antes de vencer (si vence en lunes, el jueves anterior), el cliente recibe un aviso por correo con el enlace para aceptar, y presupuestos un resumen.</div>` : ''}
+      ${(d.respuesta_cliente || 'pendiente') === 'pendiente' ? `<div class="row g8" style="margin-top:12px">
+        <button class="btn btn-gris" data-a="presuProrrogar" style="border-radius:99px" ${busy ? 'disabled' : ''}>Prorrogar 15 días</button>
+        <button class="btn ${d.aviso_vencimiento_at ? 'btn-gris' : 'btn-verde'}" data-a="presuAvisoVencAbrir" style="border-radius:99px" ${busy ? 'disabled' : ''}>${d.aviso_vencimiento_at ? 'Volver a avisar al cliente' : 'Avisar al cliente de que vence'}</button>
+      </div>
+      <div class="tiny" style="margin-top:6px;text-align:center">Dos días laborables antes de vencer nos llega un aviso a presupuestos. Al cliente se le avisa desde aquí, cuando tú quieras: correo con la fecha y el enlace para aceptar.${d.aviso_vencimiento_at ? ' Avisado el ' + fechaCorta(d.aviso_vencimiento_at) + '.' : ''}</div>` : ''}
       <div class="lbl" style="margin:12px 0 6px">¿Qué dijo el cliente?</div>
       <div class="row g8" style="flex-wrap:wrap">${[['pendiente', 'Esperando'], ['aceptado', 'Aceptó'], ['rechazado', 'Rechazó'], ['caducado', 'Caducó']].map(([k, l]) => `<span class="chip ${(d.respuesta_cliente || 'pendiente') === k ? 'on' : ''}" data-a="presuRespuesta" data-r="${k}" style="cursor:pointer;${k === 'aceptado' && (d.respuesta_cliente || 'pendiente') === k ? 'background:var(--verde);border-color:var(--verde)' : ''}">${l}</span>`).join('')}</div>
       ${d.respuesta_cliente === 'rechazado' ? `<input class="inp" data-f="presuMotivoRechazo" value="${esc(d.motivo_rechazo || '')}" placeholder="Por qué (precio, otra empresa, lo aplaza…)" style="margin-top:10px">` : ''}
@@ -13342,6 +13361,17 @@ function sheet() {
       </div>
     </div></div>`;
   }
+  if (s.tipo === 'presuAvisoVenc') {
+    return `<div class="sheet"><div>
+      <div style="font:600 23px/1.15 var(--cond)">${s.otraVez ? '¿Volver a avisar' : '¿Avisar'} ${s.nombre ? 'a ' + esc(s.nombre) : 'al cliente'}?</div>
+      <div class="sub" style="margin-top:8px">Le llega un correo diciendo que el presupuesto tiene validez hasta el ${s.vence ? fechaCorta(s.vence + 'T12:00') : '…'}, con el enlace para aceptarlo y firmarlo, y que si necesita más tiempo nos lo diga.</div>
+      <div class="sub" style="margin-top:8px;font-size:13px">Va al correo que tiene en su ficha. Si no tiene, no se envía y te lo digo.</div>
+      <div class="row g8" style="margin-top:18px">
+        <button class="btn btn-gris" data-a="cerrarSheet" style="border-radius:99px">Cancelar</button>
+        <button class="btn" data-a="presuAvisoVencEnviar" style="font-size:14px" ${s.busy ? 'disabled' : ''}>${s.busy ? 'Enviando…' : 'Enviar el aviso'}</button>
+      </div>
+    </div></div>`;
+  }
   if (s.tipo === 'elegirObra') {
     return `<div class="sheet"><div style="max-height:85vh;display:flex;flex-direction:column">
       <div style="font:600 23px/1.15 var(--cond)">¿En qué obra?</div>
@@ -14053,6 +14083,8 @@ document.addEventListener('click', (e) => {
   if (a === 'presuBorrar') return A.presuBorrar(d.id);
   if (a === 'presuEnviadoCliente') return A.presuEnviadoCliente();
   if (a === 'presuProrrogar') return A.presuProrrogar();
+  if (a === 'presuAvisoVencAbrir') return A.presuAvisoVencAbrir();
+  if (a === 'presuAvisoVencEnviar') return A.presuAvisoVencEnviar();
   if (a === 'presuRevisado') return A.presuRevisado();
   if (a === 'presuRespuesta') return A.presuRespuesta(d.r);
   if (a === 'presuCrearObra') return A.presuCrearObra();
