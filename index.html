@@ -511,7 +511,7 @@ import * as visitasDB from './visitas-db.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '31.4'; // versión visible de la app (única fuente)
+const APP_VERSION = '31.5'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -8281,10 +8281,39 @@ function opcionesAeroHTML() {
     <div class="row g8" style="align-items:center;flex-wrap:wrap">
       <span class="lbl" style="font-size:11px">Bomba de calor</span>
       ${MARCAS_AE.map(([k, l]) => `<span class="chip ${actual === k ? 'on' : ''}" data-a="presuOpcionMarcaAero" data-m="${k}" style="cursor:pointer">${l}</span>`).join('')}
-      <span class="tiny">La máquina por tramo de potencia; el acumulador y el kit son los mismos.</span>
+      <span class="tiny">La máquina por tramo de potencia; el kit es el mismo.</span>
     </div>
+    ${(() => {
+      // Depósito de inercia y acumulador de ACS del catálogo (Enzo, 6-11-2026).
+      const ops = (p.datos && p.datos.opciones_aero) || null; if (!ops) return '';
+      const op = p.opcion || {};
+      const sel = (clave, lista, actual, etiqueta) => `<span class="lbl" style="font-size:11px">${etiqueta}</span>
+        <select class="inp" data-f="${clave}" style="width:auto;max-width:100%;padding:7px 9px;font-size:13px">
+          <option value="" ${op[clave === 'presuOpcionInercia' ? 'inercia_ref' : 'acs_ref'] ? '' : 'selected'}>Automático · ${esc(actual || 'ninguno')}</option>
+          ${(lista || []).map((x) => `<option value="${esc(x.ref)}" ${op[clave === 'presuOpcionInercia' ? 'inercia_ref' : 'acs_ref'] === x.ref ? 'selected' : ''}>${esc(x.nombre)}${x.venta ? ' · ' + eur(x.venta) : ''}</option>`).join('')}
+        </select>`;
+      return `<div class="row g8" style="align-items:center;flex-wrap:wrap;margin-top:8px">${sel('presuOpcionInercia', ops.inercia, aeroEquipoActual(p, 'inercia'), 'Depósito de inercia')}</div>
+      <div class="row g8" style="align-items:center;flex-wrap:wrap;margin-top:8px">${sel('presuOpcionAcs', ops.acs, aeroEquipoActual(p, 'acs'), 'Acumulador de ACS')}</div>`;
+    })()}
   </div>`;
 }
+/** Lo que lleva ahora el presupuesto de aerotermia (del último cálculo). */
+function aeroEquipoActual(p, tipo) {
+  const ls = (p.datos && p.datos.lineas) || [];
+  const l = ls.find((x) => tipo === 'inercia'
+    ? /dep[oó]sito de inercia|geostor de inercia|^VI \d/i.test(String(x.descripcion || '')) && !/resistencia/i.test(String(x.descripcion || ''))
+    : /unistor|acumulador de acs|dep[oó]sito de acs/i.test(String(x.descripcion || '')));
+  return l ? l.descripcion : '';
+}
+/** Un depósito de inercia o un acumulador de ACS del catálogo ('' = el automático). Se recalcula. */
+A.presuOpcionEquipoAero = (clave, ref) => {
+  const t = aeObjetivo(); if (!t || V.presu.cargando) return; const p = t.holder;
+  const op = Object.assign({}, p.opcion || {});
+  if (ref) op[clave] = ref; else delete op[clave];
+  p.opcion = Object.keys(op).length ? op : null;
+  p.guardado = null; p.enTL = false; p.errTL = null;
+  t.recalc();
+};
 function opcionesMarcaHTML() {
   const t = fvObjetivo(); if (!t) return '';
   const p = t.holder;
@@ -9970,7 +9999,7 @@ function camposSolarHTML(f) {
       <div class="wrap">${chip('wifi', 'buena', 'Buena')}${chip('wifi', 'mala', 'Mala · repetidor')}</div>
       <div class="lbl" style="margin:14px 0 8px">Excedentes y trámites</div>
       <div class="wrap">${chip('excedentes', 'con_excedentes', 'Con excedentes')}${chip('excedentes', 'sin_excedentes', 'Sin excedentes')}</div>
-      <div class="wrap" style="margin-top:8px">${chip('subvencion', '1', 'Pide subvención', f.subvencion ? '1' : '')}${chip('cee', '1', 'Certificado energético', f.cee ? '1' : '')}${chip('cargador', '1', 'Cargador de coche', f.cargador ? '1' : '')}</div>
+      <div class="wrap" style="margin-top:8px">${chip('cee', '1', 'Certificado energético', f.cee ? '1' : '')}${chip('cargador', '1', 'Cargador de coche', f.cargador ? '1' : '')}</div>
       ${f.cee ? `<div class="row g8" style="margin-top:10px;align-items:center">
         <div class="grow"><div class="lbl">Desplazamiento del certificado</div>
           <input class="inp" data-f="presuCampo" data-k="cee_h" value="${esc(String(f.cee_h ?? ''))}" inputmode="decimal" placeholder="horas" style="margin-top:8px"></div>
@@ -10271,7 +10300,7 @@ const PRESU_PAGO = ['50 % a la aceptación del presupuesto', '30 % al iniciar la
 const PRESU_CONDICIONES = [
   ['1) Alcance y documentación', ['El alcance incluye únicamente lo descrito en el apartado Alcance técnico y en el Desglose económico. Cualquier partida no listada se considera excluida.', 'Planos, memorias y esquemas se entregarán en formato digital estándar. Documentación adicional o as-built detallado, si es necesario, podrá presupuestarse aparte.']],
   ['2) Precios, impuestos y revisiones', ['Precios en euros. Salvo mención expresa, los importes incluyen IVA vigente.', 'Las variaciones por cambios de alcance, trabajos imprevistos, necesidades de medios auxiliares no contempladas (grúa, andamios, elevadores) o desvíos por condiciones de obra se tratarán mediante pedido adicional/contrato de modificación previo a su ejecución.']],
-  ['3) Licencias, legalización y subvenciones', ['Licencias/Comunicación previa: el presupuesto no incluye tasas municipales ni costes de licencia salvo que se indique expresamente.', 'Legalización y tramitación: se incluye únicamente si figura como partida. La legalización se realizará conforme a la normativa vigente aplicable al tipo de instalación.', 'Subvenciones (p. ej., programas autonómicos/estatales): Sysefen puede prestar asistencia en la presentación, pero no garantiza la concesión ni los plazos de resolución. Los costes de gestión se facturarán si están presupuestados; el cliente es responsable de aportar la documentación requerida en tiempo y forma.']],
+  ['3) Licencias y legalización', ['Licencias/Comunicación previa: el presupuesto no incluye tasas municipales ni costes de licencia salvo que se indique expresamente.', 'Legalización y tramitación: se incluye únicamente si figura como partida. La legalización se realizará conforme a la normativa vigente aplicable al tipo de instalación.']],
   ['4) Condiciones de obra y responsabilidades del cliente', ['Acceso y disponibilidad: el cliente facilitará accesos, acometidas eléctricas, agua, espacios de acopio y cortes programados.', 'Estructura/soporte: salvo estudio estructural contratado, se presume que la cubierta/forjado/cimentación admite las cargas de la instalación. Cualquier refuerzo o reparación será a cargo del cliente.', 'Suministro eléctrico: la adecuación del cuadro general, aumentos de potencia contratada y actuaciones de la distribuidora/comercializadora quedan fuera salvo partida específica.']],
   ['5) Exclusiones habituales (no limitativas)', ['Obra civil (zanjas, rozas, soleras, zapatas de marquesinas/carports, albañilería y pintura).', 'Medios auxiliares especiales (grúa, andamios certificados, plataformas elevadoras) si no están en partidas.', 'Reposición de tejas/piezas especiales de cubierta más allá de lo estrictamente necesario para el montaje.', 'Canalizaciones externas no indicadas, perforaciones especiales, trabajos en zonas con amianto o materiales peligrosos.', 'Adecuaciones del CGP/CT y trámites de acceso y conexión no contemplados.', 'Monitorización avanzada, integraciones domóticas o SAI, salvo indicación.']],
   ['6) Garantías', ['Mano de obra: 2 años desde la puesta en marcha, por defectos de ejecución.', 'Equipos: garantía del fabricante según sus términos (p. ej., paneles FV con garantía de producto y de rendimiento; inversores/baterías según condiciones específicas). La tramitación se realizará conforme a los procedimientos de cada marca.', 'Quedan excluidos desgastes normales, mal uso, manipulaciones de terceros, eventos climáticos extremos o fuerza mayor.']],
@@ -14414,6 +14443,8 @@ document.addEventListener('input', (e) => {
   if (f === 'presuExtImporte') { if (V.sheet) V.sheet.importe = t.value; return; }
   if (f === 'presuOpcionKwh') { clearTimeout(presuKwhT); presuKwhT = setTimeout(() => A.presuOpcionBateria(null, t.value), 900); return; }
   if (f === 'presuOpcionInversor') return A.presuOpcionInversor(t.value);
+  if (f === 'presuOpcionInercia') return A.presuOpcionEquipoAero('inercia_ref', t.value);
+  if (f === 'presuOpcionAcs') return A.presuOpcionEquipoAero('acs_ref', t.value);
   if (f === 'presuOpcionBateriaRef') return A.presuOpcionBateriaRef(t.value);
   if (f === 'presuOpcionPaneles') { clearTimeout(presuKwhT); presuKwhT = setTimeout(() => A.presuOpcionPaneles(t.value), 900); return; }
   if (f === 'presuOpcionGrua') { clearTimeout(presuKwhT); presuKwhT = setTimeout(() => A.presuOpcionGrua(t.value), 900); return; }

@@ -46,11 +46,11 @@ igual('Fronius', ent.sis, 'Fronius');
 igual('monofásico', ent.sumi, 'Monofásico');
 igual('teja', ent.cubierta, 'Teja');
 igual('2 filas', ent.filas, 2);
-igual('subvención sí', ent.subv, 'Sí');
+igual('subvención: nunca (Enzo, 6-11-2026), aunque la ficha la pida', ent.subv, 'No');
 igual('sin avisos cuando está todo', m.avisos.length, 0);
 var r0 = calcularFV(ent, modelo);
-igual('y da el caso de referencia de Ramón: 7.770 €', r0.pvp_final, 7770);
-igual('con 3.880,93 de coste', r0.coste_total, 3880.93);
+igual('y da el caso de referencia de Ramón sin la hora de subvención: 7.770 − 80 = 7.690 €', r0.pvp_final, 7690);
+igual('con 3.880,93 − 40 = 3.840,93 de coste', r0.coste_total, 3840.93);
 
 var m2 = entradaDesdeDatos({ kwp_objetivo: 5, inversor_marca: 'deye', suministro: 'trifasico', tipo_cubierta: 'plana_transitable',
   orientacion_panel: 'horizontal', factura_rango: '200_350', certificado_energetico: true, cee_desplaz_h: 1, horas_elevador: 2 }, modelo);
@@ -92,8 +92,8 @@ igual('con el modelo v2 original (sin parámetros) sigue el 6 mm² fijo aunque h
 titulo('las líneas del presupuesto de la app');
 var ls = lineasPresupuesto(r0, modelo, { modelo_version: 'v2' });
 igual('una línea llave en mano', ls.length, 1);
-igual('a 7.770 de venta', ls[0].precio_tarifa, 7770);
-igual('y 3.880,93 de coste', ls[0].precio_coste, 3880.93);
+igual('a 7.690 de venta', ls[0].precio_tarifa, 7690);
+igual('y 3.840,93 de coste', ls[0].precio_coste, 3840.93);
 comprueba('con el desglose de las 59 partidas por dentro', ls[0].origen_inputs.desglose.length === 59);
 comprueba('el detalle para el cliente lleva los bloques, sin precios', /MÓDULOS FOTOVOLTAICOS: 10 módulos/.test(ls[0].detalle_tecnico) && !/€/.test(ls[0].detalle_tecnico));
 comprueba('la descripción dice paneles, kWp y suministro', ls[0].descripcion === 'Instalación fotovoltaica llave en mano (10 paneles, 5,10 kWp, monofásico)');
@@ -101,7 +101,7 @@ var ped = ls[0].origen_inputs.pedido;
 comprueba('pedido por proveedor: BayWa, Electromat, Massanella, Saltoki y Würth', Object.keys(ped).join(',') === 'BayWa,Electromat,Massanella,Saltoki,Würth');
 comprueba('el inversor va a BayWa con su modelo', ped.BayWa.lineas.some(function (l) { return l.articulo === 'Fronius Primo GEN24 SC 5.0'; }));
 var t = cadenaPrecios(ls, 0);
-igual('la cadena de precios de la app da el mismo total', t.total, 7770);
+igual('la cadena de precios de la app da el mismo total', t.total, 7690);
 var rd = calcularFV(Object.assign({}, ent, { horas_elev: 3 }), modelo);
 var ld = lineasPresupuesto(rd, modelo, {});
 igual('con elevador salen dos líneas', ld.length, 2);

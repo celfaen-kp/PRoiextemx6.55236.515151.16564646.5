@@ -43,6 +43,7 @@ import { cadenaPrecios, totalCoste } from './cadena.js';
 // hibrido.js, compartido con las pruebas y los informes.
 import { presupuestarFV } from './hibrido.js';
 import { conInversoresDelCatalogo } from './fv.js';
+import { opcionesAero, sustituirEquiposAero, esInercia, esAcumuladorAcs } from './aero.js';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -375,7 +376,26 @@ Deno.serve(async (req) => {
     if (!inv) inv = (await sb.from('productos').select(colsInv).ilike('nombre', '%' + base + '%').eq('activo', true)).data;
     (inv || []).forEach((p) => { if (!cfg.productos[p.referencia]) cfg.productos[p.referencia] = p; });
   }
+  // Sin el modelo v2 no hay inversor conocido: el proyecto técnico se decide
+  // por kWp (la fórmula de `proyecto` mira inversor_kw y, si es 0, kwp).
+  if (categoria === 'solar' && datos && datos.inversor_kw == null) datos = Object.assign({}, datos, { inversor_kw: 0 });
   const res = modeloFV ? presupuestarFV(datos, modeloFV, cfg) : calcular(categoria, datos, cfg);
+  // Aerotermia: depósito de inercia y acumulador de ACS elegidos a mano (6-11-2026).
+  // deno-lint-ignore no-explicit-any
+  let opcionesAerotermia: any = null;
+  if (categoria === 'aerotermia') {
+    const colsAero = 'referencia, nombre, familia, unidad, precio_tarifa, descuento_proveedor, detalle_tecnico, iva, atributos, activo, recargo, aplica_cdc';
+    const { data: equipos } = await sb.from('productos').select(colsAero).eq('activo', true)
+      .or("familia.eq.deposito_inercia,nombre.ilike.%inercia%,nombre.ilike.%unistor%,nombre.ilike.%acumulador de acs%,nombre.ilike.%deposito de acs%,nombre.ilike.%depósito de acs%");
+    const lista = (equipos || []).filter((p) => esInercia(p) || esAcumuladorAcs(p));
+    opcionesAerotermia = opcionesAero(lista, cfg.lookup);
+    if (datos && (datos.inercia_ref || datos.acs_ref)) {
+      // deno-lint-ignore no-explicit-any
+      const porRef: Record<string, any> = {};
+      lista.forEach((p) => { porRef[p.referencia] = p; });
+      res.lineas = sustituirEquiposAero(res.lineas, datos, porRef, cfg.lookup, res.incidencias);
+    }
+  }
   if (avisoBateria) res.incidencias.unshift({ nivel: 'aviso', codigo: 'bateria_incompatible', mensaje: avisoBateria, campo: 'bateria_marca' });
   const motorVersion = modeloFV ? res.motor_version : MOTOR_VERSION;
 
@@ -486,6 +506,7 @@ Deno.serve(async (req) => {
     ok: true,
     categoria,
     opciones_fv: bateriasCatalogo ? { baterias: bateriasCatalogo } : null,
+    opciones_aero: opcionesAerotermia,
     visita_id: visitaId,
     motor_version: motorVersion,
     conjunto_version: conjunto.version,

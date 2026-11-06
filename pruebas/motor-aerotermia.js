@@ -141,4 +141,35 @@ r = calcular('aerotermia', { emisores_previstos: ['suelo_radiante'], sistema_act
 comprueba('no sale ninguna máquina', !r.lineas.some(function (l) { return l.producto_ref; }));
 comprueba('pero el kit y el grupo sí', tiene(r, 'A100') && tiene(r, 'A106'));
 
+titulo('depósito de inercia y acumulador de ACS a mano (Enzo, 6-11-2026)');
+load(RUTA_TMP + '/aero.js');
+var catAero = [
+  { referencia: '0010009455', nombre: 'VI 200 suelo B 200 620/985 8 a 1 1/2” 6 100', familia: 'deposito_inercia', precio_tarifa: 1170, activo: true },
+  { referencia: '8000013824', nombre: 'Resistencia 2,2 kW para depósitos VI 80, VI 150, VI 200 y VI 370', familia: 'deposito_inercia', precio_tarifa: 225, activo: true },
+  { referencia: 'SY-GEOSTOR', nombre: 'geoSTOR de inercia', familia: 'material', precio_tarifa: 689.7, activo: true },
+  { referencia: 'SY-ACS-300', nombre: 'Acumulador de ACS 300L', familia: 'equipo', precio_tarifa: 985.8, activo: true },
+  { referencia: 'SY-UNISTOR-250', nombre: 'UniSTOR plus VIH RW 250/2 B', familia: 'equipo', precio_tarifa: 1291.05, activo: true },
+  { referencia: '0010023117', nombre: 'Acumulador 150 l 1 serpentín - 1 captador - cubierta inclinada', familia: 'otros', precio_tarifa: 3040, activo: true },
+];
+var opsAero = opcionesAero(catAero, []);
+igual('inercia: el geoSTOR y el VI 200 (por nombre), sin la resistencia', opsAero.inercia.map(function (x) { return x.ref; }).join(','), 'SY-GEOSTOR,0010009455');
+igual('ACS: el 300L y el UniSTOR, sin el solar térmico', opsAero.acs.map(function (x) { return x.ref; }).join(','), 'SY-ACS-300,SY-UNISTOR-250');
+var porRef = {}; catAero.forEach(function (p) { porRef[p.referencia] = p; });
+var base = calcular('aerotermia', { potencia_kw: 8, emisores_previstos: ['suelo_radiante'], acs_acumulador_litros: 200, acs_litros_manual: 0, sistema_actual: 'ninguno' }, config);
+var inc = [];
+var sust = sustituirEquiposAero(base.lineas, { inercia_ref: '0010009455', acs_ref: 'SY-ACS-300' }, porRef, [], inc);
+igual('mismo número de líneas (dos sustituidas)', sust.length, base.lineas.length);
+var dep = sust.filter(function (l) { return l.producto_ref === '0010009455'; })[0];
+comprueba('el depósito del kit pasa a ser el VI 200, a su precio', dep && dep.precio_tarifa === 1170 && /antes/.test(JSON.stringify(dep.origen_inputs)) && dep.origen_inputs.antes === 'Depósito de inercia');
+var acs = sust.filter(function (l) { return l.producto_ref === 'SY-ACS-300'; })[0];
+comprueba('el acumulador de 200 l pasa a ser el de 300L', acs && acs.origen_inputs.antes === 'UniSTOR plus VIH RW 200/2 B');
+comprueba('y lo dice', inc.length === 2 && /Depósito de inercia elegido a mano/.test(inc[0].mensaje) && /Acumulador de ACS elegido a mano/.test(inc[1].mensaje));
+var sinAcs = calcular('aerotermia', { potencia_kw: 8, emisores_previstos: ['suelo_radiante'], acs_acumulador_litros: 0, acs_litros_manual: 0, sistema_actual: 'ninguno' }, config);
+var inc2 = [];
+var conAcs = sustituirEquiposAero(sinAcs.lineas, { acs_ref: 'SY-UNISTOR-250' }, porRef, [], inc2);
+igual('sin acumulador en la ficha: se añade el elegido', conAcs.length, sinAcs.lineas.length + 1);
+var inc3 = [];
+igual('una referencia que no está: se deja el automático', sustituirEquiposAero(base.lineas, { inercia_ref: 'NO-EXISTE' }, porRef, [], inc3).length, base.lineas.length);
+comprueba('y avisa', inc3.length === 1 && /no está en el catálogo/.test(inc3[0].mensaje));
 resultado();
+

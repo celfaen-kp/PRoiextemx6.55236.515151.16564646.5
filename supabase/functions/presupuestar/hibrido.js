@@ -131,7 +131,12 @@ export function presupuestarFV(datos, mod, cfg) {
     if (inversorFuera && sec.startsWith('05 · ') && ref.startsWith('FV-FRONIUS-SMART-METER')) return true;
     return false;
   });
-  const viejo = calcular('solar', datos, Object.assign({}, cfg, { reglas }));
+  // El proyecto técnico va por la potencia del inversor (Enzo, 6-11-2026): a
+  // partir de 10 kW (la variable derivada `proyecto` mira `inversor_kw`); así
+  // cambia al elegir otro inversor en el desplegable. Con microinversores o
+  // A MEDIDA se mira la potencia pico.
+  const inversorKw = r.kw_inv === null || r.kw_inv === 0 ? r.kwp : r.kw_inv;
+  const viejo = calcular('solar', Object.assign({}, datos, { inversor_kw: inversorKw }), Object.assign({}, cfg, { reglas }));
   const deViejo = viejo.incidencias.filter((i) => i.codigo !== 'sin_lineas' && !/^Faltan los metros/.test(String(i.mensaje || '')));
   // El cargador de coche va en UNA partida (equipo + cuadro + instalación) con
   // su desglose por dentro, como la línea principal (Enzo, 20-10-2026).

@@ -458,7 +458,7 @@ export const ORDEN_BLOQUES = ['MÓDULOS FOTOVOLTAICOS', 'INVERSOR', 'MEDICIÓN Y
   'PUESTA EN MARCHA Y MONITORIZACIÓN', 'TRÁMITES Y GESTIONES', 'MEDIOS AUXILIARES'];
 export const NOTA_CLIENTE = 'Excluida cualquier obra a realizar, se valorará en el momento. Tasas municipales no incluidas. Presupuesto orientativo, pendiente de visita técnica.';
 export const CONDICIONES_CLIENTE = 'Forma de pago: 50 % a la aceptación, 30 % al inicio de los trabajos y 20 % a la puesta en marcha, por transferencia. '
-  + 'Validez: 15 días naturales. Subvención: se gestiona sin garantizar su concesión, importe ni plazos. Garantía de mano de obra: 2 años.';
+  + 'Validez: 15 días naturales. Garantía de mano de obra: 2 años.';
 
 /* --- De la ficha de la app a la entrada del modelo ------------------------
  * La ficha de la visita y el presupuesto suelto usan los mismos nombres
@@ -508,7 +508,9 @@ export function entradaDesdeDatos(d, modelo) {
     dist_cc: dc > 0 ? dc : ENTRADA_POR_DEFECTO.dist_cc,
     dist_ac: da > 0 ? da : ENTRADA_POR_DEFECTO.dist_ac,
     km: km > 0 ? km : ENTRADA_POR_DEFECTO.km,
-    subv: d.subvencion === true || d.subvencion === 'true' || d.subvencion === 1 ? 'Sí' : 'No',
+    // La subvención no va en los presupuestos (Enzo, 6-11-2026): la app nunca la
+    // pide. La entrada la admite solo para cuadrar los 23 casos del Excel de Ramón.
+    subv: 'No',
     cee: d.certificado_energetico === true || d.certificado_energetico === 'true' || d.certificado_energetico === 1 ? 'Sí' : 'No',
     cee_desplaz_h: n('cee_desplaz_h'),
     horas_elev: n('horas_elevador'),

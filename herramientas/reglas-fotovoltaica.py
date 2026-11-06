@@ -384,7 +384,7 @@ VARIABLES = [
      61, 'Batería, backup, lastre, dos plantas, zanja.', None),
     ('dias_obra', 'Días de obra', 'día', 'si(n_paneles > 0, dias_base + dias_extra, 0)', 62, '', None),
     # trámites
-    ('proyecto', 'Lleva proyecto', '', 'si(kwp > 10 o zona_protegida, 1, 0)', 70, 'Proyecto técnico por encima de 10 kWp o en zona protegida; si no, memoria.', None),
+    ('proyecto', 'Lleva proyecto', '', 'si(zona_protegida o si(inversor_kw > 0, inversor_kw >= 10, kwp > 10), 1, 0)', 70, 'Proyecto técnico con inversor de 10 kW o más (Enzo, 6-11-2026; sin inversor conocido, por encima de 10 kWp) o en zona protegida; si no, memoria.', None),
 ]
 
 # =============================================================================
@@ -641,7 +641,7 @@ fuera('FV-13-001', {'proyecto': 0}, HAY, '13', sub=9, notas='Memoria técnica (h
 regla('FV-13-002', {'proyecto': 1}, HAY, '13', sub=9, notas='Proyecto técnico (más de 10 kWp o zona protegida).')
 regla('FV-13-003', {}, HAY, '13', sub=8, notas='Siempre.')
 fuera('FV-13-004', {}, HAY, '13', sub=8, notas='Permiso de obra / comunicación previa.')
-regla('FV-13-006', {'subvencion': True}, '1', '13', sub=7, notas='Si pide subvención.')
+# FV-13-006 (tramitación de subvención) ya no entra: la subvención no va en los presupuestos (Enzo, 6-11-2026).
 regla('FV-13-010', {'subvencion': True}, '1', '13', sub=6, notas='Lo pide la ayuda.')
 regla('FV-13-007', {'bonificacion_ibi': True}, '1', '13', sub=7, notas='Si pide bonificación.')
 fuera('FV-13-008', {'excedentes': 'con_excedentes'}, HAY, '13', sub=7, notas='Con excedentes: compensación con la distribuidora.')
