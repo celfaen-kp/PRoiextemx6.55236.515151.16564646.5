@@ -4584,8 +4584,13 @@ function restaurarBorradorParte() {
 }
 // ¿Hay algo a medias que una recarga se llevaría por delante?
 const enFaena = () => /^p[123]$/.test(V.view)
-  || ['alta', 'visitaNueva', 'imputar', 'imputarGrupo', 'imputarEmp'].includes(V.view)
-  || !!V.sheet || !!V.presuEdit || !!V.parteBusy || !!V.visitaBusy;   // la cita a medias va en una hoja: ya cuenta con V.sheet
+  || ['alta', 'visitaNueva', 'imputar', 'imputarGrupo', 'imputarEmp', 'presuNuevo', 'clienteNuevo', 'citaNueva'].includes(V.view)
+  || !!V.sheet || !!V.presuEdit || !!V.parteBusy || !!V.visitaBusy   // la cita a medias va en una hoja: ya cuenta con V.sheet
+  // Un presupuesto en marcha (Enzo, 6-11-2026: el cartel le cortó uno a medias y
+  // lo perdió): calculando, guardando, con un resultado sin guardar o con un
+  // conjunto a medias. El cartel espera a que se guarde o se cierre.
+  || !!(V.presu && (V.presu.cargando || V.presu.guardando || (V.presu.datos && !V.presu.guardado) || Object.keys(V.presu.fusion || {}).length))
+  || !!V.presuSegBusy;
 let actualizacionPendiente = false;
 let cartelActualizarFn = null;
 window.addEventListener('pagehide', () => { if (/^p[123]$/.test(V.view) && V.draft) guardarBorradorParte(); });
