@@ -7889,7 +7889,9 @@ function presuResultadosHTML() {
   const crear = String(p.buscar || '').trim().length >= 2 && (esAdmin() || rol() === 'presupuestos')
     ? `<div class="dash" data-a="presuProductoNuevoAbrir" style="margin-top:10px;display:block">+ Crear «${esc(String(p.buscar).trim())}» como producto nuevo del catálogo</div>` : '';
   if (!p.resultados.length) {
-    return String(p.buscar || '').trim().length < 2 ? ''
+    // Sin nada escrito, el concepto nuevo se puede crear igualmente (6-11-2026).
+    const crearVacio = esAdmin() || rol() === 'presupuestos' ? '<div class="dash" data-a="presuProductoNuevoAbrir" style="margin-top:10px;display:block">+ Crear un concepto nuevo (no está en el catálogo)</div>' : '';
+    return String(p.buscar || '').trim().length < 2 ? crearVacio
       : '<div class="sub" style="font-size:12px;margin-top:10px">Nada con ese nombre. Si la tarifa de esa marca no está cargada, todavía no se puede elegir aquí.</div>' + crear;
   }
   return `<div style="margin-top:10px">${p.resultados.map((x) => `<div class="card row" data-a="presuAnadir" data-ref="${esc(x.referencia)}" style="margin-bottom:8px;cursor:pointer;padding:11px 13px">
@@ -8063,6 +8065,7 @@ function presuPanelHTML() {
       ${opcionesAeroHTML()}
       ${(d.incidencias || []).concat(Object.keys(p.fusion || {}).flatMap((c) => p.fusion[c].incidencias || [])).length ? `<div style="margin-top:12px">${(d.incidencias || []).concat(Object.keys(p.fusion || {}).flatMap((c) => p.fusion[c].incidencias || [])).map((i) => `<div class="tiny" style="margin-top:6px;color:${i.nivel === 'error' ? 'var(--rojo)' : 'var(--ambar-o)'}">${i.nivel === 'error' ? '⚠' : '·'} ${esc(i.mensaje)}</div>`).join('')}</div>` : ''}
 
+      ${!(d.lineas || []).length ? `<div class="sub" style="margin-top:14px;padding:12px 14px;border-radius:12px;background:rgba(20,23,15,.045)">${enLibre() ? 'Presupuesto vacío: busca abajo en el catálogo o crea un concepto nuevo. Cada línea que añadas aparece aquí con su precio.' : 'El motor no ha propuesto ninguna línea.'}</div>` : ''}
       ${grupos.map((g) => `${grupos.length > 1 ? `<div style="margin-top:24px;padding-top:12px;border-top:3px solid var(--tinta)"><div style="font:600 19px/1.1 var(--cond)">${esc(g.titulo)}</div>${g.total != null ? `<div class="tiny" style="margin-top:3px">${eur(g.total)} sin IVA</div>` : ''}</div>` : ''}${g.secciones.map((s) => `<div style="margin-top:16px">
         <div class="lbl" style="font-size:11px">${esc(s.nombre)}</div>
         ${s.lineas.map((l) => `<div style="padding:9px 0;border-bottom:1px solid var(--l1)">
@@ -8098,7 +8101,7 @@ function presuPanelHTML() {
 
       <div style="margin-top:18px;padding-top:12px;border-top:1px solid var(--l1)">
         <div class="lbl" style="font-size:11px">Añadir del catálogo</div>
-        <div class="sub" style="font-size:12px;margin-top:6px">Para cambiar una máquina que propuso el motor o sumar algo que no está en las reglas.</div>
+        <div class="sub" style="font-size:12px;margin-top:6px">${enLibre() ? 'Busca por nombre o referencia y toca el producto para sumarlo. Lo que no esté, lo creas como concepto nuevo.' : 'Para cambiar una máquina que propuso el motor o sumar algo que no está en las reglas.'}</div>
         <div class="row g8" style="margin-top:10px">
           <input class="inp grow" id="presu-buscar" data-f="presuTexto" value="${esc(p.buscar || '')}" placeholder="Nombre o referencia" autocomplete="off">
           <button class="pill" data-a="presuBuscar" style="padding:13px 16px">Buscar</button>
@@ -8129,6 +8132,8 @@ const eur = (n) => (Number(n) || 0).toLocaleString('es-ES', { minimumFractionDig
  * en cuál de los dos estamos.
  */
 const enSuelto = () => V.view === 'presuNuevo' && !!V.suelto;
+/** Presupuesto libre (6-11-2026): suelto, sin motor; se monta de cero con líneas. */
+const enLibre = () => enSuelto() && !!V.suelto.libre;
 
 /* --- varias opciones por cliente (16-10-2026) ------------------------------
  * Del mismo presupuesto se pueden sacar varias opciones cambiando la marca del
@@ -8392,9 +8397,9 @@ A.presuCalcular = async (categoria) => {
   try {
     const ficha = suelto ? null : fichaVisitaActual(categoria);
     p.datos = suelto
-      ? await visitasDB.presupuestarSuelto(categoria, datosConOpcion(datosDelSuelto(V.suelto)), {
+      ? await visitasDB.presupuestarSuelto(categoria, enLibre() ? {} : datosConOpcion(datosDelSuelto(V.suelto)), {
           guardar: false, dtoGlobalPct: p.dto, lineasExtra: extrasEnvio(p), lineasQuitar: p.quitadas, lineasAjustar: Object.values(p.ajustes || {}), tituloSufijo: sufijoFusion(p),
-          clienteId: V.suelto.clienteId, titulo: tituloDelSuelto(),
+          clienteId: V.suelto.clienteId, titulo: tituloDelSuelto(), libre: enLibre(),
         })
       : await visitasDB.presupuestarVisita(vv.visita.id, categoria, {
           guardar: false, dtoGlobalPct: p.dto, lineasExtra: extrasEnvio(p), lineasQuitar: p.quitadas, lineasAjustar: Object.values(p.ajustes || {}), tituloSufijo: sufijoFusion(p),
@@ -8476,9 +8481,9 @@ A.presuGuardar = async () => {
   try {
     const ficha = suelto ? null : fichaVisitaActual(p.cat);
     const r = suelto
-      ? await visitasDB.presupuestarSuelto(p.cat, datosConOpcion(datosDelSuelto(V.suelto)), {
+      ? await visitasDB.presupuestarSuelto(p.cat, enLibre() ? {} : datosConOpcion(datosDelSuelto(V.suelto)), {
           guardar: true, dtoGlobalPct: p.dto, lineasExtra: extrasEnvio(p), lineasQuitar: p.quitadas, lineasAjustar: Object.values(p.ajustes || {}), tituloSufijo: sufijoFusion(p),
-          clienteId: V.suelto.clienteId, titulo: tituloDelSuelto(),
+          clienteId: V.suelto.clienteId, titulo: tituloDelSuelto(), libre: enLibre(),
         })
       : await visitasDB.presupuestarVisita(vv.visita.id, p.cat, {
           guardar: true, dtoGlobalPct: p.dto, lineasExtra: extrasEnvio(p), lineasQuitar: p.quitadas, lineasAjustar: Object.values(p.ajustes || {}), tituloSufijo: sufijoFusion(p),
@@ -8580,9 +8585,11 @@ A.presuAjusteDeshacer = () => {
 
 /* ---------- un producto que no está en el catálogo: se crea y se añade (Enzo, 27-10-2026) ---------- */
 const FAMILIAS_PROPIAS = [['material', 'Material'], ['equipo', 'Equipo'], ['mano_obra', 'Mano de obra'], ['servicio', 'Servicio'], ['tramite', 'Trámite'], ['otro', 'Otro']];
-A.presuProductoNuevoAbrir = () => {
-  const p = V.presu; if (p.cargando) return;
-  V.sheet = { tipo: 'presuProductoNuevo', v: { nombre: String(p.buscar || '').trim(), unidad: 'ud', familia: 'material', venta: '', coste: '', detalle_tecnico: '' }, busy: false };
+A.presuProductoNuevoAbrir = (modo) => {
+  // modo 'edit' (6-11-2026): desde la modificación de un presupuesto guardado.
+  const edit = modo === 'edit' && V.presuEdit;
+  const p = V.presu; if (!edit && p.cargando) return;
+  V.sheet = { tipo: 'presuProductoNuevo', modo: edit ? 'edit' : 'nuevo', v: { nombre: String((edit ? V.presuEdit.buscar : p.buscar) || '').trim(), unidad: 'ud', familia: 'material', venta: '', coste: '', detalle_tecnico: '' }, busy: false };
   render();
 };
 A.presuProductoNuevoCampo = (k, valor) => {
@@ -8604,9 +8611,18 @@ A.presuProductoNuevoGuardar = async () => {
   try {
     const r = await visitasDB.crearProductoCatalogo({ nombre: s.v.nombre, unidad: s.v.unidad, familia: s.v.familia, venta: num(s.v.venta), coste: String(s.v.coste).trim() === '' ? null : num(s.v.coste), detalle_tecnico: s.v.detalle_tecnico });
     const x = r.producto;
+    const seccion = s.v.familia === 'mano_obra' ? 'Mano de obra' : 'Equipos';
+    if (s.modo === 'edit' && V.presuEdit) {
+      // En la edición entra como línea nueva; el precio de venta ya es el escrito (x.venta).
+      V.presuEdit.nuevas.push({ producto_ref: x.referencia, descripcion: x.nombre, detalle_tecnico: x.detalle_tecnico || null, especificaciones: [], cantidad: '1', unidad: x.unidad || 'ud',
+        precio_tarifa: x.precio_tarifa, precio_catalogo: x.precio_tarifa, iva: 21, seccion, libre: false });
+      V.presuEdit.buscar = ''; V.presuEdit.resultados = []; V.sheet = null;
+      toast('«' + x.nombre + '» creado en el catálogo y añadido: ya sale en las búsquedas.');
+      render(); return;
+    }
     const p = V.presu;
     p.extra.push({ producto_ref: x.referencia, descripcion: x.nombre, detalle_tecnico: x.detalle_tecnico || null, especificaciones: [], cantidad: 1, unidad: x.unidad || 'ud',
-      precio_tarifa: x.precio_tarifa, precio_catalogo: x.precio_tarifa, iva: 21, seccion: s.v.familia === 'mano_obra' ? 'Mano de obra' : 'Equipos' });
+      precio_tarifa: x.precio_tarifa, precio_catalogo: x.precio_tarifa, iva: 21, seccion });
     p.buscar = ''; p.resultados = []; V.sheet = null;
     toast('«' + x.nombre + '» creado en el catálogo y añadido: ya sale en las búsquedas.');
     A.presuRecalcular();
@@ -8825,6 +8841,8 @@ const SISTEMAS_AIRE = [
 
 const presuNuevoVacio = () => ({
   cat: 'aire_acondicionado', clienteId: null, cliente: '', titulo: '',
+  // libre (Enzo, 6-11-2026): sin datos ni motor, se monta de cero con líneas
+  libre: false,
   // aire: una fila por equipo interior, con sus m² y sus metros de línea
   // hasta la exterior. Con los m² el motor elige la máquina; con los metros,
   // el tubo de más y el gas.
@@ -9086,9 +9104,18 @@ A.presuSueltoChip = (k, v) => {
   // Interruptores: un toque enciende, otro apaga (antes de la asignación
   // genérica, que si no los deja siempre apagados).
   if (['subvencion', 'cargador', 'cee', 'bateria_futuro'].includes(k)) { V.suelto[k] = !V.suelto[k]; render(); return; }
+  // Con el motor o libre: al cambiar, lo calculado antes ya no vale.
+  if (k === 'libre') { V.suelto.libre = v === '1'; V.presu.datos = null; V.presu.cat = null; V.presu.extra = []; V.presu.quitadas = []; V.presu.ajustes = {}; V.presu.guardado = null; render(); return; }
   // Los chips de sí/no mandan '' para apagarse y '1' para encenderse.
   V.suelto[k] = v === '' ? false : (/^\d+$/.test(String(v)) && k !== 'cat' ? Number(v) : v);
   if (['sustituye', 'apoyo', 'limpieza', 'backup', 'recuperar'].includes(k)) V.suelto[k] = v !== '';
+  // Una categoría sin reglas (electricidad) solo se puede montar libre; al
+  // volver a una con motor, se vuelve al motor (si el libre lo eligió la
+  // persona, se queda).
+  if (k === 'cat') {
+    if (!CATS_CON_MOTOR.includes(V.suelto.cat)) { if (!V.suelto.libre) V.suelto.libre_forzado = true; V.suelto.libre = true; }
+    else if (V.suelto.libre_forzado) { V.suelto.libre = false; V.suelto.libre_forzado = false; }
+  }
   // Si se cambia de inversor, una batería que no va con él se quita.
   if (k === 'inversor' && !(BATERIAS_DE[v] || []).some(([m]) => m === V.suelto.bateria_marca)) V.suelto.bateria_marca = '';
   render();
@@ -9830,11 +9857,15 @@ function vPresuNuevo() {
 
       <div class="lbl" style="margin:16px 0 8px">Qué se presupuesta</div>
       <div class="wrap">${vSchemas.CATEGORIAS.map((c) => `<div class="chip ${f.cat === c.key ? 'sel' : ''}" data-a="presuSueltoChip" data-k="cat" data-v="${c.key}">${esc(c.nombre)}</div>`).join('')}</div>
-      ${CATS_CON_MOTOR.includes(f.cat) ? '' : `<div class="tiny" style="margin-top:8px;color:var(--ambar-o)">Todavía no hay reglas para ${esc(nombreCat(f.cat))}: de momento solo calcula aire acondicionado. Puedes montarlo a mano añadiendo líneas del catálogo.</div>`}
 
-      ${f.cat === 'aerotermia' ? camposAeroHTML(f) : f.cat === 'solar' ? camposSolarHTML(f) : camposAireHTML(f)}
+      <div class="lbl" style="margin:16px 0 8px">Cómo se hace</div>
+      <div class="wrap">${CATS_CON_MOTOR.includes(f.cat) ? `<div class="chip ${!f.libre ? 'sel' : ''}" data-a="presuSueltoChip" data-k="libre" data-v="">Con el motor</div>` : ''}<div class="chip ${f.libre ? 'sel' : ''}" data-a="presuSueltoChip" data-k="libre" data-v="1">Libre, de cero</div></div>
+      ${f.libre ? `<div class="tiny" style="margin-top:8px">${CATS_CON_MOTOR.includes(f.cat) ? 'Sin datos que rellenar: el presupuesto empieza vacío y lo montas tú línea a línea, del catálogo o creando conceptos nuevos.' : 'Todavía no hay reglas para ' + esc(nombreCat(f.cat)) + ': se monta línea a línea, del catálogo o creando conceptos nuevos.'}</div>
+      <div class="lbl" style="margin:16px 0 8px">Título del presupuesto (opcional)</div>
+      <input class="inp" data-f="presuCampo" data-k="titulo" value="${esc(String(f.titulo || ''))}" placeholder="${esc(nombreCat(f.cat))} · ${esc(f.cliente || 'cliente')}">`
+      : f.cat === 'aerotermia' ? camposAeroHTML(f) : f.cat === 'solar' ? camposSolarHTML(f) : camposAireHTML(f)}
 
-      <button class="btn btn-verde" data-a="presuCalcular" data-c="${esc(f.cat)}" style="margin-top:16px" ${p.cargando ? 'disabled' : ''}>${p.cargando ? 'Calculando…' : 'Calcular'}</button>
+      ${f.libre && p.datos && p.cat === f.cat ? '' : `<button class="btn btn-verde" data-a="presuCalcular" data-c="${esc(f.cat)}" style="margin-top:16px" ${p.cargando ? 'disabled' : ''}>${p.cargando ? (f.libre ? 'Preparando…' : 'Calculando…') : (f.libre ? 'Empezar de cero' : 'Calcular')}</button>`}
       ${p.error ? `<div class="aviso-rojo" style="margin-top:12px"><span class="ex">!</span><span style="font:400 13px/1.4 var(--sans)">${esc(p.error)}</span></div>` : ''}
     </div>
     ${p.datos ? `<div class="card" style="margin-top:12px">${presuPanelHTML()}</div>` : ''}
@@ -10028,7 +10059,10 @@ A.presuEditar = () => {
     dto: Number(v.datos.dto_global_pct || 0),
     cambios: {},          // id de línea -> { cantidad, precio_tarifa, descripcion }
     quitadas: [],
-    nueva: null,
+    // Líneas nuevas (6-11-2026): del catálogo (producto_ref) o libres. Las pone
+    // el servidor al guardar, con el recargo del catálogo cuando lo hay.
+    nuevas: [],
+    buscar: '', buscando: false, resultados: [],
     guardando: false,
   };
   render();
@@ -10062,10 +10096,55 @@ A.presuQuitarLinea = (id) => {
 };
 A.presuLineaNueva = () => {
   const e = V.presuEdit; if (!e) return;
-  e.nueva = e.nueva ? null : { descripcion: '', cantidad: '1', precio_tarifa: '', seccion: 'Otros' };
+  e.nuevas.push({ descripcion: '', cantidad: '1', precio_tarifa: '', precio_coste: '', seccion: 'Otros', unidad: 'ud', libre: true });
+  render();
+  const ult = document.querySelectorAll('[data-f="presuNueva"][data-k="descripcion"]'); if (ult.length) ult[ult.length - 1].focus();
+};
+A.presuNuevaQuitar = (i) => { const e = V.presuEdit; if (!e) return; e.nuevas.splice(Number(i), 1); render(); };
+A.presuNuevaCampo = (i, campo, valor) => { const e = V.presuEdit; if (e && e.nuevas[Number(i)]) e.nuevas[Number(i)][campo] = valor; };
+/* El catálogo al modificar un presupuesto guardado (Enzo, 6-11-2026): se busca
+ * igual que al generar y el producto entra como línea nueva; su precio de venta
+ * (con el recargo de la categoría) lo pone el servidor al guardar. */
+let presuEditBuscarT;
+A.presuEditTexto = (t) => {
+  const e = V.presuEdit; if (!e) return;
+  e.buscar = t; clearTimeout(presuEditBuscarT);
+  if (String(t || '').trim().length < 2) { e.resultados = []; return pintarPresuEditBusqueda(); }
+  presuEditBuscarT = setTimeout(() => A.presuEditBuscar(), 450);
+};
+const pintarPresuEditBusqueda = () => {
+  const caja = document.getElementById('presu-edit-resultados');
+  if (caja) caja.innerHTML = presuEditResultadosHTML(); else render();
+};
+A.presuEditBuscar = async () => {
+  const e = V.presuEdit; if (!e || String(e.buscar || '').trim().length < 2 || e.buscando) return;
+  e.buscando = true; pintarPresuEditBusqueda();
+  try { e.resultados = await visitasDB.buscarProductos(e.buscar); }
+  catch (err) { e.resultados = []; avisar('No se pudo buscar en el catálogo: ' + msgError(err)); }
+  e.buscando = false; pintarPresuEditBusqueda();
+};
+A.presuEditAnadir = (ref) => {
+  const e = V.presuEdit; if (!e) return;
+  const x = (e.resultados || []).find((r) => r.referencia === ref); if (!x) return;
+  e.nuevas.push({ producto_ref: x.referencia, descripcion: x.nombre, detalle_tecnico: x.detalle_tecnico || null, especificaciones: x.especificaciones || [],
+    cantidad: '1', unidad: x.unidad || 'ud', precio_tarifa: x.precio_tarifa, precio_catalogo: x.precio_tarifa, iva: x.iva == null ? 21 : x.iva,
+    seccion: x.familia === 'mano_obra' ? 'Mano de obra' : 'Equipos', libre: false });
+  e.buscar = ''; e.resultados = [];
   render();
 };
-A.presuNuevaCampo = (campo, valor) => { if (V.presuEdit && V.presuEdit.nueva) V.presuEdit.nueva[campo] = valor; };
+function presuEditResultadosHTML() {
+  const e = V.presuEdit; if (!e) return '';
+  if (e.buscando) return '<div class="sub" style="font-size:12px;margin-top:10px">Buscando en el catálogo…</div>';
+  const puedeCrear = esAdmin() || rol() === 'presupuestos';
+  const q = String(e.buscar || '').trim();
+  const crear = puedeCrear ? `<div class="dash" data-a="presuProductoNuevoAbrir" data-modo="edit" style="margin-top:10px;display:block">${q.length >= 2 ? '+ Crear «' + esc(q) + '» como producto nuevo del catálogo' : '+ Crear un concepto nuevo (no está en el catálogo)'}</div>` : '';
+  if (!e.resultados.length) return q.length < 2 ? crear : '<div class="sub" style="font-size:12px;margin-top:10px">Nada con ese nombre.</div>' + crear;
+  return `<div style="margin-top:10px">${e.resultados.map((x) => `<div class="card row" data-a="presuEditAnadir" data-ref="${esc(x.referencia)}" style="margin-bottom:8px;cursor:pointer;padding:11px 13px">
+    <div class="grow"><div style="font:600 14px/1.25 var(--sans)">${esc(x.nombre)}</div>
+    <div class="sub" style="font-size:12px;margin-top:3px">${esc(x.referencia)}${x.familia ? ' · ' + esc(x.familia) : ''}</div></div>
+    <div class="num" style="font-size:14px;flex:none">${eur(x.precio_tarifa)}</div>
+  </div>`).join('')}${crear}</div>`;
+}
 A.presuEditDto = (v) => { if (V.presuEdit) V.presuEdit.dto = Math.max(0, Math.min(100, Number(String(v).replace(',', '.')) || 0)); };
 
 A.presuGuardarCambios = async () => {
@@ -10111,26 +10190,16 @@ A.presuGuardarCambios = async () => {
       }
     }
 
-    // 3 · la que se añade
-    const n = e.nueva;
-    if (n && String(n.descripcion || '').trim() && num(n.precio_tarifa) >= 0) {
-      await visitasDB.anadirLineaPresupuesto({
-        presupuesto_id: v.datos.id,
-        orden: ((v.datos.lineas || []).reduce((m, l) => Math.max(m, l.orden || 0), 0)) + 1,
-        seccion: n.seccion || 'Otros',
-        descripcion: String(n.descripcion).trim(),
-        cantidad: num(n.cantidad) || 1,
-        unidad: 'ud',
-        precio_tarifa: num(n.precio_tarifa) || 0,
-        precio_coste: String(n.precio_coste || '').trim() ? num(n.precio_coste) : null,
-        precio_venta: 0,          // lo pone el recálculo
-        origen: 'manual',
-        confirmada: true,
-      });
-    }
+    // 3 · las que se añaden: las pone el servidor (recargo del catálogo) al sumar
+    const nuevas = (e.nuevas || []).filter((n) => n.producto_ref || (String(n.descripcion || '').trim() && num(n.precio_tarifa) >= 0)).map((n) => ({
+      producto_ref: n.producto_ref || null, descripcion: String(n.descripcion || '').trim(), detalle_tecnico: n.detalle_tecnico || null,
+      especificaciones: n.especificaciones || [], cantidad: num(n.cantidad) || 1, unidad: n.unidad || 'ud',
+      precio_tarifa: num(n.precio_tarifa) || 0, precio_catalogo: n.precio_catalogo, iva: n.iva,
+      precio_coste: String(n.precio_coste == null ? '' : n.precio_coste).trim() ? num(n.precio_coste) : null, seccion: n.seccion || 'Otros',
+    }));
 
     // 4 · que el servidor vuelva a sumar
-    const rc = await visitasDB.recalcularPresupuesto(v.datos.id, e.dto);
+    const rc = await visitasDB.recalcularPresupuesto(v.datos.id, e.dto, nuevas);
     if (rc && rc.catalogados) toast(rc.catalogados === 1 ? 'Producto nuevo guardado en el catálogo propio.' : rc.catalogados + ' productos nuevos guardados en el catálogo propio.');
     V.presuEdit = null;
     V.presuLista.cargado = false; A.cargarPresupuestos();
@@ -10167,7 +10236,7 @@ function previaEditHTML(d) {
     const cRaw = c.precio_coste != null ? c.precio_coste : l.precio_coste;
     if (cRaw == null || String(cRaw).trim() === '') sinCoste++; else coste += cant * num(cRaw);
   });
-  if (e.nueva && num(e.nueva.precio_tarifa) > 0) { bruto += num(e.nueva.cantidad || 1) * num(e.nueva.precio_tarifa); if (String(e.nueva.precio_coste || '').trim()) coste += num(e.nueva.cantidad || 1) * num(e.nueva.precio_coste); else sinCoste++; }
+  (e.nuevas || []).forEach((n) => { if (!(num(n.precio_tarifa) > 0)) return; bruto += num(n.cantidad || 1) * num(n.precio_tarifa); if (String(n.precio_coste == null ? '' : n.precio_coste).trim()) coste += num(n.cantidad || 1) * num(n.precio_coste); else sinCoste++; });
   bruto = Math.round(bruto * 100) / 100; coste = Math.round(coste * 100) / 100;
   const total = Math.round(bruto * (1 - num(e.dto) / 100) * 100) / 100;
   return `<div class="row" style="justify-content:space-between;margin-top:12px">
@@ -10212,17 +10281,38 @@ function presuLineasEditHTML(d) {
       ${l.origen_regla_id ? '<div class="tiny" style="margin-top:5px;opacity:.7">La propuso el motor: si la cambias, queda apuntado.</div>' : ''}
     </div>`;
   }).join('')}
-  ${e.nueva ? `<div class="card" style="margin-top:12px;background:rgba(20,23,15,.03)">
+  ${(e.nuevas || []).map((n, i) => n.libre ? `<div class="card" style="margin-top:12px;background:rgba(20,23,15,.03)">
     <div class="lbl">Línea nueva</div>
-    <input class="inp" data-f="presuNueva" data-k="descripcion" value="${esc(e.nueva.descripcion)}" placeholder="Concepto" style="margin-top:8px">
+    <input class="inp" data-f="presuNueva" data-i="${i}" data-k="descripcion" value="${esc(n.descripcion)}" placeholder="Concepto" style="margin-top:8px">
     <div class="row g8" style="margin-top:8px">
-      <input class="inp" data-f="presuNueva" data-k="cantidad" value="${esc(e.nueva.cantidad)}" inputmode="decimal" style="width:80px;text-align:center">
-      <input class="inp grow" data-f="presuNueva" data-k="precio_tarifa" value="${esc(e.nueva.precio_tarifa)}" inputmode="decimal" placeholder="Precio por unidad">
-      ${veMargenPresu(d.categoria) ? `<input class="inp" data-f="presuNueva" data-k="precio_coste" value="${esc(e.nueva.precio_coste || '')}" inputmode="decimal" placeholder="Coste" style="width:90px">` : ''}
+      <input class="inp" data-f="presuNueva" data-i="${i}" data-k="cantidad" value="${esc(String(n.cantidad))}" inputmode="decimal" style="width:80px;text-align:center">
+      <input class="inp grow" data-f="presuNueva" data-i="${i}" data-k="precio_tarifa" value="${esc(String(n.precio_tarifa))}" inputmode="decimal" placeholder="Precio por unidad">
+      ${veMargenPresu(d.categoria) ? `<input class="inp" data-f="presuNueva" data-i="${i}" data-k="precio_coste" value="${esc(String(n.precio_coste || ''))}" inputmode="decimal" placeholder="Coste" style="width:90px">` : ''}
     </div>
-    <div class="tiny" style="margin-top:8px">Lo que añadas aquí se guarda también en el catálogo propio, para encontrarlo la próxima vez desde «Añadir del catálogo».</div>
-    <span class="tiny" data-a="presuLineaNueva" style="display:inline-block;margin-top:10px;cursor:pointer;text-decoration:underline">Quitar esta línea</span>
-  </div>` : `<div class="dash" data-a="presuLineaNueva" style="margin-top:12px;display:block">+ Añadir una línea</div>`}
+    <div class="tiny" style="margin-top:8px">Se guarda también en el catálogo propio, para encontrarla la próxima vez desde «Añadir del catálogo».</div>
+    <span class="tiny" data-a="presuNuevaQuitar" data-i="${i}" style="display:inline-block;margin-top:10px;cursor:pointer;text-decoration:underline">Quitar esta línea</span>
+  </div>` : `<div class="card" style="margin-top:12px;background:rgba(20,23,15,.03)">
+    <div class="lbl">Del catálogo</div>
+    <div style="font:600 14px/1.25 var(--sans);margin-top:8px">${esc(n.descripcion)}</div>
+    <div class="sub" style="font-size:12px;margin-top:3px">${esc(n.producto_ref)}</div>
+    <div class="row g8" style="margin-top:8px;align-items:center">
+      <input class="inp" data-f="presuNueva" data-i="${i}" data-k="cantidad" value="${esc(String(n.cantidad))}" inputmode="decimal" style="width:80px;text-align:center">
+      <span class="tiny">${esc(n.unidad || 'ud')} ×</span>
+      <input class="inp grow" data-f="presuNueva" data-i="${i}" data-k="precio_tarifa" value="${esc(String(n.precio_tarifa))}" inputmode="decimal" placeholder="Precio por unidad">
+      <span class="tiny">€</span>
+    </div>
+    <div class="tiny" style="margin-top:8px">Precio del catálogo. Si no lo tocas, al guardar se le aplica el recargo de ${esc(nombreCat(d.categoria))}, como a las líneas del motor; si lo cambias, ese es el precio de venta.</div>
+    <span class="tiny" data-a="presuNuevaQuitar" data-i="${i}" style="display:inline-block;margin-top:10px;cursor:pointer;text-decoration:underline">Quitar esta línea</span>
+  </div>`).join('')}
+  <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--l1)">
+    <div class="lbl" style="font-size:11px">Añadir del catálogo</div>
+    <div class="row g8" style="margin-top:8px">
+      <input class="inp grow" data-f="presuEditTexto" value="${esc(e.buscar || '')}" placeholder="Nombre o referencia" autocomplete="off">
+      <button class="pill" data-a="presuEditBuscar" style="padding:13px 16px">Buscar</button>
+    </div>
+    <div id="presu-edit-resultados">${presuEditResultadosHTML()}</div>
+  </div>
+  <div class="dash" data-a="presuLineaNueva" style="margin-top:12px;display:block">+ Añadir una línea a mano</div>
 
   <div class="row g8" style="align-items:center;margin-top:16px">
     <span class="sub grow">Descuento al pie</span>
@@ -13596,7 +13686,7 @@ function sheet() {
       <div class="row g8" style="margin-top:12px;align-items:flex-end;flex-wrap:wrap">
         <div><div class="lbl" style="margin-bottom:6px">Unidad</div><input class="inp" data-f="ppn:unidad" value="${esc(v.unidad)}" style="width:70px;text-align:center"></div>
         <div><div class="lbl" style="margin-bottom:6px">Venta ud (PVP)</div><input class="inp" data-f="ppn:venta" value="${esc(String(v.venta))}" inputmode="decimal" style="width:110px;text-align:right"></div>
-        ${veMargenPresu(V.presu.cat) ? `<div><div class="lbl" style="margin-bottom:6px">Coste ud</div><input class="inp" data-f="ppn:coste" value="${esc(String(v.coste))}" inputmode="decimal" placeholder="€" style="width:100px;text-align:right"></div>
+        ${veMargenPresu(s.modo === 'edit' && V.presuVer && V.presuVer.datos ? V.presuVer.datos.categoria : V.presu.cat) ? `<div><div class="lbl" style="margin-bottom:6px">Coste ud</div><input class="inp" data-f="ppn:coste" value="${esc(String(v.coste))}" inputmode="decimal" placeholder="€" style="width:100px;text-align:right"></div>
         <div><div class="lbl" style="margin-bottom:6px">Margen %</div><input class="inp" data-f="ppn:margen_pct" value="${esc(String(margen))}" inputmode="decimal" style="width:80px;text-align:right"></div>` : ''}
       </div>
       <div class="row g8" style="margin-top:18px">
@@ -14080,7 +14170,7 @@ document.addEventListener('click', (e) => {
   if (a === 'elegirObraOk') return A.elegirObraOk(d.id);
   if (a === 'presuCatDe') return A.presuCatDe(d.cat);
   if (a === 'fv2DesgloseAplicar') return A.fv2DesgloseAplicar();
-  if (a === 'presuProductoNuevoAbrir') return A.presuProductoNuevoAbrir();
+  if (a === 'presuProductoNuevoAbrir') return A.presuProductoNuevoAbrir(d.modo);
   if (a === 'presuProductoNuevoFamilia') return A.presuProductoNuevoFamilia(d.f);
   if (a === 'presuProductoNuevoGuardar') return A.presuProductoNuevoGuardar();
   if (a === 'presuRecuperarLinea') return A.presuRecuperarLinea(d.clave);
@@ -14137,6 +14227,9 @@ document.addEventListener('click', (e) => {
   if (a === 'presuEditarCancelar') return A.presuEditarCancelar();
   if (a === 'presuQuitarLinea') return A.presuQuitarLinea(d.id);
   if (a === 'presuLineaNueva') return A.presuLineaNueva();
+  if (a === 'presuNuevaQuitar') return A.presuNuevaQuitar(d.i);
+  if (a === 'presuEditBuscar') return A.presuEditBuscar();
+  if (a === 'presuEditAnadir') return A.presuEditAnadir(d.ref);
   if (a === 'presuGuardarCambios') return A.presuGuardarCambios();
   if (a === 'presuSueltoChip') { A.presuSueltoChip(d.k, d.v); return; }
   if (a === 'presuSueltoCliente') return A.presuSueltoCliente(d.id);
@@ -14516,7 +14609,8 @@ document.addEventListener('input', (e) => {
   // Al tocar líneas o el descuento al pie se refresca la vista previa del
   // total y el margen, sin volver a pintar (para no perder el foco).
   if (f === 'presuLinea') { A.presuLineaCampo(t.dataset.id, t.dataset.k, t.value); refrescarPreviaEdit(); return; }
-  if (f === 'presuNueva') { A.presuNuevaCampo(t.dataset.k, t.value); refrescarPreviaEdit(); return; }
+  if (f === 'presuNueva') { A.presuNuevaCampo(t.dataset.i, t.dataset.k, t.value); refrescarPreviaEdit(); return; }
+  if (f === 'presuEditTexto') { A.presuEditTexto(t.value); return; }
   if (f === 'presuEditDto') { A.presuEditDto(t.value); refrescarPreviaEdit(); return; }
   if (f === 'presuCampo') {
     const k = t.dataset.k;

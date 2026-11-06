@@ -102,6 +102,17 @@ setTimeout(function () {
 
   A.presuSueltoChip('cat', 'electricidad');
   comprueba('electricidad avisa de que no tiene reglas', vPresuNuevo().indexOf('Todavía no hay reglas') > -1);
+  comprueba('y solo se puede montar libre', V.suelto.libre === true && vPresuNuevo().indexOf('Con el motor') < 0);
+  A.presuSueltoChip('cat', 'aire_acondicionado');
+  comprueba('al volver a aire, vuelve el motor', V.suelto.libre === false && vPresuNuevo().indexOf('Con el motor') > -1);
+
+  titulo('presupuesto libre (6-11-2026)');
+  A.presuSueltoChip('libre', '1');
+  var hl = vPresuNuevo();
+  comprueba('libre: sin los datos del motor', hl.indexOf('Equipos interiores') < 0 && hl.indexOf('data-f="presuEstancia"') < 0);
+  comprueba('con título y botón de empezar de cero', hl.indexOf('data-k="titulo"') > -1 && hl.indexOf('Empezar de cero') > -1);
+  A.presuSueltoChip('libre', '');
+  comprueba('y al volver al motor, los datos de nuevo', vPresuNuevo().indexOf('Equipos interiores') > -1);
   A.presuSueltoChip('cat', 'aire_acondicionado');
 
   titulo('qué se le manda al motor');
@@ -196,9 +207,11 @@ setTimeout(function () {
   visitasDB = {
     guardarLineaPresupuesto: function (id, c) { hechos.cambios.push([id, c]); return Promise.resolve({}); },
     borrarLineaPresupuesto: function (id) { hechos.borradas.push(id); return Promise.resolve({}); },
-    anadirLineaPresupuesto: function (f) { hechos.nuevas.push(f); return Promise.resolve({}); },
     apuntarCorreccion: function (f) { hechos.correcciones.push(f); return Promise.resolve({}); },
-    recalcularPresupuesto: function (id, dto) { hechos.recalculo = [id, dto]; return Promise.resolve({ ok: true }); },
+    // Las líneas nuevas van al servidor con el recálculo (6-11-2026): él les
+    // pone el recargo del catálogo y las suma con las demás.
+    recalcularPresupuesto: function (id, dto, nuevas) { hechos.recalculo = [id, dto]; hechos.nuevas = nuevas || []; return Promise.resolve({ ok: true }); },
+    buscarProductos: function (q) { return Promise.resolve(q === 'bomba' ? [{ referencia: 'BC-01', nombre: 'Bomba de condensados Mini', familia: 'material', unidad: 'ud', precio_tarifa: 60, iva: 21 }] : []); },
     listarPresupuestos: function () { return Promise.resolve([]); },
     verPresupuesto: function () { return Promise.resolve(V.presuVer.datos); },
   };
@@ -206,20 +219,36 @@ setTimeout(function () {
   A.presuLineaCampo('l1', 'cantidad', '4');
   A.presuLineaCampo('l1', 'precio_tarifa', '250');
   A.presuQuitarLinea('l2');
+  // una línea a mano…
   A.presuLineaNueva();
-  A.presuNuevaCampo('descripcion', 'Bomba de condensados');
-  A.presuNuevaCampo('cantidad', '2');
-  A.presuNuevaCampo('precio_tarifa', '95,50');
-  A.presuEditDto('10');
-
-  A.presuGuardarCambios().then(function () {
+  A.presuNuevaCampo(0, 'descripcion', 'Bomba de condensados');
+  A.presuNuevaCampo(0, 'cantidad', '2');
+  A.presuNuevaCampo(0, 'precio_tarifa', '95,50');
+  // …y otra del catálogo, buscándola
+  var he = vPresupuestoVer();
+  comprueba('en la edición hay buscador del catálogo', he.indexOf('data-f="presuEditTexto"') > -1);
+  comprueba('y el botón de línea a mano', he.indexOf('data-a="presuLineaNueva"') > -1);
+  V.presuEdit.buscar = 'bomba';
+  A.presuEditBuscar().then(function () {
+    igual('la búsqueda trae el producto', V.presuEdit.resultados.length, 1);
+    A.presuEditAnadir('BC-01');
+    igual('y al tocarlo entra como línea nueva', V.presuEdit.nuevas.length, 2);
+    var h2 = vPresupuestoVer();
+    comprueba('se ve con su referencia', h2.indexOf('BC-01') > -1);
+    A.presuNuevaCampo(1, 'cantidad', '3');
+    A.presuEditDto('10');
+    return A.presuGuardarCambios();
+  }).then(function () {
     igual('cambia la línea tocada', hechos.cambios.length, 1);
     igual('con la cantidad nueva', hechos.cambios[0][1].cantidad, 4);
     igual('y el precio nuevo', hechos.cambios[0][1].precio_tarifa, 250);
     igual('quita la que se marcó', hechos.borradas.join(), 'l2');
-    igual('añade la nueva', hechos.nuevas.length, 1);
-    igual('con su precio en coma', hechos.nuevas[0].precio_tarifa, 95.5);
-    igual('marcada como puesta a mano', hechos.nuevas[0].origen, 'manual');
+    igual('manda las dos nuevas al servidor', hechos.nuevas.length, 2);
+    igual('la de a mano con su precio en coma', hechos.nuevas[0].precio_tarifa, 95.5);
+    igual('sin referencia', hechos.nuevas[0].producto_ref, null);
+    igual('la del catálogo con su referencia', hechos.nuevas[1].producto_ref, 'BC-01');
+    igual('su cantidad', hechos.nuevas[1].cantidad, 3);
+    igual('y el precio del catálogo, para que el servidor sepa que no se tocó', hechos.nuevas[1].precio_catalogo, 60);
     igual('apunta la corrección del motor', hechos.correcciones.length, 1);
     comprueba('diciendo qué cambió', /cantidad 3 → 4/.test(hechos.correcciones[0].motivo));
     igual('y pide al servidor que vuelva a sumar', hechos.recalculo[0], 'p9');
@@ -291,3 +320,29 @@ setTimeout(function () {
     resultado();
   }).catch(function (e) { print('ERROR: ' + e + '\n' + (e.stack || '')); });
 }, 1600);
+
+/* Presupuesto libre (6-11-2026): sin datos ni motor, empieza vacío y se monta
+ * con líneas del catálogo o conceptos nuevos. */
+setTimeout(function () {
+  titulo('presupuesto libre: empezar de cero');
+  V.user = { id: 'u9' }; V.sheet = null; V.presuEdit = null;
+  V.agenda.clientes = [{ id: 'c1', nombre: 'Ana Ferrer' }]; V.agenda.cargado = true;
+  A.presuNuevo();
+  A.presuSueltoChip('libre', '1');
+  var llamadas = [];
+  visitasDB = {
+    presupuestarSuelto: function (cat, datos, o) { llamadas.push([cat, datos, o]); return Promise.resolve({ ok: true, categoria: cat, lineas: [], incidencias: [], totales: { bruto: 0, dto_linea: 0, subtotal: 0, dto_global: 0, total: 0, coste: 0, lineas_sin_coste: 0 }, dto_global_pct: 0 }); },
+    buscarProductos: function () { return Promise.resolve([]); },
+  };
+  A.presuCalcular('aire_acondicionado').then(function () {
+    igual('pide al servidor el libre', llamadas[0][2].libre, true);
+    igual('sin datos', Object.keys(llamadas[0][1]).length, 0);
+    var hv = vPresuNuevo();
+    comprueba('el panel vacío invita a buscar en el catálogo', hv.indexOf('Presupuesto vacío') > -1 && hv.indexOf('Añadir del catálogo') > -1);
+    comprueba('y a crear un concepto nuevo sin escribir nada', hv.indexOf('Crear un concepto nuevo') > -1);
+    comprueba('ya no sale el botón de empezar', hv.indexOf('Empezar de cero') < 0);
+    A.presuSueltoChip('libre', '');
+    comprueba('al volver al motor se olvida lo calculado', !V.presu.datos && vPresuNuevo().indexOf('Equipos interiores') > -1);
+    resultado();
+  }).catch(function (e) { print('ERROR: ' + e + '\n' + (e.stack || '')); });
+}, 2300);

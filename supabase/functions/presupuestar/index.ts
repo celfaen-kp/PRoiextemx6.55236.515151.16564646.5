@@ -213,9 +213,44 @@ Deno.serve(async (req) => {
   if (b.recalcular === true) {
     const id = String(b.presupuesto_id || '');
     if (!/^[0-9a-f-]{36}$/i.test(id)) return json({ error: 'Falta el presupuesto.' }, 400);
-    const { data: pre } = await sb.from('presupuestos').select('id, dto_global_pct, cliente_id, visita_id').eq('id', id).maybeSingle();
+    const { data: pre } = await sb.from('presupuestos').select('id, dto_global_pct, cliente_id, visita_id, categoria').eq('id', id).maybeSingle();
     if (!pre) return json({ error: 'Ese presupuesto no existe.' }, 404);
     if (!(await clienteDeColaborador(sb, yo, pre.cliente_id, pre.visita_id))) return json({ error: SOLO_SUS_CLIENTES }, 403);
+    // Líneas nuevas al modificar un presupuesto guardado (Enzo, 6-11-2026): del
+    // catálogo (con el recargo de la categoría, como las añadidas al generar) o
+    // libres (lo escrito es la venta). Se insertan detrás de las que hay.
+    // deno-lint-ignore no-explicit-any
+    const nuevas: any[] = Array.isArray(b.lineas_nuevas) ? b.lineas_nuevas.slice(0, 100) : [];
+    if (nuevas.length) {
+      const { data: lookupRec } = await sb.from('tablas_lookup').select('clave, entrada, valor').eq('categoria', String(pre.categoria || ''));
+      const refsNuevas = [...new Set(nuevas.map((l) => String(l.producto_ref || '')).filter(Boolean))];
+      // deno-lint-ignore no-explicit-any
+      const prodsNuevas: Record<string, any> = {};
+      if (refsNuevas.length) {
+        const cols = 'referencia, nombre, familia, unidad, precio_tarifa, descuento_proveedor, detalle_tecnico, especificaciones, iva, atributos, activo';
+        let prods = (await sb.from('productos').select(cols + ', recargo, aplica_cdc').in('referencia', refsNuevas)).data;
+        if (!prods) prods = (await sb.from('productos').select(cols).in('referencia', refsNuevas)).data;
+        (prods || []).forEach((p) => { if (!prodsNuevas[p.referencia]) prodsNuevas[p.referencia] = p; });
+      }
+      const { data: ultima } = await sb.from('presupuesto_lineas').select('orden').eq('presupuesto_id', id).order('orden', { ascending: false }).limit(1).maybeSingle();
+      let orden = Number(ultima?.orden || 0);
+      const filas = nuevas.map((l) => {
+        const prod = prodsNuevas[String(l.producto_ref || '')] || null;
+        const m = lineaManual(l, prod, lookupRec || []);
+        if (!prod && !String(l.descripcion || '').trim()) return null;
+        orden += 1;
+        return {
+          presupuesto_id: id, orden, seccion: m.seccion || 'Otros', producto_ref: m.producto_ref, descripcion: m.descripcion,
+          detalle_tecnico: m.detalle_tecnico, especificaciones: m.especificaciones || [], cantidad: m.cantidad, unidad: m.unidad,
+          precio_tarifa: m.precio_tarifa, precio_coste: m.precio_coste, dto_linea_pct: m.dto_linea_pct || 0, precio_venta: 0,
+          iva: m.iva == null ? 21 : m.iva, origen: 'manual', origen_regla_id: null, origen_inputs: m.origen_inputs, confirmada: true,
+        };
+      }).filter(Boolean);
+      if (filas.length) {
+        const { error: errN } = await sb.from('presupuesto_lineas').insert(filas);
+        if (errN) return json({ error: 'No se pudieron añadir las líneas nuevas: ' + errN.message }, 500);
+      }
+    }
     const { data: ls } = await sb.from('presupuesto_lineas')
       .select('id, cantidad, precio_tarifa, precio_coste, dto_linea_pct').eq('presupuesto_id', id).order('orden');
     const dto = b.dto_global_pct != null ? Number(b.dto_global_pct) : Number(pre.dto_global_pct || 0);
@@ -246,6 +281,10 @@ Deno.serve(async (req) => {
   const categoria = String(b.categoria || '');
   if (!categoria) return json({ error: 'Falta la categoría.' }, 400);
   const guardar = b.guardar !== false;
+  // Presupuesto libre (Enzo, 6-11-2026): sin datos que rellenar ni reglas; se
+  // monta de cero con líneas del catálogo o libres. También sirve para las
+  // categorías que aún no tienen reglas publicadas (electricidad).
+  const libre = b.libre === true;
 
   // --- los datos ---------------------------------------------------------------
   // De la ficha de una visita, o a secas: se presupuesta muchas veces sin haber
@@ -265,7 +304,8 @@ Deno.serve(async (req) => {
       fichaId = ficha.id;
     }
   } else if (!datos) {
-    return json({ error: 'Sin visita hay que mandar los datos.' }, 400);
+    if (!libre) return json({ error: 'Sin visita hay que mandar los datos.' }, 400);
+    datos = {};
   }
   // Colaborador: solo con una visita o un cliente suyos (sin cliente, nada).
   if (!(await clienteDeColaborador(sb, yo, clienteId, visitaId))) return json({ error: SOLO_SUS_CLIENTES }, 403);
@@ -274,17 +314,18 @@ Deno.serve(async (req) => {
   const { data: conjunto } = await sb.from('conjuntos_reglas')
     .select('id, version').eq('categoria', categoria).is('vigente_hasta', null)
     .order('vigente_desde', { ascending: false }).limit(1).maybeSingle();
-  if (!conjunto) {
+  if (!conjunto && !libre) {
     return json({ error: 'Todavía no hay reglas publicadas para ' + categoria + '.' }, 409);
   }
+  const conjuntoId: string | null = conjunto ? conjunto.id : null;
 
   const [variables, lookup, reglasR, manoObra, dtos] = await Promise.all([
     // por_cada (etapa 48): la variable se calcula por estancia. Sin pedirla
     // aquí, el motor la calculaba fuera y no encontraba los m².
     sb.from('variables_derivadas').select('codigo, formula, orden, por_cada').eq('categoria', categoria).order('orden'),
     sb.from('tablas_lookup').select('clave, entrada, valor').eq('categoria', categoria),
-    sb.from('reglas').select('*').eq('conjunto_id', conjunto.id).eq('activa', true),
-    sb.from('mano_obra').select('*').eq('conjunto_id', conjunto.id),
+    conjuntoId ? sb.from('reglas').select('*').eq('conjunto_id', conjuntoId).eq('activa', true) : Promise.resolve({ data: [] }),
+    conjuntoId ? sb.from('mano_obra').select('*').eq('conjunto_id', conjuntoId) : Promise.resolve({ data: [] }),
     sb.from('politica_descuentos').select('ambito, familia, descuento_pct').eq('activa', true),
   ]);
 
@@ -338,7 +379,7 @@ Deno.serve(async (req) => {
   // modelo (todavía no se ha pegado el SQL), todo sigue como antes.
   // deno-lint-ignore no-explicit-any
   let modeloFV: any = null;
-  if (categoria === 'solar') {
+  if (categoria === 'solar' && !libre) {
     const { data: mod } = await sb.from('motor_modelos').select('id, version, datos')
       .eq('categoria', 'solar').is('vigente_hasta', null)
       .order('vigente_desde', { ascending: false }).limit(1).maybeSingle();
@@ -379,11 +420,14 @@ Deno.serve(async (req) => {
   // Sin el modelo v2 no hay inversor conocido: el proyecto técnico se decide
   // por kWp (la fórmula de `proyecto` mira inversor_kw y, si es 0, kwp).
   if (categoria === 'solar' && datos && datos.inversor_kw == null) datos = Object.assign({}, datos, { inversor_kw: 0 });
-  const res = modeloFV ? presupuestarFV(datos, modeloFV, cfg) : calcular(categoria, datos, cfg);
+  // deno-lint-ignore no-explicit-any
+  const res: any = libre
+    ? { lineas: [], incidencias: [], variables: {}, resumen: null, recargo_sobre_coste: null }
+    : modeloFV ? presupuestarFV(datos, modeloFV, cfg) : calcular(categoria, datos, cfg);
   // Aerotermia: depósito de inercia y acumulador de ACS elegidos a mano (6-11-2026).
   // deno-lint-ignore no-explicit-any
   let opcionesAerotermia: any = null;
-  if (categoria === 'aerotermia') {
+  if (categoria === 'aerotermia' && !libre) {
     const colsAero = 'referencia, nombre, familia, unidad, precio_tarifa, descuento_proveedor, detalle_tecnico, iva, atributos, activo, recargo, aplica_cdc';
     const { data: equipos } = await sb.from('productos').select(colsAero).eq('activo', true)
       .or("familia.eq.deposito_inercia,nombre.ilike.%inercia%,nombre.ilike.%unistor%,nombre.ilike.%acumulador de acs%,nombre.ilike.%deposito de acs%,nombre.ilike.%depósito de acs%");
@@ -397,7 +441,7 @@ Deno.serve(async (req) => {
     }
   }
   if (avisoBateria) res.incidencias.unshift({ nivel: 'aviso', codigo: 'bateria_incompatible', mensaje: avisoBateria, campo: 'bateria_marca' });
-  const motorVersion = modeloFV ? res.motor_version : MOTOR_VERSION;
+  const motorVersion = libre ? 'libre' : modeloFV ? res.motor_version : MOTOR_VERSION;
 
   const dtoGlobal = b.dto_global_pct != null
     ? Number(b.dto_global_pct)
@@ -509,7 +553,7 @@ Deno.serve(async (req) => {
     opciones_aero: opcionesAerotermia,
     visita_id: visitaId,
     motor_version: motorVersion,
-    conjunto_version: conjunto.version,
+    conjunto_version: conjunto ? conjunto.version : null,
     variables: res.variables,
     incidencias: res.incidencias,
     dto_global_pct: dtoGlobal,
@@ -566,7 +610,7 @@ Deno.serve(async (req) => {
     cliente_id: clienteId,
     titulo,
     categoria,
-    conjunto_reglas_id: conjunto.id,
+    conjunto_reglas_id: conjuntoId,
     tarifa_id: tarifaId,
     motor_version: motorVersion,
     // Con qué modelo FV v2 se calculó (columna de la etapa 74; solo cuando lo hay).

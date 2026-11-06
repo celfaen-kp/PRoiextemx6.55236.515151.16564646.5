@@ -454,6 +454,8 @@ export async function presupuestarSuelto(categoria, datos, opciones) {
     lineas_extra: o.lineasExtra && o.lineasExtra.length ? o.lineasExtra : undefined,
     lineas_quitar: o.lineasQuitar && o.lineasQuitar.length ? o.lineasQuitar : undefined,
     lineas_ajustar: o.lineasAjustar && o.lineasAjustar.length ? o.lineasAjustar : undefined,
+    // Libre (6-11-2026): sin motor, se monta de cero con las líneas extra.
+    libre: o.libre === true ? true : undefined,
   });
 }
 /** Un producto nuevo en el catálogo propio (27-10-2026), para usarlo ahora y en el futuro. */
@@ -618,10 +620,13 @@ export async function borrarLineaPresupuesto(id) {
   return unwrap(await supabase.from('presupuesto_lineas').delete().eq('id', id));
 }
 
-export async function recalcularPresupuesto(presupuestoId, dtoGlobalPct) {
+export async function recalcularPresupuesto(presupuestoId, dtoGlobalPct, lineasNuevas) {
   return invocar('presupuestar', {
     presupuesto_id: presupuestoId, recalcular: true,
     dto_global_pct: dtoGlobalPct == null ? undefined : dtoGlobalPct,
+    // Líneas nuevas al modificar (6-11-2026): el servidor las pone con el
+    // recargo del catálogo y las suma con las demás.
+    lineas_nuevas: lineasNuevas && lineasNuevas.length ? lineasNuevas : undefined,
   });
 }
 
