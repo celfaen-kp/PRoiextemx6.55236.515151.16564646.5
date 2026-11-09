@@ -14007,7 +14007,10 @@ function toast(msg, tipo) {
 }
 // Avisos que BLOQUEAN algo (falta un dato, no hay conexión, falló el guardado):
 // se ven en rojo y duran más. Los mensajes de "ha ido bien" siguen con toast().
-function avisar(msg) { toast(msg, 'err'); }
+// Cada aviso rojo queda también en el cuaderno de fallos (uno por texto y sesión,
+// con usuario, pantalla y navegador): así se puede ver desde Administración lo
+// que le salió a alguien en su ordenador sin pedirle una foto (Xavi, 9-11-2026).
+function avisar(msg) { toast(msg, 'err'); registrarError('aviso · ' + (V.view || '?'), msg); }
 
 /* --- PDF --- */
 // Se separa en dos: `imprimirParteHTML` solo pinta el parte en #print (lo que
