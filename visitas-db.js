@@ -9,8 +9,18 @@
 
 import { supabase } from './supabase-client.js';
 
+// Lo que devuelve PostgREST cuando en realidad se ha perdido la sesión (Xavi,
+// 9-11-2026): sin sesión las tablas con RLS no devuelven filas y .single() da
+// PGRST116 «JSON object requested, multiple (or no) rows returned»; con el token
+// caducado, PGRST301 / «JWT expired». Se dice en español y qué hacer.
+function mensajeDB(error) {
+  const code = String((error && error.code) || ''), msg = String((error && error.message) || 'error');
+  if (code === 'PGRST116') return 'No se encontró el dato. Si acabas de verlo en pantalla, es que la sesión ha caducado: sal y vuelve a entrar con tu PIN.';
+  if (code === 'PGRST301' || /jwt expired|invalid jwt|jwt/i.test(msg)) return 'Tu sesión ha caducado: sal y vuelve a entrar con tu PIN.';
+  return msg;
+}
 function unwrap({ data, error }) {
-  if (error) throw error;
+  if (error) { const e = new Error(mensajeDB(error)); e.code = error.code; e.details = error.details; throw e; }
   return data;
 }
 

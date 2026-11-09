@@ -68,7 +68,12 @@ export async function loginConPin(nombre, pin, emailFallback, captchaToken) {
 }
 
 export async function logout() {
-  const { error } = await supabase.auth.signOut();
+  // Solo la sesión de ESTE dispositivo. Sin «scope: local», Supabase cerraba
+  // todas las sesiones del usuario en todos sus aparatos: cuando alguien
+  // entraba con la cuenta de otro para probar y pulsaba Salir, al dueño se le
+  // moría la sesión en su PC y la app le daba errores raros en inglés
+  // («Refresh Token Not Found», «JSON object requested…»). Xavi, 9-11-2026.
+  const { error } = await supabase.auth.signOut({ scope: 'local' });
   if (error) throw new Error(error.message);
 }
 
