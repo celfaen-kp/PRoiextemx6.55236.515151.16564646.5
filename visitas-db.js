@@ -262,8 +262,14 @@ async function invocar(nombre, cuerpo) {
     const clase = error.name || '';
     if (clase === 'SesionCaducada') { /* el mensaje ya es claro */ } else if (clase === 'FunctionsFetchError' || clase === 'FunctionsRelayError' || /failed to (send|fetch)/i.test(msg)) {
       // El navegador no llegó a la función: o no está subida, o está subida
-      // una versión sin CORS, o no hay red. No se puede distinguir desde aquí.
-      msg = 'no se pudo llamar a la función ' + nombre + ' (no está subida, o está subida una versión antigua)';
+      // una versión sin CORS, o algo en este equipo corta la conexión (red,
+      // antivirus, proxy o filtro). No se puede distinguir desde aquí.
+      msg = 'no se pudo llamar a la función ' + nombre + ' (sin conexión con el servidor desde este equipo: red, antivirus o filtro; o la función no está subida)';
+    } else if (clase === 'SyntaxError' || /JSON/.test(msg)) {
+      // Llegó una respuesta que no es la de Supabase: algo entre medias (antivirus,
+      // proxy o filtro de la red de este equipo) contestó con una página en vez
+      // del JSON de la función (Xavi, 9-11-2026: «problem with JSON» desde su PC).
+      msg = 'la respuesta no vino de Supabase: algo en la red de este equipo (antivirus, proxy o filtro) la interceptó (' + msg.slice(0, 120) + ')';
     } else {
       try {
         const ctx = error.context;
