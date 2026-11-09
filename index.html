@@ -10957,10 +10957,12 @@ A.confirmarBorrarPresu = async () => {
   if (!navigator.onLine) { avisar('Sin conexión: no se ha borrado.'); return; }
   s.busy = true; render();
   try {
-    await visitasDB.borrarPresupuesto(s.id);
+    const d = V.presuVer && V.presuVer.datos;
+    const r = await visitasDB.borrarPresupuesto(s.id, d && d.id === s.id ? d.tl_quotation_id : null);
     V.sheet = null; V.presuVer = null; V.presuEdit = null;
     V.presuLista.filas = (V.presuLista.filas || []).filter((x) => x.id !== s.id);
-    V.view = 'presupuestos'; toast('Presupuesto borrado.'); render();
+    V.view = 'presupuestos'; render();
+    if (r && r.aviso) avisar(r.aviso); else toast(r && r.en_teamleader ? 'Presupuesto borrado, también en Teamleader.' : 'Presupuesto borrado.');
     A.cargarPresupuestos();
   } catch (e) { s.busy = false; avisar('No se pudo borrar: ' + msgError(e)); render(); }
 };
@@ -13187,7 +13189,7 @@ function sheet() {
       <div style="font:600 23px/1.15 var(--cond)">¿Borrar este presupuesto?</div>
       <div class="sub" style="margin-top:8px">${d ? esc(nombreCat(d.categoria)) + (d.cliente && d.cliente.nombre ? ' · ' + esc(d.cliente.nombre) : '') + (d.visita && d.visita.codigo ? ' · ' + esc(d.visita.codigo) : '') + ' · ' + eur(d.total_venta) : ''}</div>
       <div class="sub" style="margin-top:10px">Se borra con todas sus líneas. <b>No se puede recuperar.</b> La visita y el cliente se quedan.</div>
-      ${tl ? '<div class="sub" style="margin-top:8px;color:var(--ambar-o)">Este presupuesto ya está en Teamleader. La oferta del CRM NO se borra: quítala tú desde allí si hace falta.</div>' : ''}
+      ${tl ? '<div class="sub" style="margin-top:8px;color:var(--ambar-o)">Este presupuesto está en Teamleader: <b>se borra también la oferta del CRM</b> y no volverá a importarse.</div>' : ''}
       <div class="row g8" style="margin-top:18px">
         <button class="btn btn-gris" data-a="cerrarSheet" style="border-radius:99px">Cancelar</button>
         <button class="btn btn-rojo" data-a="confirmarBorrarPresu" style="font-size:14px" ${s.busy ? 'disabled' : ''}>${s.busy ? 'Borrando…' : 'Sí, borrar'}</button>

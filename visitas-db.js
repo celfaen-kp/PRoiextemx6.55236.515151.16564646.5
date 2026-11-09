@@ -538,10 +538,13 @@ export async function listarPresupuestos(limite = 100) {
 
 /**
  * Borrar un presupuesto (pruebas, duplicados). Las líneas y las incidencias
- * se van con él (on delete cascade). Si estaba subido a Teamleader, la oferta
- * de allí NO se toca: hay que quitarla a mano en el CRM.
+ * se van con él (on delete cascade). Si estaba subido a Teamleader, la función
+ * teamleader-presupuesto borra también la oferta del CRM y la apunta para que
+ * la sincronización no la vuelva a traer (Enzo, 9-11-2026). Devuelve
+ * { en_teamleader, aviso } cuando pasa por el CRM; true si era solo de la app.
  */
-export async function borrarPresupuesto(id) {
+export async function borrarPresupuesto(id, tlQuotationId) {
+  if (tlQuotationId) return invocar('teamleader-presupuesto', { accion: 'borrar', presupuesto_id: id });
   const { data, error } = await supabase.from('presupuestos').delete().eq('id', id).select('id');
   if (error) throw new Error(error.message);
   if (!data || !data.length) throw new Error('No se ha borrado: puede que no tengas permiso o que ya no exista.');

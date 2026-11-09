@@ -449,6 +449,9 @@ async function sincronizar(sb: any, opciones: { cliente_id?: string } = {}) {
   // deno-lint-ignore no-explicit-any
   const presuPorOferta: Record<string, any> = {};
   (presus || []).forEach((p) => { if (esUuid(p.tl_quotation_id)) presuPorOferta[p.tl_quotation_id] = p; });
+  // Las ofertas borradas desde la app (sql/etapa101) no vuelven aunque sigan en el CRM.
+  const borradas = new Set<string>();
+  try { const { data: bor } = await sb.from('ofertas_borradas').select('tl_quotation_id'); (bor || []).forEach((x: { tl_quotation_id: string }) => borradas.add(String(x.tl_quotation_id))); } catch (_) { /* sin tabla */ }
   // deno-lint-ignore no-explicit-any
   const visitaPorDeal: Record<string, any> = {};
   (visitas || []).forEach((v) => { if (v.tl_deal_id) visitaPorDeal[v.tl_deal_id] = v; });
@@ -529,7 +532,7 @@ async function sincronizar(sb: any, opciones: { cliente_id?: string } = {}) {
 
   // Las ofertas de esas oportunidades que la app no conoce: se piden también.
   const desconocidas: string[] = [];
-  Object.values(deals).forEach((d) => (d.quotations || []).forEach((q: { id: string }) => { if (q?.id && !presuPorOferta[q.id] && !ofertas[q.id]) desconocidas.push(q.id); }));
+  Object.values(deals).forEach((d) => (d.quotations || []).forEach((q: { id: string }) => { if (q?.id && !presuPorOferta[q.id] && !ofertas[q.id] && !borradas.has(q.id)) desconocidas.push(q.id); }));
   for (let i = 0; i < desconocidas.length; i += 50) {
     try {
       const r = await crm(token, 'quotations.list', { filter: { ids: desconocidas.slice(i, i + 50) }, page: { size: 50 } });
@@ -610,7 +613,7 @@ async function sincronizar(sb: any, opciones: { cliente_id?: string } = {}) {
   //     visita, o de un cliente de la app aunque no tenga visita.
   const categoriaDeTitulo = (t: string) => (EMBUDOS.find(([, rx]) => rx.test(t || '')) || ['solar'])[0];
   for (const q of Object.values(ofertas)) {
-    if (presuPorOferta[q.id]) continue;
+    if (presuPorOferta[q.id] || borradas.has(q.id)) continue;
     const v = visitaPorDeal[q.deal?.id] || null;
     const dc = dealCliente[q.deal?.id] || null;
     if (!v && !dc) continue;   // ni visita ni cliente conocido: no sabemos de quién es
@@ -882,6 +885,36 @@ Deno.serve(async (req) => {
     if (!pid) return json({ error: 'Falta el presupuesto.' }, 400);
     try { return json(await aceptarEnTeamleader(sb, pid)); }
     catch (e) { return json({ error: (e as Error).message, sin_permiso: e instanceof SinPermiso }, e instanceof SinPermiso ? 409 : 502); }
+  }
+
+  // --- desde la app: borrar el presupuesto y su oferta en Teamleader (9-11-2026) -----
+  // Antes se borraba solo en la app y la sincronización lo volvía a traer del CRM.
+  // Orden: 1) se borra en la app con la sesión del usuario (manda la RLS: si no
+  // puede, no se toca nada); 2) se apunta la oferta en ofertas_borradas para que
+  // no vuelva; 3) quotations.delete en Teamleader. Si el CRM falla, el presupuesto
+  // ya no está en la app ni volverá, y se avisa para quitarla a mano.
+  if (b.accion === 'borrar') {
+    const pid = esUuid(b.presupuesto_id) ? String(b.presupuesto_id) : '';
+    if (!pid) return json({ error: 'Falta el presupuesto.' }, 400);
+    const { data: p } = await sb.from('presupuestos').select('id, titulo, tl_quotation_id').eq('id', pid).maybeSingle();
+    if (!p) return json({ error: 'Ese presupuesto ya no existe.' }, 404);
+    const { data: borrado, error: eb } = await comoUsuario.from('presupuestos').delete().eq('id', pid).select('id');
+    if (eb) return json({ error: 'No se pudo borrar: ' + eb.message }, 502);
+    if (!borrado || !borrado.length) return json({ error: 'No se ha borrado: no tienes permiso sobre este presupuesto.' }, 403);
+    const qid = limpio(p.tl_quotation_id);
+    if (!esUuid(qid)) return json({ ok: true, en_teamleader: false });
+    const fila = { tl_quotation_id: qid, presupuesto_id: pid, titulo: limpio(p.titulo).slice(0, 140) || null, borrado_por: yo.id, borrado_en_tl: false, error_tl: null as string | null };
+    await sb.from('ofertas_borradas').upsert(fila, { onConflict: 'tl_quotation_id' });
+    try {
+      const token = await tokenValido(sb);
+      await crm(token, 'quotations.delete', { id: qid });
+      await sb.from('ofertas_borradas').update({ borrado_en_tl: true }).eq('tl_quotation_id', qid);
+      return json({ ok: true, en_teamleader: true });
+    } catch (e) {
+      const msg = (e as Error).message;
+      await sb.from('ofertas_borradas').update({ error_tl: msg.slice(0, 300) }).eq('tl_quotation_id', qid);
+      return json({ ok: true, en_teamleader: false, aviso: 'Borrado en la app y no volverá a importarse, pero la oferta sigue en Teamleader (' + msg + '): quítala desde allí.' });
+    }
   }
 
   // --- desde la app: cambiar la categoría del presupuesto (30-10-2026) --------------
