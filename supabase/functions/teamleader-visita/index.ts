@@ -170,15 +170,27 @@ async function faseDeEmbudo(token: string, categorias: string[]) {
 }
 
 async function crm(token: string, metodo: string, cuerpo: unknown) {
-  const r = await fetch(API + metodo, {
+  // Teamleader admite 200 peticiones por minuto (ventana deslizante) para toda la
+  // integración: la app y los crons de sincronización comparten el cupo. Si contesta
+  // 429 se espera hasta x-ratelimit-reset (como mucho 8 s) y se reintenta, dos veces
+  // (Xavi, 9-11-2026: le salió el aviso al buscar un cliente en el CRM).
+  const pedir = () => fetch(API + metodo, {
     method: 'POST',
     headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json', Accept: 'application/json' },
     body: JSON.stringify(cuerpo ?? {}),
   });
+  let r = await pedir();
+  for (let intento = 0; r.status === 429 && intento < 2; intento++) {
+    const reset = Date.parse(r.headers.get('x-ratelimit-reset') || '');
+    const espera = Math.min(Math.max((Number.isNaN(reset) ? 0 : reset - Date.now()) + 250, 1000), 8000);
+    await r.text().catch(() => {});
+    await new Promise((f) => setTimeout(f, espera));
+    r = await pedir();
+  }
   const texto = await r.text();
   const res = texto ? (() => { try { return JSON.parse(texto); } catch { return { texto }; } })() : {};
   if (!r.ok) {
-    const msg = res?.errors?.[0]?.title || res?.message || res?.error || ('error ' + r.status);
+    const msg = r.status === 429 ? 'Teamleader está limitando las peticiones ahora mismo (200 por minuto para toda la app): espera unos segundos y vuelve a intentarlo' : (res?.errors?.[0]?.title || res?.message || res?.error || ('error ' + r.status));
     throw new Error(`${metodo}: ${msg}`);
   }
   return res;
