@@ -126,6 +126,29 @@ const limpio = (v: unknown) => String(v == null ? '' : v).trim();
 // El título tal y como lo ve el cliente: sin la coletilla «Hecho en Teamleader» (V28.6).
 // deno-lint-ignore no-explicit-any
 const tituloCliente = (p: any) => limpio(String(p?.titulo || '').replace(/\s*[·\-–—(]?\s*Hecho en Teamleader\s*[)]?\s*/gi, ' ').replace(/\s{2,}/g, ' ').replace(/\s*[·\-–—]\s*$/, '').replace(/^\s*[·\-–—]\s*/, '')) || 'Presupuesto';
+// Las líneas, secciones y el título en el idioma del cliente (9-11-2026): se piden a la
+// función traducir (con la clave interna), que casi siempre las tiene ya en caché del PDF
+// enviado. Si algo falla, los textos se quedan en español: la página sigue funcionando.
+const UNIDADES: Record<string, Record<string, string>> = {
+  en: { ud: 'pcs', uds: 'pcs', h: 'h', m: 'm', 'm²': 'm²', ml: 'lm', pa: 'lot', jornada: 'day', jornadas: 'days' },
+  ca: { ud: 'u.', uds: 'u.', h: 'h', m: 'm', 'm²': 'm²', ml: 'ml', pa: 'pa', jornada: 'jornada', jornadas: 'jornades' },
+  de: { ud: 'Stk.', uds: 'Stk.', h: 'Std.', m: 'm', 'm²': 'm²', ml: 'lfm', pa: 'psch.', jornada: 'Tag', jornadas: 'Tage' },
+};
+const unidadIdioma = (u: unknown, idioma: string) => { const k = String(u || 'ud').trim().toLowerCase(); const t = UNIDADES[idioma]; return (t && t[k]) || String(u || 'ud'); };
+const partesSeccion = (nombre: unknown): [string, string] => { const m = /^(\d\d) · (.+)$/.exec(String(nombre || '')); return m ? [m[1] + ' · ', m[2]] : ['', String(nombre || '')]; };
+async function traducirTextos(idioma: string, textos: unknown[]): Promise<(x: unknown) => string> {
+  const identidad = (x: unknown) => String(x == null ? '' : x);
+  const lista = [...new Set(textos.map(identidad).map((t) => t.trim()).filter(Boolean))];
+  const CLAVE = Deno.env.get('AVISOS_CLAVE') || '';
+  if (idioma === 'es' || !lista.length || !CLAVE) return identidad;
+  try {
+    const r = await fetch(Deno.env.get('SUPABASE_URL') + '/functions/v1/traducir', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-clave': CLAVE }, body: JSON.stringify({ idioma, textos: lista.slice(0, 300) }) });
+    if (!r.ok) return identidad;
+    const d = await r.json();
+    const mapa: Record<string, string> = d && d.textos ? d.textos : {};
+    return (x: unknown) => { const t = identidad(x); const k = t.trim(); return (k && mapa[k]) || t; };
+  } catch (_) { return identidad; }
+}
 const b64aBytes = (b64: string) => Uint8Array.from(atob(b64.replace(/^data:[^,]*,/, '')), (c) => c.charCodeAt(0));
 const bytesAb64 = (bytes: Uint8Array) => { let s = ''; for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, Array.from(bytes.subarray(i, i + 0x8000))); return btoa(s); };
 const token = () => crypto.randomUUID().replace(/-/g, '') + Math.random().toString(36).slice(2, 10);
@@ -245,7 +268,9 @@ Deno.serve(async (req) => {
     const ls = (lineas || []).map((l) => ({ descripcion: l.descripcion, detalle_tecnico: l.detalle_tecnico, cantidad: l.cantidad, unidad: l.unidad, precio_tarifa: l.precio_tarifa, dto_linea_pct: l.dto_linea_pct, precio_venta: l.precio_venta, seccion: l.seccion }));
     const fv2 = (lineas || []).map((l) => l.origen_inputs).find((o) => o && o.fv2);
     const idiomaP = idiomaValido(p.idioma_cliente);
-    const condiciones = fv2 ? [fv2.nota, fv2.condiciones].filter(Boolean).join(' ') : rellena(txt(idiomaP).orientativo, { n: p.validez_dias || 15 });
+    const tr = await traducirTextos(idiomaP, [tituloCliente(p), ...ls.flatMap((l) => [l.descripcion, l.detalle_tecnico, partesSeccion(l.seccion)[1]]), fv2?.nota, fv2?.condiciones]);
+    if (idiomaP !== 'es') ls.forEach((l) => { l.descripcion = tr(l.descripcion); if (l.detalle_tecnico) l.detalle_tecnico = tr(l.detalle_tecnico); const [pre, nom] = partesSeccion(l.seccion); if (nom) l.seccion = pre + tr(nom); l.unidad = unidadIdioma(l.unidad, idiomaP); });
+    const condiciones = fv2 ? [fv2.nota, fv2.condiciones].filter(Boolean).map(tr).join(' ') : rellena(txt(idiomaP).orientativo, { n: p.validez_dias || 15 });
     const bruto = ls.reduce((a, l) => a + (Number(l.precio_venta) || 0), 0);
     const dtoG = Number(p.dto_global_pct) || 0;
     const base = Number(p.total_venta) || Math.round(bruto * (1 - dtoG / 100) * 100) / 100;
@@ -255,7 +280,7 @@ Deno.serve(async (req) => {
     if (rutaPdf) { const { data: su } = await sb.storage.from(BUCKET).createSignedUrl(rutaPdf, 3600); pdf_url = su?.signedUrl || null; }
     return json({
       idioma: idiomaP,
-      presupuesto: { titulo: tituloCliente(p), categoria: txt(idiomaP)['cat_' + p.categoria] || CATS[p.categoria] || p.categoria, tl_numero: p.tl_numero, enviado_correo_at: p.enviado_correo_at, firmado_at: p.firmado_at, firma_nombre: p.firma_nombre, validez_dias: p.validez_dias },
+      presupuesto: { titulo: tr(tituloCliente(p)), categoria: txt(idiomaP)['cat_' + p.categoria] || CATS[p.categoria] || p.categoria, tl_numero: p.tl_numero, enviado_correo_at: p.enviado_correo_at, firmado_at: p.firmado_at, firma_nombre: p.firma_nombre, validez_dias: p.validez_dias },
       cliente: p.cliente?.nombre || '', lineas: ls, condiciones, vence: vence(p),
       totales: { bruto: Math.round(bruto * 100) / 100, dto_global_pct: dtoG, base, iva, total: Math.round((base + iva) * 100) / 100 }, pdf_url,
     });
@@ -288,7 +313,9 @@ Deno.serve(async (req) => {
     if (p.pdf_enviado_ruta) { const { data: f } = await sb.storage.from(BUCKET).download(p.pdf_enviado_ruta); if (f) original = new Uint8Array(await f.arrayBuffer()); }
     let pdf: Uint8Array;
     const idiomaF = idiomaValido(p.idioma_cliente);
-    try { pdf = await pdfFirmado(original, p, p.cliente, nombre, dni, ip, firmaPng, cuando, idiomaF); }
+    const trF = await traducirTextos(idiomaF, [tituloCliente(p)]);
+    const pI = { ...p, titulo: trF(tituloCliente(p)) }; // el título en el idioma del cliente (PDF firmado y copia)
+    try { pdf = await pdfFirmado(original, pI, p.cliente, nombre, dni, ip, firmaPng, cuando, idiomaF); }
     catch (e) { return json({ error: 'No se pudo componer el PDF firmado: ' + (e as Error).message }, 500); }
     const rutaPdf = base + '.pdf';
     const s2 = await sb.storage.from(BUCKET).upload(rutaPdf, pdf, { contentType: 'application/pdf', upsert: false });
@@ -375,8 +402,8 @@ Deno.serve(async (req) => {
         const emailCli = esEmail(p.enviado_correo_a) ? limpio(p.enviado_correo_a) : (esEmail(p.cliente?.email) ? limpio(p.cliente.email) : '');
         let replyTo = ''; try { const { data: aj } = await sb.from('ajustes').select('valor').eq('clave', 'correo_oficina').maybeSingle(); replyTo = limpio(aj?.valor); } catch (_) { /* sin ajuste */ }
         if (emailCli) await mandar(RESEND, Object.assign({ to: [emailCli], subject: TF.copia_asunto,
-          text: rellena(TF.copia_txt, { n: p.cliente?.nombre || '', t: tituloCliente(p) }),
-          html: marco(TF.copia_titulo, rellena(TF.copia_html, { n: esc(p.cliente?.nombre || ''), t: esc(tituloCliente(p)) })), attachments: adjuntoCli }, replyTo ? { reply_to: replyTo } : {}));
+          text: rellena(TF.copia_txt, { n: p.cliente?.nombre || '', t: tituloCliente(pI) }),
+          html: marco(TF.copia_titulo, rellena(TF.copia_html, { n: esc(p.cliente?.nombre || ''), t: esc(tituloCliente(pI)) })), attachments: adjuntoCli }, replyTo ? { reply_to: replyTo } : {}));
       } catch (e) { avisos.push('correo cliente: ' + (e as Error).message); }
     }
     return json({ ok: true, avisos });

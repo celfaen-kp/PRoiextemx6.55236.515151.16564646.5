@@ -49,7 +49,7 @@ small.cond{display:block;margin-top:14px;color:#666;font-size:12px;line-height:1
   if (!t) { fallo(T.enlace); return; }
   fetch(FUNC + '?t=' + encodeURIComponent(t) + '&json=1').then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); }).then(function (x) {
     if (!x.ok) throw new Error(x.j.error || 'Este enlace ya no está disponible.');
-    if (x.j.idioma && TXT[x.j.idioma]) { idioma = x.j.idioma; T = TXT[idioma]; document.documentElement.lang = idioma; }
+    if (x.j.idioma && TXT[x.j.idioma]) { idioma = x.j.idioma; T = TXT[idioma]; document.documentElement.lang = idioma; document.title = T.seccion + ' · Sysefen'; }
     pinta(x.j);
   }).catch(function (e) { fallo(e.message); });
 
