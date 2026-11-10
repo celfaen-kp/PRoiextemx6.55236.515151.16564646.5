@@ -716,6 +716,52 @@ export async function buscarProductos(texto, familia) {
   return lista.sort((a, b) => String(a.nombre).localeCompare(String(b.nombre), 'es', { sensitivity: 'base' }));
 }
 
+/* --- precios cambiados a mano (Ajustes → Precios; sql/etapa104, 10-11-2026) ----
+ * Presupuestos y Administración cambian los precios de la base sin pasar por
+ * nadie: el modelo fotovoltaico, el catálogo y los conceptos de precio fijo.
+ * Leer se lee directo (la base deja a esos dos roles); escribir lo hace la
+ * función `presupuestar`, que apunta cada cambio para poder deshacerlo. */
+export async function preciosModeloFV() {
+  return invocar('presupuestar', { accion: 'precios_modelo_fv' });
+}
+export async function guardarPrecios(cambios, desde, presupuestoId) {
+  return invocar('presupuestar', { accion: 'precios_guardar', cambios, desde: desde || 'configuracion', presupuesto_id: presupuestoId || undefined });
+}
+export async function deshacerPrecio(id) {
+  return invocar('presupuestar', { accion: 'precios_deshacer', id });
+}
+export async function listarCambiosPrecios(limite = 80) {
+  return unwrap(await supabase.from('precios_cambios')
+    .select('id, creado_en, nombre, origen, clave, descripcion, antes, despues, desde, deshecho_en, deshecho_por')
+    .order('creado_en', { ascending: false }).limit(limite)) || [];
+}
+/** El catálogo para cambiar precios: como buscarProductos, con lo que hace falta para el precio. */
+export async function buscarProductosPrecios(texto) {
+  const q = String(texto || '').trim();
+  if (q.length < 2) return [];
+  const COLS = 'id, referencia, nombre, familia, unidad, precio_tarifa, descuento_proveedor, recargo, aplica_cdc, atributos, activo, tarifa:tarifas(nombre)';
+  const palabras = q.split(/\s+/).filter(Boolean);
+  let porNombre = supabase.from('productos').select(COLS).eq('activo', true);
+  palabras.forEach((w) => { porNombre = porNombre.ilike('nombre', '%' + w.replace(/[%_,]/g, '') + '%'); });
+  const lista = unwrap(await porNombre.order('nombre').limit(80)) || [];
+  if (palabras.length === 1 && /^[\w.-]{3,}$/.test(q)) {
+    const porRef = unwrap(await supabase.from('productos').select(COLS).eq('activo', true).ilike('referencia', '%' + q + '%').limit(30)) || [];
+    porRef.forEach((x) => { if (!lista.some((y) => y.id === x.id)) lista.push(x); });
+  }
+  return lista.sort((a, b) => String(a.nombre).localeCompare(String(b.nombre), 'es', { sensitivity: 'base' }));
+}
+/** Los conceptos de precio fijo de las partidas (lo que no sale de un producto). */
+export async function listarConceptosFijos() {
+  return unwrap(await supabase.from('partidas_items')
+    .select('id, concepto_libre, precio_fijo, coste_fijo, unidad, orden, partida:partidas(categoria, codigo, nombre)')
+    .is('producto_ref', null).order('orden')) || [];
+}
+/** Los coeficientes con los que el motor pasa de la tarifa a coste y venta, por categoría. */
+export async function coeficientesPrecios() {
+  return unwrap(await supabase.from('tablas_lookup').select('categoria, clave, entrada, valor')
+    .in('clave', ['recargo_sobre_coste', 'costes_complementarios_pct']).eq('entrada', 'defecto')) || [];
+}
+
 /* --- legalizaciones fotovoltaicas (sql/etapa55) ------------------------------- */
 const CAMPOS_LEG = 'id, obra_id, cliente_id, autor_id, estado, datos, drive_carpeta_id, drive_cert_id, drive_datos_id, enviada_a, enviada_at, created_at, updated_at';
 export async function listarLegalizaciones() {

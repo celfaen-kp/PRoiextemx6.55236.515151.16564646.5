@@ -274,7 +274,51 @@ export function calcularFV(entrada, modelo, opciones) {
     ['INTERNO', 'Garantía (media jornada + km)', 'ud', 1, jornada / 2 + km * 2 * eur_km, '', ''],
     ['INTERNO', 'Llamada de satisfacción (0,5 h)', 'h', 0.5, eur_h, '', ''],
   ];
-  const partidas = L.map(([b, p, u, q, cu, t, a]) => ({ bloque: b, partida: p, ud: u, cantidad: q, coste_ud: cu, coste: rnd(q * cu, 2), texto: t, aviso: a }));
+  // De dónde sale el coste de cada partida (Enzo, 10-11-2026): { ruta, factor }
+  // con coste_ud = valor del modelo × factor, para que la app pueda guardar en
+  // la base el coste que alguien corrige en el desglose (precios.js). Las que
+  // son una cuenta (la jornada, la garantía…) no llevan: se cambian sus
+  // parámetros. Las pruebas comprueban que cada ruta da el coste de su partida.
+  const fB = 1 + P.portes_baywa, fR = (1 - P.dto_rebacas) * (1 + P.portes_rebacas), mt_k = mono ? 'mono' : 'tri';
+  const rPr = (k, campo, factor) => ({ ruta: ['precios', k, campo || 'coste'], factor: factor || 1 });
+  const rPa = (k) => ({ ruta: ['parametros', k], factor: 1 });
+  const porSecRef = PR.cable_solar_por_seccion && PR.cable_solar_por_seccion.coste_m;
+  const refCable = cableCC.calculo && porSecRef && porSecRef[String(cableCC.seccion)] != null
+    ? { ruta: ['precios', 'cable_solar_por_seccion', 'coste_m', String(cableCC.seccion)], factor: 1 }
+    : (cableCC.seccion === 6 && PR.cable_solar_6mm_m ? rPr('cable_solar_6mm_m') : null);
+  const dtoInvCat = inv ? num(inv.dto_catalogo) : 0;
+  const refInv = !inv ? null : (inv.origen === 'catalogo'
+    ? (inv.referencia ? { producto: inv.referencia, factor: fB * (1 - dtoInvCat) } : null)
+    : { ruta: ['inversores', inv.modelo], factor: inv.proveedor === 'BayWa' ? fB : fR });
+  const REFS = {
+    'Panel Trina Vertex S+ 510 Wp': rPa('coste_panel'), 'Inversor': refInv,
+    'Microinversor Enphase IQ8P': rPr('enphase_iq8p', 'coste', fB), 'Enphase Q Cable 2,5 mm 1,7 m': rPr('enphase_qcable', mt_k, fB),
+    'Enphase tapón final': rPr('enphase_tapon', mt_k, fB), 'Enphase conectores de campo (2 machos + 2 hembras)': rPr('enphase_conector', mt_k, fB),
+    'Medidor Fronius Smart Meter': rPr('fronius_smart_meter', mt_k, fB), 'Medidor para Deye (antivertido)': rPr('deye_medidor', mt_k, fR),
+    'Cable de datos UTP Cat5e + 2 RJ45': rPr('utp_cat5e_m'), 'Conectores RJ45': rPr('rj45'),
+    'Enphase IQ Gateway Metered (Envoy)': rPr('enphase_envoy', 'coste', fB), 'Enphase CT': rPr('enphase_ct', 'coste', fB), 'Enphase Q-Relay': rPr('enphase_qrelay', mt_k, fB),
+    'Perfil G1 4,8 m': rPr('perfil_g1_4m8'), 'Unión de perfiles UG1': rPr('union_ug1'), 'Presor final': rPr('presor_final'), 'Presor intermedio': rPr('presor_intermedio'),
+    'Pincho VR para teja 250 mm': rPr('pincho_vr_teja'), 'Taco químico Würth 300 ml': rPr('taco_quimico_300ml'), 'Malla metálica Würth': rPr('malla_wurth'),
+    'Conector de tierra Sunfer': rPr('conector_tierra_sunfer'), 'Tejas de reposición': rPr('teja_reposicion'),
+    'Lastre Sun Ballast 10° LONG 70 kg': rPr('lastre_sunballast_10'), 'Kit presor central Sun Ballast (bolsa 10)': rPr('kit_presor_central_sb'),
+    'Kit presor final Sun Ballast (bolsa 10)': rPr('kit_presor_final_sb'), 'Lámina protectora de goma Sun Ballast 15×25 cm (2 piezas)': rPr('lamina_goma_sb'),
+    'Conectores MC4 (macho + hembra)': rPr('mc4_par'), 'Tubo corrugado M25 en cubierta': rPr('tubo_corrugado_m25_m'),
+    'Tubo rígido M25 (tira 3 m) CC': rPr('tubo_rigido_m25_3m'), 'Tubo rígido M25 (tira 3 m) AC': rPr('tubo_rigido_m25_3m'), 'Grapas': rPr('grapa'), 'Racores M25': rPr('racor_m25'),
+    'Cuadro CC Solver 1 string': rPr('cuadro_cc_1string'), 'Cuadro CC Solver 2 strings': rPr('cuadro_cc_2strings'),
+    'Cuadro AC Solver': cuadro_ac ? { ruta: ['cuadros_ac', String(cuadro_ac.codigo)], factor: 1 - P.dto_saltoki } : null,
+    'Cable AC H07Z1-K 1×6': rPr('cable_h07z1k_6mm_m'), 'Cable de tierra 6 mm²': rPr('cable_h07z1k_6mm_m'),
+    'Magnetotérmico de conexión en el cuadro general': rPr('magnetotermico', mt_k), 'Magnetotérmicos Enphase': rPr('magnetotermico', mt_k),
+    'Caja de superficie Famatel 2 filas 22 módulos (Enphase)': rPr('caja_famatel_22m', 'pvp', 1 - caja.dto),
+    'Diferencial tipo F (Enphase)': rPr('diferencial_tipo_f'), 'Terminales de cobre': rPr('terminal_cobre'),
+    'Tasa de legalización': rPr('tasa_legalizacion'), 'Tasa del certificado': rPr('tasa_certificado'),
+    'Legalización (Xavi 1 h)': rPa('eur_h'), 'Documentación final (Xavi 1 h)': rPa('eur_h'), 'Permiso de obra (Xavi 0,5 h)': rPa('eur_h'),
+    'Gestión de subvención (Xavi 1 h)': rPa('eur_h'), 'Certificado energético': rPa('eur_h'),
+    'Visita técnica (45 min + trayecto)': rPa('eur_h'), 'Revisión del presupuesto': rPa('eur_h'), 'Llamada de satisfacción (0,5 h)': rPa('eur_h'),
+    'Desplazamientos furgoneta': rPa('eur_km'),
+  };
+  REFS[PARTIDA_DOC] = rPa('eur_h');
+  const refDe = (nombre) => (nombre.indexOf('Cable solar H1Z2Z2-K') === 0 ? refCable : (REFS[nombre] || null));
+  const partidas = L.map(([b, p, u, q, cu, t, a]) => ({ bloque: b, partida: p, ud: u, cantidad: q, coste_ud: cu, coste: rnd(q * cu, 2), texto: t, aviso: a, ref: refDe(p) }));
   const base_peq = partidas.filter((x) => BLOQUES_MATERIAL.includes(x.bloque)).reduce((s, x) => s + x.coste, 0);
   const peq = rnd(P.pct_peq * base_peq, 2);
   partidas.push({ bloque: 'PEQUEÑO MATERIAL', partida: 'Pequeño material (3 % del material principal)', ud: '€', cantidad: 1,
@@ -375,7 +419,7 @@ export function inversorDeCatalogo(p) {
   const coste_base = rnd(num(p.precio_tarifa) * (1 - dto), 2);
   if (!(coste_base > 0)) return null;
   const modelo = nombre.replace(/\s*-\s*\(SPD[^)]*\)\s*$/i, '').replace(/kw$/i, '').replace(/^FRONIUS\b/, 'Fronius').trim();
-  return { modelo, sistema, suministro, kw, plus, usar: true, proveedor: 'BayWa', coste_base, referencia: p.referencia || null, origen: 'catalogo' };
+  return { modelo, sistema, suministro, kw, plus, usar: true, proveedor: 'BayWa', coste_base, referencia: p.referencia || null, origen: 'catalogo', dto_catalogo: dto };
 }
 export function conInversoresDelCatalogo(modelo, productos) {
   const base = ((modelo && modelo.inversores) || []).slice();
@@ -565,6 +609,7 @@ export function lineasPresupuesto(r, modelo, extra) {
   const desglose = r.partidas.map((x) => ({
     bloque: x.bloque, nombre: x.partida, cantidad: Math.round(x.cantidad * 1000) / 1000, unidad: x.ud,
     coste_ud: x.coste_ud, coste: x.coste, aviso: x.aviso || null,
+    ref: x.ref || null,     // de dónde sale el coste (precios.js): para guardar en la base el que se corrija
     texto: x.texto || '',   // lo que ve el cliente de esta partida (la app lo necesita para rehacer el detalle si se edita el desglose)
   }));
   const lineas = [{

@@ -512,7 +512,7 @@ import * as idiomas from './presu-idiomas.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '31.6'; // versión visible de la app (única fuente)
+const APP_VERSION = '31.7'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -4477,7 +4477,7 @@ A.instalar = async () => {
 /* ---------- render ---------- */
 function render() {
   // Ramón entra directo a sus visitas: ninguna pantalla de fichar, obras ni partes.
-  if (V.user && esPresupuestos() && !VISITA_VISTAS.includes(V.view) && !(!esColaborador() && ['legalizaciones', 'legalizacion', 'obras', 'obra', 'alta', 'costesPersonal', 'planificacion'].includes(V.view))) {
+  if (V.user && esPresupuestos() && !VISITA_VISTAS.includes(V.view) && !(!esColaborador() && ['legalizaciones', 'legalizacion', 'obras', 'obra', 'alta', 'costesPersonal', 'precios', 'planificacion'].includes(V.view))) {
     V.view = 'agenda';
     if (!V.agenda.cargado) A.cargarAgenda();
   }
@@ -4506,6 +4506,7 @@ function render() {
   else if (v === 'presupuestos' && verMotor()) html = vPresupuestos();
   else if (v === 'legalizaciones' && esComercial()) html = vLegalizaciones();
   else if (v === 'costesPersonal' && veCostes()) html = vCostesPersonal();
+  else if (v === 'precios' && puedePrecios()) html = vPrecios();
   else if (v === 'fasesPlantillas' && esAdmin()) html = vFasesPlantillas();
   else if (v === 'planificacion' && planifica()) html = vPlanificacion();
   else if (v === 'legalizacion' && esComercial()) html = vLegalizacion();
@@ -4524,7 +4525,7 @@ function render() {
   else if (v === 'clienteVer' && verAgenda()) html = vClienteVer();
   else if (v === 'citaNueva' && puedeCitar()) html = vCitaNueva();
   else if (v === 'citaVer' && verAgenda()) html = vCitaVer();
-  if (V.user && ['hoy', 'obras', 'obra', 'partes', 'horas', 'imputar', 'empleados', 'ajustes', 'presupuestos', 'presupuestoVer', 'visitas', 'visita', 'agenda', 'clientes', 'clienteVer', 'revisarImp', 'errores', 'legalizaciones', 'legalizacion', 'costesPersonal', 'planificacion', 'fasesPlantillas'].includes(v)) html += nav(v);
+  if (V.user && ['hoy', 'obras', 'obra', 'partes', 'horas', 'imputar', 'empleados', 'ajustes', 'presupuestos', 'presupuestoVer', 'visitas', 'visita', 'agenda', 'clientes', 'clienteVer', 'revisarImp', 'errores', 'legalizaciones', 'legalizacion', 'costesPersonal', 'precios', 'planificacion', 'fasesPlantillas'].includes(v)) html += nav(v);
   if (!navigator.onLine && V.user) html = '<div class="offline">Sin conexión — todo se guarda en el móvil</div>' + html;
   // Red de seguridad: si un sheet revienta al pintarse (p. ej. depende de
   // datos que cambiaron justo antes, como el usuario tras salir), que se
@@ -6276,6 +6277,11 @@ function vAjustes() {
     ${veCostes() ? `<div class="card row" data-a="abrirCostes" style="margin-top:14px;cursor:pointer">
       <div class="grow"><div style="font:600 15px var(--sans)">Costes de personal</div>
       <div class="sub" style="font-size:12px;margin-top:4px">Lo que cuesta la hora de cada persona. Con ello cada obra enseña su coste real y su margen.</div></div>
+      <div style="font:400 20px/1 var(--sans);color:var(--t3)">›</div>
+    </div>` : ''}
+    ${puedePrecios() ? `<div class="card row" data-a="pr_abrir" style="margin-top:14px;cursor:pointer">
+      <div class="grow"><div style="font:600 15px var(--sans)">Precios</div>
+      <div class="sub" style="font-size:12px;margin-top:4px">Cambia a mano los precios con los que se calculan los presupuestos: fotovoltaica, catálogo y precios fijos. Con historial y deshacer.</div></div>
       <div style="font:400 20px/1 var(--sans);color:var(--t3)">›</div>
     </div>` : ''}
     ${esComercial() ? `<div class="card row" data-a="abrirLegalizaciones" style="margin-top:14px;cursor:pointer">
@@ -8585,6 +8591,401 @@ A.presuAjusteDeshacer = () => {
   A.presuRecalcular();
 };
 
+/* =============================================================================
+ * PRECIOS A MANO (Enzo, 10-11-2026): «necesito poder cambiar los precios de la
+ * base de datos manualmente, así no te pido cada vez que veo un error».
+ *
+ * Dos puertas, el mismo sitio:
+ *   · Ajustes → Precios: el modelo fotovoltaico de Ramón (parámetros, costes de
+ *     material, inversores, cuadros), el catálogo de productos, los conceptos
+ *     de precio fijo de las partidas y el historial de cambios, con deshacer.
+ *   · En el presupuesto, al editar las partidas de la instalación o retocar una
+ *     línea: «Aplicar» cambia solo ese presupuesto (como siempre) y «Guardar en
+ *     la base de datos» cambia además el precio para todos los nuevos.
+ * Lo hacen presupuestos y Administración. Escribe la función `presupuestar`
+ * (acciones precios_*), que apunta cada cambio en precios_cambios (etapa104).
+ * Los presupuestos ya guardados no cambian nunca.
+ * ========================================================================== */
+const puedePrecios = () => esAdmin() || rol() === 'presupuestos';
+const prNum = (v) => { const t = String(v == null ? '' : v).trim().replace(',', '.'); if (t === '') return null; const n = Number(t); return Number.isFinite(n) ? n : NaN; };
+const prTxt = (v) => (v == null ? '' : String(v).replace('.', ','));
+const PR_TABS = [['fv', 'Fotovoltaica'], ['catalogo', 'Catálogo'], ['fijos', 'Precios fijos'], ['historial', 'Cambios']];
+function prEstado() {
+  if (!V.precios) V.precios = { tab: 'fv', filtro: '', fv: null, fvVersion: '', fvErr: null, fvEd: {}, buscar: '', prods: null, prodErr: null, buscando: false,
+    conceptos: null, conErr: null, conEd: {}, coef: null, historial: null, hisErr: null, busy: false };
+  return V.precios;
+}
+/** De la tarifa a coste y venta, como el motor (motor.js · preciosProducto). `cat`: la categoría del presupuesto. */
+function prPreciosDe(base, p, cat) {
+  const coef = (V.precios && V.precios.coef) || [];
+  const fila = (clave) => coef.find((x) => x.categoria === cat && x.clave === clave);
+  const rf = fila('recargo_sobre_coste'), cf = fila('costes_complementarios_pct');
+  const recargoCat = rf && Number(rf.valor) > 0 ? Number(rf.valor) : 1, cdc = cf ? Number(cf.valor) || 0 : 0;
+  const atr = p && p.atributos && typeof p.atributos === 'object' ? p.atributos : {};
+  const propio = p && p.recargo != null && p.recargo !== '' && Number(p.recargo) > 0 ? Number(p.recargo) : null;
+  const rec = atr.sin_recargo === true || atr.sin_recargo === 'true' ? 1 : (propio != null ? propio : recargoCat);
+  const c2 = (n) => Math.round(n * 100 + 1e-7) / 100;
+  let coste = (Number(base) || 0) * (1 - (Number(p && p.descuento_proveedor) || 0) / 100);
+  if (rec !== 1) {
+    if (cdc && !['mano_obra', 'tramite', 'transporte', 'medios', 'servicio'].includes(String((p && p.familia) || '')) && !(p && p.aplica_cdc === false)) coste *= 1 + cdc / 100;
+    coste = c2(coste);
+    return { coste, venta: c2(coste * rec), porCoste: true };
+  }
+  return { coste: c2(coste), venta: c2(Number(base) || 0), porCoste: false };
+}
+function prPreviaHTML(p, v) {
+  const prod = Object.assign({}, p, { descuento_proveedor: prNum(v.descuento_proveedor) || 0, recargo: prNum(v.recargo) });
+  const base = prNum(v.precio_tarifa) || 0;
+  const linea = (titulo, q) => {
+    const sinCoste = !q.porCoste && Math.abs(q.coste - q.venta) < 0.005;
+    const margen = !sinCoste && q.venta > 0 ? ' · margen ' + String(Math.round((1 - q.coste / q.venta) * 1000) / 10).replace('.', ',') + ' %' : '';
+    return `<div class="tiny" style="margin-top:4px;color:var(--tinta);font-size:13px">${titulo}<b>venta ${eur(q.venta)}</b> · coste ${sinCoste ? 'sin apuntar' : eur(q.coste)}${margen}</div>`;
+  };
+  const fv = prPreciosDe(base, prod, 'solar'), resto = prPreciosDe(base, prod, '');
+  if (Math.abs(fv.venta - resto.venta) < 0.005 && Math.abs(fv.coste - resto.coste) < 0.005) return linea('En un presupuesto: ', fv);
+  return linea('En fotovoltaica: ', fv) + linea('En aerotermia, aire y lo demás: ', resto);
+}
+async function prCargar(tab) {
+  const p = prEstado();
+  if (!p.coef) { try { p.coef = await visitasDB.coeficientesPrecios(); } catch (_) { p.coef = []; } }
+  if (tab === 'fv' && !p.fv) {
+    try { const r = await visitasDB.preciosModeloFV(); p.fv = r.lista || []; p.fvVersion = r.version || ''; p.fvErr = null; }
+    catch (e) { p.fvErr = msgError(e); }
+  } else if (tab === 'fijos' && !p.conceptos) {
+    try { p.conceptos = await visitasDB.listarConceptosFijos(); p.conErr = null; } catch (e) { p.conErr = msgError(e); }
+  } else if (tab === 'historial') {
+    try { p.historial = await visitasDB.listarCambiosPrecios(); p.hisErr = null; } catch (e) { p.hisErr = msgError(e); }
+  }
+  if (V.view === 'precios') render();
+}
+/** Lo que el servidor contesta al guardar, en una frase. Devuelve true si se guardó algo. */
+function prAvisarResultado(r, queNada) {
+  const hechos = (r && r.hechos) || [], errores = (r && r.errores) || [];
+  if (errores.length) avisar((hechos.length ? hechos.length + (hechos.length === 1 ? ' precio guardado, pero ' : ' precios guardados, pero ') : '') + (errores[0].nombre ? '«' + errores[0].nombre + '»: ' : '') + errores[0].error + (errores.length > 1 ? ' (y ' + (errores.length - 1) + ' más)' : ''));
+  else if (hechos.length) toast(hechos.length === 1 ? 'Precio guardado en la base de datos: vale para los presupuestos nuevos.' : hechos.length + ' precios guardados en la base de datos: valen para los presupuestos nuevos.');
+  else toast(queNada || 'No había nada que cambiar: ya estaba así en la base de datos.');
+  if (hechos.length && V.precios) { V.precios.fv = null; V.precios.conceptos = null; V.precios.prods = null; V.precios.historial = null; }
+  return hechos.length > 0;
+}
+function prFvCambios() {
+  const p = prEstado(), out = [], malos = [];
+  Object.keys(p.fvEd).forEach((i) => {
+    const x = (p.fv || [])[Number(i)]; if (!x) return;
+    const n = prNum(p.fvEd[i]);
+    if (n == null) return;   // en blanco: se queda como estaba
+    if (Number.isNaN(n) || n < 0) { malos.push(x.nombre); return; }
+    if (x.valor != null && Math.abs(n - Number(x.valor)) < 1e-9) return;
+    out.push({ tipo: 'modelo_fv', ruta: x.ruta, valor: n, nombre: x.nombre });
+  });
+  return { cambios: out, malos };
+}
+function prConCambios() {
+  const p = prEstado(), out = [], malos = [];
+  Object.keys(p.conEd).forEach((id) => {
+    const x = (p.conceptos || []).find((y) => y.id === id); if (!x) return;
+    const ed = p.conEd[id];
+    const pf = 'precio_fijo' in ed ? prNum(ed.precio_fijo) : Number(x.precio_fijo), cf = 'coste_fijo' in ed ? prNum(ed.coste_fijo) : (x.coste_fijo == null ? null : Number(x.coste_fijo));
+    if (pf == null || Number.isNaN(pf) || pf < 0 || (cf != null && (Number.isNaN(cf) || cf < 0))) { malos.push(x.concepto_libre); return; }
+    const igual = Math.abs(pf - Number(x.precio_fijo || 0)) < 0.005 && String(cf == null ? '' : cf) === String(x.coste_fijo == null ? '' : Number(x.coste_fijo));
+    if (!igual) out.push({ tipo: 'concepto', id, campos: { precio_fijo: pf, coste_fijo: cf }, nombre: x.concepto_libre });
+  });
+  return { cambios: out, malos };
+}
+function prPieHTML(n, accion) {
+  return `<div class="row g8" style="margin-top:14px">
+    <button class="btn btn-verde" data-a="${accion}" ${n && !prEstado().busy ? '' : 'disabled'}>${prEstado().busy ? 'Guardando…' : n ? 'Guardar ' + n + (n === 1 ? ' cambio' : ' cambios') : 'Sin cambios'}</button>
+  </div>`;
+}
+function prRefrescarPie() {
+  const p = prEstado();
+  const el = document.getElementById('pr-pie'); if (!el) return;
+  el.innerHTML = p.tab === 'fv' ? prPieHTML(prFvCambios().cambios.length, 'pr_fvGuardar') : prPieHTML(prConCambios().cambios.length, 'pr_conGuardar');
+}
+function prFvListaHTML() {
+  const p = prEstado();
+  if (p.fvErr) return `<div class="card"><div class="sub">No se pudo cargar el modelo: ${esc(p.fvErr)}</div></div>`;
+  if (!p.fv) return '<div class="sub" style="margin-top:14px">Cargando el modelo fotovoltaico…</div>';
+  const q = String(p.filtro || '').trim().toLowerCase();
+  const grupos = [];
+  p.fv.forEach((x, i) => {
+    if (q && !(String(x.nombre) + ' ' + String(x.nota || '') + ' ' + String(x.grupo)).toLowerCase().includes(q)) return;
+    let g = grupos.find((y) => y.n === x.grupo); if (!g) { g = { n: x.grupo, filas: [] }; grupos.push(g); }
+    g.filas.push([x, i]);
+  });
+  if (!grupos.length) return '<div class="sub" style="margin-top:14px">Nada con ese nombre.</div>';
+  return grupos.map((g) => `<div class="lbl" style="margin:18px 0 4px">${esc(g.n)}</div>
+    ${g.filas.map(([x, i]) => { const ed = p.fvEd[i]; return `<div class="row g8" style="padding:9px 0;border-bottom:1px solid var(--l1);align-items:center">
+      <div class="grow"><div style="font:600 13px/1.25 var(--sans)">${esc(x.nombre)}</div>${x.nota ? `<div class="tiny" style="margin-top:2px">${esc(String(x.nota).slice(0, 140))}</div>` : ''}</div>
+      <input class="inp" data-f="prfv:${i}" value="${esc(ed != null ? ed : prTxt(x.valor))}" placeholder="${x.valor == null ? 'pendiente' : ''}" inputmode="decimal" style="width:104px;flex:none;padding:8px;text-align:right">
+      <span class="tiny" style="width:46px;flex:none">${esc(x.ud || '')}</span>
+    </div>`; }).join('')}`).join('');
+}
+function prCatalogoListaHTML() {
+  const p = prEstado();
+  return p.buscando ? '<div class="sub" style="margin-top:12px">Buscando en el catálogo…</div>'
+    : p.prodErr ? `<div class="sub" style="margin-top:12px">No se pudo buscar: ${esc(p.prodErr)}</div>`
+    : p.prods == null ? '<div class="sub" style="margin-top:12px">Busca por nombre o por referencia. Hay cinco tarifas: fotovoltaica, Vaillant, Saunier Duval, Midea y el catálogo propio.</div>'
+    : !p.prods.length ? '<div class="sub" style="margin-top:12px">Nada con ese nombre.</div>'
+    : p.prods.map((x) => { const q = prPreciosDe(x.precio_tarifa, x, (x.tarifa && /fotovoltaica/i.test(x.tarifa.nombre)) ? 'solar' : '');
+      return `<div class="card row" data-a="pr_prodAbrir" data-id="${x.id}" style="margin-top:10px;cursor:pointer">
+        <div class="grow"><div style="font:600 14px/1.25 var(--sans)">${esc(x.nombre)}</div>
+        <div class="tiny" style="margin-top:3px">${esc(x.referencia)} · ${esc((x.tarifa && x.tarifa.nombre) || '')} · ${esc(x.familia)}</div></div>
+        <div style="text-align:right;flex:none"><div class="num" style="font-size:15px">${eur(q.venta)}</div><div class="tiny">tarifa ${eur(x.precio_tarifa)}</div></div>
+      </div>`; }).join('');
+}
+function prCatalogoHTML() {
+  const p = prEstado();
+  return `<div class="row g8" style="margin-top:4px">
+      <input class="inp grow" data-f="prBuscar" value="${esc(p.buscar || '')}" placeholder="Nombre o referencia" autocomplete="off">
+      <button class="pill" data-a="pr_buscar" style="padding:13px 16px">Buscar</button>
+    </div><div id="pr-cat">${prCatalogoListaHTML()}</div>`;
+}
+let prBuscarT = null;
+async function prBuscarAhora() {
+  const p = prEstado(), q = String(p.buscar || '').trim();
+  const pinta = () => { const el = document.getElementById('pr-cat'); if (el) el.innerHTML = prCatalogoListaHTML(); };
+  if (q.length < 2) { p.prods = null; p.prodErr = null; pinta(); return; }
+  p.buscando = true; pinta();
+  try { const r = await visitasDB.buscarProductosPrecios(q); if (String(p.buscar || '').trim() !== q) return;   // ya se escribió otra cosa: manda la búsqueda nueva
+    p.prods = r; p.prodErr = null; }
+  catch (e) { p.prods = []; p.prodErr = msgError(e); }
+  p.buscando = false; pinta();
+}
+function prFijosHTML() {
+  const p = prEstado();
+  if (p.conErr) return `<div class="card"><div class="sub">No se pudo cargar: ${esc(p.conErr)}</div></div>`;
+  if (!p.conceptos) return '<div class="sub" style="margin-top:14px">Cargando…</div>';
+  const grupos = [];
+  p.conceptos.forEach((x) => {
+    const cat = (x.partida && x.partida.categoria) || '';
+    let g = grupos.find((y) => y.c === cat); if (!g) { g = { c: cat, filas: [] }; grupos.push(g); }
+    g.filas.push(x);
+  });
+  grupos.sort((a, b) => nombreCat(a.c).localeCompare(nombreCat(b.c), 'es'));
+  return `<div class="sub" style="font-size:12px">Lo que el motor pone a precio fijo, sin producto del catálogo: puntos de radiador, limpiezas, el panel del presupuesto por capítulos… En fotovoltaica el precio fijo es coste y el motor le suma los complementarios y el recargo; en lo demás es el precio de venta.</div>
+  ${grupos.map((g) => `<div class="lbl" style="margin:18px 0 4px">${esc(nombreCat(g.c))}</div>
+    ${g.filas.map((x) => { const ed = p.conEd[x.id] || {}; const venta = prPreciosDe(prNum('precio_fijo' in ed ? ed.precio_fijo : x.precio_fijo) || 0, { familia: 'material' }, g.c);
+      return `<div style="padding:9px 0;border-bottom:1px solid var(--l1)">
+      <div style="font:600 13px/1.25 var(--sans)">${esc(x.concepto_libre || '')}</div>
+      <div class="tiny" style="margin-top:2px">${esc((x.partida && x.partida.nombre) || '')}${x.unidad ? ' · por ' + esc(x.unidad) : ''}</div>
+      <div class="row g8" style="margin-top:6px;align-items:center;flex-wrap:wrap">
+        <span class="tiny">Precio</span><input class="inp" data-f="prc:${x.id}:precio_fijo" value="${esc('precio_fijo' in ed ? ed.precio_fijo : prTxt(x.precio_fijo))}" inputmode="decimal" style="width:96px;padding:8px;text-align:right">
+        <span class="tiny">€ · coste</span><input class="inp" data-f="prc:${x.id}:coste_fijo" value="${esc('coste_fijo' in ed ? ed.coste_fijo : prTxt(x.coste_fijo))}" placeholder="—" inputmode="decimal" style="width:96px;padding:8px;text-align:right">
+        <span class="tiny">€${venta.porCoste ? ' → venta ' + eur(venta.venta) : ''}</span>
+      </div></div>`; }).join('')}`).join('')}`;
+}
+function prHistorialHTML() {
+  const p = prEstado();
+  if (p.hisErr) return `<div class="card"><div class="sub">${/precios_cambios/.test(p.hisErr) ? 'Falta ejecutar sql/etapa104 en Supabase.' : 'No se pudo cargar: ' + esc(p.hisErr)}</div></div>`;
+  if (!p.historial) return '<div class="sub" style="margin-top:14px">Cargando…</div>';
+  if (!p.historial.length) return '<div class="sub" style="margin-top:14px">Todavía no se ha cambiado ningún precio a mano.</div>';
+  const NOMBRE = { precio_tarifa: 'tarifa', descuento_proveedor: 'dto. proveedor %', recargo: 'recargo', precio_fijo: 'precio', coste_fijo: 'coste', nombre: 'nombre', unidad: 'unidad', activo: 'activo', valor: '' };
+  const val = (v) => (v == null ? '—' : typeof v === 'number' ? String(v).replace('.', ',') : String(v));
+  const cuando = (iso) => { const d = new Date(iso); return fechaCorta(iso) + ' · ' + String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'); };
+  return p.historial.map((c) => {
+    const a = c.antes || {}, d = c.despues || {};
+    const campos = Object.keys(d).filter((k) => k !== 'id' && k !== 'ruta');
+    const que = campos.map((k) => (NOMBRE[k] ? NOMBRE[k] + ' ' : NOMBRE[k] === '' ? '' : k + ' ') + val(a[k]) + ' → ' + val(d[k])).join(' · ');
+    return `<div style="padding:10px 0;border-bottom:1px solid var(--l1);${c.deshecho_en ? 'opacity:.55' : ''}">
+      <div style="font:600 13px/1.25 var(--sans)">${esc(c.descripcion || c.clave)}</div>
+      <div class="tiny" style="margin-top:3px;color:var(--tinta)">${esc(que)}</div>
+      <div class="row g8" style="margin-top:4px;justify-content:space-between;align-items:center">
+        <span class="tiny">${esc(cuando(c.creado_en))} · ${esc(c.nombre || '')} · ${c.origen === 'modelo_fv' ? 'modelo fotovoltaico' : c.origen === 'producto' ? 'catálogo' : 'precio fijo'}${c.desde === 'presupuesto' ? ' · desde un presupuesto' : ''}</span>
+        ${c.deshecho_en ? `<span class="tiny">deshecho${c.deshecho_por ? ' por ' + esc(c.deshecho_por) : ''}</span>` : `<span class="tiny" data-a="pr_deshacer" data-id="${c.id}" style="color:var(--rojo);cursor:pointer;text-decoration:underline;flex:none">Deshacer</span>`}
+      </div></div>`;
+  }).join('');
+}
+function vPrecios() {
+  const p = prEstado();
+  const cuerpo = p.tab === 'fv' ? `<div class="sub" style="font-size:12px">El presupuestador fotovoltaico de Ramón${p.fvVersion ? ' (' + esc(p.fvVersion) + ')' : ''}: de aquí salen el coste de cada partida y el precio de la instalación. Los que van «en tanto por uno» se escriben así: 0,5 = 50 %.</div>
+      <input class="inp" data-f="prFiltro" value="${esc(p.filtro || '')}" placeholder="Filtrar: perfil, jornada, Fronius…" autocomplete="off" style="margin-top:10px">
+      <div id="pr-lista">${prFvListaHTML()}</div><div id="pr-pie">${p.fv ? prPieHTML(prFvCambios().cambios.length, 'pr_fvGuardar') : ''}</div>`
+    : p.tab === 'catalogo' ? prCatalogoHTML()
+    : p.tab === 'fijos' ? `${prFijosHTML()}<div id="pr-pie">${p.conceptos ? prPieHTML(prConCambios().cambios.length, 'pr_conGuardar') : ''}</div>`
+    : prHistorialHTML();
+  return `<div class="hdr">
+    <div class="volver" data-a="ir" data-v="ajustes">‹ ${esAdmin() ? 'Ajustes' : 'Perfil'}</div>
+    <div class="h1" style="margin-top:6px">Precios</div>
+    <div class="sub" style="margin-top:6px">Lo que cambies aquí vale para todos los presupuestos nuevos; los ya guardados no cambian. Cada cambio queda apuntado y se puede deshacer.</div>
+    <div class="row g8" style="margin-top:12px;overflow-x:auto;padding-bottom:2px">${PR_TABS.map(([k, n]) => `<span class="chip${p.tab === k ? ' on' : ''}" data-a="pr_tab" data-t="${k}" style="flex:none">${n}</span>`).join('')}</div>
+  </div>
+  <div class="scroll pad pb-nav">${cuerpo}</div>`;
+}
+function prProductoSheetHTML(s) {
+  const x = s.p, v = s.v;
+  return `<div class="sheet"><div>
+    <div style="font:600 23px/1.15 var(--cond)">Precio en el catálogo</div>
+    <div class="sub" style="margin-top:6px">${esc(x.nombre)}</div>
+    <div class="tiny" style="margin-top:3px">${esc(x.referencia)} · ${esc((x.tarifa && x.tarifa.nombre) || '')} · ${esc(x.familia)}</div>
+    <div class="row g8" style="margin-top:14px;align-items:flex-end;flex-wrap:wrap">
+      <div><div class="lbl" style="margin-bottom:6px">Precio de tarifa €</div><input class="inp" data-f="prp:precio_tarifa" value="${esc(v.precio_tarifa)}" inputmode="decimal" style="width:120px;text-align:right"></div>
+      <div><div class="lbl" style="margin-bottom:6px">Dto. proveedor %</div><input class="inp" data-f="prp:descuento_proveedor" value="${esc(v.descuento_proveedor)}" inputmode="decimal" style="width:96px;text-align:right"></div>
+      <div><div class="lbl" style="margin-bottom:6px">Recargo propio ×</div><input class="inp" data-f="prp:recargo" value="${esc(v.recargo)}" placeholder="—" inputmode="decimal" style="width:96px;text-align:right"></div>
+    </div>
+    <div id="prp-previa" style="margin-top:12px;padding:10px 12px;border-radius:12px;background:rgba(20,23,15,.04)">${prPreviaHTML(x, v)}</div>
+    <div class="tiny" style="margin-top:10px">Cómo se lee: el coste es la tarifa menos el descuento de proveedor. Con recargo (el propio, o el 1,30 de fotovoltaica si está en blanco) la venta es coste × recargo; sin recargo, la tarifa es el precio de venta. 1,5 = vender un 50 % por encima del coste.</div>
+    <div class="row g8" style="margin-top:18px">
+      <button class="btn btn-gris" data-a="cerrarSheet" style="border-radius:99px">Cancelar</button>
+      <button class="btn btn-verde" data-a="pr_prodGuardar" ${s.busy ? 'disabled' : ''}>${s.busy ? 'Guardando…' : 'Guardar en la base'}</button>
+    </div>
+  </div></div>`;
+}
+/** Confirmar que el precio de una línea del presupuesto se guarda en la base. */
+function prLineaSheetHTML(s) {
+  return `<div class="sheet"><div>
+    <div style="font:600 23px/1.15 var(--cond)">Guardar el precio en la base de datos</div>
+    <div class="sub" style="margin-top:6px">«${esc(s.descripcion)}» pasará a salir así en todos los presupuestos nuevos de ${esc(nombreCat(s.categoria))}:</div>
+    <div style="margin-top:12px;padding:10px 12px;border-radius:12px;background:rgba(20,23,15,.04);font:600 15px var(--sans)">Venta ${eur(prNum(s.venta) || 0)} por ${esc(s.unidad || 'ud')}${prNum(s.coste) != null && !Number.isNaN(prNum(s.coste)) ? ' · coste ' + eur(prNum(s.coste)) : ' · el coste no se toca'}</div>
+    <div class="tiny" style="margin-top:10px">Los presupuestos ya guardados no cambian. Queda apuntado en Ajustes → Precios → Cambios, donde se puede deshacer.</div>
+    <div class="row g8" style="margin-top:18px">
+      <button class="btn btn-gris" data-a="pr_lineaCancelar" style="border-radius:99px">Cancelar</button>
+      <button class="btn btn-verde" data-a="pr_lineaGuardar" ${s.busy ? 'disabled' : ''}>${s.busy ? 'Guardando…' : 'Guardar en la base'}</button>
+    </div>
+  </div></div>`;
+}
+/** ¿Sale esta línea de un precio guardado (un producto del catálogo o un concepto fijo de partida)? */
+function prLineaGuardable(l) {
+  if (!l || !puedePrecios()) return false;
+  const oi = l.origen_inputs && typeof l.origen_inputs === 'object' ? l.origen_inputs : {};
+  if (oi.fv2 || Array.isArray(oi.desglose)) return false;   // la instalación FV va por sus partidas; las agrupadas, por sus productos
+  return !!(l.producto_ref || oi.producto_catalogo || (l.origen === 'partida' && oi.partida));
+}
+/** Los costes del desglose FV que ya no son los de la base: lo que se guardaría. */
+function fv2CambiosBD(s) {
+  const porRef = {}, conflictos = [];
+  const r = fv2Repreciar(s.oi, s.items);
+  r.desglose.forEach((x) => {
+    if (!x.ref || x.manual || !(x.cantidad > 0)) return;
+    const k = JSON.stringify(x.ref), ini = (s.ini || {})[k];
+    if (ini == null || Math.abs(Number(x.coste_ud) - ini) < 0.00005) return;
+    if (porRef[k] && Math.abs(porRef[k].coste_ud - Number(x.coste_ud)) > 0.00005) { conflictos.push(x.nombre); return; }
+    if (!porRef[k]) porRef[k] = { ref: x.ref, nombre: x.nombre, antes: ini, coste_ud: Number(x.coste_ud), otras: 0 };
+  });
+  // Cuántas partidas más comparten ese precio (la hora de oficina, el tubo…): se avisa.
+  Object.keys(porRef).forEach((k) => { porRef[k].otras = r.desglose.filter((x) => x.ref && JSON.stringify(x.ref) === k && x.cantidad > 0).length - 1; });
+  return { lista: Object.keys(porRef).map((k) => porRef[k]), conflictos };
+}
+A.pr = async (a, d) => {
+  if (!puedePrecios()) return;
+  const p = prEstado();
+  if (a === 'pr_abrir') { V.view = 'precios'; render(); return prCargar(p.tab); }
+  if (a === 'pr_tab') { p.tab = d.t; render(); return prCargar(p.tab); }
+  if (a === 'pr_fvGuardar' || a === 'pr_conGuardar') {
+    const { cambios, malos } = a === 'pr_fvGuardar' ? prFvCambios() : prConCambios();
+    if (malos.length) { avisar('Revisa el número de «' + malos[0] + '»' + (malos.length > 1 ? ' y de ' + (malos.length - 1) + ' más' : '') + '.'); return; }
+    if (!cambios.length || p.busy) return;
+    p.busy = true; prRefrescarPie();
+    try {
+      const r = await visitasDB.guardarPrecios(cambios, 'configuracion');
+      if (prAvisarResultado(r) || !(r.errores || []).length) { if (a === 'pr_fvGuardar') p.fvEd = {}; else p.conEd = {}; }
+    } catch (e) { avisar('No se pudieron guardar los precios: ' + msgError(e)); }
+    p.busy = false;
+    return prCargar(p.tab);
+  }
+  if (a === 'pr_buscar') {
+    if (String(p.buscar || '').trim().length < 2) { avisar('Escribe al menos dos letras.'); return; }
+    clearTimeout(prBuscarT); return prBuscarAhora();
+  }
+  if (a === 'pr_prodAbrir') {
+    const x = (p.prods || []).find((y) => y.id === d.id); if (!x) return;
+    V.sheet = { tipo: 'prProducto', p: x, v: { precio_tarifa: prTxt(x.precio_tarifa), descuento_proveedor: prTxt(x.descuento_proveedor || 0), recargo: prTxt(x.recargo) }, busy: false };
+    render(); return;
+  }
+  if (a === 'pr_prodGuardar') {
+    const s = V.sheet; if (!s || s.tipo !== 'prProducto' || s.busy) return;
+    const t = prNum(s.v.precio_tarifa), dto = prNum(s.v.descuento_proveedor), rec = prNum(s.v.recargo);
+    if (t == null || Number.isNaN(t) || t < 0) { avisar('Pon el precio de tarifa.'); return; }
+    if (Number.isNaN(dto) || Number.isNaN(rec)) { avisar('Revisa los números.'); return; }
+    s.busy = true; render();
+    try {
+      const r = await visitasDB.guardarPrecios([{ tipo: 'producto', id: s.p.id, nombre: s.p.nombre, campos: { precio_tarifa: t, descuento_proveedor: dto == null ? 0 : dto, recargo: rec } }], 'configuracion');
+      const errores = (r && r.errores) || [];
+      prAvisarResultado(r);
+      if (!errores.length) { V.sheet = null; if (String(p.buscar || '').trim().length >= 2) { try { p.prods = await visitasDB.buscarProductosPrecios(p.buscar); } catch (_) { /* se queda la lista vieja */ } } }
+      else s.busy = false;
+    } catch (e) { s.busy = false; avisar('No se pudo guardar: ' + msgError(e)); }
+    render(); return;
+  }
+  if (a === 'pr_deshacer') {
+    if (p.busy) return;
+    p.busy = true;
+    try { await visitasDB.deshacerPrecio(d.id); toast('Cambio deshecho: el precio vuelve a ser el de antes.'); p.fv = null; p.conceptos = null; p.prods = null; }
+    catch (e) { avisar('No se pudo deshacer: ' + msgError(e)); }
+    p.busy = false;
+    return prCargar('historial');
+  }
+  /* --- desde el presupuesto: una línea --- */
+  if (a === 'pr_lineaAbrir') {
+    // Desde «Retocar la línea» (antes de guardar) o desde «Modificar» (guardado).
+    let l = null, venta, coste, categoria, volver = null, presupuestoId = null;
+    if (d.modo === 'ajuste') {
+      const s = V.sheet; if (!s || s.tipo !== 'presuAjuste') return;
+      l = s.original; venta = s.v.precio_tarifa; coste = s.v.precio_coste; categoria = V.presu.cat; volver = s;
+    } else {
+      const e = V.presuEdit, pd = V.presuVer && V.presuVer.datos; if (!e || !pd) return;
+      l = (pd.lineas || []).find((x) => x.id === d.id); if (!l) return;
+      const c = e.cambios[l.id] || {};
+      venta = c.precio_tarifa != null ? c.precio_tarifa : l.precio_tarifa; coste = c.precio_coste != null ? c.precio_coste : l.precio_coste;
+      categoria = pd.categoria; presupuestoId = pd.id;
+    }
+    if (!prLineaGuardable(l)) return;
+    const nv = prNum(venta);
+    if (nv == null || Number.isNaN(nv) || !(nv > 0)) { avisar('Pon antes el precio de la línea.'); return; }
+    const oi = l.origen_inputs && typeof l.origen_inputs === 'object' ? l.origen_inputs : {};
+    V.sheet = { tipo: 'prLinea', volver, presupuestoId, categoria, descripcion: l.descripcion, unidad: l.unidad, venta, coste: coste == null ? '' : coste,
+      producto_ref: l.producto_ref || oi.producto_catalogo || null, partida: oi.partida || null, busy: false };
+    render(); return;
+  }
+  if (a === 'pr_lineaCancelar') { const s = V.sheet; if (s && s.tipo === 'prLinea') { V.sheet = s.volver || null; render(); } return; }
+  if (a === 'pr_lineaGuardar') {
+    const s = V.sheet; if (!s || s.tipo !== 'prLinea' || s.busy) return;
+    s.busy = true; render();
+    try {
+      const cst = prNum(s.coste);
+      const r = await visitasDB.guardarPrecios([{ tipo: 'linea', categoria: s.categoria, producto_ref: s.producto_ref, partida: s.partida, descripcion: s.descripcion,
+        venta: prNum(s.venta), coste: cst == null || Number.isNaN(cst) ? null : cst, nombre: s.descripcion }], 'presupuesto', s.presupuestoId);
+      prAvisarResultado(r);
+      V.sheet = s.volver || null;
+    } catch (e) { s.busy = false; avisar('No se pudo guardar: ' + msgError(e)); }
+    render(); return;
+  }
+  /* --- desde el presupuesto: las partidas de la instalación fotovoltaica --- */
+  if (a === 'pr_fv2Revisar') {
+    const s = V.sheet; if (!s || s.tipo !== 'fv2Desglose') return;
+    const { lista, conflictos } = fv2CambiosBD(s);
+    if (conflictos.length) { avisar('«' + conflictos[0] + '» comparte precio con otra partida y les has puesto costes distintos: déjalos iguales para guardarlo en la base.'); return; }
+    if (!lista.length) { avisar(Object.keys(s.ini || {}).length ? 'No has cambiado ningún coste de los que vienen de la base. Las cantidades y las partidas añadidas a mano son solo de este presupuesto.' : 'Este presupuesto se calculó antes de este cambio y no sabe de dónde sale cada coste: vuelve a calcularlo, o cambia el precio en Ajustes → Precios.'); return; }
+    s.bd = lista; render(); return;
+  }
+  if (a === 'pr_fv2Cancelar') { const s = V.sheet; if (s && s.tipo === 'fv2Desglose') { s.bd = null; render(); } return; }
+  if (a === 'pr_fv2Guardar') {
+    const s = V.sheet; if (!s || s.tipo !== 'fv2Desglose' || !s.bd || s.busy) return;
+    s.busy = true; render();
+    try {
+      const cambios = s.bd.map((x) => x.ref.producto
+        ? { tipo: 'producto', referencia: x.ref.producto, coste_ud: x.coste_ud, factor: x.ref.factor, nombre: x.nombre }
+        : { tipo: 'modelo_fv', ruta: x.ref.ruta, coste_ud: x.coste_ud, factor: x.ref.factor, nombre: x.nombre });
+      const r = await visitasDB.guardarPrecios(cambios, 'presupuesto', s.presupuestoId || null);
+      prAvisarResultado(r);
+      s.busy = false; s.bd = null;
+      return A.fv2DesgloseAplicar();
+    } catch (e) { s.busy = false; avisar('No se pudo guardar en la base: ' + msgError(e)); render(); }
+    return;
+  }
+};
+A.prCampo = (f, valor) => {
+  const p = prEstado();
+  if (f === 'prFiltro') { p.filtro = valor; const el = document.getElementById('pr-lista'); if (el) el.innerHTML = prFvListaHTML(); return; }
+  if (f === 'prBuscar') { p.buscar = valor; clearTimeout(prBuscarT); prBuscarT = setTimeout(prBuscarAhora, 500); return; }
+  if (f.startsWith('prfv:')) { p.fvEd[f.slice(5)] = valor; prRefrescarPie(); return; }
+  if (f.startsWith('prc:')) { const [, id, k] = f.split(':'); (p.conEd[id] = p.conEd[id] || {})[k] = valor; prRefrescarPie(); return; }
+  if (f.startsWith('prp:')) {
+    const s = V.sheet; if (!s || s.tipo !== 'prProducto') return;
+    s.v[f.slice(4)] = valor;
+    const el = document.getElementById('prp-previa'); if (el) el.innerHTML = prPreviaHTML(s.p, s.v);
+  }
+};
+
 /* ---------- un producto que no está en el catálogo: se crea y se añade (Enzo, 27-10-2026) ---------- */
 const FAMILIAS_PROPIAS = [['material', 'Material'], ['equipo', 'Equipo'], ['mano_obra', 'Mano de obra'], ['servicio', 'Servicio'], ['tramite', 'Trámite'], ['otro', 'Otro']];
 A.presuProductoNuevoAbrir = (modo) => {
@@ -8728,17 +9129,24 @@ A.fv2DesgloseAbrir = (modo, ref) => {
     const s = V.sheet; if (!s || s.tipo !== 'presuAjuste') return;
     oi = s.original && s.original.origen_inputs; if (!oi || !oi.fv2) return;
     items = s.v.fv2 && Array.isArray(s.v.fv2.desglose) ? s.v.fv2.desglose : oi.desglose; titulo = s.v.descripcion;
-    V.sheet = { tipo: 'fv2Desglose', modo, volver: s, oi, items: (items || []).map((x) => Object.assign({}, x)), nueva: { bloque: 'ESTRUCTURA', nombre: '', cantidad: '1', unidad: 'ud', coste_ud: '' }, titulo };
+    V.sheet = { tipo: 'fv2Desglose', modo, volver: s, oi, ini: fv2CostesBase(oi), items: (items || []).map((x) => Object.assign({}, x)), nueva: { bloque: 'ESTRUCTURA', nombre: '', cantidad: '1', unidad: 'ud', coste_ud: '' }, titulo };
   } else {
     const e = V.presuEdit, d = V.presuVer && V.presuVer.datos; if (!e || !d) return;
     const l = (d.lineas || []).find((x) => x.id === ref); if (!l) return;
     oi = l.origen_inputs; if (!oi || !oi.fv2) return;
     const c = e.cambios[ref] || {};
     items = c.origen_inputs && Array.isArray(c.origen_inputs.desglose) ? c.origen_inputs.desglose : oi.desglose; titulo = c.descripcion || l.descripcion;
-    V.sheet = { tipo: 'fv2Desglose', modo, id: ref, oi: c.origen_inputs || oi, items: (items || []).map((x) => Object.assign({}, x)), nueva: { bloque: 'ESTRUCTURA', nombre: '', cantidad: '1', unidad: 'ud', coste_ud: '' }, titulo };
+    V.sheet = { tipo: 'fv2Desglose', modo, id: ref, presupuestoId: d.id, oi: c.origen_inputs || oi, ini: fv2CostesBase(oi), items: (items || []).map((x) => Object.assign({}, x)), nueva: { bloque: 'ESTRUCTURA', nombre: '', cantidad: '1', unidad: 'ud', coste_ud: '' }, titulo };
   }
   render();
 };
+/** El coste con el que salió cada partida del motor, por su origen en la base
+ *  (ref): contra esto se sabe qué costes se han corregido a mano. */
+function fv2CostesBase(oi) {
+  const ini = {};
+  ((oi && oi.desglose) || []).forEach((x) => { if (x && x.ref && !x.manual) { const k = JSON.stringify(x.ref); if (!(k in ini)) ini[k] = Number(x.coste_ud) || 0; } });
+  return ini;
+}
 function fv2DesgloseRefrescar() {
   const s = V.sheet; if (!s || s.tipo !== 'fv2Desglose') return;
   const r = fv2Repreciar(s.oi, s.items);
@@ -8813,10 +9221,19 @@ function fv2DesgloseSheetHTML(s) {
     ${ceros ? `<div class="tiny" style="margin-top:10px"><span data-a="fv2DesgloseCeros" style="color:var(--verde-o);cursor:pointer;text-decoration:underline">${s.verCeros ? 'Ocultar' : 'Mostrar'} las ${ceros} partidas del modelo que salen a 0</span></div>` : ''}
     ${r.completo ? '' : '<div class="tiny" style="margin-top:10px;color:var(--ambar-o)">Esta línea es de antes de este cambio: lo que se quite seguirá en la descripción larga para el cliente. Retócala a mano si hace falta.</div>'}
     <div id="fvd-pie" class="tiny" style="margin-top:12px;color:var(--tinta);font-size:14px">${fv2PieHTML(r)}</div>
-    <div class="row g8" style="margin-top:14px">
+    ${s.bd ? `<div style="margin-top:14px;padding:12px 14px;border-radius:14px;background:rgba(20,23,15,.045);border:1px solid var(--l2)">
+      <div style="font:600 15px var(--sans)">Guardar en la base de datos</div>
+      <div class="sub" style="font-size:12px;margin-top:4px">Estos costes cambian para todos los presupuestos nuevos. Los ya guardados no se tocan y el cambio se puede deshacer en Ajustes → Precios → Cambios.</div>
+      ${s.bd.map((x) => `<div class="tiny" style="margin-top:6px;color:var(--tinta);font-size:13px">· ${esc(x.nombre)}: ${eur(x.antes)} → <b>${eur(x.coste_ud)}</b>${x.otras > 0 ? ' <span style="color:var(--ambar-o)">(comparte precio con ' + x.otras + (x.otras === 1 ? ' partida más' : ' partidas más') + ')</span>' : ''}</div>`).join('')}
+      <div class="row g8" style="margin-top:12px">
+        <button class="btn btn-gris" data-a="pr_fv2Cancelar" style="border-radius:99px">No guardar</button>
+        <button class="btn btn-verde" data-a="pr_fv2Guardar" ${s.busy ? 'disabled' : ''}>${s.busy ? 'Guardando…' : 'Guardar y aplicar'}</button>
+      </div>
+    </div>` : `<div class="row g8" style="margin-top:14px">
       <button class="btn btn-gris" data-a="fv2DesgloseVolver" style="border-radius:99px">Cancelar</button>
       <button class="btn btn-verde" data-a="fv2DesgloseAplicar">Aplicar</button>
     </div>
+    ${puedePrecios() ? `<div class="tiny" style="margin-top:10px;text-align:center">«Aplicar» cambia solo este presupuesto. <span data-a="pr_fv2Revisar" style="color:var(--verde-o);cursor:pointer;text-decoration:underline">Guardar además los costes en la base de datos</span></div>` : ''}`}
   </div></div>`;
 }
 A.presuQuitarCalculada = (clave) => {
@@ -10303,6 +10720,7 @@ function presuLineasEditHTML(d) {
         <span class="tiny" style="color:var(--t2)">% sobre venta</span>
       </div>`; })() : ''}
       ${l.origen_inputs && l.origen_inputs.fv2 && Array.isArray(l.origen_inputs.desglose) && !fuera ? `<div class="row g8" style="margin-top:7px;align-items:center;justify-content:space-between"><span class="tiny">${c.origen_inputs ? c.origen_inputs.desglose.length + ' partidas (editadas): coste y PVP recalculados' : l.origen_inputs.desglose.length + ' partidas del presupuestador'}</span><button class="pill pill-verde" data-a="fv2DesgloseAbrir" data-modo="guardado" data-id="${l.id}" style="padding:8px 12px">Editar partidas</button></div>` : ''}
+      ${!fuera && prLineaGuardable(l) ? `<div class="tiny" style="margin-top:6px"><span data-a="pr_lineaAbrir" data-id="${l.id}" style="color:var(--verde-o);cursor:pointer;text-decoration:underline">Guardar este precio en la base de datos</span> (para los presupuestos nuevos)</div>` : ''}
       ${l.origen_regla_id ? '<div class="tiny" style="margin-top:5px;opacity:.7">La propuso el motor: si la cambias, queda apuntado.</div>' : ''}
     </div>`;
   }).join('')}
@@ -12970,7 +13388,7 @@ function nav(v) {
     || (id === 'obras' && v === 'obra')
     || (id === 'horas' && ['imputar', 'revisarImp', 'resumenImp'].includes(v))
     || (id === 'ajustes' && !esPresupuestos() && ['errores', 'legalizaciones', 'legalizacion'].includes(v))
-    || (id === 'ajustes' && ['costesPersonal', 'fasesPlantillas'].includes(v))
+    || (id === 'ajustes' && ['costesPersonal', 'fasesPlantillas', 'precios'].includes(v))
     || (id === 'obras' && ['alta', 'planificacion'].includes(v))
     || (id === 'legalizaciones' && v === 'legalizacion')
     || (id === 'empleados' && (v === 'empleado' || v === 'planilla'))
@@ -13768,9 +14186,12 @@ function sheet() {
         ${s.yaAjustada ? '<button class="btn btn-gris" data-a="presuAjusteDeshacer" style="border-radius:99px">Deshacer</button>' : ''}
         <button class="btn btn-verde" data-a="presuAjusteGuardar">Aplicar</button>
       </div>
+      ${prLineaGuardable(s.original) ? '<div class="tiny" style="margin-top:10px;text-align:center">«Aplicar» cambia solo este presupuesto. <span data-a="pr_lineaAbrir" data-modo="ajuste" style="color:var(--verde-o);cursor:pointer;text-decoration:underline">Guardar además este precio en la base de datos</span></div>' : ''}
     </div></div>`;
   }
   if (s.tipo === 'fv2Desglose') return fv2DesgloseSheetHTML(s);
+  if (s.tipo === 'prProducto') return prProductoSheetHTML(s);
+  if (s.tipo === 'prLinea') return prLineaSheetHTML(s);
   if (s.tipo === 'presuCliente') return presuClienteSheetHTML(s);
   if (s.tipo === 'presuCategoria') return presuCategoriaSheetHTML(s);
   if (s.tipo === 'presuProductoNuevo') {
@@ -14185,6 +14606,7 @@ document.addEventListener('click', (e) => {
   const d = el.dataset;
   if (a.startsWith('vf')) return A.vf(a, d);
   if (a.startsWith('ag_')) return A.ag(a, d, e);
+  if (a.startsWith('pr_')) return A.pr(a, d);
   if (a === 'visitaAparcar') return A.visitaAparcar();
   if (a === 'visitaSeguirMedias') return A.visitaSeguirMedias();
   if (a === 'nuevaVisita') return A.nuevaVisita();
@@ -14655,6 +15077,7 @@ document.addEventListener('input', (e) => {
   if (f === 'segOtro') { if (V.sheet) V.sheet.otro = t.value; return; }
   if (f === 'tbColocarMotivo') { if (V.sheet) V.sheet.motivo = t.value; return; }
   if (f.startsWith('paj:')) return A.presuAjusteCampo(f.slice(4), t.value);
+  if (f === 'prFiltro' || f === 'prBuscar' || f.startsWith('prfv:') || f.startsWith('prc:') || f.startsWith('prp:')) return A.prCampo(f, t.value);
   if (f.startsWith('fvd:')) { const [, i, k] = f.split(':'); return A.fv2DesgloseCampo(Number(i), k, t.value); }
   if (f.startsWith('fvdn:')) return A.fv2DesgloseNuevaCampo(f.slice(5), t.value);
   if (f === 'presuCliBuscar') return A.presuCliBuscar(t.value);

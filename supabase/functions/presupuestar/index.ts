@@ -42,7 +42,8 @@ import { cadenaPrecios, totalCoste } from './cadena.js';
 // El cálculo híbrido de fotovoltaica (v2 de Ramón + capítulos) vive en
 // hibrido.js, compartido con las pruebas y los informes.
 import { presupuestarFV } from './hibrido.js';
-import { conInversoresDelCatalogo } from './fv.js';
+import { conInversoresDelCatalogo, calcularFV } from './fv.js';
+import { leerRutaFV, ponerRutaFV, listaModeloFV, valorDesdeCosteUd, productoPara, conceptoPara } from './precios.js';
 import { opcionesAero, sustituirEquiposAero, esInercia, esAcumuladorAcs } from './aero.js';
 
 const CORS = {
@@ -144,6 +145,226 @@ async function catalogarLineas(sb: any, lineas: any[], origen: 'presupuesto' | '
   }
   return creados;
 }
+/* =============================================================================
+ * Precios cambiados a mano desde la app (Enzo, 10-11-2026): «necesito poder
+ * cambiar los precios de la base de datos manualmente». Tres sitios: el modelo
+ * fotovoltaico (motor_modelos), el catálogo (productos) y los conceptos de
+ * precio fijo de las partidas (partidas_items). La aritmética está en
+ * precios.js; aquí se lee, se escribe y se apunta cada cambio en
+ * precios_cambios (sql/etapa104) para poder deshacerlo.
+ *   { accion: 'precios_modelo_fv' }                       → la lista del modelo
+ *   { accion: 'precios_guardar', cambios: [...], desde, presupuesto_id }
+ *       { tipo: 'modelo_fv', ruta, valor }                 un valor del modelo
+ *       { tipo: 'modelo_fv', ruta, coste_ud, factor }      el coste de una partida del desglose
+ *       { tipo: 'producto', id | referencia, campos }      precio_tarifa, descuento_proveedor, recargo
+ *       { tipo: 'producto', referencia, coste_ud, factor } un inversor del catálogo, desde el desglose
+ *       { tipo: 'concepto', id, campos }                   precio_fijo, coste_fijo
+ *       { tipo: 'linea', categoria, producto_ref, partida, descripcion, venta, coste }
+ *                                                          lo corregido en una línea del presupuesto
+ *   { accion: 'precios_deshacer', id }                    vuelve a lo de antes
+ * ========================================================================== */
+const COLS_PRECIO_PROD = 'id, referencia, nombre, familia, unidad, precio_tarifa, descuento_proveedor, recargo, aplica_cdc, atributos, activo';
+// deno-lint-ignore no-explicit-any
+async function modeloFVVigente(sb: any) {
+  const { data } = await sb.from('motor_modelos').select('id, version, datos').eq('categoria', 'solar').is('vigente_hasta', null)
+    .order('vigente_desde', { ascending: false }).limit(1).maybeSingle();
+  return data && data.datos ? data : null;
+}
+// deno-lint-ignore no-explicit-any
+async function accionPrecios(sb: any, yo: any, b: any): Promise<Response> {
+  const nOk = (v: unknown) => { if (v == null || String(v).trim() === '') return null; const n = Number(String(v).replace(',', '.')); return Number.isFinite(n) ? n : NaN; };
+  const r2 = (n: number) => Math.round(n * 100 + 1e-7) / 100;
+  const { data: emp } = await sb.from('empleados').select('nombre').eq('id', yo.id).maybeSingle();
+  const quien = { empleado_id: yo.id, nombre: (emp && emp.nombre) || null };
+
+  if (b.accion === 'precios_modelo_fv') {
+    const mod = await modeloFVVigente(sb);
+    if (!mod) return json({ error: 'No hay modelo fotovoltaico vigente.' }, 404);
+    // El nombre de cada coste de material: el de la partida que lo usa.
+    const nombres: Record<string, string> = {};
+    try {
+      for (const sis of ['Fronius', 'Deye', 'Enphase']) for (const sumi of ['Monofásico', 'Trifásico']) for (const cubierta of ['Teja', 'Plana']) {
+        // deno-lint-ignore no-explicit-any
+        (calcularFV({ sis, sumi, cubierta, paneles_forzado: 12, cee: 'Sí' }, mod.datos) as any).partidas.forEach((x: any) => {
+          if (x.ref && Array.isArray(x.ref.ruta) && x.ref.ruta[0] === 'precios' && x.ref.ruta.length === 3) { const k = x.ref.ruta.join('/'); if (!nombres[k]) nombres[k] = x.partida; }
+        });
+      }
+    } catch (_) { /* sin nombres salen las claves */ }
+    return json({ ok: true, version: mod.version, lista: listaModeloFV(mod.datos, nombres) });
+  }
+
+  if (b.accion === 'precios_guardar') {
+    // deno-lint-ignore no-explicit-any
+    const cambios: any[] = Array.isArray(b.cambios) ? b.cambios.slice(0, 200) : [];
+    if (!cambios.length) return json({ error: 'No hay nada que guardar.' }, 400);
+    const desde = b.desde === 'presupuesto' ? 'presupuesto' : 'configuracion';
+    const presupuesto_id = /^[0-9a-f-]{36}$/i.test(String(b.presupuesto_id || '')) ? String(b.presupuesto_id) : null;
+    // deno-lint-ignore no-explicit-any
+    const hechos: any[] = [], errores: any[] = [], apuntes: any[] = [];
+    // deno-lint-ignore no-explicit-any
+    let mod: any = null, datos: any = null, modeloTocado = false;
+    const lookups: Record<string, unknown[]> = {};
+    const lookupDe = async (cat: string) => {
+      if (!lookups[cat]) lookups[cat] = (await sb.from('tablas_lookup').select('clave, entrada, valor').eq('categoria', cat)).data || [];
+      return lookups[cat];
+    };
+    const apunta = (origen: string, clave: string, descripcion: string, antes: unknown, despues: unknown) => {
+      apuntes.push(Object.assign({ origen, clave, descripcion: String(descripcion || clave).slice(0, 300), antes, despues, desde, presupuesto_id }, quien));
+    };
+    // deno-lint-ignore no-explicit-any
+    const ponProducto = async (p: any, campos: Record<string, unknown>, descripcion: string, queda?: unknown) => {
+      // deno-lint-ignore no-explicit-any
+      const antes: Record<string, any> = {}, despues: Record<string, any> = {};
+      Object.keys(campos).forEach((k) => { const a = p[k] == null ? null : p[k], d = campos[k] == null ? null : campos[k]; if (String(a) !== String(d)) { antes[k] = a; despues[k] = d; } });
+      if (!Object.keys(despues).length) return;
+      const { error } = await sb.from('productos').update(despues).eq('id', p.id);
+      if (error) { errores.push({ nombre: descripcion, error: error.message }); return; }
+      apunta('producto', p.referencia, descripcion, Object.assign({ id: p.id }, antes), Object.assign({ id: p.id }, despues));
+      hechos.push({ origen: 'producto', nombre: descripcion, antes, despues, queda: queda || null });
+    };
+    // deno-lint-ignore no-explicit-any
+    const camposProducto = (c: any): Record<string, unknown> | string => {
+      const f = c && typeof c === 'object' ? c : {};
+      const out: Record<string, unknown> = {};
+      if ('precio_tarifa' in f) { const n = nOk(f.precio_tarifa); if (n == null || Number.isNaN(n) || n < 0) return 'El precio de tarifa tiene que ser un número.'; out.precio_tarifa = r2(n); }
+      if ('descuento_proveedor' in f) { const n = nOk(f.descuento_proveedor) ?? 0; if (Number.isNaN(n) || n < 0 || n >= 100) return 'El descuento de proveedor va de 0 a 99,99 %.'; out.descuento_proveedor = r2(n); }
+      if ('recargo' in f) { const n = nOk(f.recargo); if (n != null && (Number.isNaN(n) || !(n > 0) || n > 50)) return 'El recargo propio es un multiplicador mayor que cero (1,30 = coste × 1,30), o en blanco para usar el de la categoría.'; out.recargo = n == null ? null : Math.round(n * 1e6) / 1e6; }
+      if ('nombre' in f) { const t = String(f.nombre || '').trim().slice(0, 200); if (t.length < 3) return 'El nombre es demasiado corto.'; out.nombre = t; }
+      if ('unidad' in f) out.unidad = String(f.unidad || 'ud').trim().slice(0, 12) || 'ud';
+      if ('activo' in f) out.activo = f.activo !== false;
+      return out;
+    };
+
+    for (const c of cambios) {
+      const nombre = String((c && c.nombre) || '').slice(0, 200);
+      try {
+        if (c.tipo === 'modelo_fv') {
+          if (!mod) { mod = await modeloFVVigente(sb); if (!mod) { errores.push({ nombre, error: 'No hay modelo fotovoltaico vigente.' }); continue; } datos = mod.datos; }
+          const ruta = Array.isArray(c.ruta) ? c.ruta.map((x: unknown) => String(x)) : [];
+          const valor = c.coste_ud != null ? valorDesdeCosteUd({ factor: c.factor }, c.coste_ud) : nOk(c.valor);
+          if (valor == null || Number.isNaN(valor)) { errores.push({ nombre, error: 'Pon un número.' }); continue; }
+          const r = ponerRutaFV(datos, ruta, valor);
+          if (r.error) { errores.push({ nombre: nombre || ruta.join(' › '), error: r.error }); continue; }
+          if (r.antes === r.despues) continue;
+          datos = r.datos; modeloTocado = true;
+          apunta('modelo_fv', ruta.join('/'), nombre || ruta.join(' › '), { ruta, valor: r.antes }, { ruta, valor: r.despues });
+          hechos.push({ origen: 'modelo_fv', nombre: nombre || ruta.join(' › '), antes: { valor: r.antes }, despues: { valor: r.despues } });
+        } else if (c.tipo === 'producto') {
+          let q = sb.from('productos').select(COLS_PRECIO_PROD);
+          q = /^[0-9a-f-]{36}$/i.test(String(c.id || '')) ? q.eq('id', String(c.id)) : q.eq('referencia', String(c.referencia || '')).eq('activo', true);
+          const { data: prods } = await q.limit(5);
+          if (!prods || !prods.length) { errores.push({ nombre, error: 'Ese producto no está en el catálogo.' }); continue; }
+          for (const p of prods) {
+            if (c.coste_ud != null) {   // el inversor del catálogo, corregido en el desglose FV
+              const base = valorDesdeCosteUd({ factor: c.factor }, c.coste_ud);
+              if (!(base > 0)) { errores.push({ nombre: nombre || p.nombre, error: 'Pon un coste mayor que cero.' }); continue; }
+              await ponProducto(p, { precio_tarifa: r2(base) }, nombre || p.nombre);
+              continue;
+            }
+            const campos = camposProducto(c.campos);
+            if (typeof campos === 'string') { errores.push({ nombre: nombre || p.nombre, error: campos }); continue; }
+            await ponProducto(p, campos, nombre || (campos.nombre as string) || p.nombre);
+          }
+        } else if (c.tipo === 'concepto') {
+          const { data: it } = await sb.from('partidas_items').select('id, concepto_libre, precio_fijo, coste_fijo, producto_ref').eq('id', String(c.id || '')).maybeSingle();
+          if (!it || it.producto_ref) { errores.push({ nombre, error: 'Ese concepto no existe o sale de un producto del catálogo.' }); continue; }
+          const f = c.campos && typeof c.campos === 'object' ? c.campos : {};
+          const pf = nOk(f.precio_fijo), cf = 'coste_fijo' in f ? nOk(f.coste_fijo) : undefined;
+          if (pf == null || Number.isNaN(pf) || pf < 0) { errores.push({ nombre: nombre || it.concepto_libre, error: 'El precio tiene que ser un número.' }); continue; }
+          if (cf !== undefined && cf != null && (Number.isNaN(cf) || cf < 0)) { errores.push({ nombre: nombre || it.concepto_libre, error: 'El coste tiene que ser un número.' }); continue; }
+          // deno-lint-ignore no-explicit-any
+          const antes: Record<string, any> = {}, despues: Record<string, any> = {};
+          if (Number(it.precio_fijo) !== r2(pf)) { antes.precio_fijo = it.precio_fijo; despues.precio_fijo = r2(pf); }
+          if (cf !== undefined && String(it.coste_fijo == null ? null : Number(it.coste_fijo)) !== String(cf == null ? null : r2(cf))) { antes.coste_fijo = it.coste_fijo; despues.coste_fijo = cf == null ? null : r2(cf); }
+          if (!Object.keys(despues).length) continue;
+          const { error } = await sb.from('partidas_items').update(despues).eq('id', it.id);
+          if (error) { errores.push({ nombre: nombre || it.concepto_libre, error: error.message }); continue; }
+          apunta('concepto', it.id, nombre || it.concepto_libre, Object.assign({ id: it.id }, antes), Object.assign({ id: it.id }, despues));
+          hechos.push({ origen: 'concepto', nombre: nombre || it.concepto_libre, antes, despues });
+        } else if (c.tipo === 'linea') {
+          // Lo corregido en una línea del presupuesto: se busca de dónde sale su precio.
+          const cat = String(c.categoria || '');
+          const lookup = await lookupDe(cat);
+          const titulo = nombre || String(c.descripcion || '').slice(0, 200);
+          const ref = String(c.producto_ref || '').trim();
+          let hecho = false;
+          if (ref) {
+            const { data: prods } = await sb.from('productos').select(COLS_PRECIO_PROD).eq('referencia', ref).eq('activo', true).limit(5);
+            for (const p of prods || []) {
+              const r = productoPara(p, lookup, c.venta, c.coste);
+              if (r.error) { errores.push({ nombre: titulo, error: r.error }); hecho = true; continue; }
+              await ponProducto(p, r.cambios, p.nombre, r.queda);
+              hecho = true;
+            }
+          }
+          if (!hecho && c.partida) {
+            const { data: part } = await sb.from('partidas').select('id, agrupada').eq('categoria', cat).eq('codigo', String(c.partida)).maybeSingle();
+            if (part && part.agrupada) { errores.push({ nombre: titulo, error: 'Es una partida agrupada: su precio es la suma de varios productos. Cambia esos productos en Ajustes → Precios.' }); continue; }
+            if (part) {
+              const { data: items } = await sb.from('partidas_items').select('id, concepto_libre, precio_fijo, coste_fijo, producto_ref').eq('partida_id', part.id);
+              const limpio = (t: unknown) => String(t || '').replace(/\s+/g, ' ').trim().toLowerCase();
+              // deno-lint-ignore no-explicit-any
+              const sinProducto = (items || []).filter((x: any) => !x.producto_ref);
+              // deno-lint-ignore no-explicit-any
+              const it = sinProducto.find((x: any) => limpio(x.concepto_libre) === limpio(c.descripcion)) || (sinProducto.length === 1 ? sinProducto[0] : null);
+              if (it) {
+                const r = conceptoPara(it, lookup, c.venta, c.coste);
+                if (r.error) { errores.push({ nombre: titulo, error: r.error }); continue; }
+                // deno-lint-ignore no-explicit-any
+                const antes: Record<string, any> = {}, despues: Record<string, any> = {};
+                // deno-lint-ignore no-explicit-any
+                Object.keys(r.cambios).forEach((k) => { const a = (it as any)[k] == null ? null : Number((it as any)[k]), d = (r.cambios as any)[k]; if (a !== d) { antes[k] = a; despues[k] = d; } });
+                if (Object.keys(despues).length) {
+                  const { error } = await sb.from('partidas_items').update(despues).eq('id', it.id);
+                  if (error) { errores.push({ nombre: titulo, error: error.message }); continue; }
+                  apunta('concepto', it.id, it.concepto_libre, Object.assign({ id: it.id }, antes), Object.assign({ id: it.id }, despues));
+                  hechos.push({ origen: 'concepto', nombre: it.concepto_libre, antes, despues, queda: r.queda });
+                }
+                hecho = true;
+              }
+            }
+          }
+          if (!hecho) errores.push({ nombre: titulo, error: 'Esta línea no sale de un precio guardado (la calcula el motor o se escribió a mano): no hay nada que cambiar en la base.' });
+        } else errores.push({ nombre, error: 'Cambio desconocido.' });
+      } catch (e) { errores.push({ nombre, error: String((e as Error)?.message || e) }); }
+    }
+    if (modeloTocado && mod) {
+      const { error } = await sb.from('motor_modelos').update({ datos }).eq('id', mod.id);
+      if (error) return json({ error: 'No se pudo guardar el modelo fotovoltaico: ' + error.message, errores }, 500);
+    }
+    if (apuntes.length) { try { await sb.from('precios_cambios').insert(apuntes); } catch (_) { /* sin historial el cambio vale igual */ } }
+    return json({ ok: true, hechos, errores });
+  }
+
+  if (b.accion === 'precios_deshacer') {
+    const id = String(b.id || '');
+    if (!/^[0-9a-f-]{36}$/i.test(id)) return json({ error: 'Falta el cambio.' }, 400);
+    const { data: c } = await sb.from('precios_cambios').select('*').eq('id', id).maybeSingle();
+    if (!c) return json({ error: 'Ese cambio no está en el historial.' }, 404);
+    if (c.deshecho_en) return json({ error: 'Ese cambio ya se deshizo.' }, 409);
+    // deno-lint-ignore no-explicit-any
+    const antes = (c.antes || {}) as Record<string, any>;
+    if (c.origen === 'modelo_fv') {
+      const mod = await modeloFVVigente(sb);
+      if (!mod) return json({ error: 'No hay modelo fotovoltaico vigente.' }, 404);
+      const ahora = leerRutaFV(mod.datos, antes.ruta);
+      if (ahora === undefined) return json({ error: 'Ese precio ya no está en el modelo.' }, 409);
+      const r = ponerRutaFV(mod.datos, antes.ruta, antes.valor, { vacio: true });
+      if (r.error) return json({ error: r.error }, 400);
+      const { error } = await sb.from('motor_modelos').update({ datos: r.datos }).eq('id', mod.id);
+      if (error) return json({ error: 'No se pudo guardar el modelo: ' + error.message }, 500);
+    } else if (c.origen === 'producto' || c.origen === 'concepto') {
+      const campos = Object.assign({}, antes); delete campos.id;
+      if (!antes.id || !Object.keys(campos).length) return json({ error: 'Ese cambio no guarda lo que había: no se puede deshacer.' }, 409);
+      const { error } = await sb.from(c.origen === 'producto' ? 'productos' : 'partidas_items').update(campos).eq('id', antes.id);
+      if (error) return json({ error: 'No se pudo deshacer: ' + error.message }, 500);
+    } else return json({ error: 'Ese cambio no se puede deshacer.' }, 400);
+    await sb.from('precios_cambios').update({ deshecho_en: new Date().toISOString(), deshecho_por: quien.nombre }).eq('id', id);
+    return json({ ok: true });
+  }
+  return json({ error: 'Acción de precios desconocida.' }, 400);
+}
+
 const COLS_CATALOGAR = 'id, descripcion, detalle_tecnico, unidad, precio_tarifa, precio_venta, precio_coste, iva, origen_inputs';
 
 Deno.serve(async (req) => {
@@ -170,6 +391,12 @@ Deno.serve(async (req) => {
   // deno-lint-ignore no-explicit-any
   let b: any;
   try { b = await req.json(); } catch { return json({ error: 'Petición mal formada.' }, 400); }
+
+  // --- precios cambiados a mano (Enzo, 10-11-2026) -------------------------------
+  if (typeof b.accion === 'string' && b.accion.startsWith('precios_')) {
+    if (!['presupuestos', 'admin'].includes(String(yo.rol))) return json({ error: 'Cambiar precios es de presupuestos y Administración.' }, 403);
+    return await accionPrecios(sb, yo, b);
+  }
 
   // --- un producto nuevo en el catálogo propio (Enzo, 27-10-2026) ---------------
   // Lo que no está en ninguna tarifa se crea aquí al añadirlo a un presupuesto y
@@ -513,6 +740,7 @@ Deno.serve(async (req) => {
         const desglose = (a.fv2.desglose as unknown[]).slice(0, 300).filter((x) => x && typeof x === 'object').map((x) => { const d = x as Record<string, unknown>; return {
           bloque: txt(d.bloque, 60) || 'OTROS', nombre: txt(d.nombre, 200), cantidad: numOk(d.cantidad) ?? 0, unidad: txt(d.unidad, 20) || 'ud',
           coste_ud: numOk(d.coste_ud) ?? 0, coste: numOk(d.coste) ?? 0, aviso: txt(d.aviso, 200) || null, texto: txt(d.texto, 300), manual: d.manual === true,
+          ref: d.ref && typeof d.ref === 'object' && !Array.isArray(d.ref) ? d.ref : null,
         }; });
         const precioAnt = (oi.precio && typeof oi.precio === 'object' ? oi.precio : {}) as Record<string, unknown>;
         const precioNuevo = (a.fv2.precio && typeof a.fv2.precio === 'object' ? a.fv2.precio : {}) as Record<string, unknown>;
