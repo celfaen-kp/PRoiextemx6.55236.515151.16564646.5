@@ -30,7 +30,7 @@ var partidas = {
  ['COLECTOR_3', 'Colector 3', 'Colector para 3 grupos de bombeo', 525],
  ['A103', 'Sustitución', 'A103: Sustitución de caldera por bomba de calor', 850],
  ['ACS_200', 'ACS 200', 'UniSTOR plus VIH RW 200/2 B', 2035],
- ['ACS_250', 'ACS 250', 'UniSTOR plus VIH RW 250/2 B', 2265],
+ ['ACS_250', 'ACS 250', 'UniSTOR plus VIH RW 250/2 B', 2410],
  ['APOYO', 'Apoyo', 'Resistencia eléctrica de apoyo', 250],
  ['A111', 'Limpieza', 'A111: Limpieza del circuito existente', 500]].forEach(function (p) {
   var o = partida(p[0], p[1], p[2], p[3]); partidas[p[0]] = o[p[0]];
@@ -49,11 +49,13 @@ var config = {
   partidas: partidas,
   reglas: [
     { id: 'kit', tipo: 'condicional', partida_id: 'KIT_BASE', formula_cantidad: '1', seccion: 'Instalación', prioridad: 100 },
-    { id: 'm4', tipo: 'seleccion', variable: 'potencia_diseno_kw', minimo: 0.01, maximo: 5, producto_ref: '0020306791', formula_cantidad: '1', seccion: 'Equipos', prioridad: 50 },
-    { id: 'm6', tipo: 'seleccion', variable: 'potencia_diseno_kw', minimo: 5.01, maximo: 7, producto_ref: '0020306793', formula_cantidad: '1', seccion: 'Equipos', prioridad: 50 },
-    { id: 'm8', tipo: 'seleccion', variable: 'potencia_diseno_kw', minimo: 7.01, maximo: 10, producto_ref: '0020306795', formula_cantidad: '1', seccion: 'Equipos', prioridad: 50 },
-    { id: 'm12', tipo: 'seleccion', variable: 'potencia_diseno_kw', minimo: 10.01, maximo: 13.5, producto_ref: '0020306797', formula_cantidad: '1', seccion: 'Equipos', prioridad: 50 },
-    { id: 'm15', tipo: 'seleccion', variable: 'potencia_diseno_kw', minimo: 13.51, maximo: 99, producto_ref: '0020306801', formula_cantidad: '1', seccion: 'Equipos', prioridad: 50 },
+    // Catálogo Vaillant 2026 (sql/etapa105, 10-11-2026): la aroTHERM plus de 4, 6, 8, 12 y
+    // 15 kW ya no está; la sustituye la aroTHERM plus ES de 5, 8, 12 y 15 kW (set básico,
+    // sensoCOMFORT inalámbrico, 230 V). Lo que antes iba a la de 6 kW va ahora a la de 8.
+    { id: 'm5', tipo: 'seleccion', variable: 'potencia_diseno_kw', minimo: 0.01, maximo: 5, producto_ref: '8000046550', formula_cantidad: '1', seccion: 'Equipos', prioridad: 50 },
+    { id: 'm8', tipo: 'seleccion', variable: 'potencia_diseno_kw', minimo: 5.01, maximo: 10, producto_ref: '8000046555', formula_cantidad: '1', seccion: 'Equipos', prioridad: 50 },
+    { id: 'm12', tipo: 'seleccion', variable: 'potencia_diseno_kw', minimo: 10.01, maximo: 13.5, producto_ref: '8000046561', formula_cantidad: '1', seccion: 'Equipos', prioridad: 50 },
+    { id: 'm15', tipo: 'seleccion', variable: 'potencia_diseno_kw', minimo: 13.51, maximo: 99, producto_ref: '8000046571', formula_cantidad: '1', seccion: 'Equipos', prioridad: 50 },
     { id: 'gb', tipo: 'cantidad', partida_id: 'A106', formula_cantidad: 'circuitos', seccion: 'Instalación', prioridad: 40 },
     { id: 'c2', tipo: 'condicional', partida_id: 'COLECTOR_2', condicion: { circuitos: 2 }, formula_cantidad: '1', seccion: 'Instalación', prioridad: 40 },
     { id: 'c3', tipo: 'condicional', partida_id: 'COLECTOR_3', condicion: { circuitos: [3, 4, 5, 6] }, formula_cantidad: '1', seccion: 'Instalación', prioridad: 40 },
@@ -64,11 +66,10 @@ var config = {
     { id: 'lim', tipo: 'condicional', partida_id: 'A111', condicion: { limpieza_circuito: true }, formula_cantidad: '1', seccion: 'Instalación', prioridad: 20 },
   ],
   productos: {
-    '0020306791': { referencia: '0020306791', nombre: 'aroTHERM plus 4 básico', familia: 'bomba_calor', unidad: 'ud', precio_tarifa: 8755, iva: 21 },
-    '0020306793': { referencia: '0020306793', nombre: 'aroTHERM plus 6 básico', familia: 'bomba_calor', unidad: 'ud', precio_tarifa: 9385, iva: 21 },
-    '0020306795': { referencia: '0020306795', nombre: 'aroTHERM plus 8 básico', familia: 'bomba_calor', unidad: 'ud', precio_tarifa: 9710, iva: 21 },
-    '0020306797': { referencia: '0020306797', nombre: 'aroTHERM plus 12 básico', familia: 'bomba_calor', unidad: 'ud', precio_tarifa: 12780, iva: 21 },
-    '0020306801': { referencia: '0020306801', nombre: 'aroTHERM plus 15 básico', familia: 'bomba_calor', unidad: 'ud', precio_tarifa: 13395, iva: 21 },
+    '8000046550': { referencia: '8000046550', nombre: 'Set básico plus ES 5 sensoCOMFORT inalámbrico', familia: 'bomba_calor', unidad: 'ud', precio_tarifa: 9565, iva: 21 },
+    '8000046555': { referencia: '8000046555', nombre: 'Set básico plus ES 8 sensoCOMFORT inalámbrico', familia: 'bomba_calor', unidad: 'ud', precio_tarifa: 10235, iva: 21 },
+    '8000046561': { referencia: '8000046561', nombre: 'Set básico plus ES 12 230V sensoCOMFORT inalámbrico', familia: 'bomba_calor', unidad: 'ud', precio_tarifa: 13470, iva: 21 },
+    '8000046571': { referencia: '8000046571', nombre: 'Set básico plus ES 15 230V sensoCOMFORT inalámbrico', familia: 'bomba_calor', unidad: 'ud', precio_tarifa: 14115, iva: 21 },
   },
   manoObra: [], dtoLinea: [],
 };
@@ -79,12 +80,12 @@ var eur2 = function (n) { return n.toFixed(2); };
 
 titulo('8 kW, un circuito, sin nada más');
 var r = calcular('aerotermia', { potencia_kw: 8, emisores_previstos: ['suelo_radiante'], sistema_actual: 'ninguno' }, config);
-igual('la máquina de 8 kW', r.lineas.filter(function (l) { return l.producto_ref === '0020306795'; }).length, 1);
+igual('la máquina de 8 kW', r.lineas.filter(function (l) { return l.producto_ref === '8000046555'; }).length, 1);
 comprueba('el kit base entero', tiene(r, 'A100') && tiene(r, 'A102') && tiene(r, 'Gestiones administrativas'));
 igual('un grupo de bombeo', r.lineas.filter(function (l) { return l.descripcion.indexOf('A106') > -1; })[0].cantidad, 1);
 comprueba('sin colector', !tiene(r, 'Colector'));
 comprueba('sin sustitución de caldera', !tiene(r, 'A103'));
-igual('total', eur2(total(r)), eur2(9710 + 7365 + 825));
+igual('total', eur2(total(r)), eur2(10235 + 7365 + 825));
 
 titulo('8 kW sustituyendo caldera de gas, con ACS de 200 l');
 r = calcular('aerotermia', { potencia_kw: 8, emisores_previstos: ['radiadores_bt'],
@@ -92,23 +93,23 @@ r = calcular('aerotermia', { potencia_kw: 8, emisores_previstos: ['radiadores_bt
 comprueba('sale el A103', tiene(r, 'A103'));
 comprueba('sale el acumulador de 200', tiene(r, 'VIH RW 200/2'));
 comprueba('y no el de 250', !tiene(r, 'VIH RW 250/2'));
-igual('total', eur2(total(r)), eur2(9710 + 7365 + 825 + 850 + 2035));
+igual('total', eur2(total(r)), eur2(10235 + 7365 + 825 + 850 + 2035));
 
 titulo('12 kW, tres circuitos, con apoyo y limpieza');
 r = calcular('aerotermia', { potencia_kw: 12, sistema_actual: 'caldera_gasoleo',
   emisores_previstos: ['suelo_radiante', 'fancoils', 'radiadores_bt'],
   apoyo_electrico: true, limpieza_circuito: true, acs_litros_manual: 250 }, config);
-igual('la máquina de 12 kW', r.lineas.filter(function (l) { return l.producto_ref === '0020306797'; }).length, 1);
+igual('la máquina de 12 kW', r.lineas.filter(function (l) { return l.producto_ref === '8000046561'; }).length, 1);
 igual('tres grupos de bombeo', r.lineas.filter(function (l) { return l.descripcion.indexOf('A106') > -1; })[0].cantidad, 3);
 comprueba('colector de 3', tiene(r, 'Colector para 3'));
 comprueba('resistencia de apoyo', tiene(r, 'Resistencia eléctrica'));
 comprueba('limpieza del circuito', tiene(r, 'A111'));
 comprueba('acumulador de 250', tiene(r, 'VIH RW 250/2'));
-igual('total', eur2(total(r)), eur2(12780 + 7365 + 825 * 3 + 525 + 850 + 2265 + 250 + 500));
+igual('total', eur2(total(r)), eur2(13470 + 7365 + 825 * 3 + 525 + 850 + 2410 + 250 + 500));
 
 titulo('los tramos de potencia');
-[[4, '0020306791'], [5, '0020306791'], [6, '0020306793'], [8, '0020306795'],
- [11, '0020306797'], [14, '0020306801'], [20, '0020306801']].forEach(function (c) {
+[[4, '8000046550'], [5, '8000046550'], [6, '8000046555'], [8, '8000046555'],
+ [11, '8000046561'], [14, '8000046571'], [20, '8000046571']].forEach(function (c) {
   var x = calcular('aerotermia', { potencia_kw: c[0], emisores_previstos: ['suelo_radiante'], sistema_actual: 'ninguno' }, config);
   var maquinas = x.lineas.filter(function (l) { return l.producto_ref; });
   igual(c[0] + ' kW → una sola máquina', maquinas.length, 1);
@@ -119,7 +120,7 @@ titulo('la ficha de una visita, con su carga térmica');
 r = calcular('aerotermia', { carga_termica_kw: 6.4, potencia_kw: 0,
   emisores_previstos: ['suelo_radiante'], sistema_actual: 'caldera_gas' }, config);
 igual('manda la carga térmica de la ficha', r.variables.potencia_diseno_kw, 6.4);
-igual('y elige la de 6 kW', r.lineas.filter(function (l) { return l.producto_ref; })[0].producto_ref, '0020306793');
+igual('y elige la de 8 kW (en 2026 ya no hay de 6)', r.lineas.filter(function (l) { return l.producto_ref; })[0].producto_ref, '8000046555');
 
 titulo('una visita no echa de menos los datos del presupuesto suelto');
 // Como llega de verdad: la ficha trae carga térmica y acumulador, y nada de

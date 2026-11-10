@@ -54,7 +54,8 @@ CARPETA = os.environ.get('SYSEFEN_TARIFAS') or os.path.expanduser(
 
 # Fichero -> nombre de la fila en `tarifas` (la semilla de la etapa 38)
 TARIFAS = {
-    'vaillant-2025': 'Vaillant 2025',
+    'vaillant-2025': 'Vaillant 2025',   # cerrada el 31-12-2025 (sql/etapa105)
+    'vaillant-2026': 'Vaillant 2026',
     'midea-2026': 'Midea 2026',
     'saunier-2026': 'Saunier Duval 2026',
 }
