@@ -12,6 +12,8 @@ var modelo = JSON.parse(read(RUTA_TARIFAS + '/modelo_fv.json'));
 // Los 23 casos del Excel de Ramón son con toda la mano de obra al margen: los
 // tramos €/W de Enzo (26-10-2026) se prueban aparte, abajo.
 var tramosMO = modelo.parametros.mo_venta_tramos; delete modelo.parametros.mo_venta_tramos;
+// Igual con la jornada a 880 € (Enzo, 10-11-2026): se prueba aparte, al final.
+var ventaJornada = modelo.parametros.venta_jornada; delete modelo.parametros.venta_jornada;
 var casos = JSON.parse(read(RUTA_TARIFAS + '/casos_prueba_fv.json').replace(/^﻿/, ''));
 var cerca = function (a, b, tol) { return Math.abs(Number(a) - Number(b)) <= tol; };
 
@@ -183,4 +185,24 @@ igual('40 paneles con batería: el Verto 20.0 Plus', rVp.mod_inv, 'Fronius Verto
 var r10p = calcularFV(Object.assign({}, e10, { sumi: 'Trifásico' }), modeloCat, { hibrido: true });
 igual('10 paneles trifásico con batería: Symo 12 Plus (el único Plus tri de la lista)', r10p.mod_inv, 'Fronius Symo GEN24 SC 12.0 Plus');
 igual('sin batería sigue el SC de Ramón', calcularFV(Object.assign({}, e10, { sumi: 'Trifásico' }), modeloCat).mod_inv, 'Fronius Symo GEN24 SC 5.0');
+titulo('mano de obra a 880 € la jornada (Enzo, 10-11-2026)');
+var modelo880 = JSON.parse(JSON.stringify(modeloMO)); modelo880.parametros.venta_jornada = ventaJornada || { valor: 880 };
+comprueba('el modelo del Drive trae venta_jornada = 880', !!ventaJornada && ventaJornada.valor === 880);
+var j10 = calcularFV(e10, modelo880);
+igual('10 paneles: 2 jornadas × 880 = 1.760 € (antes 1.275 por €/W)', j10.mo_tabla.venta_mo, 1760);
+igual('manda sobre la tabla €/W', j10.mo_tabla.eur_w, null);
+igual('el resto del coste sigue al 50 %, redondeado a 10', j10.precio_objetivo, Math.ceil((rSin.coste_total - rSin.jornadas * rSin.jornada) / 0.5 / 10) * 10 + 1760);
+igual('el coste no cambia (nóminas)', j10.coste_total, rCon.coste_total);
+var j6 = calcularFV(Object.assign({}, e10, { paneles_forzado: 6 }), modelo880);
+igual('6 paneles: también 2 jornadas = 1.760 €', j6.jornadas + '/' + j6.mo_tabla.venta_mo, '2/1760');
+var j14 = calcularFV(Object.assign({}, e10, { paneles_forzado: 14 }), modelo880);
+igual('14 paneles: 3 jornadas = 2.640 €', j14.jornadas + '/' + j14.mo_tabla.venta_mo, '3/2640');
+var jBat = calcularFV(e10, modelo880, { jornadaBateria: true });
+igual('con batería: 3 jornadas, la de la batería también a 880', jBat.jornadas + '/' + jBat.mo_tabla.venta_mo + '/' + jBat.mo_tabla.jornada_bateria, '3/2640/880');
+var j40 = calcularFV(e40, modelo880);
+igual('40 paneles: 6 jornadas × 880 = 5.280 €, las extra a 880', j40.mo_tabla.venta_mo + '/' + j40.mo_tabla.venta_jornadas_extra, '5280/2640');
+comprueba('el aviso de jornadas extra dice 880 €', j40.avisos.some(function (a) { return a.indexOf('cobradas a 880 € cada una') > -1; }));
+var l880 = lineasPresupuesto(j10, modelo880, {});
+igual('la línea guarda jornadas y precio de la jornada', l880[0].origen_inputs.precio.mo_tabla.jornadas + '/' + l880[0].origen_inputs.precio.mo_tabla.venta_jornada, '2/880');
+
 resultado();

@@ -79,7 +79,8 @@ export const BLOQUES_MATERIAL = ['MÓDULOS FOTOVOLTAICOS', 'INVERSOR', 'MEDICIÓ
  *   · inversorFuera: true → el inversor y el medidor no se cuentan aquí (los
  *     pone el motor antiguo: Fronius Plus con batería, o nada con Tesla).
  *   · jornadaBateria: true → un día más de montaje (inversor híbrido y batería),
- *     que se cobra a parametros.venta_jornada_bateria (450 €) aparte.
+ *     que se cobra a parametros.venta_jornada (880 €) como las demás; sin ese
+ *     parámetro, a parametros.venta_jornada_bateria (450 €) aparte.
  */
 export function calcularFV(entrada, modelo, opciones) {
   const op = opciones || {};
@@ -270,13 +271,22 @@ export function calcularFV(entrada, modelo, opciones) {
   const coste_mo = jornadas * jornada;
   const tramosMO = Array.isArray(P.mo_venta_tramos) ? P.mo_venta_tramos : null;
   const tramoMO = tramosMO ? (tramosMO.find((t) => t.hasta_kwp == null || kwp <= num(t.hasta_kwp)) || tramosMO[tramosMO.length - 1]) : null;
-  const venta_jornada_bat = jornadaBateria ? num(P.venta_jornada_bateria) || 450 : 0;
-  // Las jornadas extra de más de 22 paneles se cobran como la de la batería:
-  // 450 € el día de las dos personas (P.venta_jornada_extra si el modelo lo trae).
-  const venta_jornadas_extra = jornadas_extra * (num(P.venta_jornada_extra) || num(P.venta_jornada_bateria) || 450);
-  const venta_mo = tramoMO ? rnd(kwp * 1000 * num(tramoMO.eur_w) + venta_jornada_bat + venta_jornadas_extra, 2) : 0;
+  // Mano de obra vendida por jornada (Enzo, 10-11-2026): si el modelo trae
+  // parametros.venta_jornada (880 € la pareja y día), TODAS las jornadas se
+  // cobran a ese precio (las de montaje, la de la batería y las extra de más
+  // de 22 paneles) y manda sobre la tabla €/W, que daba 918 € por dos días en
+  // 6 paneles. El coste sigue siendo el real de nóminas.
+  const venta_jornada = num(P.venta_jornada);
+  const porJornada = venta_jornada > 0;
+  const venta_jornada_bat = jornadaBateria ? (porJornada ? venta_jornada : num(P.venta_jornada_bateria) || 450) : 0;
+  // Sin venta_jornada, las jornadas extra de más de 22 paneles se cobran como la
+  // de la batería: 450 € (P.venta_jornada_extra si el modelo lo trae).
+  const venta_jornadas_extra = jornadas_extra * (porJornada ? venta_jornada : (num(P.venta_jornada_extra) || num(P.venta_jornada_bateria) || 450));
+  const moVendida = porJornada || !!tramoMO;
+  const venta_mo = porJornada ? rnd(jornadas * venta_jornada, 2)
+    : (tramoMO ? rnd(kwp * 1000 * num(tramoMO.eur_w) + venta_jornada_bat + venta_jornadas_extra, 2) : 0);
   const redondeaArriba = (n) => Math.ceil(Number((n / P.redondeo).toFixed(9))) * P.redondeo;
-  const precio_obj = bloqueo ? 0 : (tramoMO ? redondeaArriba((coste_total - coste_mo) / (1 - P.margen_obj)) + venta_mo : redondeaArriba(coste_total / (1 - P.margen_obj)));
+  const precio_obj = bloqueo ? 0 : (moVendida ? redondeaArriba((coste_total - coste_mo) / (1 - P.margen_obj)) + venta_mo : redondeaArriba(coste_total / (1 - P.margen_obj)));
   const horas_elev = Math.max(num(e.horas_elev), plana * P.horas_elev_plana);   // en cubierta plana, siempre elevador
   const elev = horas_elev * P.pvp_elev;
   const pvp_antes = precio_obj + elev;
@@ -288,7 +298,7 @@ export function calcularFV(entrada, modelo, opciones) {
 
   let avisos = [];
   if (bloqueo) avisos.push('CASO A MEDIDA: el presupuestador no da precio. Pasar a Ramón');
-  if (n_pan > P.max_pan) avisos.push('Más de ' + P.max_pan + ' paneles: ' + jornadas_extra + (jornadas_extra === 1 ? ' jornada más' : ' jornadas más') + ' de las dos personas (una por cada ' + pan_jornada_extra + ' paneles extra' + (tramoMO ? ', cobradas a ' + g(venta_jornadas_extra / jornadas_extra) + ' € cada una' : '') + '). Revisar estructura y medios de elevación');
+  if (n_pan > P.max_pan) avisos.push('Más de ' + P.max_pan + ' paneles: ' + jornadas_extra + (jornadas_extra === 1 ? ' jornada más' : ' jornadas más') + ' de las dos personas (una por cada ' + pan_jornada_extra + ' paneles extra' + (moVendida ? ', cobradas a ' + g(venta_jornadas_extra / jornadas_extra) + ' € cada una' : '') + '). Revisar estructura y medios de elevación');
   if (n_inv > 1) avisos.push(n_inv + ' inversores ' + mod_inv + ' en paralelo (' + g(kw_inv) + ' kW): revisar con Ramón el reparto de strings y el cuadro AC');
   if (fv && e.inv_modelo && esForzado(inv) && inv.kw < kwp / P.ratio) avisos.push('Inversor elegido a mano (' + inv.modelo + ', ' + g(inv.kw) + ' kW) por debajo del ratio ' + g(P.ratio) + ' para ' + fixed(kwp, 2) + ' kWp: revisar.');
   if (fv && e.inv_modelo && !esForzado(inv)) avisos.push('El inversor «' + e.inv_modelo + '» no está en el modelo para este sistema: se usa el automático.');
@@ -303,7 +313,7 @@ export function calcularFV(entrada, modelo, opciones) {
     entrada: e, factura, consumo, n_pan, kwp, prod, n_str, kw_inv, mod_inv, n_inv, txt_inv, coste_inv, cuadro_ac, jornadas, jornadas_extra, jornada, bloqueo,
     partidas, coste_total: rnd(coste_total, 2), precio_objetivo: precio_obj, elevador: elev, horas_elev, pvp_antes, dto_eur,
     pvp_final: rnd(pvp_final, 2), iva_eur, pvp_iva: rnd(pvp_iva, 2), margen_real, avisos,
-    mo_tabla: tramoMO ? { eur_w: num(tramoMO.eur_w), venta_mo, coste_mo: rnd(coste_mo, 2), jornada_bateria: jornadaBateria ? venta_jornada_bat : 0, jornadas_extra, venta_jornadas_extra } : null,
+    mo_tabla: moVendida ? { eur_w: porJornada ? null : num(tramoMO.eur_w), venta_jornada: porJornada ? venta_jornada : null, jornadas, venta_mo, coste_mo: rnd(coste_mo, 2), jornada_bateria: jornadaBateria ? venta_jornada_bat : 0, jornadas_extra, venta_jornadas_extra } : null,
     pvp_elev: P.pvp_elev,
     cable_cc: cableCC,
   };

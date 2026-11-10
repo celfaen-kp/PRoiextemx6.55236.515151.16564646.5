@@ -517,7 +517,11 @@ Deno.serve(async (req) => {
         const precioAnt = (oi.precio && typeof oi.precio === 'object' ? oi.precio : {}) as Record<string, unknown>;
         const precioNuevo = (a.fv2.precio && typeof a.fv2.precio === 'object' ? a.fv2.precio : {}) as Record<string, unknown>;
         l.origen_inputs = Object.assign({}, oi, { desglose, desglose_editado: true,
-          precio: Object.assign({}, precioAnt, { coste_total: numOk(precioNuevo.coste_total) ?? precioAnt.coste_total, precio_objetivo: numOk(precioNuevo.precio_objetivo) ?? precioAnt.precio_objetivo, margen_real_sin_dto: numOk(precioNuevo.margen_real_sin_dto) ?? precioAnt.margen_real_sin_dto }),
+          precio: Object.assign({}, precioAnt, { coste_total: numOk(precioNuevo.coste_total) ?? precioAnt.coste_total, precio_objetivo: numOk(precioNuevo.precio_objetivo) ?? precioAnt.precio_objetivo, margen_real_sin_dto: numOk(precioNuevo.margen_real_sin_dto) ?? precioAnt.margen_real_sin_dto },
+            // Mano de obra vendida por jornada (10-11-2026): si se cambian las jornadas del desglose, la venta las sigue.
+            (() => { const ant = precioAnt.mo_tabla as Record<string, unknown> | null, nue = precioNuevo.mo_tabla as Record<string, unknown> | null;
+              if (!ant || typeof ant !== 'object' || !(Number(ant.venta_jornada) > 0) || !nue || typeof nue !== 'object') return {};
+              return { mo_tabla: Object.assign({}, ant, { jornadas: numOk(nue.jornadas) ?? ant.jornadas, venta_mo: numOk(nue.venta_mo) ?? ant.venta_mo, coste_mo: numOk(nue.coste_mo) ?? ant.coste_mo }) }; })()),
           bloques: a.fv2.bloques && typeof a.fv2.bloques === 'object' ? a.fv2.bloques : oi.bloques });
       }
     });
