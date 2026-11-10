@@ -186,6 +186,26 @@ export function calcularFV(entrada, modelo, opciones) {
   const cc = seccionCableCC(n_pan, n_str, dc + 5, P, PR);
   const cableCC = PR.cable_solar_6mm_m ? Object.assign({}, cc) : cc;
 
+  // Documentación y legalización en una sola partida (Enzo, 10-11-2026): si el
+  // modelo trae parametros.venta_documentacion (400 €), la legalización con su
+  // tasa, la documentación final y el permiso de obra van juntos en
+  // P.horas_documentacion (5) horas de Xavi y se venden a ese precio fijo
+  // (80 €/h), fuera del margen objetivo. Sin el parámetro, las cuatro partidas
+  // de Ramón (2,5 h + tasa) al margen.
+  const venta_doc_P = num(P.venta_documentacion);
+  const docResumida = venta_doc_P > 0;
+  const horas_doc = docResumida ? (num(P.horas_documentacion) || 5) : 0;
+  const PARTIDA_DOC = 'Documentación y legalización (Xavi ' + g(horas_doc) + ' h)';
+  const TRAMITES_BASE = docResumida ? [
+    ['TRÁMITES', PARTIDA_DOC, 'h', horas_doc, eur_h,
+      'Documentación y legalización: certificado de baja tensión, registro de autoconsumo, comunicación a la distribuidora, comunicación previa / permiso de obra (tasas municipales no incluidas), documentación final, esquema y manual de uso', ''],
+  ] : [
+    ['TRÁMITES', 'Legalización (Xavi 1 h)', 'h', 1, eur_h, 'Legalización: certificado de baja tensión, registro de autoconsumo y comunicación a la distribuidora', ''],
+    ['TRÁMITES', 'Tasa de legalización', 'ud', 1, PR.tasa_legalizacion.coste, '', ''],
+    ['TRÁMITES', 'Documentación final (Xavi 1 h)', 'h', 1, eur_h, 'Documentación final, esquema y manual de uso', ''],
+    ['TRÁMITES', 'Permiso de obra (Xavi 0,5 h)', 'h', 0.5, eur_h, 'Comunicación previa / permiso de obra (tasas municipales no incluidas)', ''],
+  ];
+
   // ---------- partidas: [bloque, partida, ud, cantidad, coste_ud, texto para el cliente, aviso]
   const L = [
     ['MÓDULOS FOTOVOLTAICOS', 'Panel Trina Vertex S+ 510 Wp', 'ud', n_pan, P.coste_panel, n_pan + ' módulos Trina Vertex S+ 510 Wp (' + fixed(kwp, 2) + ' kWp)', ''],
@@ -241,10 +261,7 @@ export function calcularFV(entrada, modelo, opciones) {
     ['MATERIAL ELÉCTRICO', 'Terminales de cobre', 'ud', 10, PR.terminal_cobre.coste, '', ''],
     ['MANO DE OBRA', 'Montaje (oficial + peón)', 'jornada', jornadas, jornada,
       'Montaje completo por personal propio: estructura, módulos, inversor, cuadros, cableado, pruebas y puesta en marcha', ''],
-    ['TRÁMITES', 'Legalización (Xavi 1 h)', 'h', 1, eur_h, 'Legalización: certificado de baja tensión, registro de autoconsumo y comunicación a la distribuidora', ''],
-    ['TRÁMITES', 'Tasa de legalización', 'ud', 1, PR.tasa_legalizacion.coste, '', ''],
-    ['TRÁMITES', 'Documentación final (Xavi 1 h)', 'h', 1, eur_h, 'Documentación final, esquema y manual de uso', ''],
-    ['TRÁMITES', 'Permiso de obra (Xavi 0,5 h)', 'h', 0.5, eur_h, 'Comunicación previa / permiso de obra (tasas municipales no incluidas)', ''],
+    ...TRAMITES_BASE,
     ['TRÁMITES', 'Gestión de subvención (Xavi 1 h)', 'h', subv ? 1 : 0, eur_h,
       subv ? 'Gestión y presentación de la subvención (sin garantizar su concesión ni importe)' : '', ''],
     ['TRÁMITES', 'Certificado energético', 'h', cee ? (1 + num(e.cee_desplaz_h)) : 0, eur_h, cee ? 'Certificado de eficiencia energética' : '', ''],
@@ -286,7 +303,13 @@ export function calcularFV(entrada, modelo, opciones) {
   const venta_mo = porJornada ? rnd(jornadas * venta_jornada, 2)
     : (tramoMO ? rnd(kwp * 1000 * num(tramoMO.eur_w) + venta_jornada_bat + venta_jornadas_extra, 2) : 0);
   const redondeaArriba = (n) => Math.ceil(Number((n / P.redondeo).toFixed(9))) * P.redondeo;
-  const precio_obj = bloqueo ? 0 : (moVendida ? redondeaArriba((coste_total - coste_mo) / (1 - P.margen_obj)) + venta_mo : redondeaArriba(coste_total / (1 - P.margen_obj)));
+  // Lo que se vende a precio fijo (mano de obra y documentación) sale del coste
+  // que va al margen objetivo y se suma después.
+  const coste_doc = docResumida ? horas_doc * eur_h : 0;
+  const venta_doc = docResumida ? venta_doc_P : 0;
+  const coste_aparte = (moVendida ? coste_mo : 0) + coste_doc;
+  const venta_aparte = (moVendida ? venta_mo : 0) + venta_doc;
+  const precio_obj = bloqueo ? 0 : redondeaArriba((coste_total - coste_aparte) / (1 - P.margen_obj)) + venta_aparte;
   const horas_elev = Math.max(num(e.horas_elev), plana * P.horas_elev_plana);   // en cubierta plana, siempre elevador
   const elev = horas_elev * P.pvp_elev;
   const pvp_antes = precio_obj + elev;
@@ -314,6 +337,7 @@ export function calcularFV(entrada, modelo, opciones) {
     partidas, coste_total: rnd(coste_total, 2), precio_objetivo: precio_obj, elevador: elev, horas_elev, pvp_antes, dto_eur,
     pvp_final: rnd(pvp_final, 2), iva_eur, pvp_iva: rnd(pvp_iva, 2), margen_real, avisos,
     mo_tabla: moVendida ? { eur_w: porJornada ? null : num(tramoMO.eur_w), venta_jornada: porJornada ? venta_jornada : null, jornadas, venta_mo, coste_mo: rnd(coste_mo, 2), jornada_bateria: jornadaBateria ? venta_jornada_bat : 0, jornadas_extra, venta_jornadas_extra } : null,
+    doc_tabla: docResumida ? { partida: PARTIDA_DOC, horas: horas_doc, venta_h: rnd(venta_doc / horas_doc, 2), venta: venta_doc, coste: rnd(coste_doc, 2) } : null,
     pvp_elev: P.pvp_elev,
     cable_cc: cableCC,
   };
@@ -561,7 +585,7 @@ export function lineasPresupuesto(r, modelo, extra) {
         cuadro_ac: r.cuadro_ac ? r.cuadro_ac.descripcion : null, jornadas: r.jornadas,
         cable_cc: r.cable_cc ? { seccion: r.cable_cc.seccion, calculo: r.cable_cc.calculo, tabla: r.cable_cc.tabla } : null },
       desglose,
-      precio: { coste_total: r.coste_total, precio_objetivo: r.precio_objetivo, margen_objetivo: (modelo.parametros.margen_obj || {}).valor, mo_tabla: r.mo_tabla || null,
+      precio: { coste_total: r.coste_total, precio_objetivo: r.precio_objetivo, margen_objetivo: (modelo.parametros.margen_obj || {}).valor, mo_tabla: r.mo_tabla || null, doc_tabla: r.doc_tabla || null,
         redondeo: (modelo.parametros.redondeo || {}).valor || 10, pct_peq: (modelo.parametros.pct_peq || {}).valor,
         horas_elev: r.horas_elev, elevador: r.elevador, pvp_antes: r.pvp_antes, margen_real_sin_dto: Math.round(r.margen_real * 10000) / 10000 },
       pedido: pedidoMaterial(r, modelo),

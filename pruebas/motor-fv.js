@@ -14,6 +14,9 @@ var modelo = JSON.parse(read(RUTA_TARIFAS + '/modelo_fv.json'));
 var tramosMO = modelo.parametros.mo_venta_tramos; delete modelo.parametros.mo_venta_tramos;
 // Igual con la jornada a 880 € (Enzo, 10-11-2026): se prueba aparte, al final.
 var ventaJornada = modelo.parametros.venta_jornada; delete modelo.parametros.venta_jornada;
+// Y con la documentación y legalización en una partida a 400 € (Enzo, 10-11-2026).
+var ventaDoc = modelo.parametros.venta_documentacion; delete modelo.parametros.venta_documentacion;
+var horasDoc = modelo.parametros.horas_documentacion; delete modelo.parametros.horas_documentacion;
 var casos = JSON.parse(read(RUTA_TARIFAS + '/casos_prueba_fv.json').replace(/^﻿/, ''));
 var cerca = function (a, b, tol) { return Math.abs(Number(a) - Number(b)) <= tol; };
 
@@ -204,5 +207,34 @@ igual('40 paneles: 6 jornadas × 880 = 5.280 €, las extra a 880', j40.mo_tabla
 comprueba('el aviso de jornadas extra dice 880 €', j40.avisos.some(function (a) { return a.indexOf('cobradas a 880 € cada una') > -1; }));
 var l880 = lineasPresupuesto(j10, modelo880, {});
 igual('la línea guarda jornadas y precio de la jornada', l880[0].origen_inputs.precio.mo_tabla.jornadas + '/' + l880[0].origen_inputs.precio.mo_tabla.venta_jornada, '2/880');
+
+titulo('documentación y legalización en una partida a 400 € (Enzo, 10-11-2026)');
+comprueba('el modelo del Drive trae venta_documentacion = 400 y 5 h', !!ventaDoc && ventaDoc.valor === 400 && !!horasDoc && horasDoc.valor === 5);
+var modeloDoc = JSON.parse(JSON.stringify(modelo880)); modeloDoc.parametros.venta_documentacion = { valor: 400 }; modeloDoc.parametros.horas_documentacion = { valor: 5 };
+var d10 = calcularFV(e10, modeloDoc);
+var tram = function (r) { return r.partidas.filter(function (x) { return x.bloque === 'TRÁMITES' && x.cantidad > 0; }); };
+igual('antes eran cuatro partidas: 2,5 h + tasa = 140 € de coste', tram(j10).length + '/' + tram(j10).reduce(function (s, x) { return s + x.coste; }, 0), '4/140');
+igual('ahora una sola: 5 h de Xavi', tram(d10).map(function (x) { return x.partida + ' · ' + x.cantidad + ' ' + x.ud + ' × ' + x.coste_ud; }).join('|'), 'Documentación y legalización (Xavi 5 h) · 5 h × 40');
+igual('se vende a 400 € (80 €/h) con 200 € de coste', d10.doc_tabla.venta + '/' + d10.doc_tabla.venta_h + '/' + d10.doc_tabla.coste, '400/80/200');
+igual('el coste sube 60 € (200 − 140)', Math.round((d10.coste_total - j10.coste_total) * 100) / 100, 60);
+igual('precio: el resto al 50 % redondeado a 10, más mano de obra y los 400', d10.precio_objetivo, Math.ceil(Number(((d10.coste_total - d10.mo_tabla.coste_mo - 200) / 0.5 / 10).toFixed(9))) * 10 + d10.mo_tabla.venta_mo + 400);
+comprueba('el precio sube entre 110 y 130 € (280 → 400, con el redondeo a 10)', d10.precio_objetivo - j10.precio_objetivo >= 110 && d10.precio_objetivo - j10.precio_objetivo <= 130);
+var dSub = calcularFV(Object.assign({}, e10, { subv: 'Sí' }), modeloDoc);
+igual('la gestión de subvención sigue aparte, a coste y margen', tram(dSub).length + '/' + tram(dSub)[1].partida, '2/Gestión de subvención (Xavi 1 h)');
+var lDoc = lineasPresupuesto(d10, modeloDoc, {});
+igual('la línea guarda la venta de la documentación', lDoc[0].origen_inputs.precio.doc_tabla.venta + '/' + lDoc[0].origen_inputs.precio.doc_tabla.partida, '400/Documentación y legalización (Xavi 5 h)');
+var txtCli = lineasCliente(d10)['TRÁMITES Y GESTIONES'];
+comprueba('al cliente le sale un solo texto con legalización, permiso y documentación', txtCli.length === 1 && /certificado de baja tensión/.test(txtCli[0]) && /permiso de obra/.test(txtCli[0]) && /manual de uso/.test(txtCli[0]));
+// Sin mano de obra vendida aparte, la documentación sigue a 400 € fijos.
+var modeloSoloDoc = JSON.parse(JSON.stringify(modelo)); modeloSoloDoc.parametros.venta_documentacion = { valor: 400 };
+var dSolo = calcularFV(e10, modeloSoloDoc);
+igual('sin tabla de mano de obra: resto al 50 % + 400', dSolo.precio_objetivo, Math.ceil(Number(((dSolo.coste_total - 200) / 0.5 / 10).toFixed(9))) * 10 + 400);
+
+// En la app, al editar el desglose (fv2Repreciar) la venta sigue a las horas.
+var oiDoc = lDoc[0].origen_inputs, nomDoc = oiDoc.precio.doc_tabla.partida;
+igual('app: repreciar sin tocar da el mismo precio', fv2Repreciar(oiDoc, oiDoc.desglose).precio_objetivo, d10.precio_objetivo);
+igual('app: con 6 h se vende a 480 € (+80)', fv2Repreciar(oiDoc, oiDoc.desglose.map(function (x) { return x.nombre === nomDoc ? Object.assign({}, x, { cantidad: 6 }) : x; })).precio_objetivo, d10.precio_objetivo + 80);
+igual('app: quitada la partida, no se cobra (−400)', fv2Repreciar(oiDoc, oiDoc.desglose.filter(function (x) { return x.nombre !== nomDoc; })).precio_objetivo, d10.precio_objetivo - 400);
+comprueba('app: la ficha dice a cuánto se vende', /la documentación y legalización se vende a 400,00/.test(desgloseFV2HTML(oiDoc)));
 
 resultado();

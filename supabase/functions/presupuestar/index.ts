@@ -521,7 +521,11 @@ Deno.serve(async (req) => {
             // Mano de obra vendida por jornada (10-11-2026): si se cambian las jornadas del desglose, la venta las sigue.
             (() => { const ant = precioAnt.mo_tabla as Record<string, unknown> | null, nue = precioNuevo.mo_tabla as Record<string, unknown> | null;
               if (!ant || typeof ant !== 'object' || !(Number(ant.venta_jornada) > 0) || !nue || typeof nue !== 'object') return {};
-              return { mo_tabla: Object.assign({}, ant, { jornadas: numOk(nue.jornadas) ?? ant.jornadas, venta_mo: numOk(nue.venta_mo) ?? ant.venta_mo, coste_mo: numOk(nue.coste_mo) ?? ant.coste_mo }) }; })()),
+              return { mo_tabla: Object.assign({}, ant, { jornadas: numOk(nue.jornadas) ?? ant.jornadas, venta_mo: numOk(nue.venta_mo) ?? ant.venta_mo, coste_mo: numOk(nue.coste_mo) ?? ant.coste_mo }) }; })(),
+            // Documentación y legalización a precio fijo (10-11-2026): si se cambian sus horas o se quita, la venta las sigue.
+            (() => { const ant = precioAnt.doc_tabla as Record<string, unknown> | null, nue = precioNuevo.doc_tabla as Record<string, unknown> | null;
+              if (!ant || typeof ant !== 'object' || !nue || typeof nue !== 'object') return {};
+              return { doc_tabla: Object.assign({}, ant, { horas: numOk(nue.horas) ?? ant.horas, venta: numOk(nue.venta) ?? ant.venta, coste: numOk(nue.coste) ?? ant.coste }) }; })()),
           bloques: a.fv2.bloques && typeof a.fv2.bloques === 'object' ? a.fv2.bloques : oi.bloques });
       }
     });
