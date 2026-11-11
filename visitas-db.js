@@ -762,6 +762,36 @@ export async function coeficientesPrecios() {
     .in('clave', ['recargo_sobre_coste', 'costes_complementarios_pct']).eq('entrada', 'defecto')) || [];
 }
 
+/* --- facturas (sql/etapa106, 11-11-2026) ----------------------------------------
+ * El espejo de las facturas y abonos de Teamleader se lee directo; todo lo que
+ * escribe (borrador, contabilizar, cobro, abono, sincronizar) lo hace la función
+ * `teamleader-factura`, que es la que habla con Teamleader. */
+const COLS_FACTURA_LISTA = 'id, tipo, numero, estado, fecha, vence, pagada, cliente_id, cliente_nombre, presupuesto_id, entidad, base, iva, total, pendiente, tl_id, tl_factura_abonada_id, origen';
+export async function listarFacturas() {
+  const todas = [];
+  for (let desde = 0; desde < 20000; desde += 1000) {
+    const pag = unwrap(await supabase.from('facturas').select(COLS_FACTURA_LISTA)
+      .order('fecha', { ascending: false, nullsFirst: true }).order('numero', { ascending: false, nullsFirst: true }).range(desde, desde + 999)) || [];
+    todas.push(...pag);
+    if (pag.length < 1000) break;
+  }
+  return todas;
+}
+export async function verFactura(id) {
+  return unwrap(await supabase.from('facturas').select('*').eq('id', id).single());
+}
+export async function facturasDePresupuesto(presupuestoId) {
+  return unwrap(await supabase.from('facturas').select('*').eq('presupuesto_id', presupuestoId)
+    .order('fecha', { ascending: true, nullsFirst: false }).order('created_at', { ascending: true })) || [];
+}
+/** Los abonos que rectifican una factura (por su id de Teamleader). */
+export async function abonosDeFactura(tlId) {
+  return unwrap(await supabase.from('facturas').select('id, tipo, numero, fecha, base, total, tl_factura_abonada_id').eq('tipo', 'abono').eq('tl_factura_abonada_id', tlId)) || [];
+}
+export async function facturar(cuerpo) {
+  return invocar('teamleader-factura', cuerpo);
+}
+
 /* --- legalizaciones fotovoltaicas (sql/etapa55) ------------------------------- */
 const CAMPOS_LEG = 'id, obra_id, cliente_id, autor_id, estado, datos, drive_carpeta_id, drive_cert_id, drive_datos_id, enviada_a, enviada_at, created_at, updated_at';
 export async function listarLegalizaciones() {

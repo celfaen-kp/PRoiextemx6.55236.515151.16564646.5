@@ -512,7 +512,7 @@ import * as idiomas from './presu-idiomas.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '31.7'; // versión visible de la app (única fuente)
+const APP_VERSION = '31.8'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -4477,7 +4477,7 @@ A.instalar = async () => {
 /* ---------- render ---------- */
 function render() {
   // Ramón entra directo a sus visitas: ninguna pantalla de fichar, obras ni partes.
-  if (V.user && esPresupuestos() && !VISITA_VISTAS.includes(V.view) && !(!esColaborador() && ['legalizaciones', 'legalizacion', 'obras', 'obra', 'alta', 'costesPersonal', 'precios', 'planificacion'].includes(V.view))) {
+  if (V.user && esPresupuestos() && !VISITA_VISTAS.includes(V.view) && !(!esColaborador() && ['legalizaciones', 'legalizacion', 'obras', 'obra', 'alta', 'costesPersonal', 'precios', 'facturas', 'planificacion'].includes(V.view))) {
     V.view = 'agenda';
     if (!V.agenda.cargado) A.cargarAgenda();
   }
@@ -4507,6 +4507,7 @@ function render() {
   else if (v === 'legalizaciones' && esComercial()) html = vLegalizaciones();
   else if (v === 'costesPersonal' && veCostes()) html = vCostesPersonal();
   else if (v === 'precios' && puedePrecios()) html = vPrecios();
+  else if (v === 'facturas' && puedeFacturar()) html = vFacturas();
   else if (v === 'fasesPlantillas' && esAdmin()) html = vFasesPlantillas();
   else if (v === 'planificacion' && planifica()) html = vPlanificacion();
   else if (v === 'legalizacion' && esComercial()) html = vLegalizacion();
@@ -4525,7 +4526,7 @@ function render() {
   else if (v === 'clienteVer' && verAgenda()) html = vClienteVer();
   else if (v === 'citaNueva' && puedeCitar()) html = vCitaNueva();
   else if (v === 'citaVer' && verAgenda()) html = vCitaVer();
-  if (V.user && ['hoy', 'obras', 'obra', 'partes', 'horas', 'imputar', 'empleados', 'ajustes', 'presupuestos', 'presupuestoVer', 'visitas', 'visita', 'agenda', 'clientes', 'clienteVer', 'revisarImp', 'errores', 'legalizaciones', 'legalizacion', 'costesPersonal', 'precios', 'planificacion', 'fasesPlantillas'].includes(v)) html += nav(v);
+  if (V.user && ['hoy', 'obras', 'obra', 'partes', 'horas', 'imputar', 'empleados', 'ajustes', 'presupuestos', 'presupuestoVer', 'visitas', 'visita', 'agenda', 'clientes', 'clienteVer', 'revisarImp', 'errores', 'legalizaciones', 'legalizacion', 'costesPersonal', 'precios', 'facturas', 'planificacion', 'fasesPlantillas'].includes(v)) html += nav(v);
   if (!navigator.onLine && V.user) html = '<div class="offline">Sin conexión — todo se guarda en el móvil</div>' + html;
   // Red de seguridad: si un sheet revienta al pintarse (p. ej. depende de
   // datos que cambiaron justo antes, como el usuario tras salir), que se
@@ -6277,6 +6278,11 @@ function vAjustes() {
     ${veCostes() ? `<div class="card row" data-a="abrirCostes" style="margin-top:14px;cursor:pointer">
       <div class="grow"><div style="font:600 15px var(--sans)">Costes de personal</div>
       <div class="sub" style="font-size:12px;margin-top:4px">Lo que cuesta la hora de cada persona. Con ello cada obra enseña su coste real y su margen.</div></div>
+      <div style="font:400 20px/1 var(--sans);color:var(--t3)">›</div>
+    </div>` : ''}
+    ${puedeFacturar() ? `<div class="card row" data-a="fac_abrir" style="margin-top:14px;cursor:pointer">
+      <div class="grow"><div style="font:600 15px var(--sans)">Facturas</div>
+      <div class="sub" style="font-size:12px;margin-top:4px">Todas las facturas y abonos de Teamleader, y hacer facturas nuevas: de un presupuesto (todo, un porcentaje, partidas) o sueltas.</div></div>
       <div style="font:400 20px/1 var(--sans);color:var(--t3)">›</div>
     </div>` : ''}
     ${puedePrecios() ? `<div class="card row" data-a="pr_abrir" style="margin-top:14px;cursor:pointer">
@@ -8986,6 +8992,458 @@ A.prCampo = (f, valor) => {
   }
 };
 
+/* =============================================================================
+ * FACTURAS (Enzo, 11-11-2026): «quiero poder generar facturas desde
+ * presupuestos, o incluso una factura parcial por ítem o porcentaje, con la
+ * interfaz como la de Teamleader… y tenerlas todas en la app para mudarnos de
+ * Teamleader poco a poco». Sin Verifactu: las facturas se mandan a la gestoría.
+ *
+ * La factura se COMPONE aquí (todo, un porcentaje, un importe, partidas sueltas
+ * o lo que queda restando los anticipos) y se EMITE en Teamleader: la función
+ * `teamleader-factura` crea el borrador, lo contabiliza (ahí Teamleader le pone
+ * el número, y eso no se deshace), baja su PDF, apunta el cobro y abona. La
+ * tabla `facturas` (sql/etapa106) es el espejo de todas las de Teamleader.
+ * Facturan presupuestos y Administración.
+ * ========================================================================== */
+const puedeFacturar = () => esAdmin() || rol() === 'presupuestos';
+const facNum = (v) => { const t = String(v == null ? '' : v).trim().replace(',', '.'); if (t === '') return null; const n = Number(t); return Number.isFinite(n) ? n : NaN; };
+const fac2 = (n) => Math.round((Number(n) || 0) * 100 + 1e-7) / 100;
+const FAC_FILTROS = [['todas', 'Todas'], ['borrador', 'Borradores'], ['pendiente', 'Por cobrar'], ['vencida', 'Vencidas'], ['pagada', 'Pagadas'], ['abono', 'Abonos']];
+const FAC_PAGO = { 'cash:0': 'Al contado', 'after_invoice_date:14': '14 días', 'after_invoice_date:30': '30 días', 'after_invoice_date:60': '60 días', 'end_of_month:30': '30 días fin de mes', 'end_of_month:45': '45 días fin de mes', 'end_of_month:60': '60 días fin de mes' };
+const facPagoTxt = (k) => FAC_PAGO[k] || (k ? String(k).replace('after_invoice_date:', '').replace('end_of_month:', 'fin de mes ').replace('cash:', 'contado ') + ' días' : '');
+function facEstadoBase() { if (!V.fac) V.fac = { lista: null, cargando: false, error: null, buscar: '', filtro: 'todas', sync: null }; return V.fac; }
+/** Las facturas que tienen un abono (por su id de Teamleader → base abonada). */
+function facAbonadas(lista) {
+  const m = {};
+  (lista || []).forEach((f) => { if (f.tipo === 'abono' && f.tl_factura_abonada_id) m[f.tl_factura_abonada_id] = fac2((m[f.tl_factura_abonada_id] || 0) + Math.abs(Number(f.base) || 0)); });
+  return m;
+}
+/** Cómo se enseña una factura: la clave del estado, el texto y sus colores (los de Teamleader). */
+function facEstado(f, abonadas) {
+  const ab = (abonadas || {})[f.tl_id];
+  if (f.tipo === 'abono') return { k: 'abono', txt: 'Abono', bg: '#f1ecf9', color: '#5b3f99' };
+  if (ab && ab >= fac2(f.base) - 0.005) return { k: 'abonada', txt: 'Abonada', bg: '#f1ecf9', color: '#5b3f99' };
+  if (f.estado === 'borrador') return { k: 'borrador', txt: 'Borrador', bg: 'rgba(20,23,15,.06)', color: 'var(--t2)' };
+  if (f.estado === 'pagada' || f.pagada) return { k: 'pagada', txt: 'Pagado', bg: '#e2f3f1', color: '#1a857f' };
+  if (f.vence && f.vence < hoyISO()) { const dias = Math.round((new Date(hoyISO() + 'T12:00') - new Date(f.vence + 'T12:00')) / 864e5); return { k: 'vencida', txt: 'Vencido (' + dias + ' d)', bg: '#fde6e3', color: '#b8372b' }; }
+  return { k: 'pendiente', txt: 'Por cobrar', bg: '#fdf3dc', color: '#8a5a0a' };
+}
+const facPildora = (e) => `<span class="badge" style="background:${e.bg};color:${e.color}">${esc(e.txt)}</span>`;
+const facFecha = (iso) => (iso ? String(iso).slice(8, 10) + '/' + String(iso).slice(5, 7) + '/' + String(iso).slice(0, 4) : '—');
+function facFiltradas() {
+  const F = facEstadoBase(); const ab = facAbonadas(F.lista);
+  const q = String(F.buscar || '').trim().toLowerCase();
+  return (F.lista || []).filter((f) => {
+    const e = facEstado(f, ab).k;
+    if (F.filtro !== 'todas' && !(F.filtro === e || (F.filtro === 'pendiente' && e === 'vencida'))) return false;
+    return !q || (String(f.numero || 'borrador') + ' ' + String(f.cliente_nombre || '') + ' ' + String(f.entidad || '')).toLowerCase().includes(q);
+  });
+}
+function facListaHTML() {
+  const F = facEstadoBase();
+  if (F.error) return `<div class="card" style="background:var(--rojo-cl)"><div class="sub" style="color:var(--rojo)">${/facturas/.test(F.error) && /relation|does not exist|schema cache/i.test(F.error) ? 'Falta ejecutar sql/etapa106 en Supabase.' : esc(F.error)}</div></div>`;
+  if (!F.lista) return '<div class="tiny">Cargando…</div>';
+  const ab = facAbonadas(F.lista), filas = facFiltradas();
+  const porCobrar = fac2(F.lista.filter((f) => f.tipo === 'factura' && f.estado === 'pendiente').reduce((s, f) => s + (Number(f.pendiente != null ? f.pendiente : f.total) || 0), 0));
+  const cab = `<div class="tiny" style="margin:2px 0 10px">${filas.length} de ${F.lista.length}${porCobrar > 0 ? ' · por cobrar ' + eur(porCobrar) + ' (IVA incluido)' : ''}</div>`;
+  if (!filas.length) return cab + '<div class="card"><div class="sub">Nada con ese filtro.</div></div>';
+  return cab + filas.slice(0, 300).map((f) => `<div class="card" data-a="fac_ver" data-id="${f.id}" style="margin-bottom:8px;cursor:pointer;padding:12px 14px">
+      <div class="row g8"><span style="font:700 14px var(--mono)">${esc(f.numero || 'Borrador')}</span>${facPildora(facEstado(f, ab))}<div class="grow"></div><span class="tiny">${facFecha(f.fecha)}</span></div>
+      <div class="row" style="align-items:baseline;justify-content:space-between;margin-top:7px">
+        <div class="grow" style="font:500 14px/1.25 var(--sans)">${esc(f.cliente_nombre || 'Sin cliente')}</div>
+        <div class="num" style="font-size:17px;flex:none;${f.tipo === 'abono' ? 'color:#5b3f99' : ''}">${f.tipo === 'abono' ? '−' : ''}${eur(Math.abs(Number(f.base) || 0))}</div>
+      </div>
+      ${/sysefen group/i.test(f.entidad || '') ? '' : `<div class="tiny" style="margin-top:3px">${esc(f.entidad || '')}</div>`}
+    </div>`).join('') + (filas.length > 300 ? `<div class="tiny" style="text-align:center;margin-top:8px">Se enseñan 300 de ${filas.length}: afina con el buscador.</div>` : '');
+}
+function vFacturas() {
+  const F = facEstadoBase();
+  return `<div class="hdr">
+    <div class="volver" data-a="ir" data-v="presupuestos">‹ Presupuestos</div>
+    <div class="row" style="justify-content:space-between;margin-top:6px">
+      <div class="h1">Facturas</div>
+      <div class="row g8">
+        <button class="pill" data-a="fac_sync" style="padding:8px 12px;background:var(--l1);color:var(--tinta)" ${F.sync && F.sync.busy ? 'disabled' : ''} title="Traer de Teamleader las facturas nuevas o cambiadas">${F.sync && F.sync.busy ? '…' : '↻'}</button>
+        <button class="pill" data-a="fac_nueva" style="background:#76923c;color:#fff">+ Factura</button>
+      </div>
+    </div>
+    <div class="sub" style="margin-top:8px">Todas las de Teamleader, las hechas aquí y las hechas allí. Se emiten en Teamleader: al contabilizar les pone el número. ${F.sync && F.sync.txt ? '<b>' + esc(F.sync.txt) + '</b>' : ''}</div>
+    <input class="inp" data-f="fac:buscar" value="${esc(F.buscar || '')}" placeholder="Número o cliente" autocomplete="off" style="margin-top:10px">
+    <div class="row g8" style="margin-top:10px;overflow-x:auto;padding-bottom:2px">${FAC_FILTROS.map(([k, n]) => `<span class="chip${F.filtro === k ? ' on' : ''}" data-a="fac_filtro" data-k="${k}" style="flex:none">${n}</span>`).join('')}</div>
+  </div>
+  <div class="scroll pad pb-nav"><div id="fac-lista">${facListaHTML()}</div></div>`;
+}
+async function facCargarLista() {
+  const F = facEstadoBase();
+  F.cargando = true;
+  try { F.lista = await visitasDB.listarFacturas(); F.error = null; } catch (e) { F.error = msgError(e); }
+  F.cargando = false;
+  if (V.view === 'facturas') render();
+}
+/** Lo ya facturado de un presupuesto: facturas con número menos sus abonos (sin IVA). */
+function facFacturado(facturas) {
+  const fs = (facturas || []).filter((f) => f.tipo === 'factura' && f.estado !== 'borrador');
+  const abonos = (facturas || []).filter((f) => f.tipo === 'abono');
+  return fac2(fs.reduce((s, f) => s + (Number(f.base) || 0), 0) - abonos.reduce((s, f) => s + Math.abs(Number(f.base) || 0), 0));
+}
+/** La tarjeta «Facturación» de la ficha de un presupuesto aceptado. */
+function facPresuHTML(d) {
+  if (!puedeFacturar() || !d) return '';
+  const pv = V.presuVer || {}; const fs = pv.facturas;
+  if (d.respuesta_cliente !== 'aceptado' && !(fs && fs.length)) return '';
+  const ab = facAbonadas(fs || []);
+  const total = fac2(d.total_venta), hecho = facFacturado(fs || []);
+  const borradores = (fs || []).filter((f) => f.estado === 'borrador').length;
+  return `<div class="card" style="margin-top:14px">
+    <div class="row" style="justify-content:space-between;align-items:center"><div class="lbl">Facturación</div>
+      ${d.respuesta_cliente === 'aceptado' ? `<button class="pill" data-a="fac_nueva" data-pid="${d.id}" style="background:#76923c;color:#fff;padding:9px 13px">Facturar</button>` : ''}</div>
+    ${fs == null ? '<div class="tiny" style="margin-top:8px">Mirando las facturas…</div>'
+      : !fs.length ? '<div class="sub" style="margin-top:8px;font-size:13px">Todavía no se ha facturado nada de este presupuesto.</div>'
+      : `<div style="margin-top:6px">${fs.map((f) => `<div class="row g8" data-a="fac_ver" data-id="${f.id}" style="padding:8px 0;border-bottom:1px solid var(--l1);cursor:pointer;align-items:center">
+          <span style="font:600 13px var(--mono);flex:none">${esc(f.numero || 'Borrador')}</span>${facPildora(facEstado(f, ab))}
+          <span class="tiny grow">${facFecha(f.fecha)}${f.lineas && f.lineas.length === 1 ? ' · ' + esc(String(f.lineas[0].descripcion || '').slice(0, 34)) : ''}</span>
+          <span class="num" style="font-size:14px;flex:none">${f.tipo === 'abono' ? '−' : ''}${eur(Math.abs(Number(f.base) || 0))}</span></div>`).join('')}</div>
+        <div class="tiny" style="margin-top:8px;color:var(--tinta)">Facturado ${eur(hecho)} de ${eur(total)} sin IVA${total > 0 ? ' (' + String(Math.round(hecho / total * 1000) / 10).replace('.', ',') + ' %)' : ''}${total - hecho > 0.005 ? ' · quedan ' + eur(fac2(total - hecho)) : ''}${borradores ? ' · ' + borradores + (borradores === 1 ? ' borrador sin contabilizar' : ' borradores sin contabilizar') : ''}</div>`}
+  </div>`;
+}
+async function facCargarDePresu(id) {
+  if (!puedeFacturar() || !V.presuVer || V.presuVer.id !== id) return;
+  try { V.presuVer.facturas = await visitasDB.facturasDePresupuesto(id); } catch (_) { V.presuVer.facturas = []; }
+  if (V.view === 'presupuestoVer' && V.presuVer && V.presuVer.id === id) render();
+}
+
+/* La factura con la plantilla del PDF de Sysefen en Teamleader (Enzo, 11-11-2026:
+ * «¿puedes usar la misma plantilla de factura y paleta de colores?»): banda verde
+ * oliva #76923c con las columnas en blanco, filas alternas en gris #eff0ef, texto
+ * #262626 y #666666, la descripción larga en gris debajo, las secciones en
+ * negrita y los totales a la derecha con «Cantidad total» resaltada. El PDF de
+ * verdad lo sigue haciendo Teamleader; el día que la app emita sola, es esta. */
+const FAC_VERDE = '#76923c';
+function facDocHTML(f, secciones) {
+  // En el móvil la descripción no cabe en una columna: va a lo ancho, y debajo
+  // la cantidad, el precio, el IVA y el total, alineados con la cabecera.
+  const col = 'display:grid;grid-template-columns:minmax(0,1fr) 44px 80px 40px 84px;gap:6px;align-items:baseline';
+  const n = (v) => String(v).replace('.', ',');
+  let i = 0;
+  const filas = secciones.map((g) => `${g.t ? `<div style="padding:8px 8px 6px;font-weight:700;color:#262626;border-top:1px solid #262626">${esc(g.t)}</div>` : ''}${g.ls.map((l) => `<div style="padding:8px;border-top:1px solid #9a9a9a;background:${i++ % 2 ? '#fff' : '#eff0ef'}">
+      <div style="color:#262626">${esc(l.descripcion)}</div>${l.detalle ? `<div style="color:#666;font-size:11px;line-height:1.35;margin-top:3px;white-space:pre-line">${esc(String(l.detalle).replace(/\*\*/g, '').slice(0, 600))}</div>` : ''}${l.dto_pct ? `<div style="color:#666;font-size:11px;margin-top:2px">− ${n(l.dto_pct)} % descuento</div>` : ''}
+      <div style="${col};margin-top:4px"><div></div><div style="text-align:right">${n(l.cantidad)}</div><div style="text-align:right">${eur(l.precio)}</div><div style="text-align:right">${l.iva_pct != null ? n(l.iva_pct) + '%' : ''}</div><div style="text-align:right;font-weight:600">${eur(l.importe)}</div></div></div>`).join('')}`).join('');
+  const tot = (k, v, fuerte) => `<div style="display:flex;justify-content:space-between;padding:${fuerte ? '7px 8px' : '3px 8px'};${fuerte ? 'background:#eff0ef;border-top:1px solid #262626;font-weight:700;color:#262626' : ''}"><span>${k}</span><span>${v}</span></div>`;
+  return `<div style="margin-top:14px;font:400 12px/1.3 Calibri,Carlito,'Segoe UI',var(--sans);color:#262626;background:#fff;border-radius:10px;overflow:hidden;box-shadow:0 0 0 1px var(--l1)">
+    <div style="${col};padding:9px 8px;background:${FAC_VERDE};color:#fff"><div>Descripción</div><div style="text-align:right">Cant.</div><div style="text-align:right">Precio unit.</div><div style="text-align:right">IVA %</div><div style="text-align:right">Total</div></div>
+    ${filas || '<div style="padding:10px 8px;color:#666">Sin líneas.</div>'}
+    <div style="border-top:1px solid #262626;padding:6px 0 0;margin-left:38%">
+      ${tot('Total IVA excl.', eur(f.base))}
+      ${(f.impuestos || []).map((t) => tot('IVA ' + n(t.pct) + '%', eur(t.cuota))).join('')}
+      ${tot('Total IVA incl.', eur(f.total))}
+      ${tot('Cantidad total', eur(f.total), true)}
+    </div>
+    ${(f.cobros || []).length || (f.tipo !== 'abono' && f.estado === 'pendiente' && f.pendiente != null) ? `<div style="padding:8px;text-align:right">
+      ${(f.cobros || []).map((p) => `<div style="color:#1a857f">Cobrado ${eur(p.importe)} el ${facFecha(p.fecha)}</div>`).join('')}
+      ${f.tipo !== 'abono' && f.estado === 'pendiente' && f.pendiente != null ? `<div style="color:#8a5a0a">Por cobrar: ${eur(f.pendiente)}</div>` : ''}</div>` : ''}
+  </div>`;
+}
+
+/* --- ver una factura: como la ficha de Teamleader (Info, Contenidos, totales y acciones) --- */
+function facVerSheetHTML(s) {
+  const f = s.f;
+  if (!f) return `<div class="sheet"><div><div class="sub">${s.err ? esc(s.err) : 'Cargando la factura…'}</div><button class="btn btn-gris" data-a="cerrarSheet" style="margin-top:14px;border-radius:99px">Cerrar</button></div></div>`;
+  const e = facEstado(f, s.abonadas || {});
+  const esAbono = f.tipo === 'abono';
+  const secciones = []; (f.lineas || []).forEach((l) => { let g = secciones[secciones.length - 1]; if (!g || g.t !== (l.seccion || '')) { g = { t: l.seccion || '', ls: [] }; secciones.push(g); } g.ls.push(l); });
+  const dato = (k, v) => (v ? `<div class="row g8" style="padding:4px 0;align-items:baseline"><span class="tiny" style="width:104px;flex:none">${k}</span><span style="font:500 13px/1.3 var(--sans)">${v}</span></div>` : '');
+  const c = s.confirmar;
+  const acciones = c === 'contabilizar' ? `<div style="margin-top:14px;padding:12px 14px;border-radius:14px;background:#fdf3dc">
+        <div style="font:600 15px var(--sans)">Contabilizar la factura</div>
+        <div class="sub" style="font-size:12px;margin-top:4px">Teamleader le pone el siguiente número de la serie y ya no se puede cambiar ni borrar: si luego hay un error, se rectifica con un abono. Comprueba el cliente, las líneas y el total (${eur(f.total)} con IVA).</div>
+        <div class="row g8" style="margin-top:10px;align-items:center"><span class="tiny">Fecha</span><input class="inp" type="date" data-f="fac:v:fecha" value="${esc(s.v.fecha)}" style="width:170px;padding:9px"></div>
+        <div class="row g8" style="margin-top:12px"><button class="btn btn-gris" data-a="fac_confirmar" data-k="" style="border-radius:99px">Todavía no</button><button class="btn" data-a="fac_contabilizar" style="background:#76923c" ${s.busy ? 'disabled' : ''}>${s.busy ? 'Contabilizando…' : 'Contabilizar'}</button></div></div>`
+    : c === 'borrar' ? `<div style="margin-top:14px;padding:12px 14px;border-radius:14px;background:var(--rojo-cl)">
+        <div style="font:600 15px var(--sans)">Borrar el borrador</div><div class="sub" style="font-size:12px;margin-top:4px">Se borra también en Teamleader. No ha gastado número.</div>
+        <div class="row g8" style="margin-top:12px"><button class="btn btn-gris" data-a="fac_confirmar" data-k="" style="border-radius:99px">No borrar</button><button class="btn btn-rojo" data-a="fac_borrar" ${s.busy ? 'disabled' : ''}>${s.busy ? 'Borrando…' : 'Borrar'}</button></div></div>`
+    : c === 'cobro' ? `<div style="margin-top:14px;padding:12px 14px;border-radius:14px;background:#e2f5f1">
+        <div style="font:600 15px var(--sans)">Apuntar un cobro</div>
+        <div class="row g8" style="margin-top:10px;align-items:center;flex-wrap:wrap"><span class="tiny">Importe (con IVA)</span><input class="inp" data-f="fac:v:importe" value="${esc(s.v.importe)}" inputmode="decimal" style="width:120px;padding:9px;text-align:right"><span class="tiny">€ · el</span><input class="inp" type="date" data-f="fac:v:fecha" value="${esc(s.v.fecha)}" style="width:170px;padding:9px"></div>
+        <div class="row g8" style="margin-top:12px"><button class="btn btn-gris" data-a="fac_confirmar" data-k="" style="border-radius:99px">Cancelar</button><button class="btn" data-a="fac_cobro" style="background:#76923c" ${s.busy ? 'disabled' : ''}>${s.busy ? 'Guardando…' : 'Apuntar cobro'}</button></div></div>`
+    : c === 'abonar' ? `<div style="margin-top:14px;padding:12px 14px;border-radius:14px;background:#f1ecf9">
+        <div style="font:600 15px var(--sans)">Abonar la factura</div>
+        <div class="sub" style="font-size:12px;margin-top:4px">Crea en Teamleader una nota de abono (factura rectificativa) con su propio número. Deja el importe en blanco para abonarla entera, o pon una parte sin IVA.</div>
+        <div class="row g8" style="margin-top:10px;align-items:center;flex-wrap:wrap"><span class="tiny">Importe sin IVA</span><input class="inp" data-f="fac:v:importe" value="${esc(s.v.importe)}" placeholder="toda" inputmode="decimal" style="width:120px;padding:9px;text-align:right"><span class="tiny">€ · el</span><input class="inp" type="date" data-f="fac:v:fecha" value="${esc(s.v.fecha)}" style="width:170px;padding:9px"></div>
+        <input class="inp" data-f="fac:v:concepto" value="${esc(s.v.concepto || '')}" placeholder="Concepto del abono parcial (opcional)" style="margin-top:8px">
+        <div class="row g8" style="margin-top:12px"><button class="btn btn-gris" data-a="fac_confirmar" data-k="" style="border-radius:99px">Cancelar</button><button class="btn" data-a="fac_abonar" style="background:#5b3f99" ${s.busy ? 'disabled' : ''}>${s.busy ? 'Abonando…' : 'Crear el abono'}</button></div></div>`
+    : `<div class="row g8" style="margin-top:14px;flex-wrap:wrap">
+        ${!esAbono && e.k === 'borrador' ? '<button class="pill" data-a="fac_confirmar" data-k="contabilizar" style="background:#76923c;color:#fff;padding:12px 15px">Contabilizar</button>' : ''}
+        ${!esAbono && (e.k === 'pendiente' || e.k === 'vencida') ? '<button class="pill" data-a="fac_confirmar" data-k="cobro" style="background:#76923c;color:#fff;padding:12px 15px">Apuntar cobro</button>' : ''}
+        <button class="pill" data-a="fac_pdf" style="padding:12px 15px" ${s.busy ? 'disabled' : ''}>${s.busy === 'pdf' ? 'Abriendo…' : 'PDF'}</button>
+        ${!esAbono && e.k !== 'borrador' && e.k !== 'abonada' ? '<button class="pill" data-a="fac_confirmar" data-k="abonar" style="padding:12px 15px">Abonar</button>' : ''}
+        ${!esAbono && e.k === 'borrador' ? '<button class="pill pill-rojo" data-a="fac_confirmar" data-k="borrar" style="padding:12px 15px">Borrar</button>' : ''}
+        ${f.presupuesto_id && V.view !== 'presupuestoVer' ? `<button class="pill" data-a="fac_irPresu" data-id="${f.presupuesto_id}" style="padding:12px 15px">Ver presupuesto</button>` : ''}
+      </div>`;
+  return `<div class="sheet"><div>
+    <div class="row g8" style="align-items:center"><div style="font:600 23px/1.15 var(--cond)">${esAbono ? 'Abono' : 'Factura'} ${esc(f.numero || '')}</div>${facPildora(e)}</div>
+    <div style="margin-top:10px">
+      ${dato('Empresa', esc(f.entidad || ''))}${dato('Cliente', esc(f.cliente_nombre || '') + (f.cliente_nif ? ' · ' + esc(f.cliente_nif) : ''))}
+      ${dato('Fecha', facFecha(f.fecha) + (f.vence && !esAbono ? ' · vence ' + facFecha(f.vence) : ''))}${dato('Pago', esc(facPagoTxt(f.forma_pago)))}
+      ${dato('Observaciones', esc(f.nota || ''))}
+    </div>
+    ${facDocHTML(f, secciones)}
+    ${acciones}
+    <div class="row g8" style="margin-top:14px;align-items:center;justify-content:space-between">
+      <button class="btn btn-gris" data-a="cerrarSheet" style="border-radius:99px;width:auto;padding:12px 22px">Cerrar</button>
+      <span class="tiny">${f.origen === 'app' ? 'Hecha desde la app' : 'Hecha en Teamleader'} · <span data-a="fac_refrescar" style="text-decoration:underline;cursor:pointer">actualizar</span></span>
+    </div>
+  </div></div>`;
+}
+
+/* --- hacer una factura: desde un presupuesto (todo, %, importe, partidas, resto) o libre --- */
+const facIvasDe = (s) => ((s.op && s.op.ivas && s.op.ivas[s.v.entidad]) || []).slice().sort((a, b) => b.pct - a.pct || a.nombre.localeCompare(b.nombre));
+function facIvaPorDefecto(s) { const l = facIvasDe(s); return (l.find((i) => i.pct === 21) || l[0] || { id: '' }).id; }
+/** Las facturas del presupuesto que se pueden restar como anticipo: con número, de una línea y sin abonar del todo. */
+function facAnticipos(s) {
+  const fs = (s.op && s.op.facturas) || []; const ab = facAbonadas(fs);
+  return fs.filter((f) => f.tipo === 'factura' && f.numero && !(ab[f.tl_id] >= fac2(f.base) - 0.005) && ((f.hito && ['porcentaje', 'importe'].includes(f.hito.modo)) || (f.lineas || []).length === 1));
+}
+/** La base (sin IVA) que saldría con lo elegido, y lo que se resta de anticipos. */
+function facBase(s) {
+  const v = s.v, op = s.op || {}; let base = 0, resta = 0;
+  if (v.modo === 'porcentaje') base = fac2(((op.presupuesto && op.presupuesto.total) || 0) * (facNum(v.pct) || 0) / 100);
+  else if (v.modo === 'importe') base = fac2(facNum(v.importe) || 0);
+  else if (v.modo === 'libre') base = fac2((v.lineas || []).reduce((t, l) => t + (facNum(l.cantidad) || 0) * (facNum(l.precio) || 0), 0));
+  else {
+    (op.lineas || []).forEach((l) => {
+      const tot = Number(l.cantidad) || 1;
+      const q = v.modo === 'resto' ? tot : (v.partidas[l.id] && v.partidas[l.id].on ? Math.min(facNum(v.partidas[l.id].cant) || 0, tot) : 0);
+      if (q > 0) base += (Number(l.precio_venta) || 0) * q / tot;
+    });
+    base = fac2(base);
+    facAnticipos(s).forEach((f) => { if (v.descontar[f.id]) resta += Number(f.base) || 0; });
+    resta = fac2(resta);
+  }
+  return { bruto: base, resta, base: fac2(base - resta) };
+}
+function facPreviaHTML(s) {
+  const b = facBase(s); const iva = facIvasDe(s).find((i) => i.id === s.v.iva); const pct = iva ? iva.pct : 0;
+  const cuota = fac2(b.base * pct / 100);
+  const pre = s.op && s.op.presupuesto; const hecho = pre ? facFacturado(s.op.facturas) : 0;
+  return `<div class="row" style="justify-content:space-between;align-items:baseline"><span class="sub grow">Base${b.resta ? ' (' + eur(b.bruto) + ' − ' + eur(b.resta) + ' de anticipos)' : ''}</span><span class="num" style="font-size:16px;flex:none;white-space:nowrap">${eur(b.base)}</span></div>
+    <div class="row" style="justify-content:space-between;align-items:baseline;margin-top:3px"><span class="sub">IVA ${String(pct).replace('.', ',')} %</span><span class="num" style="font-size:14px">${eur(cuota)}</span></div>
+    <div class="row" style="justify-content:space-between;align-items:baseline;margin-top:5px"><span style="font:600 15px var(--sans)">Total factura</span><span class="num" style="font-size:20px">${eur(fac2(b.base + cuota))}</span></div>
+    ${pre && pre.total > 0 ? `<div class="tiny" style="margin-top:8px">Presupuesto ${eur(pre.total)} sin IVA · ya facturado ${eur(hecho)} (${String(Math.round(hecho / pre.total * 1000) / 10).replace('.', ',')} %) · con esta, ${eur(fac2(hecho + b.base))} (${String(Math.round((hecho + b.base) / pre.total * 1000) / 10).replace('.', ',')} %)${hecho + b.base > pre.total + 0.01 ? ' <b style="color:var(--rojo)">— pasa del presupuesto</b>' : ''}</div>` : ''}`;
+}
+function facRefrescarPrevia() { const el = document.getElementById('fac-previa'); const s = V.sheet; if (el && s && s.tipo === 'facNueva') el.innerHTML = facPreviaHTML(s); }
+function facNuevaSheetHTML(s) {
+  const pie = '<button class="btn btn-gris" data-a="cerrarSheet" style="margin-top:14px;border-radius:99px">Cerrar</button>';
+  if (s.cargando) return '<div class="sheet"><div><div style="font:600 23px/1.15 var(--cond)">Nueva factura</div><div class="sub" style="margin-top:8px">Preguntando a Teamleader las empresas, los tipos de IVA y lo ya facturado…</div></div></div>';
+  if (s.err) return `<div class="sheet"><div><div style="font:600 23px/1.15 var(--cond)">Nueva factura</div><div class="sub" style="margin-top:8px;color:var(--rojo)">${esc(s.err)}</div>${pie}</div></div>`;
+  const v = s.v, op = s.op, pre = op.presupuesto, ivas = facIvasDe(s);
+  if (!pre && !op.cliente) {
+    const q = String(s.buscar || '').trim().toLowerCase();
+    const cs = q.length >= 2 ? V.agenda.clientes.filter((c) => clienteCasa(c, q)).slice(0, 8) : [];
+    return `<div class="sheet"><div><div style="font:600 23px/1.15 var(--cond)">Nueva factura</div>
+      <div class="sub" style="margin-top:6px">Sin presupuesto: elige el cliente y escribe las líneas. Para facturar un presupuesto, entra en él y pulsa «Facturar».</div>
+      <input class="inp" data-f="fac:cli" value="${esc(s.buscar || '')}" placeholder="Busca el cliente" autocomplete="off" style="margin-top:12px">
+      <div id="fac-clis">${cs.map((c) => `<div class="row" data-a="fac_cliente" data-id="${c.id}" style="padding:10px 0;border-bottom:1px solid var(--l1);cursor:pointer"><div class="grow" style="font:500 14px var(--sans)">${esc(c.nombre)}</div><span class="tiny">${esc(c.nif || '')}</span></div>`).join('')}</div>${pie}</div></div>`;
+  }
+  const modos = pre ? [['porcentaje', 'Un porcentaje'], ['importe', 'Un importe'], ['partidas', 'Partidas'], ['resto', 'Todo / lo que queda']] : [];
+  const ants = pre ? facAnticipos(s) : [];
+  const secP = []; (op.lineas || []).forEach((l) => { let g = secP[secP.length - 1]; if (!g || g.t !== (l.seccion || '')) { g = { t: l.seccion || '', ls: [] }; secP.push(g); } g.ls.push(l); });
+  const cuerpo = v.modo === 'porcentaje' ? `<div class="row g8" style="margin-top:10px;align-items:center;flex-wrap:wrap">
+        ${[15, 30, 40, 50].map((p) => `<span class="chip${String(v.pct) === String(p) ? ' on' : ''}" data-a="fac_pct" data-p="${p}">${p} %</span>`).join('')}
+        <input class="inp" data-f="fac:n:pct" value="${esc(v.pct)}" inputmode="decimal" style="width:76px;padding:9px;text-align:right"><span class="tiny">% del presupuesto</span></div>
+      <input class="inp" data-f="fac:n:concepto" value="${esc(v.concepto)}" placeholder="Concepto: Anticipo ${esc(String(v.pct || ''))} %" style="margin-top:8px">`
+    : v.modo === 'importe' ? `<div class="row g8" style="margin-top:10px;align-items:center"><input class="inp" data-f="fac:n:importe" value="${esc(v.importe)}" inputmode="decimal" placeholder="0,00" style="width:140px;padding:10px;text-align:right"><span class="tiny">€ sin IVA</span></div>
+      <input class="inp" data-f="fac:n:concepto" value="${esc(v.concepto)}" placeholder="Concepto: Anticipo" style="margin-top:8px">`
+    : v.modo === 'partidas' ? `<div class="tiny" style="margin-top:10px">Marca lo que se factura ahora y, si es solo una parte, cambia la cantidad. <span data-a="fac_todas" style="text-decoration:underline;cursor:pointer">${Object.values(v.partidas).every((x) => x.on) ? 'Quitar todas' : 'Marcar todas'}</span></div>
+      ${secP.map((g) => `${g.t ? `<div class="tiny" style="margin-top:10px;font-weight:600;color:var(--tinta)">${esc(g.t)}</div>` : ''}${g.ls.map((l) => { const p = v.partidas[l.id] || {}; return `<div class="row g8" style="padding:7px 0;border-bottom:1px solid var(--l1);align-items:center;${p.on ? '' : 'opacity:.5'}">
+          <input type="checkbox" data-f="fac:p:${l.id}:on" ${p.on ? 'checked' : ''} style="width:20px;height:20px;flex:none">
+          <div class="grow" style="font:500 13px/1.25 var(--sans)">${esc(l.descripcion)}</div>
+          <input class="inp" data-f="fac:p:${l.id}:cant" value="${esc(p.cant)}" inputmode="decimal" style="width:60px;padding:7px;text-align:center;flex:none" ${p.on ? '' : 'disabled'}>
+          <span class="tiny" style="flex:none;text-align:right;white-space:nowrap">de ${String(Number(l.cantidad)).replace('.', ',')}<br>${eur(l.precio_venta)}</span></div>`; }).join('')}`).join('')}`
+    : v.modo === 'resto' ? `<div class="sub" style="margin-top:10px;font-size:13px">Van todas las partidas del presupuesto (${(op.lineas || []).length} líneas, ${eur(pre.total)}).${ants.length ? ' Los anticipos marcados se restan, cada uno en su sección «Factura anticipada Nº», como en Teamleader.' : ''}</div>`
+    : `<div class="tiny" style="margin-top:10px">Concepto, cantidad y precio sin IVA de cada línea.</div>
+      ${v.lineas.map((l, i) => `<div style="padding:7px 0;border-bottom:1px solid var(--l1)">
+        <input class="inp" data-f="fac:l:${i}:descripcion" value="${esc(l.descripcion)}" placeholder="Concepto" style="padding:9px 11px">
+        <div class="row g8" style="margin-top:6px;align-items:center"><input class="inp" data-f="fac:l:${i}:cantidad" value="${esc(l.cantidad)}" inputmode="decimal" style="width:70px;padding:8px;text-align:center"><span class="tiny">×</span>
+          <input class="inp" data-f="fac:l:${i}:precio" value="${esc(l.precio)}" inputmode="decimal" placeholder="Precio" style="width:110px;padding:8px;text-align:right"><span class="tiny">€</span><div class="grow"></div>
+          ${v.lineas.length > 1 ? `<span class="tiny" data-a="fac_lineaQuitar" data-i="${i}" style="color:var(--rojo);cursor:pointer">Quitar</span>` : ''}</div></div>`).join('')}
+      <div class="dash" data-a="fac_lineaMas" style="margin-top:10px;display:block">+ Otra línea</div>`;
+  return `<div class="sheet"><div>
+    <div style="font:600 23px/1.15 var(--cond)">${pre ? 'Facturar el presupuesto' : 'Nueva factura'}</div>
+    <div class="sub" style="margin-top:6px">${pre ? esc((pre.numero ? 'Nº ' + pre.numero + ' · ' : '') + (pre.titulo || '')) + ' · ' : ''}${esc((op.cliente && op.cliente.nombre) || '')}${op.cliente && op.cliente.nif ? ' · ' + esc(op.cliente.nif) : ''}</div>
+    ${op.cliente && !op.cliente.en_teamleader ? '<div class="tiny" style="margin-top:6px;color:var(--rojo)">Este cliente todavía no está en Teamleader: súbelo desde su ficha antes de facturar.</div>' : ''}
+    ${op.cliente && !op.cliente.nif ? '<div class="tiny" style="margin-top:6px;color:var(--ambar-o)">El cliente no tiene NIF apuntado: la factura saldrá sin él.</div>' : ''}
+    ${pre && !pre.aceptado ? '<div class="tiny" style="margin-top:6px;color:var(--rojo)">El presupuesto todavía no está aceptado: márcalo como aceptado antes de facturarlo.</div>' : ''}
+    ${op.entidades.length > 1 ? `<div class="lbl" style="margin:14px 0 6px">Empresa que factura</div><div class="row g8" style="flex-wrap:wrap">${op.entidades.map((e) => `<span class="chip${v.entidad === e.id ? ' on' : ''}" data-a="fac_entidad" data-id="${e.id}">${esc(e.nombre)}</span>`).join('')}</div>` : ''}
+    ${modos.length ? `<div class="lbl" style="margin:14px 0 6px">Qué se factura</div><div class="row g8" style="flex-wrap:wrap">${modos.map(([k, n]) => `<span class="chip${v.modo === k ? ' on' : ''}" data-a="fac_modo" data-k="${k}">${n}</span>`).join('')}</div>` : ''}
+    ${cuerpo}
+    ${pre && (v.modo === 'partidas' || v.modo === 'resto') && ants.length ? `<div class="lbl" style="margin:14px 0 4px">Restar anticipos ya facturados</div>
+      ${ants.map((f) => `<label class="row g8" style="padding:7px 0;border-bottom:1px solid var(--l1);align-items:center;cursor:pointer">
+        <input type="checkbox" data-f="fac:d:${f.id}" ${v.descontar[f.id] ? 'checked' : ''} style="width:20px;height:20px;flex:none">
+        <span class="grow" style="font:500 13px var(--sans)">${esc(f.numero)} · ${facFecha(f.fecha)}${f.lineas && f.lineas[0] ? ' · ' + esc(String(f.lineas[0].descripcion).slice(0, 30)) : ''}</span><span class="num" style="font-size:14px">−${eur(f.base)}</span></label>`).join('')}` : ''}
+    <div class="lbl" style="margin:14px 0 6px">IVA</div>
+    <div class="row g8" style="flex-wrap:wrap">${ivas.map((i) => `<span class="chip${v.iva === i.id ? ' on' : ''}" data-a="fac_iva" data-id="${i.id}">${esc(/^ventas\s+\d+\s*% iva$/i.test(i.nombre) ? String(i.pct).replace('.', ',') + ' %' : i.nombre.replace(/^Ventas\s+/i, '') + (i.pct ? '' : ' (0 %)'))}</span>`).join('')}</div>
+    <div class="row g8" style="margin-top:14px;align-items:flex-end;flex-wrap:wrap">
+      <div><div class="lbl" style="margin-bottom:6px">Fecha</div><input class="inp" type="date" data-f="fac:n:fecha" value="${esc(v.fecha)}" style="width:170px;padding:10px"></div>
+      <div class="grow"><div class="lbl" style="margin-bottom:6px">Forma de pago</div><select class="inp" data-f="fac:n:pago" style="padding:10px">${(op.formas_pago || []).map((p) => { const k = p.type + ':' + p.days; return `<option value="${k}" ${v.pago === k ? 'selected' : ''}>${esc(facPagoTxt(k))}</option>`; }).join('')}</select></div>
+    </div>
+    <input class="inp" data-f="fac:n:nota" value="${esc(v.nota)}" placeholder="Observaciones en la factura${pre && pre.numero ? ' (por defecto: Nuestra referencia: ' + esc(pre.numero) + ')' : ' (opcional)'}" style="margin-top:10px">
+    <div id="fac-previa" style="margin-top:14px;padding:12px 14px;border-radius:14px;background:rgba(20,23,15,.045)">${facPreviaHTML(s)}</div>
+    <div class="tiny" style="margin-top:8px">Se crea como <b>borrador</b> en Teamleader, sin número. Lo revisas y, si está bien, lo contabilizas desde aquí.</div>
+    <div class="row g8" style="margin-top:14px">
+      <button class="btn btn-gris" data-a="cerrarSheet" style="border-radius:99px">Cancelar</button>
+      <button class="btn" data-a="fac_crear" style="background:#76923c" ${s.busy ? 'disabled' : ''}>${s.busy ? 'Creando…' : 'Crear borrador'}</button>
+    </div>
+  </div></div>`;
+}
+async function facAbrirNueva(presupuestoId, clienteId) {
+  V.sheet = { tipo: 'facNueva', presupuestoId: presupuestoId || null, cargando: true, op: null, err: null, busy: false, buscar: '', v: null };
+  render();
+  const s = V.sheet;
+  try {
+    if (!presupuestoId && !clienteId) {
+      if (!V.agenda.cargado) { try { await A.cargarAgenda(); } catch (_) { /* sin red */ } }
+      s.op = { cliente: null, presupuesto: null };
+    } else s.op = await visitasDB.facturar(presupuestoId ? { accion: 'opciones', presupuesto_id: presupuestoId } : { accion: 'opciones', cliente_id: clienteId });
+    const op = s.op, pre = op.presupuesto;
+    if (pre || op.cliente) {
+      const partidas = {}; (op.lineas || []).forEach((l) => { partidas[l.id] = { on: true, cant: String(Number(l.cantidad)).replace('.', ',') }; });
+      s.v = { entidad: op.entidad_id || (op.entidades[0] || {}).id || '', modo: pre ? 'porcentaje' : 'libre', pct: '50', importe: '', concepto: '', iva: '', fecha: hoyISO(), pago: 'cash:0', nota: '', partidas, descontar: {}, lineas: [{ descripcion: '', cantidad: '1', precio: '' }] };
+      s.v.iva = facIvaPorDefecto(s);
+      facAnticipos(s).forEach((f) => { s.v.descontar[f.id] = true; });
+      // Con anticipos ya hechos, lo normal es que toque lo que queda.
+      if (pre && facAnticipos(s).length) s.v.modo = 'resto';
+    }
+  } catch (e) { s.err = 'No se pudo preparar la factura: ' + msgError(e); }
+  s.cargando = false;
+  if (V.sheet === s) render();
+}
+async function facAbrirVer(id, fila) {
+  V.sheet = { tipo: 'facVer', id, f: fila || null, err: null, busy: false, confirmar: '', v: { fecha: hoyISO(), importe: '', concepto: '' }, abonadas: {} };
+  render();
+  const s = V.sheet;
+  try {
+    if (!s.f) s.f = await visitasDB.verFactura(id);
+    const hermanas = s.f.tipo === 'factura' && s.f.tl_id ? await visitasDB.abonosDeFactura(s.f.tl_id) : [];
+    s.abonadas = facAbonadas(hermanas);
+  } catch (e) { if (!s.f) s.err = 'No se pudo abrir: ' + msgError(e); }
+  if (V.sheet === s) render();
+}
+/** Tras cambiar algo: la lista, la tarjeta del presupuesto y la hoja abierta al día. */
+function facTrasCambio(fila) {
+  facCargarLista();
+  if (V.presuVer && V.presuVer.id) facCargarDePresu(V.presuVer.id);
+  if (fila && V.sheet && V.sheet.tipo === 'facVer') { V.sheet.f = fila; V.sheet.confirmar = ''; V.sheet.busy = false; }
+}
+A.fac = async (a, d) => {
+  if (!puedeFacturar()) return;
+  const F = facEstadoBase();
+  if (a === 'fac_abrir') { V.view = 'facturas'; render(); return facCargarLista(); }
+  if (a === 'fac_filtro') { F.filtro = d.k; render(); return; }
+  if (a === 'fac_sync') {
+    if (F.sync && F.sync.busy) return;
+    F.sync = { busy: true, txt: 'Trayendo de Teamleader…' }; render();
+    try {
+      let total = 0;
+      for (let i = 0; i < 12; i++) {
+        const r = await visitasDB.facturar({ accion: 'sincronizar', max: 60 });
+        total += r.actualizadas || 0;
+        if (!(r.quedan > 0)) break;
+        F.sync.txt = 'Trayendo de Teamleader… quedan ' + r.quedan; if (V.view === 'facturas') render();
+      }
+      F.sync = { busy: false, txt: '' }; toast(total ? total + (total === 1 ? ' factura actualizada.' : ' facturas actualizadas.') : 'Ya estaba todo al día.');
+    } catch (e) { F.sync = { busy: false, txt: '' }; avisar('No se pudo sincronizar con Teamleader: ' + msgError(e)); }
+    return facCargarLista();
+  }
+  if (a === 'fac_ver') { const f = (F.lista || []).find((x) => x.id === d.id) || ((V.presuVer && V.presuVer.facturas) || []).find((x) => x.id === d.id); return facAbrirVer(d.id, f && f.lineas ? f : null); }
+  if (a === 'fac_nueva') return facAbrirNueva(d.pid || null, null);
+  if (a === 'fac_irPresu') { V.sheet = null; return A.presuAbrir(d.id); }
+
+  const s = V.sheet; if (!s) return;
+  /* --- la hoja de una factura --- */
+  if (s.tipo === 'facVer') {
+    if (a === 'fac_confirmar') { s.confirmar = d.k || ''; if (d.k === 'cobro') s.v.importe = s.f.pendiente != null ? String(s.f.pendiente).replace('.', ',') : String(s.f.total).replace('.', ','); if (d.k === 'abonar') s.v.importe = ''; if (d.k === 'contabilizar') s.v.fecha = s.f.fecha || hoyISO(); else s.v.fecha = hoyISO(); render(); return; }
+    if (a === 'fac_refrescar') { try { const r = await visitasDB.facturar({ accion: 'refrescar', id: s.id }); facTrasCambio(r.factura); toast('Factura al día.'); } catch (e) { avisar('No se pudo actualizar: ' + msgError(e)); } render(); return; }
+    if (a === 'fac_pdf') {
+      if (s.busy) return;
+      const w = window.open('', '_blank'); s.busy = 'pdf'; render();
+      try { const r = await visitasDB.facturar({ accion: 'pdf', id: s.id }); if (w) w.location.href = r.url; else window.open(r.url, '_blank', 'noopener'); }
+      catch (e) { if (w) w.close(); avisar('No se pudo abrir el PDF: ' + msgError(e)); }
+      s.busy = false; render(); return;
+    }
+    const llamadas = { fac_contabilizar: () => ({ accion: 'contabilizar', id: s.id, fecha: s.v.fecha }), fac_borrar: () => ({ accion: 'borrar', id: s.id }),
+      fac_cobro: () => ({ accion: 'cobro', id: s.id, importe: s.v.importe, fecha: s.v.fecha }), fac_abonar: () => ({ accion: 'abonar', id: s.id, importe: s.v.importe, fecha: s.v.fecha, concepto: s.v.concepto }) };
+    if (llamadas[a]) {
+      if (s.busy) return;
+      if (a === 'fac_cobro') { const n = facNum(s.v.importe); if (n == null || Number.isNaN(n) || !(n > 0)) { avisar('Pon el importe cobrado.'); return; } }
+      if (a === 'fac_abonar') { const n = facNum(s.v.importe); if (n != null && (Number.isNaN(n) || !(n > 0))) { avisar('Revisa el importe del abono.'); return; } }
+      s.busy = true; render();
+      try {
+        const r = await visitasDB.facturar(llamadas[a]());
+        if (a === 'fac_borrar') { V.sheet = null; toast('Borrador borrado, también en Teamleader.'); facTrasCambio(null); }
+        else {
+          facTrasCambio(r.factura);
+          toast(a === 'fac_contabilizar' ? 'Contabilizada: es la factura ' + (r.factura.numero || '') + '.' : a === 'fac_cobro' ? 'Cobro apuntado.' : 'Abono creado' + (r.abono && r.abono.numero ? ': ' + r.abono.numero : '') + '.');
+          if (a === 'fac_abonar' && r.abono) s.abonadas = facAbonadas([r.abono]);
+        }
+      } catch (e) { s.busy = false; avisar('No se pudo: ' + msgError(e)); }
+      render(); return;
+    }
+    return;
+  }
+  /* --- la hoja de hacer una factura --- */
+  if (s.tipo !== 'facNueva') return;
+  if (a === 'fac_cliente') return facAbrirNueva(null, d.id);
+  if (!s.v) return;
+  if (a === 'fac_modo') { s.v.modo = d.k; render(); return; }
+  if (a === 'fac_pct') { s.v.pct = String(d.p); render(); return; }
+  if (a === 'fac_iva') { s.v.iva = d.id; render(); return; }
+  if (a === 'fac_entidad') { s.v.entidad = d.id; s.v.iva = facIvaPorDefecto(s); render(); return; }
+  if (a === 'fac_todas') { const todas = Object.values(s.v.partidas).every((x) => x.on); Object.values(s.v.partidas).forEach((x) => { x.on = !todas; }); render(); return; }
+  if (a === 'fac_lineaMas') { s.v.lineas.push({ descripcion: '', cantidad: '1', precio: '' }); render(); return; }
+  if (a === 'fac_lineaQuitar') { s.v.lineas.splice(Number(d.i), 1); render(); return; }
+  if (a === 'fac_crear') {
+    if (s.busy) return;
+    const v = s.v, b = facBase(s);
+    if (v.modo === 'porcentaje') { const p = facNum(v.pct); if (p == null || Number.isNaN(p) || !(p > 0 && p <= 100)) { avisar('El porcentaje va de 0 a 100.'); return; } }
+    if (v.modo === 'importe' && !(b.base > 0)) { avisar('Pon el importe a facturar, sin IVA.'); return; }
+    if (v.modo === 'partidas' && !(b.bruto > 0)) { avisar('Marca al menos una partida.'); return; }
+    if (v.modo === 'libre' && !v.lineas.some((l) => String(l.descripcion).trim() && (facNum(l.cantidad) || 0) !== 0)) { avisar('Escribe al menos una línea con su concepto.'); return; }
+    if (!v.iva) { avisar('Elige el tipo de IVA.'); return; }
+    const [tipoPago, diasPago] = String(v.pago || 'cash:0').split(':');
+    const cuerpo = { accion: 'borrador', modo: v.modo, entidad_id: v.entidad, iva_id: v.iva, fecha: v.fecha, forma_pago: { type: tipoPago, days: Number(diasPago) || 0 }, nota: v.nota,
+      presupuesto_id: s.op.presupuesto ? s.op.presupuesto.id : undefined, cliente_id: s.op.presupuesto ? undefined : s.op.cliente.id };
+    if (v.modo === 'porcentaje') { cuerpo.pct = facNum(v.pct); cuerpo.concepto = v.concepto; }
+    if (v.modo === 'importe') { cuerpo.importe = facNum(v.importe); cuerpo.concepto = v.concepto; }
+    if (v.modo === 'partidas') cuerpo.partidas = Object.keys(v.partidas).filter((id) => v.partidas[id].on && (facNum(v.partidas[id].cant) || 0) > 0).map((id) => ({ id, cantidad: facNum(v.partidas[id].cant) }));
+    if (v.modo === 'partidas' || v.modo === 'resto') cuerpo.descontar = facAnticipos(s).filter((f) => v.descontar[f.id]).map((f) => f.id);
+    if (v.modo === 'libre') cuerpo.lineas = v.lineas.map((l) => ({ descripcion: l.descripcion, cantidad: facNum(l.cantidad) || 0, precio: facNum(l.precio) || 0 }));
+    s.busy = true; render();
+    try {
+      const r = await visitasDB.facturar(cuerpo);
+      toast('Borrador creado en Teamleader. Revísalo y contabilízalo.');
+      facCargarLista(); if (V.presuVer && V.presuVer.id) facCargarDePresu(V.presuVer.id);
+      return facAbrirVer(r.factura.id, r.factura);
+    } catch (e) { s.busy = false; avisar('No se pudo crear la factura: ' + msgError(e)); render(); }
+    return;
+  }
+};
+let facBuscarT = null;
+A.facCampo = (f, valor, t) => {
+  const s = V.sheet;
+  if (f === 'fac:buscar') { facEstadoBase().buscar = valor; clearTimeout(facBuscarT); facBuscarT = setTimeout(() => { const el = document.getElementById('fac-lista'); if (el) el.innerHTML = facListaHTML(); }, 200); return; }
+  if (!s) return;
+  if (f === 'fac:cli' && s.tipo === 'facNueva') { s.buscar = valor; const q = String(valor).trim().toLowerCase(); const el = document.getElementById('fac-clis');
+    if (el) el.innerHTML = (q.length >= 2 ? V.agenda.clientes.filter((c) => clienteCasa(c, q)).slice(0, 8) : []).map((c) => `<div class="row" data-a="fac_cliente" data-id="${c.id}" style="padding:10px 0;border-bottom:1px solid var(--l1);cursor:pointer"><div class="grow" style="font:500 14px var(--sans)">${esc(c.nombre)}</div><span class="tiny">${esc(c.nif || '')}</span></div>`).join('');
+    return; }
+  const p = f.split(':');
+  if (p[1] === 'v' && s.tipo === 'facVer') { s.v[p[2]] = valor; return; }
+  if (s.tipo !== 'facNueva' || !s.v) return;
+  if (p[1] === 'n') { s.v[p[2]] = valor; if (p[2] === 'pct') { clearTimeout(facBuscarT); facBuscarT = setTimeout(() => { if (V.sheet === s && document.activeElement && document.activeElement.dataset.f !== 'fac:n:pct') render(); }, 1200); } facRefrescarPrevia(); return; }
+  if (p[1] === 'p') { const x = s.v.partidas[p[2]]; if (!x) return; if (p[3] === 'on') { x.on = !!(t && t.checked); render(); } else { x.cant = valor; facRefrescarPrevia(); } return; }
+  if (p[1] === 'd') { s.v.descontar[p[2]] = !!(t && t.checked); facRefrescarPrevia(); return; }
+  if (p[1] === 'l') { const l = s.v.lineas[Number(p[2])]; if (l) { l[p[3]] = valor; facRefrescarPrevia(); } return; }
+};
+
 /* ---------- un producto que no está en el catálogo: se crea y se añade (Enzo, 27-10-2026) ---------- */
 const FAMILIAS_PROPIAS = [['material', 'Material'], ['equipo', 'Equipo'], ['mano_obra', 'Mano de obra'], ['servicio', 'Servicio'], ['tramite', 'Trámite'], ['otro', 'Otro']];
 A.presuProductoNuevoAbrir = (modo) => {
@@ -9734,6 +10192,7 @@ async function abrirPresuSinOrigen(id) {
   try { V.presuVer.datos = await visitasDB.verPresupuesto(id); }
   catch (e) { V.presuVer.error = msgError(e); }
   V.presuVer.cargando = false; render();
+  facCargarDePresu(id);
 }
 
 /* ---------------------------------------------------------------------------
@@ -10251,6 +10710,7 @@ function vPresupuestos() {
       <div class="h1">Presupuestos</div>
       <div class="row g8">
         ${esAdmin() || rol() === 'presupuestos' ? `<button class="pill" data-a="tlSincronizar" style="padding:8px 12px;background:var(--l1);color:var(--tinta)" ${V.tlSyncBusy ? 'disabled' : ''} title="Traer de Teamleader lo enviado, aceptado o rechazado, y las ofertas hechas allí">${V.tlSyncBusy ? 'Mirando…' : '↻ Teamleader'}</button>` : ''}
+        ${puedeFacturar() ? '<button class="pill" data-a="fac_abrir" style="padding:8px 12px;background:var(--l1);color:var(--tinta)">Facturas</button>' : ''}
         <button class="pill" data-a="presuNuevo" style="background:var(--tinta);color:#fff">+ Nuevo</button>
       </div>
     </div>
@@ -11146,6 +11606,7 @@ function vPresupuestoVer() {
       ${d.sync_estado === 'error' && d.sync_error ? `<div class="tiny" style="margin-top:8px;color:var(--rojo)">${esc(d.sync_error)}</div>` : ''}
     </div>
     ${seguimientoHTML(d)}
+    ${facPresuHTML(d)}
     <button class="btn" data-a="presuBorrar" data-id="${d.id}" style="margin-top:14px;border-radius:99px;background:none;color:var(--rojo);box-shadow:inset 0 0 0 1.5px var(--rojo)">Borrar presupuesto</button>
     <div class="tiny" style="text-align:center;margin-top:8px">Para pruebas y duplicados. Si ya está en Teamleader, la oferta de allí se queda: quítala desde el CRM.</div>` : ''}
   </div>`;
@@ -13389,6 +13850,7 @@ function nav(v) {
     || (id === 'horas' && ['imputar', 'revisarImp', 'resumenImp'].includes(v))
     || (id === 'ajustes' && !esPresupuestos() && ['errores', 'legalizaciones', 'legalizacion'].includes(v))
     || (id === 'ajustes' && ['costesPersonal', 'fasesPlantillas', 'precios'].includes(v))
+    || (id === 'presupuestos' && v === 'facturas')
     || (id === 'obras' && ['alta', 'planificacion'].includes(v))
     || (id === 'legalizaciones' && v === 'legalizacion')
     || (id === 'empleados' && (v === 'empleado' || v === 'planilla'))
@@ -14192,6 +14654,8 @@ function sheet() {
   if (s.tipo === 'fv2Desglose') return fv2DesgloseSheetHTML(s);
   if (s.tipo === 'prProducto') return prProductoSheetHTML(s);
   if (s.tipo === 'prLinea') return prLineaSheetHTML(s);
+  if (s.tipo === 'facVer') return facVerSheetHTML(s);
+  if (s.tipo === 'facNueva') return facNuevaSheetHTML(s);
   if (s.tipo === 'presuCliente') return presuClienteSheetHTML(s);
   if (s.tipo === 'presuCategoria') return presuCategoriaSheetHTML(s);
   if (s.tipo === 'presuProductoNuevo') {
@@ -14607,6 +15071,7 @@ document.addEventListener('click', (e) => {
   if (a.startsWith('vf')) return A.vf(a, d);
   if (a.startsWith('ag_')) return A.ag(a, d, e);
   if (a.startsWith('pr_')) return A.pr(a, d);
+  if (a.startsWith('fac_')) return A.fac(a, d);
   if (a === 'visitaAparcar') return A.visitaAparcar();
   if (a === 'visitaSeguirMedias') return A.visitaSeguirMedias();
   if (a === 'nuevaVisita') return A.nuevaVisita();
@@ -15077,6 +15542,7 @@ document.addEventListener('input', (e) => {
   if (f === 'segOtro') { if (V.sheet) V.sheet.otro = t.value; return; }
   if (f === 'tbColocarMotivo') { if (V.sheet) V.sheet.motivo = t.value; return; }
   if (f.startsWith('paj:')) return A.presuAjusteCampo(f.slice(4), t.value);
+  if (f.startsWith('fac:')) return A.facCampo(f, t.type === 'checkbox' ? (t.checked ? '1' : '') : t.value, t);
   if (f === 'prFiltro' || f === 'prBuscar' || f.startsWith('prfv:') || f.startsWith('prc:') || f.startsWith('prp:')) return A.prCampo(f, t.value);
   if (f.startsWith('fvd:')) { const [, i, k] = f.split(':'); return A.fv2DesgloseCampo(Number(i), k, t.value); }
   if (f.startsWith('fvdn:')) return A.fv2DesgloseNuevaCampo(f.slice(5), t.value);
