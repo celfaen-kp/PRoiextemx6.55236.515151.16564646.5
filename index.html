@@ -512,7 +512,7 @@ import * as idiomas from './presu-idiomas.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '31.8'; // versión visible de la app (única fuente)
+const APP_VERSION = '31.9'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -1419,7 +1419,7 @@ A.salir = () => {
   V.view = 'login'; render();
   sysAuth.logout().catch(() => {});
 };
-A.ir = (v) => { if (/^p[123]$/.test(V.view) && !/^p[123]$/.test(v)) limpiarBorradorParte(); V.volverPila = []; V.volverA = null; V.view = v; render(); if (v === 'legalizaciones') A.cargarLegalizaciones(); if (v === 'presupuestos') A.cargarPresupuestos(); if (v === 'visitas') A.cargarVisitas(); if (AG_VISTAS.includes(v)) A.cargarAgenda(); if (v === 'ajustes' && verCRM() && !V.crm.cargado) A.crmEstado(); if (v === 'ajustes' && esAdmin() && !V.copias.cargado) A.copiasEstado(); if (['hoy', 'obras', 'obra', 'partes', 'horas'].includes(v)) refrescarDatos().then(render); };
+A.ir = (v) => { if (/^p[123]$/.test(V.view) && !/^p[123]$/.test(v)) limpiarBorradorParte(); V.volverPila = []; V.volverA = null; V.view = v; render(); if (v === 'legalizaciones') A.cargarLegalizaciones(); if (v === 'presupuestos') A.cargarPresupuestos(); if (v === 'facturas') facCargarLista(); if (v === 'visitas') A.cargarVisitas(); if (AG_VISTAS.includes(v)) A.cargarAgenda(); if (v === 'ajustes' && verCRM() && !V.crm.cargado) A.crmEstado(); if (v === 'ajustes' && esAdmin() && !V.copias.cargado) A.copiasEstado(); if (['hoy', 'obras', 'obra', 'partes', 'horas'].includes(v)) refrescarDatos().then(render); };
 A.verObra = (id) => {
   V.obraId = id; V.obraRango = 'total'; V.view = 'obra'; render();
   // El total de una obra se cuenta desde que se abrió, que puede ser de antes
@@ -6280,7 +6280,7 @@ function vAjustes() {
       <div class="sub" style="font-size:12px;margin-top:4px">Lo que cuesta la hora de cada persona. Con ello cada obra enseña su coste real y su margen.</div></div>
       <div style="font:400 20px/1 var(--sans);color:var(--t3)">›</div>
     </div>` : ''}
-    ${puedeFacturar() ? `<div class="card row" data-a="fac_abrir" style="margin-top:14px;cursor:pointer">
+    ${esAdmin() ? `<div class="card row" data-a="fac_abrir" style="margin-top:14px;cursor:pointer">
       <div class="grow"><div style="font:600 15px var(--sans)">Facturas</div>
       <div class="sub" style="font-size:12px;margin-top:4px">Todas las facturas y abonos de Teamleader, y hacer facturas nuevas: de un presupuesto (todo, un porcentaje, partidas) o sueltas.</div></div>
       <div style="font:400 20px/1 var(--sans);color:var(--t3)">›</div>
@@ -9059,11 +9059,12 @@ function facListaHTML() {
 function vFacturas() {
   const F = facEstadoBase();
   return `<div class="hdr">
-    <div class="volver" data-a="ir" data-v="presupuestos">‹ Presupuestos</div>
-    <div class="row" style="justify-content:space-between;margin-top:6px">
+    ${esAdmin() ? '<div class="volver" data-a="ir" data-v="ajustes">‹ Ajustes</div>' : marcaSysefen(false)}
+    <div class="row" style="justify-content:space-between${esAdmin() ? ';margin-top:6px' : ''}">
       <div class="h1">Facturas</div>
       <div class="row g8">
         <button class="pill" data-a="fac_sync" style="padding:8px 12px;background:var(--l1);color:var(--tinta)" ${F.sync && F.sync.busy ? 'disabled' : ''} title="Traer de Teamleader las facturas nuevas o cambiadas">${F.sync && F.sync.busy ? '…' : '↻'}</button>
+        <button class="pill" data-a="fac_gestoria" style="padding:8px 12px;background:var(--l1);color:var(--tinta)" title="Listado en Excel y los PDF de un mes o un trimestre, para la gestoría">Gestoría</button>
         <button class="pill" data-a="fac_nueva" style="background:#76923c;color:#fff">+ Factura</button>
       </div>
     </div>
@@ -9165,6 +9166,14 @@ function facVerSheetHTML(s) {
         <div style="font:600 15px var(--sans)">Apuntar un cobro</div>
         <div class="row g8" style="margin-top:10px;align-items:center;flex-wrap:wrap"><span class="tiny">Importe (con IVA)</span><input class="inp" data-f="fac:v:importe" value="${esc(s.v.importe)}" inputmode="decimal" style="width:120px;padding:9px;text-align:right"><span class="tiny">€ · el</span><input class="inp" type="date" data-f="fac:v:fecha" value="${esc(s.v.fecha)}" style="width:170px;padding:9px"></div>
         <div class="row g8" style="margin-top:12px"><button class="btn btn-gris" data-a="fac_confirmar" data-k="" style="border-radius:99px">Cancelar</button><button class="btn" data-a="fac_cobro" style="background:#76923c" ${s.busy ? 'disabled' : ''}>${s.busy ? 'Guardando…' : 'Apuntar cobro'}</button></div></div>`
+    : c === 'correo' ? `<div style="margin-top:14px;padding:12px 14px;border-radius:14px;background:rgba(20,23,15,.045)">
+        <div style="font:600 15px var(--sans)">Enviar al cliente por correo</div>
+        <div class="sub" style="font-size:12px;margin-top:4px">Sale desde noreply@sysefen.com con el PDF adjunto. Si el cliente contesta, la respuesta llega a la oficina.</div>
+        <div class="lbl" style="margin:10px 0 5px">Para</div><input class="inp" type="email" data-f="fac:v:para" value="${esc(s.v.para || '')}" placeholder="correo del cliente" autocapitalize="off" style="padding:10px">
+        <div class="lbl" style="margin:10px 0 5px">Con copia a (opcional)</div><input class="inp" data-f="fac:v:cc" value="${esc(s.v.cc || '')}" placeholder="otro@correo.com" autocapitalize="off" style="padding:10px">
+        <div class="lbl" style="margin:10px 0 5px">Asunto</div><input class="inp" data-f="fac:v:asunto" value="${esc(s.v.asunto || '')}" style="padding:10px">
+        <div class="lbl" style="margin:10px 0 5px">Mensaje</div><textarea class="inp" data-f="fac:v:texto" rows="9" style="padding:10px;font-size:13px;line-height:1.45">${esc(s.v.texto || '')}</textarea>
+        <div class="row g8" style="margin-top:12px"><button class="btn btn-gris" data-a="fac_confirmar" data-k="" style="border-radius:99px">Cancelar</button><button class="btn" data-a="fac_correo" style="background:#76923c" ${s.busy ? 'disabled' : ''}>${s.busy ? 'Enviando…' : 'Enviar'}</button></div></div>`
     : c === 'abonar' ? `<div style="margin-top:14px;padding:12px 14px;border-radius:14px;background:#f1ecf9">
         <div style="font:600 15px var(--sans)">Abonar la factura</div>
         <div class="sub" style="font-size:12px;margin-top:4px">Crea en Teamleader una nota de abono (factura rectificativa) con su propio número. Deja el importe en blanco para abonarla entera, o pon una parte sin IVA.</div>
@@ -9174,7 +9183,9 @@ function facVerSheetHTML(s) {
     : `<div class="row g8" style="margin-top:14px;flex-wrap:wrap">
         ${!esAbono && e.k === 'borrador' ? '<button class="pill" data-a="fac_confirmar" data-k="contabilizar" style="background:#76923c;color:#fff;padding:12px 15px">Contabilizar</button>' : ''}
         ${!esAbono && (e.k === 'pendiente' || e.k === 'vencida') ? '<button class="pill" data-a="fac_confirmar" data-k="cobro" style="background:#76923c;color:#fff;padding:12px 15px">Apuntar cobro</button>' : ''}
-        <button class="pill" data-a="fac_pdf" style="padding:12px 15px" ${s.busy ? 'disabled' : ''}>${s.busy === 'pdf' ? 'Abriendo…' : 'PDF'}</button>
+        ${!esAbono && e.k === 'borrador' ? '<button class="pill" data-a="fac_editar" style="padding:12px 15px">Editar</button>' : ''}
+        <button class="pill" data-a="fac_pdf" style="padding:12px 15px" ${s.busy ? 'disabled' : ''}>${s.busy === 'pdf' ? 'Abriendo…' : 'Ver PDF'}</button>
+        ${f.numero ? `<button class="pill" data-a="fac_correoAbrir" style="padding:12px 15px" ${s.busy ? 'disabled' : ''}>${s.busy === 'correo' ? 'Preparando…' : f.enviada_app_at ? 'Volver a enviar' : 'Enviar al cliente'}</button>` : ''}
         ${!esAbono && e.k !== 'borrador' && e.k !== 'abonada' ? '<button class="pill" data-a="fac_confirmar" data-k="abonar" style="padding:12px 15px">Abonar</button>' : ''}
         ${!esAbono && e.k === 'borrador' ? '<button class="pill pill-rojo" data-a="fac_confirmar" data-k="borrar" style="padding:12px 15px">Borrar</button>' : ''}
         ${f.presupuesto_id && V.view !== 'presupuestoVer' ? `<button class="pill" data-a="fac_irPresu" data-id="${f.presupuesto_id}" style="padding:12px 15px">Ver presupuesto</button>` : ''}
@@ -9192,6 +9203,7 @@ function facVerSheetHTML(s) {
       <button class="btn btn-gris" data-a="cerrarSheet" style="border-radius:99px;width:auto;padding:12px 22px">Cerrar</button>
       <span class="tiny">${f.origen === 'app' ? 'Hecha desde la app' : 'Hecha en Teamleader'} · <span data-a="fac_refrescar" style="text-decoration:underline;cursor:pointer">actualizar</span></span>
     </div>
+    ${f.enviada_app_at ? `<div class="tiny" style="margin-top:8px">Enviada por correo a ${esc(f.enviada_app_a || '')} el ${facFecha(String(f.enviada_app_at).slice(0, 10))}.</div>` : ''}
   </div></div>`;
 }
 
@@ -9317,6 +9329,129 @@ async function facAbrirNueva(presupuestoId, clienteId) {
   s.cargando = false;
   if (V.sheet === s) render();
 }
+/* --- editar un borrador: sus líneas, la fecha, la forma de pago y las observaciones --- */
+async function facAbrirEditar(id) {
+  V.sheet = { tipo: 'facEditar', id, cargando: true, err: null, busy: false, f: null, ivas: [], pagos: [], v: null };
+  render();
+  const s = V.sheet;
+  try {
+    const [r, op] = await Promise.all([visitasDB.facturar({ accion: 'refrescar', id }), visitasDB.facturar({ accion: 'opciones' })]);
+    s.f = r.factura;
+    if (s.f.estado !== 'borrador') throw new Error('esa factura ya está contabilizada: se rectifica con un abono');
+    s.ivas = ((op.ivas || {})[s.f.entidad_tl_id] || []).slice().sort((a, b) => b.pct - a.pct || a.nombre.localeCompare(b.nombre));
+    s.pagos = op.formas_pago || [];
+    const ivaDe = (l) => (l.iva_id && s.ivas.some((i) => i.id === l.iva_id) ? l.iva_id : (s.ivas.find((i) => i.pct === Number(l.iva_pct)) || s.ivas[0] || { id: '' }).id);
+    s.v = { fecha: s.f.fecha || hoyISO(), pago: s.f.forma_pago || 'cash:0', nota: s.f.nota || '',
+      lineas: (s.f.lineas || []).map((l) => ({ seccion: l.seccion || '', descripcion: l.descripcion || '', detalle: l.detalle || '', cantidad: String(l.cantidad).replace('.', ','), precio: String(l.precio).replace('.', ','), dto: l.dto_pct ? String(l.dto_pct).replace('.', ',') : '', iva: ivaDe(l) })) };
+    if (!s.v.lineas.length) s.v.lineas.push({ seccion: '', descripcion: '', detalle: '', cantidad: '1', precio: '', dto: '', iva: (s.ivas.find((i) => i.pct === 21) || s.ivas[0] || { id: '' }).id });
+  } catch (e) { s.err = 'No se pudo abrir el borrador: ' + msgError(e); }
+  s.cargando = false;
+  if (V.sheet === s) render();
+}
+function facEditarTotales(s) {
+  let base = 0, cuota = 0;
+  (s.v.lineas || []).forEach((l) => {
+    const imp = fac2((facNum(l.cantidad) || 0) * (facNum(l.precio) || 0) * (1 - (facNum(l.dto) || 0) / 100));
+    const iva = s.ivas.find((i) => i.id === l.iva);
+    base += imp; cuota += imp * (iva ? iva.pct : 0) / 100;
+  });
+  base = fac2(base); cuota = fac2(cuota);
+  return `<div class="row" style="justify-content:space-between;align-items:baseline"><span class="sub">Base</span><span class="num" style="font-size:16px">${eur(base)}</span></div>
+    <div class="row" style="justify-content:space-between;align-items:baseline;margin-top:3px"><span class="sub">IVA</span><span class="num" style="font-size:14px">${eur(cuota)}</span></div>
+    <div class="row" style="justify-content:space-between;align-items:baseline;margin-top:5px"><span style="font:600 15px var(--sans)">Total factura</span><span class="num" style="font-size:20px">${eur(fac2(base + cuota))}</span></div>`;
+}
+function facEditarSheetHTML(s) {
+  if (s.cargando) return '<div class="sheet"><div><div style="font:600 23px/1.15 var(--cond)">Editar el borrador</div><div class="sub" style="margin-top:8px">Trayendo el borrador de Teamleader…</div></div></div>';
+  if (s.err) return `<div class="sheet"><div><div style="font:600 23px/1.15 var(--cond)">Editar el borrador</div><div class="sub" style="margin-top:8px;color:var(--rojo)">${esc(s.err)}</div><button class="btn btn-gris" data-a="cerrarSheet" style="margin-top:14px;border-radius:99px">Cerrar</button></div></div>`;
+  const v = s.v;
+  const nombreIva = (i) => (/^ventas\s+\d+\s*% iva$/i.test(i.nombre) ? String(i.pct).replace('.', ',') + ' %' : i.nombre.replace(/^Ventas\s+/i, '') + (i.pct ? '' : ' (0 %)'));
+  return `<div class="sheet"><div>
+    <div style="font:600 23px/1.15 var(--cond)">Editar el borrador</div>
+    <div class="sub" style="margin-top:6px">${esc(s.f.cliente_nombre || '')} · ${esc(s.f.entidad || '')}. Cambia, quita o añade líneas; al guardar se cambia también en Teamleader. Para cambiar de cliente, borra el borrador y hazlo de nuevo.</div>
+    ${v.lineas.map((l, i) => `<div style="padding:10px 0;border-bottom:1px solid var(--l1)">
+      ${i === 0 || l.nueva || (v.lineas[i - 1] && v.lineas[i - 1].seccion !== l.seccion) ? `<input class="inp" data-f="fac:e:${i}:seccion" value="${esc(l.seccion)}" placeholder="Sección (opcional): Equipos, Instalación…" style="padding:7px 10px;font-size:12px;margin-bottom:6px;background:rgba(20,23,15,.03)">` : ''}
+      <input class="inp" data-f="fac:e:${i}:descripcion" value="${esc(l.descripcion)}" placeholder="Concepto" style="padding:9px 11px">
+      ${l.detalle ? `<textarea class="inp" data-f="fac:e:${i}:detalle" rows="2" placeholder="Descripción larga" style="margin-top:6px;padding:8px 11px;font-size:12px">${esc(l.detalle)}</textarea>` : ''}
+      <div class="row g8" style="margin-top:6px;align-items:center;flex-wrap:wrap">
+        <input class="inp" data-f="fac:e:${i}:cantidad" value="${esc(l.cantidad)}" inputmode="decimal" style="width:64px;padding:8px;text-align:center"><span class="tiny">×</span>
+        <input class="inp" data-f="fac:e:${i}:precio" value="${esc(l.precio)}" inputmode="decimal" placeholder="Precio" style="width:104px;padding:8px;text-align:right"><span class="tiny">€ · dto</span>
+        <input class="inp" data-f="fac:e:${i}:dto" value="${esc(l.dto)}" inputmode="decimal" placeholder="0" style="width:52px;padding:8px;text-align:right"><span class="tiny">%</span>
+        <select class="inp" data-f="fac:e:${i}:iva" style="width:auto;padding:8px;font-size:13px">${s.ivas.map((x) => `<option value="${x.id}" ${l.iva === x.id ? 'selected' : ''}>IVA ${esc(nombreIva(x))}</option>`).join('')}</select>
+        <div class="grow"></div>
+        ${v.lineas.length > 1 ? `<span class="tiny" data-a="fac_edQuitar" data-i="${i}" style="color:var(--rojo);cursor:pointer">Quitar</span>` : ''}
+      </div></div>`).join('')}
+    <div class="dash" data-a="fac_edMas" style="margin-top:10px;display:block">+ Otra línea</div>
+    <div class="row g8" style="margin-top:14px;align-items:flex-end;flex-wrap:wrap">
+      <div><div class="lbl" style="margin-bottom:6px">Fecha</div><input class="inp" type="date" data-f="fac:n:fecha" value="${esc(v.fecha)}" style="width:170px;padding:10px"></div>
+      <div class="grow"><div class="lbl" style="margin-bottom:6px">Forma de pago</div><select class="inp" data-f="fac:n:pago" style="padding:10px">${s.pagos.map((p) => { const k = p.type + ':' + p.days; return `<option value="${k}" ${v.pago === k ? 'selected' : ''}>${esc(facPagoTxt(k))}</option>`; }).join('')}</select></div>
+    </div>
+    <div class="lbl" style="margin:12px 0 6px">Observaciones</div>
+    <textarea class="inp" data-f="fac:n:nota" rows="2" style="padding:10px;font-size:13px">${esc(v.nota)}</textarea>
+    <div id="fac-ed-tot" style="margin-top:14px;padding:12px 14px;border-radius:14px;background:rgba(20,23,15,.045)">${facEditarTotales(s)}</div>
+    <div class="row g8" style="margin-top:14px">
+      <button class="btn btn-gris" data-a="fac_edCancelar" style="border-radius:99px">Cancelar</button>
+      <button class="btn" data-a="fac_edGuardar" style="background:#76923c" ${s.busy ? 'disabled' : ''}>${s.busy ? 'Guardando…' : 'Guardar cambios'}</button>
+    </div>
+  </div></div>`;
+}
+
+/* --- el paquete de la gestoría: listado en Excel y los PDF de un mes o un trimestre, en un ZIP --- */
+const FAC_MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+/** De 'T4' o '11' y el año al periodo: { desde, hasta, etiqueta, nombre }. */
+function facPeriodo(anio, k) {
+  const y = Number(anio), dd = (n) => String(n).padStart(2, '0');
+  const fin = (m) => y + '-' + dd(m) + '-' + dd(new Date(y, m, 0).getDate());
+  if (/^T[1-4]$/.test(k)) { const t = Number(k[1]); return { desde: y + '-' + dd(t * 3 - 2) + '-01', hasta: fin(t * 3), etiqueta: y + '-T' + t, nombre: t + '.º trimestre de ' + y }; }
+  if (k === 'anio') return { desde: y + '-01-01', hasta: y + '-12-31', etiqueta: String(y), nombre: 'todo ' + y };
+  const m = Number(k); return { desde: y + '-' + dd(m) + '-01', hasta: fin(m), etiqueta: y + '-' + dd(m), nombre: FAC_MESES[m - 1] + ' de ' + y };
+}
+/** Las facturas y abonos contabilizados de un periodo y una empresa, y sus sumas (los abonos restan). */
+function facDelPeriodo(lista, per, entidad) {
+  const fs = (lista || []).filter((f) => f.numero && f.fecha && f.fecha >= per.desde && f.fecha <= per.hasta && (!entidad || f.entidad === entidad));
+  const sg = (f) => (f.tipo === 'abono' ? -1 : 1);
+  return { fs, facturas: fs.filter((f) => f.tipo === 'factura').length, abonos: fs.filter((f) => f.tipo === 'abono').length,
+    base: fac2(fs.reduce((t, f) => t + sg(f) * Math.abs(Number(f.base) || 0), 0)), iva: fac2(fs.reduce((t, f) => t + sg(f) * Math.abs(Number(f.iva) || 0), 0)), total: fac2(fs.reduce((t, f) => t + sg(f) * Math.abs(Number(f.total) || 0), 0)) };
+}
+function facAbrirGestoria() {
+  const F = facEstadoBase(); const hoy = hoyISO();
+  const empresas = [...new Set((F.lista || []).map((f) => f.entidad).filter(Boolean))].sort((a, b) => Number(/sysefen group/i.test(b)) - Number(/sysefen group/i.test(a)) || a.localeCompare(b));
+  // Por defecto, el trimestre anterior si el actual acaba de empezar; si no, el actual.
+  let anio = Number(hoy.slice(0, 4)), t = Math.ceil(Number(hoy.slice(5, 7)) / 3);
+  if ((Number(hoy.slice(5, 7)) - 1) % 3 === 0 && Number(hoy.slice(8, 10)) <= 20) { t -= 1; if (t < 1) { t = 4; anio -= 1; } }
+  V.sheet = { tipo: 'facGestoria', anio: String(anio), k: 'T' + t, entidad: empresas[0] || '', empresas, busy: false, txt: '' };
+  render();
+}
+function facGestoriaSheetHTML(s) {
+  const F = facEstadoBase();
+  const anios = [...new Set((F.lista || []).map((f) => String(f.fecha || '').slice(0, 4)).filter(Boolean))].sort().reverse();
+  const per = facPeriodo(s.anio, s.k), r = facDelPeriodo(F.lista, per, s.entidad);
+  const chip = (k, n) => `<span class="chip${s.k === k ? ' on' : ''}" data-a="fac_gesK" data-k="${k}" style="flex:none">${n}</span>`;
+  return `<div class="sheet"><div>
+    <div style="font:600 23px/1.15 var(--cond)">Para la gestoría</div>
+    <div class="sub" style="margin-top:6px">Un ZIP con el listado de facturas emitidas en Excel (base, IVA por tipo y total; los abonos restan) y el PDF de cada factura y cada abono del periodo.</div>
+    ${s.empresas.length > 1 ? `<div class="lbl" style="margin:14px 0 6px">Empresa</div><div class="row g8" style="flex-wrap:wrap">${s.empresas.map((e) => `<span class="chip${s.entidad === e ? ' on' : ''}" data-a="fac_gesEmp" data-e="${esc(e)}">${esc(e)}</span>`).join('')}</div>` : ''}
+    <div class="lbl" style="margin:14px 0 6px">Año</div>
+    <div class="row g8" style="flex-wrap:wrap">${anios.map((a) => `<span class="chip${s.anio === a ? ' on' : ''}" data-a="fac_gesAnio" data-y="${a}">${a}</span>`).join('')}</div>
+    <div class="lbl" style="margin:14px 0 6px">Trimestre</div>
+    <div class="row g8" style="flex-wrap:wrap">${[1, 2, 3, 4].map((t) => chip('T' + t, t + 'T')).join('')}${chip('anio', 'Todo el año')}</div>
+    <div class="lbl" style="margin:14px 0 6px">O un mes</div>
+    <div class="row g8" style="overflow-x:auto;padding-bottom:2px">${FAC_MESES.map((m, i) => chip(String(i + 1), m.slice(0, 3))).join('')}</div>
+    <div style="margin-top:14px;padding:12px 14px;border-radius:14px;background:rgba(20,23,15,.045)">
+      <div style="font:600 15px var(--sans)">${esc(per.nombre.charAt(0).toUpperCase() + per.nombre.slice(1))}</div>
+      ${r.fs.length ? `<div class="sub" style="margin-top:4px">${r.facturas} ${r.facturas === 1 ? 'factura' : 'facturas'}${r.abonos ? ' y ' + r.abonos + (r.abonos === 1 ? ' abono' : ' abonos') : ''}</div>
+        <div class="row" style="justify-content:space-between;margin-top:8px"><span class="sub">Base imponible</span><span class="num" style="font-size:15px">${eur(r.base)}</span></div>
+        <div class="row" style="justify-content:space-between;margin-top:3px"><span class="sub">IVA repercutido</span><span class="num" style="font-size:15px">${eur(r.iva)}</span></div>
+        <div class="row" style="justify-content:space-between;margin-top:3px"><span style="font:600 14px var(--sans)">Total</span><span class="num" style="font-size:17px">${eur(r.total)}</span></div>`
+      : '<div class="sub" style="margin-top:4px">No hay facturas contabilizadas en ese periodo.</div>'}
+    </div>
+    ${s.txt ? `<div class="tiny" style="margin-top:8px;color:var(--tinta)">${esc(s.txt)}</div>` : ''}
+    <div class="row g8" style="margin-top:14px">
+      <button class="btn btn-gris" data-a="cerrarSheet" style="border-radius:99px">Cerrar</button>
+      <button class="btn" data-a="fac_gesDescargar" style="background:#76923c" ${s.busy || !r.fs.length ? 'disabled' : ''}>${s.busy ? 'Preparando…' : 'Descargar el ZIP'}</button>
+    </div>
+  </div></div>`;
+}
+
 async function facAbrirVer(id, fila) {
   V.sheet = { tipo: 'facVer', id, f: fila || null, err: null, busy: false, confirmar: '', v: { fecha: hoyISO(), importe: '', concepto: '' }, abonadas: {} };
   render();
@@ -9356,6 +9491,7 @@ A.fac = async (a, d) => {
   }
   if (a === 'fac_ver') { const f = (F.lista || []).find((x) => x.id === d.id) || ((V.presuVer && V.presuVer.facturas) || []).find((x) => x.id === d.id); return facAbrirVer(d.id, f && f.lineas ? f : null); }
   if (a === 'fac_nueva') return facAbrirNueva(d.pid || null, null);
+  if (a === 'fac_gestoria') return facAbrirGestoria();
   if (a === 'fac_irPresu') { V.sheet = null; return A.presuAbrir(d.id); }
 
   const s = V.sheet; if (!s) return;
@@ -9364,11 +9500,33 @@ A.fac = async (a, d) => {
     if (a === 'fac_confirmar') { s.confirmar = d.k || ''; if (d.k === 'cobro') s.v.importe = s.f.pendiente != null ? String(s.f.pendiente).replace('.', ',') : String(s.f.total).replace('.', ','); if (d.k === 'abonar') s.v.importe = ''; if (d.k === 'contabilizar') s.v.fecha = s.f.fecha || hoyISO(); else s.v.fecha = hoyISO(); render(); return; }
     if (a === 'fac_refrescar') { try { const r = await visitasDB.facturar({ accion: 'refrescar', id: s.id }); facTrasCambio(r.factura); toast('Factura al día.'); } catch (e) { avisar('No se pudo actualizar: ' + msgError(e)); } render(); return; }
     if (a === 'fac_pdf') {
+      // Se abre en otra pestaña, para verlo antes de descargarlo: el enlace es de
+      // la copia que guarda la app, que el navegador enseña en vez de bajarlo.
       if (s.busy) return;
       const w = window.open('', '_blank'); s.busy = 'pdf'; render();
+      try { if (w) w.document.title = 'Abriendo el PDF…'; } catch (_) { /* pestaña de otro origen */ }
       try { const r = await visitasDB.facturar({ accion: 'pdf', id: s.id }); if (w) w.location.href = r.url; else window.open(r.url, '_blank', 'noopener'); }
       catch (e) { if (w) w.close(); avisar('No se pudo abrir el PDF: ' + msgError(e)); }
       s.busy = false; render(); return;
+    }
+    if (a === 'fac_editar') return facAbrirEditar(s.id);
+    if (a === 'fac_correoAbrir') {
+      if (s.busy) return;
+      s.busy = 'correo'; render();
+      try { const r = await visitasDB.facturar({ accion: 'correo_previa', id: s.id }); Object.assign(s.v, { para: r.para || '', cc: '', asunto: r.asunto || '', texto: r.texto || '' }); s.confirmar = 'correo'; }
+      catch (e) { avisar('No se pudo preparar el correo: ' + msgError(e)); }
+      s.busy = false; render(); return;
+    }
+    if (a === 'fac_correo') {
+      if (s.busy) return;
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(s.v.para || '').trim())) { avisar('Pon el correo del cliente.'); return; }
+      if (!String(s.v.asunto || '').trim() || !String(s.v.texto || '').trim()) { avisar('Faltan el asunto o el mensaje.'); return; }
+      s.busy = true; render();
+      try {
+        const r = await visitasDB.facturar({ accion: 'correo', id: s.id, para: String(s.v.para).trim(), cc: s.v.cc || '', asunto: s.v.asunto, texto: s.v.texto });
+        facTrasCambio(r.factura); toast('Factura enviada a ' + String(s.v.para).trim() + '.');
+      } catch (e) { s.busy = false; avisar('No se pudo enviar: ' + msgError(e)); }
+      render(); return;
     }
     const llamadas = { fac_contabilizar: () => ({ accion: 'contabilizar', id: s.id, fecha: s.v.fecha }), fac_borrar: () => ({ accion: 'borrar', id: s.id }),
       fac_cobro: () => ({ accion: 'cobro', id: s.id, importe: s.v.importe, fecha: s.v.fecha }), fac_abonar: () => ({ accion: 'abonar', id: s.id, importe: s.v.importe, fecha: s.v.fecha, concepto: s.v.concepto }) };
@@ -9387,6 +9545,57 @@ A.fac = async (a, d) => {
         }
       } catch (e) { s.busy = false; avisar('No se pudo: ' + msgError(e)); }
       render(); return;
+    }
+    return;
+  }
+  /* --- editar un borrador --- */
+  if (s.tipo === 'facEditar') {
+    if (a === 'fac_edCancelar') return facAbrirVer(s.id, null);
+    if (!s.v) return;
+    if (a === 'fac_edMas') { const u = s.v.lineas[s.v.lineas.length - 1] || {}; s.v.lineas.push({ seccion: u.seccion || '', descripcion: '', detalle: '', cantidad: '1', precio: '', dto: '', iva: u.iva || (s.ivas[0] || {}).id || '', nueva: true }); render(); return; }
+    if (a === 'fac_edQuitar') { s.v.lineas.splice(Number(d.i), 1); render(); return; }
+    if (a === 'fac_edGuardar') {
+      if (s.busy) return;
+      const lineas = s.v.lineas.filter((l) => String(l.descripcion).trim() && (facNum(l.cantidad) || 0) !== 0);
+      if (!lineas.length) { avisar('La factura tiene que llevar al menos una línea con concepto y cantidad.'); return; }
+      if (s.v.lineas.some((l) => Number.isNaN(facNum(l.cantidad)) || Number.isNaN(facNum(l.precio)) || Number.isNaN(facNum(l.dto)))) { avisar('Revisa los números de las líneas.'); return; }
+      const [tipoPago, diasPago] = String(s.v.pago || 'cash:0').split(':');
+      s.busy = true; render();
+      try {
+        const r = await visitasDB.facturar({ accion: 'editar', id: s.id, fecha: s.v.fecha, forma_pago: { type: tipoPago, days: Number(diasPago) || 0 }, nota: s.v.nota,
+          lineas: lineas.map((l) => ({ seccion: l.seccion, descripcion: l.descripcion, detalle: l.detalle, cantidad: facNum(l.cantidad), precio: facNum(l.precio) || 0, dto_pct: facNum(l.dto) || 0, iva_id: l.iva })) });
+        toast('Borrador cambiado, también en Teamleader.');
+        facCargarLista(); if (V.presuVer && V.presuVer.id) facCargarDePresu(V.presuVer.id);
+        return facAbrirVer(r.factura.id, r.factura);
+      } catch (e) { s.busy = false; avisar('No se pudo guardar: ' + msgError(e)); render(); }
+      return;
+    }
+    return;
+  }
+  /* --- el paquete de la gestoría --- */
+  if (s.tipo === 'facGestoria') {
+    if (a === 'fac_gesK') { s.k = d.k; s.txt = ''; render(); return; }
+    if (a === 'fac_gesAnio') { s.anio = d.y; s.txt = ''; render(); return; }
+    if (a === 'fac_gesEmp') { s.entidad = d.e; s.txt = ''; render(); return; }
+    if (a === 'fac_gesDescargar') {
+      if (s.busy) return;
+      const per = facPeriodo(s.anio, s.k);
+      const una = (F.lista || []).find((f) => f.entidad === s.entidad);
+      const w = window.open('', '_blank');
+      s.busy = true; s.txt = 'Juntando el listado y los PDF…'; render();
+      try {
+        let r = null;
+        for (let i = 0; i < 12; i++) {
+          r = await visitasDB.facturar({ accion: 'paquete', desde: per.desde, hasta: per.hasta, etiqueta: per.etiqueta, entidad_id: una ? una.entidad_tl_id : undefined });
+          if (r.listo) break;
+          s.txt = 'Guardando las copias de los PDF… faltan ' + r.faltan + ' de ' + r.total; if (V.sheet === s) render();
+        }
+        if (!r || !r.listo) throw new Error('quedan PDF por guardar; vuelve a intentarlo en un minuto');
+        if (w) w.location.href = r.url; else window.open(r.url, '_blank', 'noopener');
+        s.txt = 'Listo: ' + r.documentos + (r.documentos === 1 ? ' documento' : ' documentos') + ', ' + String(r.megas).replace('.', ',') + ' MB. Si no se ha descargado solo, vuelve a pulsar.';
+      } catch (e) { if (w) w.close(); s.txt = ''; avisar('No se pudo preparar el paquete: ' + msgError(e)); }
+      s.busy = false; if (V.sheet === s) render();
+      return;
     }
     return;
   }
@@ -9437,6 +9646,12 @@ A.facCampo = (f, valor, t) => {
     return; }
   const p = f.split(':');
   if (p[1] === 'v' && s.tipo === 'facVer') { s.v[p[2]] = valor; return; }
+  if (s.tipo === 'facEditar' && s.v) {
+    const totales = () => { const el = document.getElementById('fac-ed-tot'); if (el) el.innerHTML = facEditarTotales(s); };
+    if (p[1] === 'n') { s.v[p[2]] = valor; return; }
+    if (p[1] === 'e') { const l = s.v.lineas[Number(p[2])]; if (l) { l[p[3]] = valor; if (['cantidad', 'precio', 'dto', 'iva'].includes(p[3])) totales(); } return; }
+    return;
+  }
   if (s.tipo !== 'facNueva' || !s.v) return;
   if (p[1] === 'n') { s.v[p[2]] = valor; if (p[2] === 'pct') { clearTimeout(facBuscarT); facBuscarT = setTimeout(() => { if (V.sheet === s && document.activeElement && document.activeElement.dataset.f !== 'fac:n:pct') render(); }, 1200); } facRefrescarPrevia(); return; }
   if (p[1] === 'p') { const x = s.v.partidas[p[2]]; if (!x) return; if (p[3] === 'on') { x.on = !!(t && t.checked); render(); } else { x.cant = valor; facRefrescarPrevia(); } return; }
@@ -10710,7 +10925,6 @@ function vPresupuestos() {
       <div class="h1">Presupuestos</div>
       <div class="row g8">
         ${esAdmin() || rol() === 'presupuestos' ? `<button class="pill" data-a="tlSincronizar" style="padding:8px 12px;background:var(--l1);color:var(--tinta)" ${V.tlSyncBusy ? 'disabled' : ''} title="Traer de Teamleader lo enviado, aceptado o rechazado, y las ofertas hechas allí">${V.tlSyncBusy ? 'Mirando…' : '↻ Teamleader'}</button>` : ''}
-        ${puedeFacturar() ? '<button class="pill" data-a="fac_abrir" style="padding:8px 12px;background:var(--l1);color:var(--tinta)">Facturas</button>' : ''}
         <button class="pill" data-a="presuNuevo" style="background:var(--tinta);color:#fff">+ Nuevo</button>
       </div>
     </div>
@@ -13839,7 +14053,7 @@ function nav(v) {
   const items = esColaborador()
     ? [['agenda', 'Agenda', '5px'], ['clientes', 'Clientes', '3px'], ['presupuestos', 'Presup.', '2px'], ['ajustes', 'Perfil', '99px']]
     : esPresupuestos()
-    ? [['agenda', 'Agenda', '5px'], ['clientes', 'Clientes', '3px'], ['presupuestos', 'Presup.', '2px'], ['obras', 'Obras', '5px'], ['legalizaciones', 'Legaliz.', '6px'], ['ajustes', 'Perfil', '99px']]
+    ? [['agenda', 'Agenda', '5px'], ['clientes', 'Clientes', '3px'], ['presupuestos', 'Presup.', '2px'], ['facturas', 'Facturas', '4px'], ['obras', 'Obras', '5px'], ['legalizaciones', 'Legaliz.', '6px'], ['ajustes', 'Perfil', '99px']]
     : esAdmin()
     ? [['hoy', 'Hoy', '99px'], ['empleados', 'Empleados', '4px'], ['obras', 'Obras', '5px'], ['partes', 'Partes', '3px'], ['horas', 'Horas', '2px'], ['agenda', 'Citas', '6px'], ['ajustes', 'Ajustes', '99px']]
     : puedeCrear()
@@ -13850,7 +14064,6 @@ function nav(v) {
     || (id === 'horas' && ['imputar', 'revisarImp', 'resumenImp'].includes(v))
     || (id === 'ajustes' && !esPresupuestos() && ['errores', 'legalizaciones', 'legalizacion'].includes(v))
     || (id === 'ajustes' && ['costesPersonal', 'fasesPlantillas', 'precios'].includes(v))
-    || (id === 'presupuestos' && v === 'facturas')
     || (id === 'obras' && ['alta', 'planificacion'].includes(v))
     || (id === 'legalizaciones' && v === 'legalizacion')
     || (id === 'empleados' && (v === 'empleado' || v === 'planilla'))
@@ -14656,6 +14869,8 @@ function sheet() {
   if (s.tipo === 'prLinea') return prLineaSheetHTML(s);
   if (s.tipo === 'facVer') return facVerSheetHTML(s);
   if (s.tipo === 'facNueva') return facNuevaSheetHTML(s);
+  if (s.tipo === 'facEditar') return facEditarSheetHTML(s);
+  if (s.tipo === 'facGestoria') return facGestoriaSheetHTML(s);
   if (s.tipo === 'presuCliente') return presuClienteSheetHTML(s);
   if (s.tipo === 'presuCategoria') return presuCategoriaSheetHTML(s);
   if (s.tipo === 'presuProductoNuevo') {

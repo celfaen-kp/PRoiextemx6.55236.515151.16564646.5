@@ -766,7 +766,7 @@ export async function coeficientesPrecios() {
  * El espejo de las facturas y abonos de Teamleader se lee directo; todo lo que
  * escribe (borrador, contabilizar, cobro, abono, sincronizar) lo hace la función
  * `teamleader-factura`, que es la que habla con Teamleader. */
-const COLS_FACTURA_LISTA = 'id, tipo, numero, estado, fecha, vence, pagada, cliente_id, cliente_nombre, presupuesto_id, entidad, base, iva, total, pendiente, tl_id, tl_factura_abonada_id, origen';
+const COLS_FACTURA_LISTA = 'id, tipo, numero, estado, fecha, vence, pagada, cliente_id, cliente_nombre, presupuesto_id, entidad, entidad_tl_id, base, iva, total, pendiente, tl_id, tl_factura_abonada_id, origen, enviada_app_at';
 export async function listarFacturas() {
   const todas = [];
   for (let desde = 0; desde < 20000; desde += 1000) {

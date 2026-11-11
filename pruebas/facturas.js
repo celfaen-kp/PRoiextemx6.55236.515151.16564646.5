@@ -18,7 +18,11 @@ comprueba('un colaborador no', !puedeFacturar() && vAjustes().indexOf('data-a="f
 V.user = { id: 'u2' };
 comprueba('Administración sí', puedeFacturar() && vAjustes().indexOf('data-a="fac_abrir"') > 0);
 V.user = { id: 'u0' };
-comprueba('presupuestos sí, y lo tiene en Presupuestos y en su perfil', puedeFacturar() && vAjustes().indexOf('data-a="fac_abrir"') > 0 && vPresupuestos().indexOf('data-a="fac_abrir"') > 0);
+comprueba('presupuestos sí, con su pestaña «Facturas» en la barra de abajo', puedeFacturar() && /data-v="facturas"/.test(nav('facturas')) && nav('facturas').indexOf('Facturas') > 0);
+comprueba('y ya no va dentro de Presupuestos ni en su perfil', vPresupuestos().indexOf('fac_abrir') < 0 && vAjustes().indexOf('data-a="fac_abrir"') < 0);
+V.user = { id: 'u1' };
+comprueba('el colaborador no tiene la pestaña', !/data-v="facturas"/.test(nav('agenda')));
+V.user = { id: 'u0' };
 
 titulo('los estados, como en Teamleader');
 var ab = facAbonadas(TODAS);
@@ -107,6 +111,37 @@ var hpg = ver(F1);
 comprueba('una pagada enseña el cobro y deja abonar', hpg.indexOf('Cobrado 6817,14') > 0 && hpg.indexOf('data-k="abonar"') > 0 && hpg.indexOf('data-k="cobro"') < 0);
 comprueba('una ya abonada no se abona otra vez', ver(F4, { abonadas: { t4: 2000 } }).indexOf('data-k="abonar"') < 0);
 comprueba('un abono solo tiene PDF', ver(A4).indexOf('data-a="fac_pdf"') > 0 && ver(A4).indexOf('data-k="abonar"') < 0 && ver(A4).indexOf('Abono R2026 / 9') > 0);
+titulo('editar un borrador');
+var sE = { tipo: 'facEditar', id: 'f3', cargando: false, err: null, busy: false, f: F3, ivas: [{ id: 'i21', nombre: 'Ventas 21% IVA', pct: 21 }, { id: 'i10', nombre: 'Ventas 10% IVA', pct: 10 }, { id: 'iue', nombre: 'Ventas dentro de la UE', pct: 0 }], pagos: [{ type: 'cash', days: 0 }, { type: 'after_invoice_date', days: 30 }],
+  v: { fecha: HOY, pago: 'cash:0', nota: '', lineas: [{ seccion: 'Equipos', descripcion: 'Bomba', detalle: 'Detalle largo', cantidad: '2', precio: '500', dto: '10', iva: 'i21' }, { seccion: 'Equipos', descripcion: 'Montaje', detalle: '', cantidad: '1', precio: '100', dto: '', iva: 'i10' }] } };
+var he = facEditarSheetHTML(sE);
+comprueba('cada línea con su concepto, cantidad, precio, descuento e IVA', he.indexOf('data-f="fac:e:0:descripcion"') > 0 && he.indexOf('data-f="fac:e:1:precio"') > 0 && he.indexOf('data-f="fac:e:0:dto"') > 0 && he.indexOf('IVA dentro de la UE (0 %)') > 0 && he.indexOf('data-a="fac_edGuardar"') > 0);
+comprueba('la sección solo se pide donde cambia', (he.match(/fac:e:\d+:seccion/g) || []).length === 1);
+comprueba('los totales cuentan el descuento y el IVA de cada línea', facEditarTotales(sE).indexOf('1000,00') > 0 && facEditarTotales(sE).indexOf('199,00') > 0 && facEditarTotales(sE).indexOf('1199,00') > 0);
+comprueba('un borrador se puede editar desde su hoja; una contabilizada no', ver(F3).indexOf('data-a="fac_editar"') > 0 && ver(F2).indexOf('data-a="fac_editar"') < 0);
+
+titulo('ver el PDF y enviarla al cliente');
+comprueba('el botón dice «Ver PDF»', ver(F1).indexOf('>Ver PDF<') > 0);
+comprueba('una contabilizada se puede enviar; un borrador no', ver(F2).indexOf('data-a="fac_correoAbrir"') > 0 && ver(F3).indexOf('fac_correoAbrir') < 0);
+var hco = ver(F2, { confirmar: 'correo', v: { fecha: HOY, importe: '', concepto: '', para: 'cliente@correo.com', cc: '', asunto: 'Factura 2026 / 129 · Sysefen', texto: 'Hola:\n\nTe adjuntamos la factura.' } });
+comprueba('el correo: para, copia, asunto y mensaje editables, y de dónde sale', hco.indexOf('data-f="fac:v:para"') > 0 && hco.indexOf('value="cliente@correo.com"') > 0 && hco.indexOf('data-f="fac:v:texto"') > 0 && hco.indexOf('noreply@sysefen.com') > 0 && hco.indexOf('data-a="fac_correo"') > 0);
+comprueba('si ya se envió, lo dice y ofrece volver a enviar', ver(Object.assign({}, F2, { enviada_app_at: '2026-11-11T09:00:00Z', enviada_app_a: 'cliente@correo.com' })).indexOf('Enviada por correo a cliente@correo.com el 11/11/2026') > 0 && ver(Object.assign({}, F2, { enviada_app_at: '2026-11-11T09:00:00Z' })).indexOf('Volver a enviar') > 0);
+
+titulo('el paquete de la gestoría');
+igual('un trimestre', JSON.stringify(facPeriodo('2026', 'T4')), '{"desde":"2026-10-01","hasta":"2026-12-31","etiqueta":"2026-T4","nombre":"4.º trimestre de 2026"}');
+igual('un mes, con su último día', JSON.stringify(facPeriodo('2024', '2')), '{"desde":"2024-02-01","hasta":"2024-02-29","etiqueta":"2024-02","nombre":"febrero de 2024"}');
+igual('el año entero', facPeriodo('2026', 'anio').desde + '/' + facPeriodo('2026', 'anio').hasta, '2026-01-01/2026-12-31');
+var LG = [{ tipo: 'factura', numero: '2026 / 1', fecha: '2026-10-05', entidad: 'SYSEFEN GROUP 2024 SL', base: 1000, iva: 210, total: 1210 }, { tipo: 'factura', numero: '2026 / 2', fecha: '2026-11-06', entidad: 'SYSEFEN GROUP 2024 SL', base: 300, iva: 30, total: 330 },
+  { tipo: 'abono', numero: 'R2026 / 1', fecha: '2026-11-08', entidad: 'SYSEFEN GROUP 2024 SL', base: 200, iva: 42, total: 242 }, { tipo: 'factura', numero: null, fecha: '2026-11-09', entidad: 'SYSEFEN GROUP 2024 SL', base: 999, iva: 0, total: 999 },
+  { tipo: 'factura', numero: '2026 / 9', fecha: '2026-11-09', entidad: 'San Miguel', base: 50, iva: 10.5, total: 60.5 }, { tipo: 'factura', numero: '2026 / 0', fecha: '2026-09-30', entidad: 'SYSEFEN GROUP 2024 SL', base: 7, iva: 1.47, total: 8.47 }];
+var rg = facDelPeriodo(LG, facPeriodo('2026', 'T4'), 'SYSEFEN GROUP 2024 SL');
+igual('solo las contabilizadas del periodo y de esa empresa; los abonos restan', rg.facturas + '/' + rg.abonos + '/' + rg.base + '/' + rg.iva + '/' + rg.total, '2/1/1100/198/1298');
+igual('un mes', facDelPeriodo(LG, facPeriodo('2026', '11'), 'SYSEFEN GROUP 2024 SL').fs.length, 2);
+V.fac = null; facEstadoBase().lista = LG;
+var hg = facGestoriaSheetHTML({ tipo: 'facGestoria', anio: '2026', k: 'T4', entidad: 'SYSEFEN GROUP 2024 SL', empresas: ['SYSEFEN GROUP 2024 SL', 'San Miguel'], busy: false, txt: '' });
+comprueba('la hoja: empresa, año, trimestres, meses y el resumen del periodo', hg.indexOf('data-a="fac_gesEmp"') > 0 && hg.indexOf('data-k="T4"') > 0 && hg.indexOf('data-k="11"') > 0 && hg.indexOf('2 facturas y 1 abono') > 0 && hg.indexOf('1100,00') > 0 && hg.indexOf('Descargar el ZIP') > 0);
+comprueba('sin facturas en el periodo no deja descargar', /fac_gesDescargar"[^>]*disabled/.test(facGestoriaSheetHTML({ tipo: 'facGestoria', anio: '2026', k: 'T1', entidad: 'SYSEFEN GROUP 2024 SL', empresas: ['SYSEFEN GROUP 2024 SL'], busy: false, txt: '' })));
+comprueba('la lista tiene el botón de la gestoría', (V.view = 'facturas', vFacturas().indexOf('data-a="fac_gestoria"') > 0));
 V.user = null; V.fac = null; V.presuVer = null; V.view = 'login';
 
 resultado();
