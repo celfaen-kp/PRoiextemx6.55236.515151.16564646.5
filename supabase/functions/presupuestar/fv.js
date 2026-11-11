@@ -78,6 +78,10 @@ export const BLOQUES_MATERIAL = ['MÓDULOS FOTOVOLTAICOS', 'INVERSOR', 'MEDICIÓ
  *     precio: sale sin estructura y la estructura la pone el motor antiguo.
  *   · inversorFuera: true → el inversor y el medidor no se cuentan aquí (los
  *     pone el motor antiguo: Fronius Plus con batería, o nada con Tesla).
+ *   · pasarATrifasico: true → si el suministro es monofásico y la potencia no
+ *     cabe en el mayor inversor monofásico del sistema (Fronius Primo: 10 kW,
+ *     22 paneles), o se elige a mano un inversor trifásico, se presupuesta en
+ *     trifásico (Symo, Verto) y se avisa, en vez de quedar A MEDIDA.
  *   · jornadaBateria: true → un día más de montaje (inversor híbrido y batería),
  *     que se cobra a parametros.venta_jornada (880 €) como las demás; sin ese
  *     parámetro, a parametros.venta_jornada_bateria (450 €) aparte.
@@ -132,6 +136,26 @@ export function calcularFV(entrada, modelo, opciones) {
     if (!inv && !e.inv_modelo && e.sumi === 'Trifásico' && kw_mayor > 0) {
       n_inv = roundup(kw_nec / kw_mayor);
       lista.filter((i) => i.kw * n_inv >= kw_nec).forEach((i) => { if (!inv || i.kw < inv.kw) inv = i; });
+    }
+    // Monofásico que se queda corto (Enzo, 11-11-2026: «con más de 22 paneles me
+    // da que no hay Fronius de esa capacidad»). Los Fronius mayores sí están
+    // (Symo hasta 12 kW, Verto de 15 a 33,3 kW), pero son trifásicos: el
+    // presupuesto se rehace entero en trifásico (inversor, medidor, cuadro AC y
+    // cable de alterna) y se avisa de que hay que comprobar el suministro. Igual
+    // si se elige a mano un inversor trifásico con la ficha en monofásico.
+    if (op.pasarATrifasico && e.sumi === 'Monofásico') {
+      const corto = !inv && !e.inv_modelo && kw_mayor > 0 && kw_nec > kw_mayor;
+      const aManoTri = !!inv && !!e.inv_modelo && esForzado(inv) && inv.suministro === 'Trifásico';
+      if (corto || aManoTri) {
+        const rt = calcularFV(Object.assign({}, e, { sumi: 'Trifásico' }), modelo, Object.assign({}, op, { pasarATrifasico: false }));
+        if (rt.kw_inv !== null) {
+          rt.sumi_cambiado = { de: 'Monofásico', a: 'Trifásico', kw_mayor, motivo: corto ? 'potencia' : 'inversor' };
+          rt.avisos.unshift(corto
+            ? 'Con ' + n_pan + ' paneles (' + fixed(kwp, 2) + ' kWp) hacen falta ' + fixed(kw_nec, 1) + ' kW y el ' + e.sis + ' monofásico mayor es de ' + g(kw_mayor) + ' kW: se presupuesta en TRIFÁSICO con ' + rt.txt_inv + '. Comprobar que el suministro del cliente es trifásico.'
+            : 'El inversor elegido (' + inv.modelo + ') es trifásico y la ficha dice monofásico: se presupuesta en TRIFÁSICO. Comprobar que el suministro del cliente es trifásico.');
+          return rt;
+        }
+      }
     }
   }
   // Strings: 1 hasta 10 paneles, 2 por inversor a partir de ahí.

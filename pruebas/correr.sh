@@ -22,7 +22,7 @@ for f in "$AQUI"/${1:-*}.js; do
     globalThis.RUTA_TMP = '$TMP'; globalThis.RUTA_TARIFAS = '$TARIFAS';
     load('$AQUI/arnes.js'); load('$TMP/modulos.js'); load('$TMP/app.js');
     load('$f');
-  " 2>&1); codigo=$?
+  " 2>&1) && codigo=0 || codigo=$?   # con `set -e`, sin esto una excepción cortaba el guion sin enseñar nada
   printf '%s\n' "$salida"
   if [ $codigo -ne 0 ] || printf '%s' "$salida" | grep -q '^Exception:'; then fallos=$((fallos+1)); echo ">>> FALLO en $nombre (excepción o salida con error)"; fi
   echo

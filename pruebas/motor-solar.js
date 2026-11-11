@@ -480,3 +480,12 @@ var r40cat = presupuestarFV(con({ baterias: 'si', baterias_kwh: 10, bateria_marc
 igual('40 paneles trifásico con batería: Verto 20.0 Plus', r40cat.fv2.mod_inv, 'Fronius Verto 20.0 Plus');
 var rTesla = presupuestarFV(con({ baterias: 'si', baterias_kwh: 13.5, bateria_marca: 'tesla', paneles_manual: 10 }), modCat, config);
 comprueba('con Tesla no hay inversor del v2 (lo lleva el Powerwall)', !rTesla.fv2.partidas.some(function (x) { return x.partida === 'Inversor' && x.cantidad > 0; }));
+titulo('más de 22 paneles con la ficha en monofásico: el presupuesto pasa a trifásico (Enzo, 11-11-2026)');
+var r23 = presupuestarFV(con({ paneles_manual: 23, suministro: 'monofasico' }), modCat, config);
+igual('23 paneles sin batería: Symo de 12 kW y con precio', r23.fv2.mod_inv + '/' + r23.fv2.entrada.sumi + '/' + r23.fv2.bloqueo, 'Fronius Symo GEN24 SC 12.0/Trifásico/0');
+comprueba('el aviso sale en el presupuesto, y no como error', r23.incidencias.some(function (i) { return /se presupuesta en TRIFÁSICO con Fronius Symo GEN24 SC 12\.0/.test(i.mensaje) && i.nivel === 'aviso'; }));
+comprueba('ya no sale el «A MEDIDA»', !r23.incidencias.some(function (i) { return /A MEDIDA/.test(i.mensaje); }));
+comprueba('la línea de la instalación está confirmada y con importe', r23.lineas[0].confirmada !== false && r23.lineas[0].precio_tarifa > 0);
+var r22s = presupuestarFV(con({ paneles_manual: 22, suministro: 'monofasico' }), modCat, config);
+igual('22 paneles: sigue en monofásico', r22s.fv2.entrada.sumi, 'Monofásico');
+resultado();

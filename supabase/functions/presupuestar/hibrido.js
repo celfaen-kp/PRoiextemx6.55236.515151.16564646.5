@@ -104,10 +104,13 @@ export function presupuestarFV(datos, mod, cfg) {
   // elige el híbrido él mismo y solo la batería sale del motor por capítulos.
   // Con Tesla no hay inversor aparte (el Powerwall lo lleva dentro): como antes.
   if (inversorFuera && !tesla) {
-    const r2 = calcularFV(m.entrada, modelo, { chapaAMedida: false, inversorFuera: false, hibrido: true, jornadaBateria: conBateria });
+    const r2 = calcularFV(m.entrada, modelo, { chapaAMedida: false, inversorFuera: false, hibrido: true, jornadaBateria: conBateria, pasarATrifasico: true });
     if (r2.kw_inv !== null) { r = r2; inversorFuera = false; }
   }
-  if (!r) r = calcularFV(m.entrada, modelo, { chapaAMedida: false, inversorFuera, jornadaBateria: conBateria });
+  if (!r) r = calcularFV(m.entrada, modelo, { chapaAMedida: false, inversorFuera, jornadaBateria: conBateria, pasarATrifasico: true });
+  // Si el v2 ha pasado el presupuesto a trifásico (monofásico que se queda corto,
+  // 11-11-2026), el resto del motor (reglas por capítulos, cargador) va también en trifásico.
+  if (r.sumi_cambiado) datos = Object.assign({}, datos, { suministro: 'trifasico' });
   const avisosEntrada = m.avisos.slice();
   if (!estructuraNueva) avisosEntrada.push('Cubierta «' + m.cubierta_app + '»: el modelo v2 no la cubre; la estructura sale del motor por capítulos con sus precios (pendientes de confirmar). Revisar.');
   if (fronius && (conBateria || preparado) && !inversorFuera) avisosEntrada.push((conBateria ? 'Con batería: ' : 'Preparado para baterías: ') + 'inversor híbrido ' + r.txt_inv + ' (Plus, del catálogo) elegido por el presupuestador' + (conBateria ? '; la batería sale del motor por capítulos con su margen.' : '.'));
