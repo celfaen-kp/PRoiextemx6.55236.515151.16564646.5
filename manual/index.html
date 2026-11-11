@@ -46,6 +46,10 @@ p{margin:8px 0;max-width:68ch}
 .dos img{width:100%;border-radius:18px;border:1px solid var(--l1);display:block}
 .dos figcaption{font-size:14px;color:var(--t2);margin-top:10px;line-height:1.4}
 .dos figcaption b{color:var(--tinta)}
+.ancha{margin:22px 0;background:#fff;border-radius:22px;padding:16px;box-shadow:0 2px 8px rgba(20,23,15,.06)}
+.ancha img{width:100%;border-radius:14px;border:1px solid var(--l1);display:block}
+.ancha figcaption{font-size:14px;color:var(--t2);margin-top:10px;line-height:1.4}
+.ancha figcaption b{color:var(--tinta)}
 .paso{display:flex;gap:14px;margin:12px 0;max-width:72ch}
 .paso b.n{flex:none;width:28px;height:28px;border-radius:50%;background:var(--tinta);color:#fff;display:flex;align-items:center;justify-content:center;font:700 14px var(--cond)}
 .nota{border-left:3px solid var(--ambar);background:#fbf5e8;padding:12px 16px;border-radius:0 14px 14px 0;margin:16px 0;max-width:72ch;font-size:15px}
@@ -79,7 +83,7 @@ footer{margin-top:60px;padding-top:20px;border-top:1px solid var(--l1);color:var
 }
 @media print{
   nav.indice,.volver-app{display:none}.marco{display:block}main{padding:0;max-width:none}
-  .pantalla,.dos figure,.roles a{box-shadow:none;border:1px solid var(--l1);break-inside:avoid}
+  .pantalla,.dos figure,.ancha,.roles a{box-shadow:none;border:1px solid var(--l1);break-inside:avoid}
   h2{break-before:page}
   a{color:inherit}
 }
@@ -109,12 +113,16 @@ footer{margin-top:60px;padding-top:20px;border-top:1px solid var(--l1);color:var
   <a href="#jefe-horas">Horas e imputaciones</a>
   <h4>Presupuestos</h4>
   <a class="rol" href="#pres">Tu día a día</a>
-  <a href="#pres-clientes">Clientes</a>
+  <a href="#pres-clientes">Clientes y seguimiento</a>
   <a href="#pres-citas">Citas</a>
   <a href="#pres-visitas">Visitas</a>
   <a href="#pres-presupuestos">Presupuestos</a>
+  <a href="#pres-enviar">Enviar, firmar y aceptar</a>
+  <a href="#pres-facturas">Facturas</a>
+  <a href="#pres-precios">Precios</a>
   <a href="#pres-teamleader">Teamleader</a>
   <a href="#pres-obras">Obras, economía y costes</a>
+  <a href="#colaborador">Colaborador</a>
   <h4>Administración</h4>
   <a class="rol" href="#admin">Tu día a día</a>
   <a href="#admin-empleados">Empleados y planillas</a>
@@ -133,25 +141,27 @@ footer{margin-top:60px;padding-top:20px;border-top:1px solid var(--l1);color:var
 <div class="roles">
   <a href="#operario"><b>Operario</b><span>Fichas tus horas y ves tus obras.</span></a>
   <a href="#jefe"><b>Jefe de obra</b><span>Lo del operario, más obras, partes firmados y reparto de horas.</span></a>
-  <a href="#pres"><b>Presupuestos</b><span>Clientes, citas, visitas con toma de datos y presupuestos que van a Teamleader.</span></a>
-  <a href="#admin"><b>Administración</b><span>Empleados, planillas, revisión de horas, copias y ajustes.</span></a>
+  <a href="#pres"><b>Presupuestos</b><span>Clientes y su seguimiento, citas, visitas, presupuestos que el cliente firma en línea, facturas y precios.</span></a>
+  <a href="#admin"><b>Administración</b><span>Empleados, planillas, revisión de horas, facturas, copias de seguridad y ajustes.</span></a>
 </div>
 
 <h2 id="instalar">Instalar y entrar</h2>
 <p>La app no se descarga de una tienda: es una página web que se guarda en la pantalla de inicio del móvil y funciona como una app, también sin cobertura.</p>
 <div class="dos">
-  <figure><img src="img/login.png" alt="Pantalla de entrada con la lista de personas"><figcaption><b>Quién eres.</b> Al abrir la app sale la lista de personas. Toca tu nombre. Abajo está <i>Instalar en la pantalla de inicio</i> y la versión que tienes.</figcaption></figure>
-  <figure><img src="img/pin.png" alt="Teclado del PIN"><figcaption><b>Tu PIN.</b> Cuatro números. Los recibiste por correo al darte de alta y puedes cambiarlos en Perfil. Si te equivocas, la pantalla tiembla y vuelves a empezar.</figcaption></figure>
+  <figure><img src="img/login.png" alt="Pantalla de entrada con la lista de personas"><figcaption><b>Quién eres.</b> Al abrir la app sale la lista de personas, solo con el nombre: primero los jefes de obra, después los operarios y al final presupuestos. Toca el tuyo. Abajo está <i>Instalar en la pantalla de inicio</i> y la versión que tienes.</figcaption></figure>
+  <figure><img src="img/pin.png" alt="Teclado del PIN"><figcaption><b>Tu PIN.</b> Cuatro números. Los recibiste por correo al darte de alta y puedes cambiarlos en Perfil. En el ordenador se pueden teclear. Si te equivocas, la pantalla tiembla y vuelves a empezar.</figcaption></figure>
 </div>
 <h4>Instalar en el móvil</h4>
 <div class="paso"><b class="n">1</b><div><b>iPhone:</b> abre el enlace en <b>Safari</b> (si te llega por WhatsApp, elige "Abrir en Safari"). Toca el botón de <b>Compartir</b> y luego <b>Añadir a pantalla de inicio</b>.</div></div>
 <div class="paso"><b class="n">2</b><div><b>Android:</b> abre el enlace en Chrome, toca el menú <b>⋮</b> y <b>Instalar aplicación</b>.</div></div>
 <div class="paso"><b class="n">3</b><div>A partir de ahí entras desde el icono, como cualquier app. La primera vez pide tu nombre y tu PIN; después te recuerda.</div></div>
-<div class="nota">Cada persona entra con su nombre. Si compartes móvil con alguien, toca <b>Cambiar de usuario</b> en la pantalla del PIN. Para salir del todo: tu foto arriba a la derecha → <b>Salir</b>.</div>
+<div class="nota">Cada persona entra con su nombre. Si compartes móvil con alguien, toca <b>Cambiar de usuario</b> en la pantalla del PIN. Para salir del todo: tu foto arriba a la derecha → <b>Salir</b>. Salir cierra la sesión solo en ese aparato: si tienes la app abierta en el móvil y en el ordenador, el otro sigue dentro.</div>
+<p>En el ordenador (y en el navegador del móvil) hay un icono junto a la marca Sysefen para <b>abrir la app en otra pestaña</b>: sirve para tener dos pantallas a la vez, por ejemplo dos presupuestos uno al lado del otro.</p>
 
 <h2 id="actualizar">Cuando hay versión nueva</h2>
 <p>La app se mejora a menudo. Cuando hay una versión nueva, al abrirla sale un cartel oscuro que tapa la pantalla con un solo botón: <span class="btn verde">Actualizar</span>. Púlsalo. Tarda un segundo, no se pierde nada de lo guardado y así todo el equipo trabaja con la misma versión.</p>
 <p>El cartel también sale si tenías la app abierta en segundo plano y la vuelves a abrir. No se puede seguir sin actualizar: es a propósito.</p>
+<p>Si estás <b>a medias de algo</b> (un parte, el alta de una obra, una visita, un reparto de horas, un presupuesto o una ventana abierta), el cartel espera y sale cuando vuelves a una pantalla normal. El parte a medias, además, se guarda en el móvil a cada cambio: si la app se cierra, al volver lo recuperas.</p>
 
 <h2 id="quien">Qué ve cada usuario</h2>
 <p>Las pestañas de abajo cambian según quién eres. Nadie ve más de lo que necesita.</p>
@@ -164,9 +174,13 @@ footer{margin-top:60px;padding-top:20px;border-top:1px solid var(--l1);color:var
   <tr><td><b>Economía</b> de la obra y <b>costes</b> de personal</td><td class="no">—</td><td class="no">— (pone albaranes y gastos)</td><td class="si">Sí</td><td class="si">Sí</td></tr>
   <tr><td><b>Empleados</b> y planillas</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="si">Sí</td></tr>
   <tr><td><b>Agenda</b>, clientes, visitas</td><td class="no">—</td><td class="no">—</td><td class="si">Sí</td><td class="si">Ver citas</td></tr>
-  <tr><td><b>Presupuestos</b></td><td class="no">—</td><td class="no">—</td><td class="si">Sí</td><td class="si">Sí</td></tr>
+  <tr><td><b>Presupuestos</b>, envío al cliente y firma</td><td class="no">—</td><td class="no">—</td><td class="si">Sí</td><td class="si">Sí</td></tr>
+  <tr><td><b>Facturas</b></td><td class="no">—</td><td class="no">—</td><td class="si">Pestaña propia</td><td class="si">Desde Ajustes</td></tr>
+  <tr><td><b>Precios</b> de la base de datos</td><td class="no">—</td><td class="no">—</td><td class="si">Desde Perfil</td><td class="si">Desde Ajustes</td></tr>
+  <tr><td><b>Lista de compra</b> de la obra</td><td class="no">—</td><td class="si">Ver</td><td class="si">Sí</td><td class="si">Sí, y a quién llega</td></tr>
   <tr><td><b>Perfil / Ajustes</b></td><td class="si">Perfil</td><td class="si">Ajustes</td><td class="si">Perfil + Teamleader</td><td class="si">Ajustes de la empresa</td></tr>
 </table>
+<p>Hay un quinto tipo de usuario, el <b>colaborador</b>: trabaja como presupuestos, pero solo con los clientes que se le asignan. Está <a href="#colaborador">más abajo</a>.</p>
 
 <!-- ============================================================ OPERARIO -->
 <h2 id="operario"><span class="quien op">Operario</span> Tu día a día</h2>
@@ -216,7 +230,7 @@ footer{margin-top:60px;padding-top:20px;border-top:1px solid var(--l1);color:var
   <img src="img/op-obras.png" alt="Lista de obras">
   <div class="txt">
     <h4>Obras</h4>
-    <p>Las obras en curso, cada una con su código <b>OB-137</b>, el cliente, la dirección, las horas que lleva, los partes y el <b>avance</b> («62 % · 7 de 12 fases»). Las cerradas, en su pestaña. Buscador por número («137»), cliente o calle. Toca una para ver su ficha y el proyecto con sus fases.</p>
+    <p>Las obras en curso, cada una con su código <b>OB-137</b>, el cliente, la dirección, las horas que lleva, los partes y el <b>avance</b>: un dibujo de la obra (la furgoneta con el material camino de la casa) con el porcentaje y cuántas subfases van hechas. Las cerradas, en su pestaña. Buscador por número («137»), cliente o calle. Toca una para ver su ficha y el proyecto con sus fases.</p>
     <p>No hace falta elegir obra para fichar: las horas se reparten después.</p>
   </div>
 </div>
@@ -256,7 +270,7 @@ footer{margin-top:60px;padding-top:20px;border-top:1px solid var(--l1);color:var
   <img src="img/jefe-obras.png" alt="Obras del jefe">
   <div class="txt">
     <h4>La lista</h4>
-    <p>Cada obra con su <b>código</b> (OB-137), lo que lleva (<b>AE</b> aerotermia, <b>FV</b> fotovoltaica, <b>AC</b> aire), su estado, el <b>cliente</b> y la <b>calle · población</b> en grande, las horas, los partes y el <b>avance</b>. Las más nuevas arriba; <i>A-Z cliente</i> cambia el orden. <b>En curso</b> y <b>Cerradas</b> en dos pestañas.</p>
+    <p>Cada obra con su <b>código</b> (OB-137), lo que lleva (<b>AE</b> aerotermia, <b>FV</b> fotovoltaica, <b>AC</b> aire, <b>EL</b> instalación eléctrica, <b>BAT</b> baterías, <b>CC</b> cargador de coche u otro con el nombre que le pongas), su estado, el <b>cliente</b> y la <b>calle · población</b> en grande, las horas, los partes y el <b>avance</b>. Las más nuevas arriba; <i>A-Z cliente</i> cambia el orden. <b>En curso</b> y <b>Cerradas</b> en dos pestañas.</p>
     <p>El <b>buscador</b> entiende el número («137», «OB-137»), el cliente, la obra o la dirección. <span class="btn">+ Nueva</span> para crear una.</p>
     <div class="nota">El código lo pone el sistema al guardar, es correlativo y no se puede cambiar: así la obra se puede decir por teléfono y escribir en un albarán sin confundirla con otra.</div>
   </div>
@@ -265,7 +279,7 @@ footer{margin-top:60px;padding-top:20px;border-top:1px solid var(--l1);color:var
   <img src="img/jefe-obra-nueva.png" alt="Nueva obra">
   <div class="txt">
     <h4>Crear una obra</h4>
-    <div class="paso"><b class="n">1</b><div>El <b>código</b> sale en gris: «se asignará al guardar». Marca <b>qué lleva la obra</b>: aerotermia, fotovoltaica, aire. Puede llevar varias: una casa con aerotermia y placas es una sola obra, con las fases de las dos.</div></div>
+    <div class="paso"><b class="n">1</b><div>El <b>código</b> sale en gris: «se asignará al guardar». Marca <b>qué lleva la obra</b>: aerotermia, fotovoltaica, aire, instalación eléctrica, baterías, cargador de coche u «otro» con nombre libre. Puede llevar varias: una casa con aerotermia y placas es una sola obra, con las fases de las dos.</div></div>
     <div class="paso"><b class="n">2</b><div><b>Cliente</b>, <b>dirección</b> y <b>población</b>. El nombre de la obra es opcional. El <b>email</b> es a donde irán los informes de los partes.</div></div>
     <div class="paso"><b class="n">3</b><div>Opcional: <b>Buscar el cliente en Teamleader</b>. Si lo enganchas, la obra queda enlazada con su ficha del CRM.</div></div>
     <div class="paso"><b class="n">4</b><div><span class="btn">Guardar</span>: la app te dice el código («Obra guardada: OB-141») y la obra nace con sus fases. Si venías de crear un parte, sigues con el parte.</div></div>
@@ -276,18 +290,29 @@ footer{margin-top:60px;padding-top:20px;border-top:1px solid var(--l1);color:var
   <div class="txt">
     <h4>La ficha de la obra</h4>
     <ul>
-      <li>Arriba, el código, las categorías, el estado, el cliente y la dirección. <b>Cómo llegar</b> abre el mapa. <span class="btn verde">Nuevo parte</span> y <span class="btn gris">Editar</span>.</li>
+      <li>Arriba, el código, las categorías, el estado, el cliente y la dirección. <b>Cómo llegar</b> abre el mapa. <span class="btn verde">Nuevo parte</span>, <span class="btn gris">Apuntar horas</span> y <span class="btn gris">Editar</span>.</li>
+      <li><b>Comentarios de la obra</b>: lo que haya que saber (accesos, llaves, acuerdos con el cliente, pendientes). Se escriben y se guardan ahí mismo.</li>
       <li><b>Horas por empleado</b>: hoy, semana, mes o total. <span class="btn">Imprimir PDF</span> y <span class="btn gris">Exportar CSV</span> del reparto.</li>
       <li><b>Proyecto</b>: las fases de la obra con su porcentaje (ver más abajo).</li>
+      <li><b>Lista de compra</b>: qué hay que pedir y a quién, sumando todos los presupuestos aceptados de la obra. <b>Ver lista de compra</b> abre el PDF.</li>
       <li><b>Albaranes y recibos</b>: foto o PDF de lo que se compra para esa obra, con importe. Cada uno con importe cuenta como gasto de la obra. Lo ven jefes, presupuestos y Administración.</li>
-      <li>Abajo: <b>Marcar obra como cerrada</b> (pasa a la pestaña Cerradas) y <b>Borrar obra</b>, solo si está vacía, sin partes ni horas: para las que se crearon dos veces.</li>
+      <li><b>Partes de esta obra</b>. Si un parte se hizo en la obra equivocada, <b>Cambiar de obra</b> lo lleva a la buena.</li>
+      <li>Abajo: <b>Marcar obra como cerrada</b> (pasa a la pestaña Cerradas), <b>Mover todos los partes a otra obra</b> y <b>Borrar obra</b>, solo si está vacía, sin partes ni horas: para las que se crearon dos veces.</li>
     </ul>
     <div class="nota">Los <b>costes</b> (lo que cuesta la hora de cada persona, el margen de la obra) no salen aquí: solo los ven presupuestos y Administración.</div>
   </div>
 </div>
 
+<div class="pantalla">
+  <img src="img/jefe-apuntar-horas.png" alt="Apuntar horas en la obra, sin parte">
+  <div class="txt">
+    <h4>Apuntar horas sin hacer parte</h4>
+    <p><span class="btn gris">Apuntar horas</span> sirve para dejar horas en la obra cuando no hay parte: recoger material, una visita corta, una gestión. Eliges quién, el día, las horas y una nota. Cuentan en las horas de la obra y en su coste, pero no generan parte ni le llegan al cliente.</p>
+  </div>
+</div>
+
 <h3 id="jefe-proyecto">El proyecto: fases y avance</h3>
-<p>Cada obra tiene sus <b>fases</b> según lo que lleva: pedido y recepción de material, replanteo; en fotovoltaica fijaciones y estructura, montaje de paneles, cableado de continua, inversor y baterías, alterna y protecciones, puesta en marcha, legalización; en aerotermia y aire las suyas; y al final el cobro. Cada fase tiene un <b>porcentaje</b> y la obra un <b>avance global</b>, la media de sus fases. Así se sabe dónde está parada cada obra sin preguntar.</p>
+<p>Cada obra tiene sus <b>fases</b> según lo que lleva: pedido y recepción de material, replanteo; en fotovoltaica fijaciones y estructura, montaje de paneles, cableado de continua, inversor y baterías, alterna y protecciones, puesta en marcha, legalización; en aerotermia y aire las suyas; y al final el cobro. Dentro de cada categoría van sus <b>subfases</b>, y se pueden añadir fases propias («Fontanería», «Piscina») con las suyas. Cada una tiene un <b>porcentaje</b> y la obra un <b>avance global</b>, la media de todas. Así se sabe dónde está parada cada obra sin preguntar.</p>
 <div class="pantalla">
   <img src="img/jefe-parte-avance.png" alt="Avance de la obra en el parte">
   <div class="txt">
@@ -300,7 +325,8 @@ footer{margin-top:60px;padding-top:20px;border-top:1px solid var(--l1);color:var
   <img src="img/jefe-obra-proyecto.png" alt="Proyecto en la ficha de la obra">
   <div class="txt">
     <h4>Desde la ficha</h4>
-    <p>En <b>Proyecto</b>, el avance global y las fases por grupos (Preparación, Fotovoltaica, Aerotermia, Aire, Cierre). Toca una fase para cambiar su porcentaje, ponerle una <b>nota</b> («falta la bancada, viene el lunes»), marcarla como <b>no aplica</b> o quitarla. <i>+ Añadir fase</i> mete una suelta: zanja, andamio…</p>
+    <p>En <b>Proyecto</b>, el dibujo de la obra con el avance global y, debajo, las fases por grupos (Preparación, Fotovoltaica, Aerotermia, Aire, Cierre). Toca una para cambiar su porcentaje, ponerle una <b>nota</b> («falta la bancada, viene el lunes»), marcarla como <b>no aplica</b> o quitarla. <i>+ subfase</i> añade una dentro del grupo; <i>+ Añadir fase</i> crea un grupo nuevo: zanja, andamio, fontanería…</p>
+    <p>Si al editar la obra le quitas una categoría, se van sus fases sin avance; si le añades otra, nacen las suyas.</p>
     <div class="nota ok">Cuando todas las fases que aplican están al 100 %, la obra pasa sola a <b>finalizada</b>. Cerrarla (cobrada y archivada) se hace a mano.</div>
   </div>
 </div>
@@ -316,6 +342,7 @@ footer{margin-top:60px;padding-top:20px;border-top:1px solid var(--l1);color:var
       <li><b>Toca una casilla vacía</b>: eliges la obra (primero las que no tienen a nadie ese día) y a quién más mandas con ella; la app te propone a <b>quien suele ir</b>. Hora prevista y una nota.</li>
       <li>La franja ámbar <b>Sin asignar</b> del día que toques arriba: las obras en marcha a las que no va nadie. Toca una para cubrirla.</li>
       <li><b>Repetir lo del último día</b> para todos de un toque. En cada asignación: cambiar hora y nota, copiar al día siguiente, quitar.</li>
+      <li>Una persona puede ir a <b>más de una obra el mismo día</b>: en su casilla, <i>+ otra</i>.</li>
       <li>La franja roja <b>Partes fuera de plan</b>: partes hechos en una obra donde esa persona no estaba planificada ese día. «Era correcto · apuntar» lo deja planificado; «Ignorar» lo da por visto.</li>
     </ul>
     <div class="nota">A las 14:00 cada persona recibe por correo a dónde va mañana, y presupuestos y Administración un repaso: quién no tiene obra y qué obras no tienen a nadie.</div>
@@ -329,7 +356,7 @@ footer{margin-top:60px;padding-top:20px;border-top:1px solid var(--l1);color:var
   <div class="txt">
     <h4>La lista</h4>
     <p>Cada parte con su número, fecha, obra, cuántos operarios y horas, y su estado: <b>Firmado</b>, <b>Sin firma</b> (el cliente no estaba), <b>Enviado</b> o <b>Anulado</b>. Si hubo incidencia, sale en rojo.</p>
-    <p>Botones: <b>PDF</b>, <b>Compartir</b>, <b>Enviar</b> por correo y <b>Borrar</b>.</p>
+    <p>Botones: <b>PDF</b>, <b>Compartir</b>, <b>Enviar</b> por correo, <b>Borrar</b> y <b>Cambiar de obra</b>, por si se hizo en la que no era.</p>
   </div>
 </div>
 <div class="pantalla">
@@ -355,8 +382,8 @@ footer{margin-top:60px;padding-top:20px;border-top:1px solid var(--l1);color:var
   <img src="img/jefe-parte-p2.png" alt="Parte, paso 2, firma">
   <div class="txt">
     <h4>Paso 2 de 3 · La firma del cliente</h4>
-    <p>El cliente puede escribir sus observaciones, pones su <b>nombre</b> y firma <b>con el dedo</b> en el recuadro.</p>
-    <p>Si el cliente no está, activa <b>Cliente no presente</b>: el parte sale sin su firma y lo dice.</p>
+    <p>El cliente puede escribir sus observaciones y, antes de firmar, <b>ve el parte entero</b>: trabajos, horas, materiales e incidencias, con «Firma pendiente» en su casilla. <i>Ver en grande (PDF)</i> se lo enseña a pantalla completa. Después pones su <b>nombre</b> y firma <b>con el dedo</b> en el recuadro.</p>
+    <p>Si el cliente no está, activa <b>Cliente no presente</b>: el parte sale sin su firma y lo dice, y no se enseña nada.</p>
     <div class="nota ok">Al firmar, el cliente da por buenos los trabajos y las horas. Enséñale el parte antes.</div>
   </div>
 </div>
@@ -398,31 +425,47 @@ footer{margin-top:60px;padding-top:20px;border-top:1px solid var(--l1);color:var
 
 <!-- ============================================================ PRESUPUESTOS -->
 <h2 id="pres"><span class="quien pres">Presupuestos</span> Tu día a día</h2>
-<p>Tu trabajo empieza con un <b>cliente</b> que pide presupuesto, sigue con una <b>cita</b>, una <b>visita</b> en la que tomas los datos, y acaba con el <b>presupuesto</b>, que sale del motor de la app y se sube a <b>Teamleader</b>. Después sigues la <b>obra</b>: su proyecto, su planificación y su economía. No fichas ni haces partes.</p>
+<p>Tu trabajo empieza con un <b>cliente</b> que pide presupuesto, sigue con una <b>cita</b>, una <b>visita</b> en la que tomas los datos y el <b>presupuesto</b>, que sale del motor de la app. Desde la app se lo <b>envías al cliente</b>, que lo acepta y lo <b>firma en línea</b>; al aceptarlo nace la <b>obra</b> y, cuando toca, la <b>factura</b>. Todo queda también en <b>Teamleader</b>. No fichas ni haces partes.</p>
 <div class="pantalla">
   <img src="img/pres-agenda.png" alt="Agenda, hoy primero">
   <div class="txt">
     <h4>Agenda · hoy primero</h4>
     <ul>
       <li>La <b>tira de la semana</b>: puntos en los días con cita. Toca un día para ver solo sus citas; <i>Ver el mes entero</i> abre el calendario.</li>
-      <li><b>La próxima cita</b>, en grande: <b>Llamar</b>, <b>Cómo llegar</b> y <span class="btn verde">Empezar visita</span>, que abre la toma de datos con el cliente ya puesto.</li>
-      <li><b>Pendiente</b>: visitas sin cerrar o sin subir, presupuestos sin subir a Teamleader, clientes sin cita. Cada línea abre justo eso.</li>
-      <li>Debajo, las citas de los próximos días. <b>Todas / Mías</b> filtra si sois varios.</li>
+      <li><b>La próxima cita</b>, en grande: <b>Llamar</b>, <b>Cómo llegar</b> y <span class="btn verde">Empezar visita</span>, que abre la toma de datos con el cliente ya puesto. Debajo, el resto de citas, día por día. <b>Todas / Mías</b> filtra si sois varios.</li>
+      <li><b>Pendiente</b>: visitas cerradas sin enviar, presupuestos sin subir a Teamleader, clientes sin cita, las <b>próximas acciones</b> que tocan hoy o están vencidas y los clientes aplazados que vuelven esta semana. Cada línea abre justo eso.</li>
     </ul>
   </div>
 </div>
 <div class="dos">
   <figure><img src="img/pres-agenda-mes.png" alt="Agenda con el mes"><figcaption><b>El mes entero</b>, para planificar. Los días pasados salen apagados.</figcaption></figure>
-  <figure><img src="img/pres-visitas.png" alt="Visitas"><figcaption><b>Todas las visitas</b> (desde Clientes → Visitas): sin cerrar, por enviar y en Teamleader. <b>CSV</b> exporta la lista.</figcaption></figure>
+  <figure><img src="img/pres-visitas.png" alt="Visitas"><figcaption><b>Todas las visitas</b> (al final de la Agenda): sin cerrar, por enviar y en Teamleader. <b>CSV</b> exporta la lista.</figcaption></figure>
 </div>
 
-<h3 id="pres-clientes">Clientes</h3>
+<h3 id="pres-clientes">Clientes y seguimiento</h3>
+<p>Los clientes se ven de dos maneras: en <b>tablero</b>, que es como salen al entrar, o en <b>lista</b>. El botón de arriba cambia de una a otra y cada aparato recuerda la que dejaste. <span class="btn gris">↻</span> trae al momento lo que haya pasado en Teamleader.</p>
+<figure class="ancha"><img src="img/pres-tablero.png" alt="Tablero de clientes, primeras columnas"><figcaption><b>El tablero.</b> Cada columna es una fase y cada tarjeta, un cliente. De izquierda a derecha: <b>Nuevos · sin cita</b>, <b>No responden</b>, <b>Citados</b>, <b>Visitados · por presupuestar</b>, <b>Resueltos sin cita</b>…</figcaption></figure>
+<figure class="ancha"><img src="img/pres-tablero-2.png" alt="Tablero de clientes, columnas de la derecha"><figcaption>…<b>Presupuesto por revisar o enviar</b>, <b>Enviado · esperando</b>, <b>Aceptados · obra</b>, <b>Finalizados</b>, <b>Aplazados</b>, <b>Rechazados</b> y <b>Otros</b>. Arriba de cada columna, cuántos hay y cuánto suman sus presupuestos.</figcaption></figure>
 <div class="pantalla">
-  <img src="img/pres-clientes.png" alt="Clientes">
+  <img src="img/pres-clientes.png" alt="El tablero en el móvil">
   <div class="txt">
-    <h4>La lista</h4>
-    <p>Todos los clientes de presupuestos, con su estado: <b>Sin cita · sin contactar</b> (rojo, hay que llamarle), <b>Citado</b>, <b>Visitado</b> (sin cerrar o por enviar), <b>En Teamleader</b>. Buscador por nombre, teléfono o población, y filtros; <b>Sin contactar</b> es el que hay que mirar cada mañana.</p>
-    <p>Los que llegan de la <b>web</b> entran solos, sin cita: salen arriba con <span class="btn">Mirar ahora</span>. En cada cliente sin cita, dos botones: <b>Contactado</b> y <b>No cogió</b>. Queda quién llamó, cuándo y cuántos intentos («No cogió el teléfono · 1 oct · Fabrizio · 2 intentos»), para que no se pase nadie.</p>
+    <h4>Cómo se lee y cómo se mueve</h4>
+    <ul>
+      <li>La tarjeta lleva la <b>fecha de ingreso</b>, el nombre, el <b>importe</b> (si tiene varios presupuestos aceptados, la suma, con el número entre paréntesis), la <b>próxima acción</b> y lo último que se habló.</li>
+      <li>La barrita de siete tramos es <b>el camino del cliente</b>: contacto, cita, visita, presupuesto, enviado, respuesta y obra. Verde, hecho; ámbar, lo que toca ahora; rojo, donde se paró (rechazado o aplazado).</li>
+      <li>Las columnas <b>se deducen solas</b> de lo que ha pasado: al poner una cita pasa a Citados, al guardar el presupuesto a Presupuesto, al aceptarlo a Aceptados, y cuando todas sus obras están acabadas, a Finalizados.</li>
+      <li>Para colocarlo a mano, arrastra la tarjeta a otra columna o toca <b>⋯ → Mover a</b>. La app pide lo que esa fase necesita: el porqué, hasta cuándo se aplaza… <b>No responden</b>, <b>Rechazados</b> sin presupuesto, <b>Finalizados</b> y <b>Otros</b> se ponen así.</li>
+      <li><b>↑↓ Fecha</b> ordena la columna por fecha de ingreso; también se puede subir o bajar un cliente a mano.</li>
+    </ul>
+    <div class="nota">El buscador no distingue tildes ni mayúsculas y entiende palabras sueltas, la dirección y el teléfono con o sin espacios.</div>
+  </div>
+</div>
+<div class="pantalla">
+  <img src="img/pres-clientes-lista.png" alt="Clientes en lista">
+  <div class="txt">
+    <h4>En lista</h4>
+    <p>Los mismos clientes, uno debajo de otro, con <b>filtros</b> por fase y cuántos hay en cada una: sin contactar, sin cita, citados, visitados, aplazados, presupuesto por revisar o enviar, esperando respuesta, aceptados, rechazados. <b>Sin contactar</b> es el que hay que mirar cada mañana.</p>
+    <p>Los que llegan de la <b>web</b> entran solos, sin cita, y salen arriba con lo que pidieron en el formulario y <span class="btn">Mirar ahora</span>. En cada uno: <b>Contactado</b>, <b>No cogió</b>, <b>Citar</b> y <b>No hace falta</b> (para cerrarlo sin cita: ya tiene obra, solo era una consulta, se presupuesta sin ir a verlo…).</p>
   </div>
 </div>
 <div class="pantalla">
@@ -430,7 +473,7 @@ footer{margin-top:60px;padding-top:20px;border-top:1px solid var(--l1);color:var
   <div class="txt">
     <h4>Dar de alta un cliente</h4>
     <div class="paso"><b class="n">1</b><div>Antes de escribirlo, <b>Buscar en Teamleader</b>: si ya existe en el CRM, se trae con un toque y no se duplica.</div></div>
-    <div class="paso"><b class="n">2</b><div>Tipo (particular, empresa, comunidad), <b>nombre</b>, teléfono, email (para los avisos de la cita), dirección de la visita y población.</div></div>
+    <div class="paso"><b class="n">2</b><div>Tipo (particular, empresa, comunidad), <b>nombre</b>, teléfono, NIF, email (para los avisos de la cita), dirección de la visita y población.</div></div>
     <div class="paso"><b class="n">3</b><div><span class="btn verde">Siguiente: la cita</span> para ponerle día en el mismo paso, o <span class="btn gris">Sin cita</span> para dejarlo pendiente.</div></div>
     <div class="nota">Al guardar, el cliente se crea también en Teamleader y se apunta en la hoja de clientes de Google. Si algo de eso falla, la ficha lo dice y lo puedes reintentar.</div>
   </div>
@@ -439,8 +482,32 @@ footer{margin-top:60px;padding-top:20px;border-top:1px solid var(--l1);color:var
   <img src="img/pres-cliente.png" alt="Ficha del cliente">
   <div class="txt">
     <h4>La ficha del cliente</h4>
-    <p>Teléfono, email, dirección, la tarjeta <b>Llamada</b> (contactado o no cogió, con <i>Quitar</i> por si fue un error), si está en la <b>hoja de clientes</b>, y su <b>historial</b>: citas, visitas y presupuestos, en orden. <span class="btn verde">+ Nueva cita</span> y <span class="btn gris">Editar</span>.</p>
+    <ul>
+      <li>Arriba, el nombre, <b>el camino</b> con sus siete pasos y los botones: <b>Llamar</b>, <b>Cómo llegar</b>, <span class="btn verde">+ Nueva cita</span>, <span class="btn gris">Editar</span> y el de la visita, que cambia según el momento: <b>Hacer visita</b> (empieza la toma de datos sin pasar por una cita), <b>Seguir la visita</b> o <b>Cerrar la visita</b> si está a medias, y <b>Ver visita</b> cuando ya está hecha.</li>
+      <li>Si el cliente tiene obra, un botón verde <b>Ver obra OB-137 · En curso · 35 %</b> y, debajo, la tarjeta de sus obras con el avance.</li>
+      <li><i>¿Presupuesto hecho en Teamleader? Tráelo aquí con sus líneas</i>: trae todas las ofertas que tenga en el CRM.</li>
+      <li><b>Documentos del cliente</b>: la factura de la luz, el DNI, planos… Foto o PDF. Los ven presupuestos, jefes y Administración.</li>
+      <li><b>Qué pidió por la web</b>, si entró por el formulario; si lleva alguien de fuera, la tarjeta <b>Colaborador</b> para asignárselo.</li>
+      <li>El <b>historial</b>: citas, visitas y presupuestos, en orden. Al abrir uno y volver, vuelves a la ficha.</li>
+    </ul>
     <p>Abajo, <i>Borrar cliente</i>: solo si no tiene visitas ni presupuestos.</p>
+  </div>
+</div>
+<div class="dos">
+  <figure><img src="img/pres-cliente-sincita.png" alt="Cliente recién llegado de la web"><figcaption><b>Recién llegado.</b> Solo el primer tramo del camino en ámbar: toca llamarle. <b>No cogió</b>, <b>Contactado</b> o <b>No hace falta cita</b>.</figcaption></figure>
+  <figure><img src="img/pres-cliente-obra.png" alt="Cliente con obra en marcha"><figcaption><b>Con obra en marcha.</b> El camino entero en verde, el botón <b>Ver obra</b> y la tarjeta de la obra con su avance.</figcaption></figure>
+</div>
+<div class="pantalla">
+  <img src="img/pres-cliente-seguimiento.png" alt="Seguimiento del cliente: llamada, próxima acción y bitácora">
+  <div class="txt">
+    <h4>El seguimiento: llamadas, próxima acción y bitácora</h4>
+    <ul>
+      <li><b>Llamada</b>: <b>Contactado</b> o <b>No cogió</b>. Queda quién llamó, cuándo y cuántos intentos. Con «No cogió» y sin cita pendiente, el cliente pasa solo a <b>No responden</b>. <i>Quitar</i> lo deshace.</li>
+      <li><b>Próxima acción</b>: qué toca hacer con este cliente, qué día y quién («Llamar: ¿lo ha mirado? · 13 nov · Ramón»). Sale en su tarjeta del tablero y, el día que toca, en <b>Pendiente</b> de la agenda; en rojo si se pasa. <b>Hecho</b> la cierra.</li>
+      <li><span class="btn gris">+ Apuntar llamada o nota</span>: una llamada, un WhatsApp, un correo o una nota suelta.</li>
+      <li><span class="btn gris">Aplazar</span>: hasta una fecha y con el porqué («lo retoman en enero»). El cliente pasa a Aplazados y vuelve a la agenda una semana antes.</li>
+      <li>La <b>bitácora</b> junta todo eso con lo que la app apunta sola: citas, visitas, presupuestos enviados, respuestas.</li>
+    </ul>
   </div>
 </div>
 
@@ -459,83 +526,215 @@ footer{margin-top:60px;padding-top:20px;border-top:1px solid var(--l1);color:var
   <img src="img/pres-cita.png" alt="Ficha de la cita">
   <div class="txt">
     <h4>La ficha de la cita, y los correos</h4>
-    <p>Todo lo de la cita y tres acciones: <b>Llamar</b>, <b>Cómo llegar</b> y <b>Cambiar</b>. Abajo: <span class="btn verde">Empezar visita</span>, <span class="btn gris">No estaba</span> y <span class="btn gris">Anular</span>.</p>
+    <p>Todo lo de la cita y tres acciones: <b>Llamar</b>, <b>Cómo llegar</b> y <b>Cambiar</b>. Abajo: <span class="btn verde">Empezar visita</span>, <span class="btn gris">No estaba</span> y <span class="btn gris">Borrar esta cita</span>; <i>Anular la cita</i> es el enlace pequeño de encima.</p>
     <p>Los correos al cliente salen <b>solos</b>: la <b>confirmación</b> al crear la cita, el <b>recordatorio</b> 24 horas antes, el <b>cambio</b> si se mueve y la <b>anulación</b> si se anula. Llevan un botón para añadirla a su calendario. La ficha dice cuándo salió cada uno.</p>
     <p>Si algo falla (el cliente no tiene email, por ejemplo), la app lo dice en rojo. <span class="btn gris">Reenviar aviso por correo</span> lo vuelve a mandar y enseña el motivo si no puede.</p>
+    <div class="nota">Los resúmenes que te llegan por correo (las citas de mañana, lo que vence) salen de lunes a viernes; el del viernes habla del lunes.</div>
   </div>
 </div>
 
 <h3 id="pres-visitas">Visitas: la toma de datos</h3>
-<p>La visita es donde tomas en casa del cliente todo lo que hace falta para presupuestar: el inmueble, la instalación que tiene, lo que quiere, fotos y medidas. Va en <b>5 pasos</b> y se guarda sola en el móvil mientras la haces, con o sin cobertura.</p>
+<p>La visita es donde tomas en casa del cliente todo lo que hace falta para presupuestar: el inmueble, la instalación que tiene, lo que quiere, fotos y medidas. Va en <b>5 pasos</b> y se guarda sola en el móvil mientras la haces, con o sin cobertura. Arriba a la derecha, <b>Guardar y cerrar</b> sale guardando lo que lleves y <b>Cancelar</b> descarta lo de ahora (si la visita ya estaba guardada, la borra con sus fotos, y antes pregunta).</p>
 <div class="dos">
-  <figure><img src="img/pres-visita-nueva-1.png" alt="Visita, paso 1"><figcaption><b>1 · Cliente.</b> Búscalo (nombre, NIF o teléfono) o créalo. Si vienes de <i>Empezar visita</i> desde la cita, ya está puesto.</figcaption></figure>
-  <figure><img src="img/pres-visita-nueva-3.png" alt="Visita, paso 3"><figcaption><b>2 · El inmueble</b> (dirección, tipo, m², año…) y <b>3 · Qué se presupuesta</b>: marca los oficios que se han venido a mirar.</figcaption></figure>
-  <figure><img src="img/pres-visita-nueva-4.png" alt="Visita, paso 4, ficha de aire"><figcaption><b>4 · Fichas.</b> Una por oficio. En aire acondicionado, por ejemplo: sistema, y por cada estancia sus <b>m²</b> y los <b>metros de línea</b> hasta la exterior. Con eso el motor elige la máquina y calcula tubo y gas.</figcaption></figure>
+  <figure><img src="img/pres-visita-nueva-1.png" alt="Visita, paso 1"><figcaption><b>1 · Cliente.</b> Búscalo (nombre, NIF o teléfono) o créalo. Si vienes de <i>Empezar visita</i> desde la cita, o de <i>Hacer visita</i> desde su ficha, ya está puesto.</figcaption></figure>
+  <figure><img src="img/pres-visita-nueva-3.png" alt="Visita, paso 3"><figcaption><b>2 · El inmueble</b> (dirección, tipo, m², año…) y <b>3 · Qué se presupuesta</b>: marca los oficios que se han venido a mirar; el elegido queda en verde con su tick.</figcaption></figure>
+  <figure><img src="img/pres-visita-nueva-4.png" alt="Visita, paso 4, ficha de aire"><figcaption><b>4 · Fichas.</b> Una por oficio, con sus fotos. En aire acondicionado, por ejemplo: sistema, y por cada estancia sus <b>m²</b> y los <b>metros de línea</b> hasta la exterior. Con eso el motor elige la máquina y calcula tubo y gas.</figcaption></figure>
 </div>
 <div class="nota">Los campos marcados como obligatorios son los que el presupuesto necesita de verdad. Los que tienen una <b>ayuda</b> debajo te dicen por qué se piden. Si un dato no lo sabes, déjalo: el motor avisará de lo que le falta, en vez de inventárselo.</div>
 <div class="pantalla">
   <img src="img/pres-visita-ver.png" alt="Ficha de una visita">
   <div class="txt">
     <h4>5 · Cierre, y después</h4>
-    <p>Al cerrar la visita, el cliente recibe un correo de <b>gracias</b> (una sola vez, sin ningún dato de los que tomaste). La visita sube a <b>Teamleader</b> como oportunidad, con sus fotos.</p>
+    <p>Al cerrar la visita la app <b>pregunta</b> si le mandas al cliente el correo de <b>gracias</b> (no lleva ningún dato de los que tomaste). Si dices que no, el botón queda en la ficha para mandarlo después. La visita sube a <b>Teamleader</b> como oportunidad, con sus fotos.</p>
     <p>En la ficha de una visita ya cerrada:</p>
     <ul>
-      <li><span class="btn">Calcular…</span> un presupuesto de cada oficio con la ficha.</li>
-      <li><b>PDF de la visita</b>: primero se ve, y desde ahí se comparte.</li>
-      <li><b>Copiar a Drive</b>: el PDF y las fotos a la carpeta del cliente.</li>
+      <li><span class="btn gris">Modificar la ficha</span>: para añadir o cambiar datos antes de presupuestar (baterías, metros, cubierta…), también si ya está en Teamleader.</li>
+      <li><span class="btn">Calcular…</span> un presupuesto de cada oficio con la ficha. Si la visita tiene varias fichas, pueden ir en <b>un presupuesto conjunto</b>, cada instalación en su bloque con su suma.</li>
+      <li><b>Ver PDF</b> y <b>Compartir</b> la ficha en papel, y <b>Copiar a Drive</b>: el PDF y las fotos a la carpeta del cliente.</li>
+      <li>Las <b>fotos</b>, en rejilla; al tocar una se abren de una en una, con flechas.</li>
     </ul>
-    <p>Una visita que te quedó a medias sale en la Agenda, en <i>Pendiente</i>, para seguirla.</p>
+    <p>Una visita sin cerrar se retoma desde la ficha del cliente (<b>Seguir la visita</b>) o desde la lista de visitas, en <i>Sin cerrar</i>.</p>
   </div>
 </div>
 
 <h3 id="pres-presupuestos">Presupuestos</h3>
-<p>El presupuesto lo <b>propone el motor</b> a partir de los datos y de las tarifas cargadas (Vaillant, Saunier Duval, Midea, Fronius, Enphase, BYD, Tesla…). Tú lo revisas, cambias lo que haga falta y lo guardas. Al guardar sube solo a Teamleader.</p>
+<p>El presupuesto lo <b>propone el motor</b> a partir de los datos y de las tarifas cargadas (Vaillant, Saunier Duval, Midea, Fronius, Deye, Enphase, BYD, Tesla…). Tú lo revisas, cambias lo que haga falta y lo guardas. Al guardar sube solo a Teamleader.</p>
 <div class="pantalla">
   <img src="img/pres-presupuestos.png" alt="Lista de presupuestos">
   <div class="txt">
     <h4>La lista</h4>
-    <p>Los de las visitas y los sueltos, juntos: oficio, cliente, visita si la hay, importe sin IVA y estado. <b>Por revisar</b> significa que al motor le faltó algún dato: ábrelo y mira los avisos.</p>
-    <p><span class="btn">+ Nuevo</span> hace un presupuesto <b>suelto</b>, sin visita: por teléfono o para un cliente de siempre.</p>
+    <p>Los de las visitas y los sueltos, juntos: oficio, estado, cliente, visita si la hay e importe sin IVA. <b>Pendiente de revisar</b> significa que aún no le has dado el visto bueno; si al motor le faltó algún dato, al abrirlo salen los avisos.</p>
+    <p>Lo que pasa en Teamleader (enviado, aceptado, rechazado, ofertas hechas allí) entra solo cada cinco minutos y al volver a la app; <span class="btn gris">↻ Teamleader</span> lo trae al momento. <span class="btn">+ Nuevo</span> hace un presupuesto <b>suelto</b>, sin visita.</p>
   </div>
 </div>
 <div class="pantalla">
   <img src="img/pres-presu-nuevo.png" alt="Presupuesto nuevo, suelto">
   <div class="txt">
     <h4>Presupuesto suelto</h4>
-    <div class="paso"><b class="n">1</b><div>Para quién (opcional; si escribes el nombre, te propone clientes del CRM para engancharlo).</div></div>
-    <div class="paso"><b class="n">2</b><div>Qué se presupuesta. Cada oficio pide cuatro datos: en aire, sistema y por equipo m² y metros; en aerotermia, potencia y circuitos; en fotovoltaica, paneles, inversor, batería…</div></div>
-    <div class="paso"><b class="n">3</b><div><span class="btn verde">Calcular</span>. Salen las líneas por secciones, los avisos, y el total. Puedes poner un descuento al pie y añadir cosas del catálogo.</div></div>
-    <div class="paso"><b class="n">4</b><div><span class="btn verde">Guardar este presupuesto</span>: se guarda con la tarifa de ese día y <b>se sube solo a Teamleader</b>, con su PDF.</div></div>
+    <div class="paso"><b class="n">1</b><div><b>Para quién</b>: escribe el nombre o <i>Buscar el cliente en la app o en Teamleader</i> (particulares y empresas).</div></div>
+    <div class="paso"><b class="n">2</b><div><b>Qué se presupuesta</b> y <b>cómo</b>: <b>Con el motor</b> (pide cuatro datos: en aire, sistema y por equipo m² y metros; en aerotermia, potencia y circuitos; en fotovoltaica, paneles, inversor, batería…) o <b>Libre, de cero</b>, que empieza vacío y lo montas línea a línea.</div></div>
+    <div class="paso"><b class="n">3</b><div><span class="btn verde">Calcular</span>. Salen las líneas por secciones, los avisos y el total.</div></div>
+    <div class="paso"><b class="n">4</b><div>Retoca lo que haga falta (abajo) y <span class="btn verde">Guardar este presupuesto</span>: se guarda con la tarifa de ese día y <b>se sube solo a Teamleader</b>, con su PDF.</div></div>
   </div>
 </div>
+<h4>Antes de guardar: lo que se puede cambiar</h4>
+<ul>
+  <li><b>Editar</b> cualquier línea: concepto, descripción larga, cantidad, precio, descuento y, para quien ve costes, el coste y el margen. El motor respeta el retoque si vuelves a calcular.</li>
+  <li><b>Quitar</b> una línea: queda en una lista abajo, <i>Quitadas de este presupuesto</i>, de donde se recupera.</li>
+  <li><b>Añadir del catálogo</b>: el buscador encuentra por palabras en cualquier orden («arotherm 8») o por referencia. Lo que no exista se crea ahí mismo como producto nuevo y queda en el catálogo para la próxima vez.</li>
+  <li><b>Descuento al pie</b>, en tanto por ciento, y <span class="btn gris">Aplicar</span>.</li>
+  <li>Debajo del total, <b>coste, beneficio y margen</b>: lo ven presupuestos y Administración, nunca el cliente.</li>
+</ul>
+<h4>Fotovoltaica: varias opciones para el mismo cliente</h4>
+<p>En un presupuesto de paneles, encima de las líneas hay un bloque de opciones que recalcula sin tocar la ficha de la visita:</p>
+<ul>
+  <li><b>Opción con</b> Fronius, Deye o Enphase.</li>
+  <li><b>Inversor</b>: el que elige el motor («Automático») o uno concreto del desplegable.</li>
+  <li><b>Paneles</b>: los calculados o los que pongas a mano. <b>Grúa</b>: las horas de camión grúa, si hace falta.</li>
+  <li><b>Batería</b>: sin batería o la marca compatible con ese inversor, los kWh y, si quieres, el modelo.</li>
+</ul>
+<p>Para darle al cliente dos o tres opciones: guarda esta, cambia de marca o de batería y guarda la siguiente. Cada una es un presupuesto aparte, con la marca, los kWp y la batería en el título, y una oferta aparte en Teamleader. En <b>aerotermia</b> pasa lo mismo con la marca: Vaillant o Midea.</p>
+<p>La línea de la instalación fotovoltaica se puede abrir para ver y editar sus <b>partidas</b> (cantidad, coste, nombre), quitar alguna o añadir una a mano.</p>
 <div class="pantalla">
   <img src="img/pres-presu-ver.png" alt="Ficha de un presupuesto">
   <div class="txt">
-    <h4>La ficha de un presupuesto</h4>
+    <h4>La ficha de un presupuesto guardado</h4>
     <ul>
-      <li>Las líneas con cantidad, precio y, en las máquinas, su detalle técnico. Las de cada estancia lo dicen ("— Salón").</li>
-      <li><span class="btn gris">PDF</span>: lo ves, y desde ahí compartes.</li>
-      <li><span class="btn gris">Modificar</span>: cambia concepto, cantidad, precio, quita o añade líneas, descuento. El servidor vuelve a sumar. Lo que cambies de una línea del motor queda apuntado: así se afinan las reglas.</li>
-      <li>Si no está en Teamleader, <span class="btn verde">Mandar a Teamleader</span>; si algo falló, el error sale debajo.</li>
+      <li>El <b>título</b> se cambia tocándolo (✎) y la <b>categoría</b>, tocándola debajo.</li>
+      <li><b>Cliente</b>: si no tiene, <span class="btn verde">Asignar cliente</span>; si tiene, <span class="btn gris">Copiar para otro cliente</span> hace un presupuesto nuevo con las mismas líneas para otro.</li>
+      <li>Las líneas con cantidad, precio y, en las máquinas, su detalle técnico; el total y, debajo, coste y margen.</li>
+      <li><b>Idioma del PDF</b>: español, inglés, catalán o alemán. Las líneas se traducen al preparar el PDF.</li>
+      <li><span class="btn gris">PDF</span> lo enseña, <span class="btn gris">Descargar PDF</span> lo baja con su nombre. Lleva siempre las condiciones generales y el bloque de aceptación.</li>
+      <li><span class="btn gris">Modificar</span>: cambia concepto, descripción larga, cantidad, precio, descuento por línea, coste o margen; quita líneas o añade otras del catálogo o a mano. Si el presupuesto está en Teamleader, la oferta de allí se actualiza.</li>
+      <li><span class="btn gris">Lista de compra</span> (qué habría que pedir) y <span class="btn gris">Abrir aparte</span>, para tenerlo en otra ventana y comparar dos.</li>
     </ul>
-    <div class="nota ok">Los precios salen de la tarifa cargada, no de la app. Cuando cambia una tarifa, se carga la nueva y los presupuestos antiguos se quedan con la suya.</div>
+    <div class="nota ok">Los precios salen de la tarifa cargada. Un presupuesto guardado se queda con los precios del día en que se hizo, aunque después cambie la tarifa.</div>
+  </div>
+</div>
+
+<h3 id="pres-enviar">Enviar, firmar y aceptar</h3>
+<p>Debajo de las líneas, la ficha lleva el <b>seguimiento</b> del presupuesto: creado, en Teamleader, revisado, enviado al cliente, validez y respuesta. Ahí se hace cada paso.</p>
+<div class="pantalla">
+  <img src="img/pres-presu-enviar-btn.png" alt="Seguimiento del presupuesto y botón Enviar al cliente">
+  <div class="txt">
+    <h4>Revisar y enviar</h4>
+    <div class="paso"><b class="n">1</b><div>Repasa el presupuesto y pulsa <span class="btn verde">Ya lo revisé</span>. En la lista y en el tablero deja de estar «pendiente de revisar».</div></div>
+    <div class="paso"><b class="n">2</b><div><span class="btn verde">Enviar al cliente</span> abre el correo. Si se lo diste en mano o por otro medio, <span class="btn gris">Ya se lo envié por otro lado</span> lo apunta igual.</div></div>
+    <p><b>Nº Teamleader</b>: el número de la oferta (2026/640) se escribe a mano y sale en la lista.</p>
+  </div>
+</div>
+<div class="pantalla">
+  <img src="img/pres-presu-enviar.png" alt="Enviar el presupuesto al cliente por correo">
+  <div class="txt">
+    <h4>El correo al cliente</h4>
+    <ul>
+      <li><b>Idioma</b> del PDF y del correo: español, inglés, catalán o alemán. En otro idioma, tu asunto y tu mensaje se traducen y los ves antes de confirmar.</li>
+      <li><b>Para</b> (viene el correo del cliente), <b>copia</b>, <b>asunto</b> y tu <b>mensaje</b>.</li>
+      <li>Si el cliente tiene más presupuestos sin contestar, puedes marcar <b>varias opciones</b> para mandarlas juntas: cada una con su PDF y su enlace.</li>
+      <li><span class="btn verde">Revisar y enviar</span> pide confirmación antes de mandar nada.</li>
+    </ul>
+    <p>El correo sale de <i>noreply@sysefen.com</i> con el PDF adjunto y un botón <b>Ver y aceptar este presupuesto</b>.</p>
+  </div>
+</div>
+<h4>Lo que hace el cliente</h4>
+<p>El botón del correo le abre una página de Sysefen con su presupuesto, en su idioma. Puede verlo, descargarlo y, si está conforme, <b>aceptarlo y firmarlo</b> ahí mismo: escribe su nombre y su <b>DNI, NIE o CIF</b> (es obligatorio) y firma con el dedo o el ratón.</p>
+<div class="pantalla">
+  <img src="img/pres-presu-aceptado.png" alt="Presupuesto aceptado y firmado, con su obra y su facturación">
+  <div class="txt">
+    <h4>Cuando acepta</h4>
+    <ul>
+      <li>El presupuesto queda <b>aceptado y firmado en línea</b>, con quién firmó y cuándo. <span class="btn verde">PDF firmado</span> lo abre; también llega por correo y se guarda en Drive.</li>
+      <li>En Teamleader la oferta pasa a aceptada.</li>
+      <li><b>La obra se crea sola</b>, con el cliente, la dirección y la categoría: <span class="btn gris">Ver la obra OB-141</span>. Si el cliente ya tenía una obra abierta, el presupuesto se suma a ella y el proyecto crece con sus fases.</li>
+      <li>A la oficina le llega por correo la <b>lista de compra</b>: el material a pedir, por proveedor, de todos los presupuestos aceptados de esa obra.</li>
+      <li>El cliente pasa a <b>Aceptados</b> en el tablero.</li>
+    </ul>
+    <p>Si te lo acepta de palabra, marca <b>Aceptó</b> en <i>¿Qué dijo el cliente?</i> (sale cuando el presupuesto consta como enviado) y pasa lo mismo, sin firma. <b>Rechazó</b> deja escribir el porqué; <b>Caducó</b>, si lo dejó pasar.</p>
+  </div>
+</div>
+<div class="nota">Un presupuesto enviado vale <b>15 días</b>. Dos días laborables antes de que venza os llega un aviso a presupuestos y Administración. Al cliente no se le avisa solo: en la ficha están <b>Avisar al cliente de que vence</b> (un correo con la fecha y el enlace para aceptar) y <b>Prorrogar 15 días</b>.</div>
+<p><b>Borrar presupuesto</b>, al final de la ficha, lo borra con sus líneas y, si estaba en Teamleader, borra también la oferta de allí. No se puede recuperar.</p>
+
+<h3 id="pres-facturas">Facturas</h3>
+<p>Las facturas se <b>componen en la app</b> y las <b>emite Teamleader</b>, que es quien les pone el número. En la pestaña <b>Facturas</b> están todas, las hechas desde la app y las hechas en Teamleader, de todas las empresas; se ponen al día solas cada media hora y con <span class="btn gris">↻</span>.</p>
+<div class="pantalla">
+  <img src="img/pres-facturas.png" alt="Lista de facturas">
+  <div class="txt">
+    <h4>La lista</h4>
+    <p>Cada factura con su número, su estado (<b>borrador</b>, <b>por cobrar</b>, <b>vencido</b> con los días, <b>pagado</b>, <b>abono</b>), la fecha, el cliente y la base. Arriba, cuánto queda por cobrar. Buscador por número o cliente y filtros: todas, borradores, por cobrar, vencidas, pagadas y abonos.</p>
+    <p><span class="btn verde">+ Factura</span> hace una factura libre, sin presupuesto. Lo normal es facturar desde el presupuesto aceptado.</p>
+  </div>
+</div>
+<div class="pantalla">
+  <img src="img/pres-facturar.png" alt="Facturar un presupuesto">
+  <div class="txt">
+    <h4>Facturar un presupuesto</h4>
+    <p>En la ficha del presupuesto aceptado sale la tarjeta <b>Facturación</b>, con lo facturado y lo que queda. <span class="btn verde">Facturar</span> abre esta hoja:</p>
+    <ul>
+      <li><b>Qué se factura</b>: <b>un porcentaje</b> del presupuesto (15, 30, 40, 50 o el que escribas), <b>un importe</b>, unas <b>partidas</b> con su cantidad, o <b>todo / lo que queda</b>, que resta los anticipos ya facturados.</li>
+      <li><b>IVA</b>: el 21 % por defecto; se puede elegir otro de los tipos activos.</li>
+      <li><b>Fecha</b>, <b>forma de pago</b> y observaciones.</li>
+      <li>Abajo, la <b>vista previa</b>: base, IVA y total, y cuánto llevas facturado de ese presupuesto.</li>
+    </ul>
+    <p><span class="btn verde">Crear</span> la deja como <b>borrador</b> en Teamleader, todavía sin número.</p>
+  </div>
+</div>
+<div class="pantalla">
+  <img src="img/pres-factura.png" alt="Ficha de una factura">
+  <div class="txt">
+    <h4>La ficha de la factura</h4>
+    <ul>
+      <li>Un <b>borrador</b> se puede <b>Editar</b> (líneas, fecha, forma de pago, observaciones) o <b>Borrar</b>: no ha gastado número.</li>
+      <li><b>Contabilizar</b>: Teamleader le pone el siguiente número de la serie. Desde ahí ya no se cambia ni se borra; un error se corrige con un abono. La app pide confirmación.</li>
+      <li><b>Ver PDF</b> lo abre en otra pestaña, para verlo antes de descargarlo.</li>
+      <li><b>Enviar al cliente</b>: un correo con el PDF adjunto; el destinatario, el asunto y el mensaje vienen propuestos y se pueden cambiar. Queda apuntado a quién y cuándo se envió.</li>
+      <li><b>Apuntar cobro</b>, con fecha e importe (entero o una parte).</li>
+      <li><b>Abonar</b>: la factura entera o una parte.</li>
+    </ul>
+  </div>
+</div>
+<div class="pantalla">
+  <img src="img/pres-gestoria.png" alt="Paquete para la gestoría">
+  <div class="txt">
+    <h4>El paquete para la gestoría</h4>
+    <p><span class="btn gris">Gestoría</span>, en la lista: eliges la empresa y un <b>trimestre</b>, un <b>mes</b> o <b>todo el año</b>. Sale el resumen (facturas, abonos, base, IVA y total) y <span class="btn verde">Descargar el ZIP</span> baja el listado de facturas emitidas en Excel y el PDF de cada factura y cada abono del periodo. Los abonos restan.</p>
+  </div>
+</div>
+
+<h3 id="pres-precios">Precios</h3>
+<div class="pantalla">
+  <img src="img/pres-precios.png" alt="Pantalla de precios">
+  <div class="txt">
+    <h4>Cambiar los precios de la base de datos</h4>
+    <p>En <b>Perfil → Precios</b> (Ajustes en Administración) se cambian a mano los precios con los que se calculan los presupuestos:</p>
+    <ul>
+      <li><b>Fotovoltaica</b>: el modelo con el que se presupuestan las instalaciones (margen, jornadas, documentación, costes de personal, compras y material).</li>
+      <li><b>Catálogo</b>: cada producto, con su tarifa, su descuento de proveedor y su recargo; la app enseña la venta y el coste que salen.</li>
+      <li><b>Precios fijos</b>: los conceptos de precio fijo de las partidas (mano de obra, soportes…).</li>
+      <li><b>Cambios</b>: el historial, con quién y cuándo, y <b>Deshacer</b>.</li>
+    </ul>
+    <p>También desde un presupuesto: al editar una línea, <span class="btn gris">Aplicar</span> cambia solo ese presupuesto y el enlace <b>Guardar en la base de datos</b> cambia además el precio para todos los nuevos, después de enseñarte qué va a cambiar.</p>
+    <div class="nota">Lo que cambies vale para los presupuestos nuevos. Los ya guardados no cambian nunca.</div>
   </div>
 </div>
 
 <h3 id="pres-teamleader">Teamleader y la hoja de clientes</h3>
 <div class="pantalla">
-  <img src="img/pres-perfil.png" alt="Perfil de presupuestos con Teamleader">
+  <img src="img/pres-perfil.png" alt="Perfil de presupuestos">
   <div class="txt">
     <h4>Conectar Teamleader</h4>
-    <p>En <b>Perfil → Teamleader</b>: <span class="btn">Conectar</span> abre Teamleader para dar permiso, una vez. Desde entonces la app crea y lee clientes, sube visitas como oportunidades y presupuestos como ofertas.</p>
-    <p>Si el permiso caduca, la app te lo dice y vuelves a conectar aquí. <span class="btn gris">Comprobar</span> dice si sigue vivo.</p>
+    <p>En <b>Perfil → Teamleader</b>: <span class="btn">Conectar</span> abre Teamleader para dar permiso, una vez. Si el permiso caduca, la app te lo dice y vuelves a conectar aquí. <span class="btn gris">Comprobar</span> dice si sigue vivo.</p>
     <h4>Qué va a dónde</h4>
     <table>
       <tr><th>En la app</th><th>En Teamleader</th></tr>
       <tr><td>Cliente</td><td>Contacto o empresa</td></tr>
       <tr><td>Visita cerrada</td><td>Oportunidad (deal), en el embudo de su oficio, con las fotos</td></tr>
-      <tr><td>Presupuesto guardado</td><td>Oferta dentro de esa oportunidad, y el PDF en sus archivos. No se manda al cliente: eso se hace desde Teamleader.</td></tr>
+      <tr><td>Presupuesto guardado</td><td>Oferta dentro de esa oportunidad, con su PDF. Lo que modificas aquí se actualiza allí</td></tr>
+      <tr><td>Aceptado en la app o firmado en línea</td><td>La oferta pasa a aceptada. Y lo que se marca allí (enviada, aceptada, rechazada, caducada) vuelve a la app</td></tr>
+      <tr><td>Presupuesto borrado</td><td>Se borra también la oferta</td></tr>
+      <tr><td>Factura</td><td>Factura en borrador; al contabilizarla, Teamleader le pone el número</td></tr>
     </table>
+    <p>Los presupuestos hechos directamente en Teamleader entran en la app enteros, con sus líneas.</p>
   </div>
 </div>
 
@@ -544,7 +743,7 @@ footer{margin-top:60px;padding-top:20px;border-top:1px solid var(--l1);color:var
   <img src="img/pres-obras.png" alt="Obras para presupuestos">
   <div class="txt">
     <h4>Obras</h4>
-    <p>Tienes la pestaña <b>Obras</b>: todas, con su código, su avance y sus partes (horas y materiales, sin precios). Puedes crear y editar obras, y <span class="btn verde">Planificar semana</span> igual que un jefe (ver <a href="#jefe-planificacion">el tablero</a>). El proyecto y sus fases, igual que en <a href="#jefe-proyecto">el jefe</a>.</p>
+    <p>Tienes la pestaña <b>Obras</b>: todas, con su código, su avance y sus partes (horas y materiales, sin precios). Puedes crear y editar obras, y <span class="btn verde">Planificar semana</span> (ver <a href="#jefe-planificacion">el tablero</a>). El proyecto y sus fases, igual que en <a href="#jefe-proyecto">el jefe</a>. En cada obra, la <b>lista de compra</b> con <b>Ver lista de compra</b> y <b>Regenerar</b>, que la vuelve a calcular con los presupuestos como estén ahora.</p>
   </div>
 </div>
 <div class="pantalla">
@@ -552,7 +751,7 @@ footer{margin-top:60px;padding-top:20px;border-top:1px solid var(--l1);color:var
   <div class="txt">
     <h4>Economía de la obra</h4>
     <p>En la ficha, el bloque <b>Economía</b>, que solo veis presupuestos y Administración: lo <b>presupuestado</b> frente al <b>coste real</b> (personal y material), el <b>margen</b> real frente al previsto y las <b>horas</b> reales frente a las previstas, con barra y semáforo: verde por debajo del 90 % de horas, ámbar hasta el 105 %, rojo si se pasa o el margen cae a la mitad. Si la obra es mixta, el desglose por categoría.</p>
-    <p><span class="btn">Enlazar</span> el presupuesto que aceptó el cliente: de ahí sale lo presupuestado. El coste de material se alimenta solo de los albaranes y recibos con importe y de los materiales con precio de los partes.</p>
+    <p>Lo presupuestado sale de los presupuestos aceptados, que quedan enlazados solos a la obra; <span class="btn">Enlazar</span> añade uno a mano. El coste de material se alimenta de los albaranes y recibos con importe y de los materiales con precio de los partes.</p>
   </div>
 </div>
 <div class="pantalla">
@@ -563,9 +762,26 @@ footer{margin-top:60px;padding-top:20px;border-top:1px solid var(--l1);color:var
   </div>
 </div>
 
+<!-- ============================================================ COLABORADOR -->
+<h2 id="colaborador"><span class="quien pres">Colaborador</span> Solo tus clientes</h2>
+<p>El colaborador es alguien de fuera que lleva clientes para Sysefen. Trabaja como presupuestos (agenda, citas, visitas y presupuestos), pero <b>solo con los clientes que se le asignan</b>.</p>
+<div class="pantalla">
+  <img src="img/colab-clientes.png" alt="Clientes de un colaborador">
+  <div class="txt">
+    <h4>Qué ve y qué no</h4>
+    <ul>
+      <li>Sus pestañas son <b>Agenda</b>, <b>Clientes</b>, <b>Presupuestos</b> y <b>Perfil</b>.</li>
+      <li>Ve sus clientes asignados, con sus citas, sus visitas y sus presupuestos, y puede citar, visitar y presupuestar.</li>
+      <li>No ve los clientes de los demás ni los que entran por la web, y no puede crear ni borrar clientes.</li>
+      <li>No tiene obras, horas, facturas, precios, costes ni márgenes, ni la conexión con Teamleader.</li>
+    </ul>
+    <p>Un cliente se le asigna desde su ficha, en la tarjeta <b>Colaborador</b>: lo hacen presupuestos o Administración. Sin asignar, ningún colaborador lo ve.</p>
+  </div>
+</div>
+
 <!-- ============================================================ ADMIN -->
 <h2 id="admin"><span class="quien admin">Administración</span> Tu día a día</h2>
-<p>Administración no ficha. Ve y corrige lo de todos: fichajes, imputaciones, empleados y sus planillas, obras, partes, citas y presupuestos, y los ajustes de la empresa.</p>
+<p>Administración no ficha. Ve y corrige lo de todos: fichajes, imputaciones, empleados y sus planillas, obras, partes, citas y presupuestos, y lleva las facturas, los precios, las copias de seguridad y los ajustes de la empresa.</p>
 <div class="pantalla">
   <img src="img/admin-hoy.png" alt="Hoy de administración">
   <div class="txt">
@@ -630,7 +846,7 @@ footer{margin-top:60px;padding-top:20px;border-top:1px solid var(--l1);color:var
 </div>
 <div class="dos">
   <figure><img src="img/admin-citas.png" alt="Citas"><figcaption><b>Citas</b>: la agenda de presupuestos, para saber dónde está cada uno. No se editan desde aquí.</figcaption></figure>
-  <figure><img src="img/admin-presupuestos.png" alt="Presupuestos"><figcaption><b>Presupuestos</b>: los mismos que ve presupuestos, con permiso para calcular, modificar y mandar a Teamleader.</figcaption></figure>
+  <figure><img src="img/admin-presupuestos.png" alt="Presupuestos"><figcaption><b>Presupuestos</b> (desde Hoy): los mismos que ve presupuestos, con permiso para calcular, modificar, enviar al cliente y facturar. Todo lo de <a href="#pres-presupuestos">presupuestos</a> vale igual.</figcaption></figure>
 </div>
 
 <h3 id="admin-ajustes">Ajustes</h3>
@@ -642,9 +858,22 @@ footer{margin-top:60px;padding-top:20px;border-top:1px solid var(--l1);color:var
       <li><b>Nombre de la empresa</b> y <b>CIF</b>: salen en los PDF.</li>
       <li><b>Email de copia</b>: la gestoría o administración recibe copia de cada parte enviado.</li>
       <li><b>Ubicación al fichar</b>, <b>aviso de fichaje</b> y si los <b>operarios ven importes</b>.</li>
-      <li><b>Costes de personal</b> y <b>Fases por categoría</b>.</li>
-      <li><b>Errores de la app</b>: lo que ha fallado en los móviles, para revisarlo.</li>
-      <li><b>Importar histórico</b> de fichajes desde un CSV.</li>
+      <li><b>Fases por categoría</b> y <b>Costes de personal</b>.</li>
+      <li><b>Facturas</b>: la misma pantalla que tiene presupuestos en su pestaña (ver <a href="#pres-facturas">facturas</a>), con el paquete para la gestoría.</li>
+      <li><b>Precios</b>: los de la base de datos (ver <a href="#pres-precios">precios</a>).</li>
+      <li><b>Fallos</b>: lo que ha fallado en los móviles, y cada aviso rojo que le ha salido a alguien, para revisarlo.</li>
+      <li><b>Empleados</b>, <b>Descargar copia</b> del registro de jornada e <b>Importar CSV</b> con el histórico de fichajes anterior a la app.</li>
+    </ul>
+  </div>
+</div>
+<div class="pantalla">
+  <img src="img/admin-ajustes-copias.png" alt="Ajustes: copias de seguridad y lista de compra">
+  <div class="txt">
+    <h4>Teamleader, copias de seguridad y lista de compra</h4>
+    <ul>
+      <li><b>Teamleader</b>: conectar, comprobar y, solo Administración, desconectar.</li>
+      <li><b>Copias de seguridad</b>: cada domingo de madrugada se copia todo a Drive (clientes, presupuestos, obras, partes, fichajes, horas, catálogo, y los PDF y fotos). Se guardan las ocho últimas semanas y la primera copia de cada mes. La tarjeta dice cuándo fue la última y cuánto ocupa; <span class="btn">Hacer una copia ahora</span> lanza una. Si una falla, llega un correo.</li>
+      <li><b>Lista de compra · destinatarios</b>: a qué correos llega la lista de compra cada vez que un cliente acepta un presupuesto. Al cliente y a los operarios no les llega nunca.</li>
     </ul>
   </div>
 </div>
@@ -659,12 +888,17 @@ footer{margin-top:60px;padding-top:20px;border-top:1px solid var(--l1);color:var
   <tr><td>La app se ve distinta a la de un compañero</td><td>Uno de los dos no ha actualizado. Cierra la app y ábrela: saldrá el cartel de <b>Actualizar</b>.</td></tr>
   <tr><td>El PDF no se comparte por WhatsApp</td><td>Primero se ve el PDF; desde ahí, <b>Compartir</b>. Se manda solo el archivo, sin texto.</td></tr>
   <tr><td>El presupuesto sale "Por revisar" o con avisos</td><td>Al motor le faltó un dato o hay algo que no cuadra (una batería que no va con ese inversor, una estancia demasiado grande…). Los avisos lo dicen; corrige la ficha o añade la línea a mano.</td></tr>
+  <tr><td>Al cliente no le llegó el presupuesto</td><td>En la ficha del presupuesto, <b>Reenviar al cliente</b>: comprueba el correo y vuelve a mandarlo. La ficha dice a qué dirección salió y cuándo.</td></tr>
+  <tr><td>El cliente quiere más tiempo para decidir</td><td>En la ficha del presupuesto, <b>Prorrogar 15 días</b>.</td></tr>
+  <tr><td>Una factura contabilizada está mal</td><td>No se puede cambiar ni borrar: se hace un <b>abono</b> desde su ficha y, si hace falta, una factura nueva.</td></tr>
+  <tr><td>Un precio de la base está mal</td><td>Perfil → <b>Precios</b>, o al editar la línea en un presupuesto, <b>Guardar en la base de datos</b>. Si te equivocas, <b>Deshacer</b> en la pestaña Cambios.</td></tr>
+  <tr><td>Sale un aviso rojo en inglés o «no se pudo llamar a la función»</td><td>Suele ser que la sesión se ha perdido en ese aparato: sal y vuelve a entrar. El aviso queda apuntado para Administración.</td></tr>
   <tr><td>"El permiso de Teamleader ya no vale"</td><td>Perfil → Teamleader → <b>Conectar</b> otra vez.</td></tr>
   <tr><td>El correo de la cita no le llegó al cliente</td><td>Abre la cita: dice si se envió y cuándo. Si el cliente no tiene email, pónselo en su ficha y pulsa <b>Reenviar aviso por correo</b>.</td></tr>
   <tr><td>Un cliente no está en la hoja de clientes</td><td>En su ficha, <b>Apuntarlo en la hoja</b>. Los que se crean desde la app van solos.</td></tr>
 </table>
 
-<footer>Manual de la app Sysefen · las pantallas son de ejemplo, con datos inventados · se regenera con <code>herramientas/manual/capturar.py</code></footer>
+<footer>Manual de la app Sysefen · al día con la versión 32.1 (11-11-2026) · las pantallas son de ejemplo, con datos inventados · se regenera con <code>herramientas/manual/capturar.py</code></footer>
 </main>
 </div>
 </body>

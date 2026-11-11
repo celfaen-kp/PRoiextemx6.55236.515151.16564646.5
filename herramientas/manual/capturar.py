@@ -1,4 +1,3 @@
-import time
 #!/usr/bin/env python3
 """
 Sysefen · Las capturas del manual de usuario
@@ -26,6 +25,8 @@ AQUI = os.path.dirname(os.path.abspath(__file__))
 IMG = os.path.join(RAIZ, 'manual', 'img')
 PUERTO = 8766
 ANCHO, ALTO, ESCALA = 390, 844, 2
+# Escenas que se fotografían a otro tamaño (ancho, alto, escala): las de ordenador.
+TAMANOS = {'pres-tablero': (1280, 700, 1.5), 'pres-tablero-2': (1280, 700, 1.5)}
 
 SNAP = r'''
 import WebKit
@@ -64,7 +65,7 @@ def pagina_prueba():
     s = open(os.path.join(RAIZ, 'index.html'), encoding='utf-8').read()
     i = s.rfind('</script>')
     gancho = """
-window.__m = { S, V, A, render, agNuevoCliente, agNuevaCita, limpiarBorradorVisita, pdfDeImpresion,
+window.__m = { S, V, A, render, hojaHTML: () => sheet(), agNuevoCliente, agNuevaCita, limpiarBorradorVisita, pdfDeImpresion,
   obraColumnas: (x) => { obraColumnas = x; }, empRows: (x) => { empRows = x; }, empIdPorNombre: (x) => { empIdPorNombre = x; }, nombrePorEmpId: (x) => { nombrePorEmpId = x; } };
 """
     s = s[:i] + gancho + s[i:]
@@ -74,6 +75,9 @@ window.__m = { S, V, A, render, agNuevoCliente, agNuevaCita, limpiarBorradorVisi
     # Como módulo: los módulos corren en orden y después de la app, que también
     # es un módulo. Como script normal corría antes y no encontraba window.__m.
     # Con un sello de tiempo: si no, el navegador reutiliza la copia vieja del archivo.
+    # Sin animaciones: fuera de una ventana WebKit no las avanza y las hojas (que entran con un
+    # fundido) se quedaban invisibles en la foto.
+    s = s + '\n<style>*,*::before,*::after{animation:none!important;transition:none!important}</style>'
     s = s + '\n<script type="module" src="herramientas/manual/escenas.js?t=' + str(int(time.time())) + '"></script>\n'
     return s
 
@@ -107,7 +111,8 @@ def main():
         mal = []
         for e in escenas:
             out = os.path.join(IMG, e + '.png')
-            r = subprocess.run([bin_, f'http://localhost:{PUERTO}/zz-manual.html', out, e, str(ANCHO), str(ALTO), str(ESCALA)],
+            ancho, alto, escala = TAMANOS.get(e, (ANCHO, ALTO, ESCALA))
+            r = subprocess.run([bin_, f'http://localhost:{PUERTO}/zz-manual.html', out, e, str(ancho), str(alto), str(escala)],
                                capture_output=True, text=True, timeout=40)
             ok = 'ok' in r.stdout and 'fallo' not in r.stdout and os.path.exists(out)
             print(('  ✓ ' if ok else '  ✗ ') + e + ('' if ok else '  ' + (r.stdout + r.stderr).strip()[:200]))

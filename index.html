@@ -512,7 +512,7 @@ import * as idiomas from './presu-idiomas.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '32.0'; // versión visible de la app (única fuente)
+const APP_VERSION = '32.1'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -9132,7 +9132,7 @@ const FAC_VERDE = '#76923c';
 function facDocHTML(f, secciones) {
   // En el móvil la descripción no cabe en una columna: va a lo ancho, y debajo
   // la cantidad, el precio, el IVA y el total, alineados con la cabecera.
-  const col = 'display:grid;grid-template-columns:minmax(0,1fr) 44px 80px 40px 84px;gap:6px;align-items:baseline';
+  const col = 'display:grid;grid-template-columns:minmax(0,1fr) 30px 66px 34px 74px;gap:5px;align-items:baseline';
   const n = (v) => String(v).replace('.', ',');
   let i = 0;
   const filas = secciones.map((g) => `${g.t ? `<div style="padding:8px 8px 6px;font-weight:700;color:#262626;border-top:1px solid #262626">${esc(g.t)}</div>` : ''}${g.ls.map((l) => `<div style="padding:8px;border-top:1px solid #9a9a9a;background:${i++ % 2 ? '#fff' : '#eff0ef'}">
@@ -9140,7 +9140,7 @@ function facDocHTML(f, secciones) {
       <div style="${col};margin-top:4px"><div></div><div style="text-align:right">${n(l.cantidad)}</div><div style="text-align:right">${eur(l.precio)}</div><div style="text-align:right">${l.iva_pct != null ? n(l.iva_pct) + '%' : ''}</div><div style="text-align:right;font-weight:600">${eur(l.importe)}</div></div></div>`).join('')}`).join('');
   const tot = (k, v, fuerte) => `<div style="display:flex;justify-content:space-between;padding:${fuerte ? '7px 8px' : '3px 8px'};${fuerte ? 'background:#eff0ef;border-top:1px solid #262626;font-weight:700;color:#262626' : ''}"><span>${k}</span><span>${v}</span></div>`;
   return `<div style="margin-top:14px;font:400 12px/1.3 Calibri,Carlito,'Segoe UI',var(--sans);color:#262626;background:#fff;border-radius:10px;overflow:hidden;box-shadow:0 0 0 1px var(--l1)">
-    <div style="${col};padding:9px 8px;background:${FAC_VERDE};color:#fff"><div>Descripción</div><div style="text-align:right">Cant.</div><div style="text-align:right">Precio unit.</div><div style="text-align:right">IVA %</div><div style="text-align:right">Total</div></div>
+    <div style="${col};padding:9px 8px;background:${FAC_VERDE};color:#fff"><div style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Descripción</div><div style="text-align:right">Cant.</div><div style="text-align:right">Precio unit.</div><div style="text-align:right">IVA %</div><div style="text-align:right">Total</div></div>
     ${filas || '<div style="padding:10px 8px;color:#666">Sin líneas.</div>'}
     <div style="border-top:1px solid #262626;padding:6px 0 0;margin-left:38%">
       ${tot('Total IVA excl.', eur(f.base))}
@@ -11832,7 +11832,7 @@ function vPresupuestoVer() {
     ${seguimientoHTML(d)}
     ${facPresuHTML(d)}
     <button class="btn" data-a="presuBorrar" data-id="${d.id}" style="margin-top:14px;border-radius:99px;background:none;color:var(--rojo);box-shadow:inset 0 0 0 1.5px var(--rojo)">Borrar presupuesto</button>
-    <div class="tiny" style="text-align:center;margin-top:8px">Para pruebas y duplicados. Si ya está en Teamleader, la oferta de allí se queda: quítala desde el CRM.</div>` : ''}
+    <div class="tiny" style="text-align:center;margin-top:8px">Para pruebas y duplicados. Si ya está en Teamleader, se borra también la oferta de allí.</div>` : ''}
   </div>`;
 }
 // El seguimiento del presupuesto, en su ficha: los pasos de crearlo a la

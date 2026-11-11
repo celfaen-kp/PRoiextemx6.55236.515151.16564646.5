@@ -38,7 +38,8 @@ dos PDF (el certificado oficial rellenado y una hoja con los datos del 034), se 
 | Plantilla oficial del certificado | `legalizacion/annex-verificacio-caib.pdf` |
 | Tabla `legalizaciones` y datos fijos en `empresa` | `sql/etapa55_legalizaciones.sql` |
 | Subida a Drive y correo | función `supabase/functions/legalizacion-enviar` (sigue desplegada) |
-| Captura del manual | `manual/img/pres-legalizaciones.png` |
+| Capturas del manual | `manual/img/pres-legalizaciones.png`, `jefe-legalizaciones.png`, `jefe-legalizacion.png`, `jefe-legalizacion-verif.png`, `admin-ajustes-legalizacion.png` |
+| Escenas de esas capturas | `herramientas/manual/escenas.js`: las cinco escenas de legalización, con dos barras delante |
 
 ## Lo que queda por configurar antes de usarlo
 
