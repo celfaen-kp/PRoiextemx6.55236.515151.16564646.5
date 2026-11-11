@@ -512,7 +512,7 @@ import * as idiomas from './presu-idiomas.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '31.9'; // versión visible de la app (única fuente)
+const APP_VERSION = '32.0'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -1155,6 +1155,13 @@ const puedeCrear = () => ['admin', 'jefe'].includes(rol());
 const esColaborador = () => rol() === 'colaborador';
 const esPresupuestos = () => ['presupuestos', 'colaborador'].includes(rol());
 const esComercial = () => ['presupuestos', 'jefe', 'admin'].includes(rol());
+// Legalizaciones fotovoltaicas: APAGADAS (Enzo, 11-11-2026: «saquemos el apartado
+// de legalizaciones por ahora»). El apartado entero sigue en este archivo (pantallas,
+// PDF, envío a Drive y correo) y sus datos en la base; solo se esconden sus entradas:
+// la pestaña, la tarjeta y los datos fijos de Ajustes y el botón de la obra.
+// Para volver a enseñarlo: poner true aquí. Lo demás, en legalizacion/LEEME.md.
+const LEGALIZACIONES = false;
+const verLegalizaciones = () => LEGALIZACIONES && esComercial();
 // Quién ve costes (sql/etapa59): Administración y presupuestos. El jefe de
 // obra pone albaranes y gastos, pero no ve el coste del personal ni la
 // economía de la obra. Igual que ve_costes() en la base.
@@ -1419,7 +1426,7 @@ A.salir = () => {
   V.view = 'login'; render();
   sysAuth.logout().catch(() => {});
 };
-A.ir = (v) => { if (/^p[123]$/.test(V.view) && !/^p[123]$/.test(v)) limpiarBorradorParte(); V.volverPila = []; V.volverA = null; V.view = v; render(); if (v === 'legalizaciones') A.cargarLegalizaciones(); if (v === 'presupuestos') A.cargarPresupuestos(); if (v === 'facturas') facCargarLista(); if (v === 'visitas') A.cargarVisitas(); if (AG_VISTAS.includes(v)) A.cargarAgenda(); if (v === 'ajustes' && verCRM() && !V.crm.cargado) A.crmEstado(); if (v === 'ajustes' && esAdmin() && !V.copias.cargado) A.copiasEstado(); if (['hoy', 'obras', 'obra', 'partes', 'horas'].includes(v)) refrescarDatos().then(render); };
+A.ir = (v) => { if (/^p[123]$/.test(V.view) && !/^p[123]$/.test(v)) limpiarBorradorParte(); V.volverPila = []; V.volverA = null; V.view = v; render(); if (v === 'legalizaciones' && LEGALIZACIONES) A.cargarLegalizaciones(); if (v === 'presupuestos') A.cargarPresupuestos(); if (v === 'facturas') facCargarLista(); if (v === 'visitas') A.cargarVisitas(); if (AG_VISTAS.includes(v)) A.cargarAgenda(); if (v === 'ajustes' && verCRM() && !V.crm.cargado) A.crmEstado(); if (v === 'ajustes' && esAdmin() && !V.copias.cargado) A.copiasEstado(); if (['hoy', 'obras', 'obra', 'partes', 'horas'].includes(v)) refrescarDatos().then(render); };
 A.verObra = (id) => {
   V.obraId = id; V.obraRango = 'total'; V.view = 'obra'; render();
   // El total de una obra se cuenta desde que se abrió, que puede ser de antes
@@ -4476,6 +4483,8 @@ A.instalar = async () => {
 
 /* ---------- render ---------- */
 function render() {
+  // Legalizaciones apagadas: quien llegue a esas vistas (un enlace viejo) vuelve a su sitio.
+  if (!LEGALIZACIONES && ['legalizaciones', 'legalizacion'].includes(V.view)) V.view = esPresupuestos() ? 'agenda' : 'ajustes';
   // Ramón entra directo a sus visitas: ninguna pantalla de fichar, obras ni partes.
   if (V.user && esPresupuestos() && !VISITA_VISTAS.includes(V.view) && !(!esColaborador() && ['legalizaciones', 'legalizacion', 'obras', 'obra', 'alta', 'costesPersonal', 'precios', 'facturas', 'planificacion'].includes(V.view))) {
     V.view = 'agenda';
@@ -4504,13 +4513,13 @@ function render() {
   else if (v === 'importar' && esAdmin()) html = vImportar();
   else if (v === 'ajustes') html = vAjustes();
   else if (v === 'presupuestos' && verMotor()) html = vPresupuestos();
-  else if (v === 'legalizaciones' && esComercial()) html = vLegalizaciones();
+  else if (v === 'legalizaciones' && verLegalizaciones()) html = vLegalizaciones();
   else if (v === 'costesPersonal' && veCostes()) html = vCostesPersonal();
   else if (v === 'precios' && puedePrecios()) html = vPrecios();
   else if (v === 'facturas' && puedeFacturar()) html = vFacturas();
   else if (v === 'fasesPlantillas' && esAdmin()) html = vFasesPlantillas();
   else if (v === 'planificacion' && planifica()) html = vPlanificacion();
-  else if (v === 'legalizacion' && esComercial()) html = vLegalizacion();
+  else if (v === 'legalizacion' && verLegalizaciones()) html = vLegalizacion();
   else if (v === 'presuNuevo' && verMotor()) html = vPresuNuevo();
   else if (v === 'presupuestoVer' && verMotor()) html = vPresupuestoVer();
   else if (v === 'p1') html = vP1();
@@ -4905,10 +4914,10 @@ function vObra() {
       ${puedeCrear() ? `<button class="pill pill-verde grow" data-a="nuevoParte" data-id="${o.id}" style="padding:14px">Nuevo parte</button>` : ''}
       <button class="pill grow" data-a="horasObraAbrir" data-id="${o.id}" style="padding:14px;background:rgba(255,255,255,.12);color:#fff" title="Horas en esta obra sin hacer parte: control propio">Apuntar horas</button>
       <button class="pill grow" data-a="editarObra" data-id="${o.id}" style="padding:14px;background:rgba(255,255,255,.12);color:#fff">Editar</button>
-    </div>
+    </div>${LEGALIZACIONES ? `
     <div class="row g8" style="margin-top:8px">
       <button class="pill grow" data-a="legNueva" data-id="${o.id}" style="padding:12px;background:rgba(255,255,255,.12);color:#fff">Legalización fotovoltaica</button>
-    </div>` : ''}
+    </div>` : ''}` : ''}
   </div>
   <div class="scroll pad pb-nav">
     ${puedeObras() ? comentariosObraHTML(o) : ''}
@@ -6290,12 +6299,12 @@ function vAjustes() {
       <div class="sub" style="font-size:12px;margin-top:4px">Cambia a mano los precios con los que se calculan los presupuestos: fotovoltaica, catálogo y precios fijos. Con historial y deshacer.</div></div>
       <div style="font:400 20px/1 var(--sans);color:var(--t3)">›</div>
     </div>` : ''}
-    ${esComercial() ? `<div class="card row" data-a="abrirLegalizaciones" style="margin-top:14px;cursor:pointer">
+    ${verLegalizaciones() ? `<div class="card row" data-a="abrirLegalizaciones" style="margin-top:14px;cursor:pointer">
       <div class="grow"><div style="font:600 15px var(--sans)">Legalizaciones fotovoltaicas</div>
       <div class="sub" style="font-size:12px;margin-top:4px">Modelo 034 y certificado de verificación por obra. A Drive y al correo de quien legaliza.</div></div>
       <div style="font:400 20px/1 var(--sans);color:var(--t3)">›</div>
     </div>` : ''}
-    ${esAdmin() ? `<div class="card" style="margin-top:14px">
+    ${LEGALIZACIONES && esAdmin() ? `<div class="card" style="margin-top:14px">
       <div class="lbl">Legalizaciones · datos fijos</div>
       <div class="sub" style="font-size:12px;margin-top:4px">Salen en cada certificado. El correo es a donde llegan los PDF (Xavi).</div>
       ${[['email_legalizaciones', 'Correo de legalizaciones', 'email'], ['instalador_razon_social', 'Razón social de la empresa instaladora', 'text'], ['instalador_numero', 'Nº de instalador autorizado', 'text'], ['instalador_nombre', 'Nombre del instalador', 'text'], ['instalador_nif', 'DNI / NIF del instalador', 'text'], ['instalador_direccion', 'Dirección', 'text'], ['instalador_cp_localidad', 'CP y localidad', 'text'], ['instalador_telefono', 'Teléfono', 'text'], ['aparato_verificador', 'Aparato verificador (marca, modelo y nº de serie)', 'text']]
@@ -10596,10 +10605,11 @@ A.cargarLegalizaciones = async () => {
   if (['legalizaciones', 'legalizacion', 'ajustes'].includes(V.view)) render();
 };
 
-A.abrirLegalizaciones = () => { V.view = 'legalizaciones'; scrollMemo.legalizaciones = 0; render(); A.cargarLegalizaciones(); };
+A.abrirLegalizaciones = () => { if (!LEGALIZACIONES) return; V.view = 'legalizaciones'; scrollMemo.legalizaciones = 0; render(); A.cargarLegalizaciones(); };
 
 /** Nueva legalización para una obra: se precarga lo que la obra ya sabe. */
 A.legNueva = async (obraId) => {
+  if (!LEGALIZACIONES) return;
   if (!obraId) { V.sheet = { tipo: 'legObra', buscar: '' }; render(); return; }
   const o = obraById(obraId) || {};
   const datos = {
@@ -14053,7 +14063,7 @@ function nav(v) {
   const items = esColaborador()
     ? [['agenda', 'Agenda', '5px'], ['clientes', 'Clientes', '3px'], ['presupuestos', 'Presup.', '2px'], ['ajustes', 'Perfil', '99px']]
     : esPresupuestos()
-    ? [['agenda', 'Agenda', '5px'], ['clientes', 'Clientes', '3px'], ['presupuestos', 'Presup.', '2px'], ['facturas', 'Facturas', '4px'], ['obras', 'Obras', '5px'], ['legalizaciones', 'Legaliz.', '6px'], ['ajustes', 'Perfil', '99px']]
+    ? [['agenda', 'Agenda', '5px'], ['clientes', 'Clientes', '3px'], ['presupuestos', 'Presup.', '2px'], ['facturas', 'Facturas', '4px'], ['obras', 'Obras', '5px'], ...(LEGALIZACIONES ? [['legalizaciones', 'Legaliz.', '6px']] : []), ['ajustes', 'Perfil', '99px']]
     : esAdmin()
     ? [['hoy', 'Hoy', '99px'], ['empleados', 'Empleados', '4px'], ['obras', 'Obras', '5px'], ['partes', 'Partes', '3px'], ['horas', 'Horas', '2px'], ['agenda', 'Citas', '6px'], ['ajustes', 'Ajustes', '99px']]
     : puedeCrear()

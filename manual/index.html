@@ -115,7 +115,6 @@ footer{margin-top:60px;padding-top:20px;border-top:1px solid var(--l1);color:var
   <a href="#pres-presupuestos">Presupuestos</a>
   <a href="#pres-teamleader">Teamleader</a>
   <a href="#pres-obras">Obras, economía y costes</a>
-  <a href="#pres-legalizaciones">Legalizaciones</a>
   <h4>Administración</h4>
   <a class="rol" href="#admin">Tu día a día</a>
   <a href="#admin-empleados">Empleados y planillas</a>
@@ -166,7 +165,6 @@ footer{margin-top:60px;padding-top:20px;border-top:1px solid var(--l1);color:var
   <tr><td><b>Empleados</b> y planillas</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="si">Sí</td></tr>
   <tr><td><b>Agenda</b>, clientes, visitas</td><td class="no">—</td><td class="no">—</td><td class="si">Sí</td><td class="si">Ver citas</td></tr>
   <tr><td><b>Presupuestos</b></td><td class="no">—</td><td class="no">—</td><td class="si">Sí</td><td class="si">Sí</td></tr>
-  <tr><td><b>Legalizaciones</b> fotovoltaicas</td><td class="no">—</td><td class="si">Desde la obra</td><td class="si">Pestaña propia</td><td class="si">Sí, y los datos fijos</td></tr>
   <tr><td><b>Perfil / Ajustes</b></td><td class="si">Perfil</td><td class="si">Ajustes</td><td class="si">Perfil + Teamleader</td><td class="si">Ajustes de la empresa</td></tr>
 </table>
 
@@ -278,7 +276,7 @@ footer{margin-top:60px;padding-top:20px;border-top:1px solid var(--l1);color:var
   <div class="txt">
     <h4>La ficha de la obra</h4>
     <ul>
-      <li>Arriba, el código, las categorías, el estado, el cliente y la dirección. <b>Cómo llegar</b> abre el mapa. <span class="btn verde">Nuevo parte</span>, <span class="btn gris">Editar</span> y <span class="btn gris">Legalización fotovoltaica</span>.</li>
+      <li>Arriba, el código, las categorías, el estado, el cliente y la dirección. <b>Cómo llegar</b> abre el mapa. <span class="btn verde">Nuevo parte</span> y <span class="btn gris">Editar</span>.</li>
       <li><b>Horas por empleado</b>: hoy, semana, mes o total. <span class="btn">Imprimir PDF</span> y <span class="btn gris">Exportar CSV</span> del reparto.</li>
       <li><b>Proyecto</b>: las fases de la obra con su porcentaje (ver más abajo).</li>
       <li><b>Albaranes y recibos</b>: foto o PDF de lo que se compra para esa obra, con importe. Cada uno con importe cuenta como gasto de la obra. Lo ven jefes, presupuestos y Administración.</li>
@@ -400,7 +398,7 @@ footer{margin-top:60px;padding-top:20px;border-top:1px solid var(--l1);color:var
 
 <!-- ============================================================ PRESUPUESTOS -->
 <h2 id="pres"><span class="quien pres">Presupuestos</span> Tu día a día</h2>
-<p>Tu trabajo empieza con un <b>cliente</b> que pide presupuesto, sigue con una <b>cita</b>, una <b>visita</b> en la que tomas los datos, y acaba con el <b>presupuesto</b>, que sale del motor de la app y se sube a <b>Teamleader</b>. Después sigues la <b>obra</b>: su proyecto, su planificación y su economía, y las <b>legalizaciones</b>. No fichas ni haces partes.</p>
+<p>Tu trabajo empieza con un <b>cliente</b> que pide presupuesto, sigue con una <b>cita</b>, una <b>visita</b> en la que tomas los datos, y acaba con el <b>presupuesto</b>, que sale del motor de la app y se sube a <b>Teamleader</b>. Después sigues la <b>obra</b>: su proyecto, su planificación y su economía. No fichas ni haces partes.</p>
 <div class="pantalla">
   <img src="img/pres-agenda.png" alt="Agenda, hoy primero">
   <div class="txt">
@@ -565,16 +563,6 @@ footer{margin-top:60px;padding-top:20px;border-top:1px solid var(--l1);color:var
   </div>
 </div>
 
-<h3 id="pres-legalizaciones">Legalizaciones fotovoltaicas</h3>
-<div class="pantalla">
-  <img src="img/pres-legalizaciones.png" alt="Legalizaciones">
-  <div class="txt">
-    <h4>Modelo 034 y certificado</h4>
-    <p>Tu pestaña <b>Legaliz.</b> (los jefes la tienen en Perfil y en cada obra). Una legalización por obra: eliges la obra y el cliente (del CRM, de la lista o nuevo), rellenas los datos del Modelo 034 y, si las tienes, las medidas de la verificación. La app genera el <b>certificado oficial rellenado</b> y la <b>hoja de datos del 034</b>, los dos en PDF, los sube a Drive (08-Legalizaciones / la obra) y se los manda por correo a quien legaliza en la oficina.</p>
-    <p>Se guarda sola mientras escribes; <b>Enviar</b> cuando esté completa. Los datos fijos del instalador los pone Administración en Ajustes.</p>
-  </div>
-</div>
-
 <!-- ============================================================ ADMIN -->
 <h2 id="admin"><span class="quien admin">Administración</span> Tu día a día</h2>
 <p>Administración no ficha. Ve y corrige lo de todos: fichajes, imputaciones, empleados y sus planillas, obras, partes, citas y presupuestos, y los ajustes de la empresa.</p>
@@ -654,7 +642,7 @@ footer{margin-top:60px;padding-top:20px;border-top:1px solid var(--l1);color:var
       <li><b>Nombre de la empresa</b> y <b>CIF</b>: salen en los PDF.</li>
       <li><b>Email de copia</b>: la gestoría o administración recibe copia de cada parte enviado.</li>
       <li><b>Ubicación al fichar</b>, <b>aviso de fichaje</b> y si los <b>operarios ven importes</b>.</li>
-      <li><b>Costes de personal</b>, <b>Fases por categoría</b> y <b>Legalizaciones · datos fijos</b> (razón social, nº de instalador, aparato verificador y el correo a donde van los PDF).</li>
+      <li><b>Costes de personal</b> y <b>Fases por categoría</b>.</li>
       <li><b>Errores de la app</b>: lo que ha fallado en los móviles, para revisarlo.</li>
       <li><b>Importar histórico</b> de fichajes desde un CSV.</li>
     </ul>
