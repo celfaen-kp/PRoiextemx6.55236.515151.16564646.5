@@ -716,6 +716,27 @@ export async function buscarProductos(texto, familia) {
   return lista.sort((a, b) => String(a.nombre).localeCompare(String(b.nombre), 'es', { sensitivity: 'base' }));
 }
 
+/** Conjuntos del catálogo (sql/etapa109, 13-11-2026): un modelo de la tarifa que
+ *  son varias unidades (interior + exterior, cassette + panel). Se busca por el
+ *  modelo del conjunto o por cualquiera de sus unidades y cada uno vuelve con
+ *  sus `unidades`, que son productos del catálogo con su precio de hoy. El que
+ *  tenga una unidad fuera del catálogo no sale. */
+export async function buscarConjuntos(texto) {
+  const q = String(texto || '').trim();
+  if (q.length < 2) return [];
+  let c = supabase.from('conjuntos').select('id, modelo, referencia, nombre, gama, componentes').eq('activo', true);
+  q.toLowerCase().split(/\s+/).filter(Boolean).forEach((w) => { c = c.ilike('buscar', '%' + w.replace(/[%_,]/g, '') + '%'); });
+  const lista = unwrap(await c.order('nombre').limit(12)) || [];
+  const refs = [...new Set(lista.flatMap((x) => (x.componentes || []).map((k) => String(k.referencia))))];
+  if (!refs.length) return [];
+  const prods = unwrap(await supabase.from('productos')
+    .select('referencia, nombre, familia, unidad, precio_tarifa, detalle_tecnico, especificaciones, iva').eq('activo', true).in('referencia', refs)) || [];
+  return lista.map((x) => {
+    const unidades = (x.componentes || []).map((k) => { const p = prods.find((y) => y.referencia === String(k.referencia)); return p ? Object.assign({}, p, { cantidad: Number(k.cantidad) || 1 }) : null; });
+    return unidades.length && unidades.every(Boolean) ? { id: x.id, modelo: x.modelo, referencia: x.referencia, nombre: x.nombre, gama: x.gama, unidades } : null;
+  }).filter(Boolean);
+}
+
 /* --- precios cambiados a mano (Ajustes → Precios; sql/etapa104, 10-11-2026) ----
  * Presupuestos y Administración cambian los precios de la base sin pasar por
  * nadie: el modelo fotovoltaico, el catálogo y los conceptos de precio fijo.

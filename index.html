@@ -512,7 +512,7 @@ import * as idiomas from './presu-idiomas.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '32.1'; // versión visible de la app (única fuente)
+const APP_VERSION = '32.2'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -7905,18 +7905,35 @@ Object.assign(V, {
 
 const CATS_CON_MOTOR = ['aire_acondicionado', 'aerotermia', 'solar'];
 
+/* Conjuntos del catálogo (Enzo, 13-11-2026: «el MTJU-71(24)N8Q-1 es la interior
+ * MTJU-24NX y la exterior MO-24N8-Q-1; están las dos, pero a mano toca buscarlas
+ * una por una»). El buscador trae también los conjuntos (sql/etapa109), por su
+ * modelo o por cualquiera de sus unidades; salen los primeros y al tocar uno
+ * entran todas sus unidades, cada una en su línea y con su precio del catálogo.
+ * Si la búsqueda de conjuntos falla, la de productos sigue como siempre. */
+const buscarConjuntosSeguro = (q) => Promise.resolve().then(() => (typeof visitasDB.buscarConjuntos === 'function' ? visitasDB.buscarConjuntos(q) : [])).catch(() => []);
+const conjuntoTotal = (c) => (c.unidades || []).reduce((t, u) => t + (Number(u.precio_tarifa) || 0) * (Number(u.cantidad) || 1), 0);
+function conjuntosHTML(lista, accion) {
+  return (lista || []).map((c) => `<div class="card row" data-a="${accion}" data-id="${esc(c.id)}" style="margin-bottom:8px;cursor:pointer;padding:11px 13px;border-left:3px solid var(--verde-c)">
+    <div class="grow"><div class="tiny" style="color:var(--verde-o);letter-spacing:.06em">CONJUNTO · ${c.unidades.length} LÍNEAS</div>
+    <div style="font:600 14px/1.25 var(--sans);margin-top:3px">${esc(c.modelo)}</div>
+    <div class="sub" style="font-size:12px;margin-top:3px">${c.unidades.map((u) => (u.cantidad > 1 ? u.cantidad + ' × ' : '') + esc(u.nombre)).join(' + ')}</div></div>
+    <div class="num" style="font-size:14px;flex:none">${eur(conjuntoTotal(c))}</div>
+  </div>`).join('');
+}
+
 function presuResultadosHTML() {
   const p = V.presu;
   if (p.buscando) return '<div class="sub" style="font-size:12px;margin-top:10px">Buscando en el catálogo…</div>';
   const crear = String(p.buscar || '').trim().length >= 2 && (esAdmin() || rol() === 'presupuestos')
     ? `<div class="dash" data-a="presuProductoNuevoAbrir" style="margin-top:10px;display:block">+ Crear «${esc(String(p.buscar).trim())}» como producto nuevo del catálogo</div>` : '';
-  if (!p.resultados.length) {
+  if (!p.resultados.length && !(p.conjuntos || []).length) {
     // Sin nada escrito, el concepto nuevo se puede crear igualmente (6-11-2026).
     const crearVacio = esAdmin() || rol() === 'presupuestos' ? '<div class="dash" data-a="presuProductoNuevoAbrir" style="margin-top:10px;display:block">+ Crear un concepto nuevo (no está en el catálogo)</div>' : '';
     return String(p.buscar || '').trim().length < 2 ? crearVacio
       : '<div class="sub" style="font-size:12px;margin-top:10px">Nada con ese nombre. Si la tarifa de esa marca no está cargada, todavía no se puede elegir aquí.</div>' + crear;
   }
-  return `<div style="margin-top:10px">${p.resultados.map((x) => `<div class="card row" data-a="presuAnadir" data-ref="${esc(x.referencia)}" style="margin-bottom:8px;cursor:pointer;padding:11px 13px">
+  return `<div style="margin-top:10px">${conjuntosHTML(p.conjuntos, 'presuAnadirConjunto')}${p.resultados.map((x) => `<div class="card row" data-a="presuAnadir" data-ref="${esc(x.referencia)}" style="margin-bottom:8px;cursor:pointer;padding:11px 13px">
     <div class="grow"><div style="font:600 14px/1.25 var(--sans)">${esc(x.nombre)}</div>
     <div class="sub" style="font-size:12px;margin-top:3px">${esc(x.referencia)}${x.familia ? ' · ' + esc(x.familia) : ''}</div></div>
     <div class="num" style="font-size:14px;flex:none">${eur(x.precio_tarifa)}</div>
@@ -8124,7 +8141,7 @@ function presuPanelHTML() {
 
       <div style="margin-top:18px;padding-top:12px;border-top:1px solid var(--l1)">
         <div class="lbl" style="font-size:11px">Añadir del catálogo</div>
-        <div class="sub" style="font-size:12px;margin-top:6px">${enLibre() ? 'Busca por nombre o referencia y toca el producto para sumarlo. Lo que no esté, lo creas como concepto nuevo.' : 'Para cambiar una máquina que propuso el motor o sumar algo que no está en las reglas.'}</div>
+        <div class="sub" style="font-size:12px;margin-top:6px">${enLibre() ? 'Busca por nombre o referencia y toca el producto para sumarlo. Los equipos que la tarifa vende por conjunto (interior y exterior) salen los primeros y entran de una vez. Lo que no esté, lo creas como concepto nuevo.' : 'Para cambiar una máquina que propuso el motor o sumar algo que no está en las reglas.'}</div>
         <div class="row g8" style="margin-top:10px">
           <input class="inp grow" id="presu-buscar" data-f="presuTexto" value="${esc(p.buscar || '')}" placeholder="Nombre o referencia" autocomplete="off">
           <button class="pill" data-a="presuBuscar" style="padding:13px 16px">Buscar</button>
@@ -8537,7 +8554,7 @@ let presuBuscarT, presuKwhT;
 A.presuTexto = (t) => {
   V.presu.buscar = t;
   clearTimeout(presuBuscarT);
-  if (String(t || '').trim().length < 2) { V.presu.resultados = []; return pintarPresuBusqueda(); }
+  if (String(t || '').trim().length < 2) { V.presu.resultados = []; V.presu.conjuntos = []; return pintarPresuBusqueda(); }
   presuBuscarT = setTimeout(() => A.presuBuscar(), 450);
 };
 const pintarPresuBusqueda = () => {
@@ -8548,22 +8565,32 @@ A.presuBuscar = async () => {
   const p = V.presu;
   if (String(p.buscar || '').trim().length < 2 || p.buscando) return;
   p.buscando = true; pintarPresuBusqueda();
-  try { p.resultados = await visitasDB.buscarProductos(p.buscar); }
-  catch (e) { p.resultados = []; avisar('No se pudo buscar en el catálogo: ' + msgError(e)); }
+  try { const [r, c] = await Promise.all([visitasDB.buscarProductos(p.buscar), buscarConjuntosSeguro(p.buscar)]); p.resultados = r; p.conjuntos = c; }
+  catch (e) { p.resultados = []; p.conjuntos = []; avisar('No se pudo buscar en el catálogo: ' + msgError(e)); }
   p.buscando = false; pintarPresuBusqueda();
 };
+const presuExtraDe = (x, cantidad) => ({
+  producto_ref: x.referencia, descripcion: x.nombre, detalle_tecnico: x.detalle_tecnico || null,
+  especificaciones: x.especificaciones || [], cantidad: cantidad || 1, unidad: x.unidad || 'ud',
+  // precio_catalogo: el servidor sabe así si la persona tocó el precio. Si no
+  // lo tocó, le aplica el recargo del producto (en fotovoltaica el catálogo
+  // es coste). Lo que vuelve ya con recargo se refleja aquí (presuCalcular).
+  precio_tarifa: x.precio_tarifa, precio_catalogo: x.precio_tarifa, iva: x.iva == null ? 21 : x.iva, seccion: 'Equipos',
+});
 A.presuAnadir = (ref) => {
   const p = V.presu;
   const x = (p.resultados || []).find((r) => r.referencia === ref); if (!x) return;
-  p.extra.push({
-    producto_ref: x.referencia, descripcion: x.nombre, detalle_tecnico: x.detalle_tecnico || null,
-    especificaciones: x.especificaciones || [], cantidad: 1, unidad: x.unidad || 'ud',
-    // precio_catalogo: el servidor sabe así si la persona tocó el precio. Si no
-    // lo tocó, le aplica el recargo del producto (en fotovoltaica el catálogo
-    // es coste). Lo que vuelve ya con recargo se refleja aquí (presuCalcular).
-    precio_tarifa: x.precio_tarifa, precio_catalogo: x.precio_tarifa, iva: x.iva == null ? 21 : x.iva, seccion: 'Equipos',
-  });
-  p.buscar = ''; p.resultados = [];
+  p.extra.push(presuExtraDe(x, 1));
+  p.buscar = ''; p.resultados = []; p.conjuntos = [];
+  A.presuRecalcular();
+};
+/** Un conjunto: entran todas sus unidades, cada una en su línea. */
+A.presuAnadirConjunto = (id) => {
+  const p = V.presu;
+  const c = (p.conjuntos || []).find((r) => r.id === id); if (!c) return;
+  c.unidades.forEach((u) => p.extra.push(presuExtraDe(u, u.cantidad)));
+  p.buscar = ''; p.resultados = []; p.conjuntos = [];
+  toast('Conjunto ' + c.modelo + ': ' + c.unidades.length + ' líneas añadidas.');
   A.presuRecalcular();
 };
 /* ---------- retocar una línea calculada antes de guardar (Enzo, 27-10-2026) ---------- */
@@ -11235,7 +11262,7 @@ let presuEditBuscarT;
 A.presuEditTexto = (t) => {
   const e = V.presuEdit; if (!e) return;
   e.buscar = t; clearTimeout(presuEditBuscarT);
-  if (String(t || '').trim().length < 2) { e.resultados = []; return pintarPresuEditBusqueda(); }
+  if (String(t || '').trim().length < 2) { e.resultados = []; e.conjuntos = []; return pintarPresuEditBusqueda(); }
   presuEditBuscarT = setTimeout(() => A.presuEditBuscar(), 450);
 };
 const pintarPresuEditBusqueda = () => {
@@ -11245,17 +11272,26 @@ const pintarPresuEditBusqueda = () => {
 A.presuEditBuscar = async () => {
   const e = V.presuEdit; if (!e || String(e.buscar || '').trim().length < 2 || e.buscando) return;
   e.buscando = true; pintarPresuEditBusqueda();
-  try { e.resultados = await visitasDB.buscarProductos(e.buscar); }
-  catch (err) { e.resultados = []; avisar('No se pudo buscar en el catálogo: ' + msgError(err)); }
+  try { const [r, c] = await Promise.all([visitasDB.buscarProductos(e.buscar), buscarConjuntosSeguro(e.buscar)]); e.resultados = r; e.conjuntos = c; }
+  catch (err) { e.resultados = []; e.conjuntos = []; avisar('No se pudo buscar en el catálogo: ' + msgError(err)); }
   e.buscando = false; pintarPresuEditBusqueda();
 };
+const presuNuevaDe = (x, cantidad) => ({ producto_ref: x.referencia, descripcion: x.nombre, detalle_tecnico: x.detalle_tecnico || null, especificaciones: x.especificaciones || [],
+  cantidad: String(cantidad || 1), unidad: x.unidad || 'ud', precio_tarifa: x.precio_tarifa, precio_catalogo: x.precio_tarifa, iva: x.iva == null ? 21 : x.iva,
+  seccion: x.familia === 'mano_obra' ? 'Mano de obra' : 'Equipos', libre: false });
 A.presuEditAnadir = (ref) => {
   const e = V.presuEdit; if (!e) return;
   const x = (e.resultados || []).find((r) => r.referencia === ref); if (!x) return;
-  e.nuevas.push({ producto_ref: x.referencia, descripcion: x.nombre, detalle_tecnico: x.detalle_tecnico || null, especificaciones: x.especificaciones || [],
-    cantidad: '1', unidad: x.unidad || 'ud', precio_tarifa: x.precio_tarifa, precio_catalogo: x.precio_tarifa, iva: x.iva == null ? 21 : x.iva,
-    seccion: x.familia === 'mano_obra' ? 'Mano de obra' : 'Equipos', libre: false });
-  e.buscar = ''; e.resultados = [];
+  e.nuevas.push(presuNuevaDe(x, 1));
+  e.buscar = ''; e.resultados = []; e.conjuntos = [];
+  render();
+};
+A.presuEditAnadirConjunto = (id) => {
+  const e = V.presuEdit; if (!e) return;
+  const c = (e.conjuntos || []).find((r) => r.id === id); if (!c) return;
+  c.unidades.forEach((u) => e.nuevas.push(presuNuevaDe(u, u.cantidad)));
+  e.buscar = ''; e.resultados = []; e.conjuntos = [];
+  toast('Conjunto ' + c.modelo + ': ' + c.unidades.length + ' líneas añadidas.');
   render();
 };
 function presuEditResultadosHTML() {
@@ -11264,8 +11300,8 @@ function presuEditResultadosHTML() {
   const puedeCrear = esAdmin() || rol() === 'presupuestos';
   const q = String(e.buscar || '').trim();
   const crear = puedeCrear ? `<div class="dash" data-a="presuProductoNuevoAbrir" data-modo="edit" style="margin-top:10px;display:block">${q.length >= 2 ? '+ Crear «' + esc(q) + '» como producto nuevo del catálogo' : '+ Crear un concepto nuevo (no está en el catálogo)'}</div>` : '';
-  if (!e.resultados.length) return q.length < 2 ? crear : '<div class="sub" style="font-size:12px;margin-top:10px">Nada con ese nombre.</div>' + crear;
-  return `<div style="margin-top:10px">${e.resultados.map((x) => `<div class="card row" data-a="presuEditAnadir" data-ref="${esc(x.referencia)}" style="margin-bottom:8px;cursor:pointer;padding:11px 13px">
+  if (!e.resultados.length && !(e.conjuntos || []).length) return q.length < 2 ? crear : '<div class="sub" style="font-size:12px;margin-top:10px">Nada con ese nombre.</div>' + crear;
+  return `<div style="margin-top:10px">${conjuntosHTML(e.conjuntos, 'presuEditAnadirConjunto')}${e.resultados.map((x) => `<div class="card row" data-a="presuEditAnadir" data-ref="${esc(x.referencia)}" style="margin-bottom:8px;cursor:pointer;padding:11px 13px">
     <div class="grow"><div style="font:600 14px/1.25 var(--sans)">${esc(x.nombre)}</div>
     <div class="sub" style="font-size:12px;margin-top:3px">${esc(x.referencia)}${x.familia ? ' · ' + esc(x.familia) : ''}</div></div>
     <div class="num" style="font-size:14px;flex:none">${eur(x.precio_tarifa)}</div>
@@ -15358,6 +15394,7 @@ document.addEventListener('click', (e) => {
   if (a === 'presuGuardar') return A.presuGuardar();
   if (a === 'presuBuscar') return A.presuBuscar();
   if (a === 'presuAnadir') return A.presuAnadir(d.ref);
+  if (a === 'presuAnadirConjunto') return A.presuAnadirConjunto(d.id);
   if (a === 'presuQuitarExtra') return A.presuQuitarExtra(d.i);
   if (a === 'presuQuitarCalculada') return A.presuQuitarCalculada(d.clave);
   if (a === 'presuAjustarAbrir') return A.presuAjustarAbrir(d.clave);
@@ -15447,6 +15484,7 @@ document.addEventListener('click', (e) => {
   if (a === 'presuNuevaQuitar') return A.presuNuevaQuitar(d.i);
   if (a === 'presuEditBuscar') return A.presuEditBuscar();
   if (a === 'presuEditAnadir') return A.presuEditAnadir(d.ref);
+  if (a === 'presuEditAnadirConjunto') return A.presuEditAnadirConjunto(d.id);
   if (a === 'presuGuardarCambios') return A.presuGuardarCambios();
   if (a === 'presuSueltoChip') { A.presuSueltoChip(d.k, d.v); return; }
   if (a === 'presuSueltoCliente') return A.presuSueltoCliente(d.id);
