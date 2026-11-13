@@ -451,6 +451,7 @@ export async function presupuestarVisita(visitaId, categoria, opciones) {
     ficha_id: o.fichaId || undefined,
     titulo: o.titulo || undefined,
     titulo_sufijo: o.tituloSufijo || undefined,   // presupuesto conjunto: «+ Aerotermia»
+    observaciones: String(o.observaciones || '').trim() || undefined,   // la nota para el cliente (etapa 110)
   });
 }
 
@@ -472,6 +473,9 @@ export async function presupuestarSuelto(categoria, datos, opciones) {
     lineas_ajustar: o.lineasAjustar && o.lineasAjustar.length ? o.lineasAjustar : undefined,
     // Libre (6-11-2026): sin motor, se monta de cero con las líneas extra.
     libre: o.libre === true ? true : undefined,
+    // Etapa 110 (13-11-2026): el tipo escrito de un «otro» y la nota para el cliente.
+    categoria_texto: String(o.categoriaTexto || '').trim() || undefined,
+    observaciones: String(o.observaciones || '').trim() || undefined,
   });
 }
 /** Un producto nuevo en el catálogo propio (27-10-2026), para usarlo ahora y en el futuro. */
@@ -576,8 +580,8 @@ export async function seguimientoPresupuesto(id, cambios) {
 
 /** Cambia la categoría (solar, aerotermia…) de un presupuesto guardado; si está
  * en Teamleader, la función mueve la oportunidad al embudo de la nueva. */
-export async function cambiarCategoriaPresupuesto(id, categoria) {
-  return invocar('teamleader-presupuesto', { accion: 'categoria', presupuesto_id: id, categoria });
+export async function cambiarCategoriaPresupuesto(id, categoria, texto) {
+  return invocar('teamleader-presupuesto', { accion: 'categoria', presupuesto_id: id, categoria, categoria_texto: categoria === 'otro' ? (texto || '') : undefined });
 }
 
 /** Un presupuesto guardado, con sus líneas y sus incidencias. */
@@ -614,7 +618,7 @@ export async function presupuestosDeVisita(visitaId) {
 export async function duplicarPresupuesto(id, { cliente_id, titulo }) {
   const d = await verPresupuesto(id);
   const copia = (o, campos) => { const r = {}; campos.forEach((k) => { if (o[k] !== undefined) r[k] = o[k]; }); return r; };
-  const fila = Object.assign(copia(d, ['categoria', 'conjunto_reglas_id', 'tarifa_id', 'motor_version', 'modelo_id', 'estimativo_min', 'estimativo_max', 'ratio_aplicado',
+  const fila = Object.assign(copia(d, ['categoria', 'categoria_texto', 'observaciones', 'conjunto_reglas_id', 'tarifa_id', 'motor_version', 'modelo_id', 'estimativo_min', 'estimativo_max', 'ratio_aplicado',
     'total_bruto', 'total_dto_linea', 'dto_global_pct', 'total_coste', 'total_venta', 'confianza', 'validez_dias']),
     { cliente_id, titulo: titulo || d.titulo || null, visita_id: null, ficha_id: null, estado: 'generado', sync_estado: 'pendiente' });
   const nuevo = unwrap(await supabase.from('presupuestos').insert(fila).select().single());
@@ -701,7 +705,9 @@ export async function buscarProductos(texto, familia) {
   // encuentra «aroTHERM plus 8 básico…»). Antes se buscaba la frase entera y,
   // además, el texto en la referencia: «8» casaba con casi todos los códigos y
   // los 25 primeros por nombre tapaban lo que se buscaba (Enzo, 26-10-2026).
-  const COLS = 'referencia, nombre, familia, unidad, precio_tarifa, detalle_tecnico, especificaciones, iva';
+  // Con lo que hace falta para saber el coste (descuento de proveedor, recargo
+  // propio…): la app lo enseña a quien ve costes sin esperar a guardar (13-11-2026).
+  const COLS = 'referencia, nombre, familia, unidad, precio_tarifa, detalle_tecnico, especificaciones, iva, descuento_proveedor, recargo, aplica_cdc, atributos';
   const palabras = q.split(/\s+/).filter(Boolean);
   let porNombre = supabase.from('productos').select(COLS).eq('activo', true);
   palabras.forEach((w) => { porNombre = porNombre.ilike('nombre', '%' + w.replace(/[%_,]/g, '') + '%'); });
@@ -730,7 +736,7 @@ export async function buscarConjuntos(texto) {
   const refs = [...new Set(lista.flatMap((x) => (x.componentes || []).map((k) => String(k.referencia))))];
   if (!refs.length) return [];
   const prods = unwrap(await supabase.from('productos')
-    .select('referencia, nombre, familia, unidad, precio_tarifa, detalle_tecnico, especificaciones, iva').eq('activo', true).in('referencia', refs)) || [];
+    .select('referencia, nombre, familia, unidad, precio_tarifa, detalle_tecnico, especificaciones, iva, descuento_proveedor, recargo, aplica_cdc, atributos').eq('activo', true).in('referencia', refs)) || [];
   return lista.map((x) => {
     const unidades = (x.componentes || []).map((k) => { const p = prods.find((y) => y.referencia === String(k.referencia)); return p ? Object.assign({}, p, { cantidad: Number(k.cantidad) || 1 }) : null; });
     return unidades.length && unidades.every(Boolean) ? { id: x.id, modelo: x.modelo, referencia: x.referencia, nombre: x.nombre, gama: x.gama, unidades } : null;

@@ -512,7 +512,7 @@ import * as idiomas from './presu-idiomas.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '32.2'; // versión visible de la app (única fuente)
+const APP_VERSION = '32.3'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -3377,7 +3377,7 @@ function economiaHTML(o) {
         <button class="pill" data-a="enlazarPresu" data-id="${o.id}" style="padding:7px 12px;font-size:12px">Enlazar</button>
       </div>
       ${pres.length ? pres.map((p) => `<div class="row g8" style="align-items:center;padding:9px 0;border-bottom:1px solid var(--l1)">
-          <div class="grow"><div style="font:500 14px var(--sans)">${esc(nombreCat(p.categoria))}</div><div class="tiny" style="margin-top:2px">${esc((p.visita && p.visita.codigo) || '')}</div></div>
+          <div class="grow"><div style="font:500 14px var(--sans)">${esc(nombreCatDe(p))}</div><div class="tiny" style="margin-top:2px">${esc((p.visita && p.visita.codigo) || '')}</div></div>
           <span class="num" style="font-size:16px;white-space:nowrap">${euros2(p.total_venta)}</span>
           <button class="pill" data-a="desenlazarPresu" data-id="${p.id}" data-obra="${o.id}" style="padding:6px 10px;font-size:11px;background:var(--l1);color:var(--tinta)">Quitar</button></div>`).join('')
         : '<div class="sub" style="margin-top:6px">Ninguno todavía. Enlaza el presupuesto que aceptó el cliente para comparar con lo real.</div>'}
@@ -3385,11 +3385,11 @@ function economiaHTML(o) {
 }
 function presuListaHTML(s) {
   const q = sinTildes(V.presuBuscar);
-  const filas = (s.filas || []).filter((p) => !p.obra_id || p.obra_id === s.obraId).filter((p) => !q || sinTildes([(p.cliente || {}).nombre, (p.visita || {}).codigo, nombreCat(p.categoria)].join(' ')).includes(q));
+  const filas = (s.filas || []).filter((p) => !p.obra_id || p.obra_id === s.obraId).filter((p) => !q || sinTildes([(p.cliente || {}).nombre, (p.visita || {}).codigo, nombreCatDe(p)].join(' ')).includes(q));
   if (s.error) return `<div class="sub">${esc(s.error)}</div>`;
   if (!s.filas) return '<div class="sub">Cargando…</div>';
   if (!filas.length) return '<div class="sub">Ningún presupuesto con eso.</div>';
-  return filas.slice(0, 60).map((p) => `<button class="fila-obra" data-a="enlazarPresuElegir" data-id="${p.id}" ${s.busy ? 'disabled' : ''}>${esc((p.cliente || {}).nombre || 'Sin cliente')} · ${esc(nombreCat(p.categoria))}<small>${esc((p.visita || {}).codigo || '')} · ${euros2(p.total_venta)} · ${esc(fechaCorta(p.created_at))}${p.obra_id ? ' · ya enlazado' : ''}</small></button>`).join('');
+  return filas.slice(0, 60).map((p) => `<button class="fila-obra" data-a="enlazarPresuElegir" data-id="${p.id}" ${s.busy ? 'disabled' : ''}>${esc((p.cliente || {}).nombre || 'Sin cliente')} · ${esc(nombreCatDe(p))}<small>${esc((p.visita || {}).codigo || '')} · ${euros2(p.total_venta)} · ${esc(fechaCorta(p.created_at))}${p.obra_id ? ' · ya enlazado' : ''}</small></button>`).join('');
 }
 A.enlazarPresu = async (obraId) => {
   V.sheet = { tipo: 'enlazarPresu', obraId, filas: null, error: null, busy: false }; V.presuBuscar = ''; render();
@@ -6731,7 +6731,14 @@ const VISITA_VISTAS = ['visitas', 'visita', 'visitaNueva', 'ajustes', 'presupues
 const PASOS_VISITA = ['Cliente', 'El inmueble', '¿Qué se presupuesta?', 'Fichas', 'Cierre'];
 const KEY_VISITA = 'sysefen.visita.borrador';
 const CAMPOS_COMUN = vSchemas.COMUN.secciones.flatMap((s) => s.campos);
-const nombreCat = (c) => (vSchemas.CATEGORIAS.find((x) => x.key === c) || { nombre: c }).nombre;
+/* «Otro» (Enzo, 13-11-2026): un presupuesto que no es de ninguno de los cuatro
+ * oficios. Es una categoría solo de presupuestos (las visitas siguen con las
+ * cuatro fichas) y puede llevar su tipo escrito a mano (categoria_texto, sql/etapa110). */
+const CAT_OTRO = { key: 'otro', nombre: 'Otro', corto: 'Otro' };
+const CATS_PRESU = vSchemas.CATEGORIAS.concat([CAT_OTRO]);
+const nombreCat = (c) => (CATS_PRESU.find((x) => x.key === c) || { nombre: c }).nombre;
+/** El tipo de un presupuesto: su categoría o, si es «otro», lo que se escribió. */
+const nombreCatDe = (p) => (p && p.categoria === 'otro' && String(p.categoria_texto || '').trim()) || nombreCat(p ? p.categoria : '');
 const msgError = (e) => (e && e.message) || 'error desconocido';
 const inicialesCli = (n) => String(n || '?').trim().split(/\s+/).slice(0, 2).map((x) => x[0]).join('').toUpperCase();
 const tipoCliente = (c) => (c && c.tl_tipo === 'company' ? 'Empresa' : 'Particular');
@@ -7911,6 +7918,15 @@ const CATS_CON_MOTOR = ['aire_acondicionado', 'aerotermia', 'solar'];
  * modelo o por cualquiera de sus unidades; salen los primeros y al tocar uno
  * entran todas sus unidades, cada una en su línea y con su precio del catálogo.
  * Si la búsqueda de conjuntos falla, la de productos sigue como siempre. */
+/** Coste y margen de un producto del catálogo en un presupuesto de esa categoría
+ *  (solo para quien ve costes): lo mismo que pondrá el servidor al guardar. */
+function costeCatalogoHTML(x, cat) {
+  if (!veMargenPresu(cat) || !x || x.descuento_proveedor === undefined) return '';
+  const pr = prPreciosDe(x.precio_tarifa, x, cat);
+  if (!(pr.venta > 0)) return '';
+  const m = Math.round((1 - pr.coste / pr.venta) * 1000) / 10;
+  return `<div class="tiny" style="margin-top:3px;color:${m >= 0 ? 'var(--verde-o)' : 'var(--rojo)'}">Interno · coste ${eur(pr.coste)}${pr.porCoste ? ' · venta ' + eur(pr.venta) : ''} · margen ${String(m).replace('.', ',')} %</div>`;
+}
 const buscarConjuntosSeguro = (q) => Promise.resolve().then(() => (typeof visitasDB.buscarConjuntos === 'function' ? visitasDB.buscarConjuntos(q) : [])).catch(() => []);
 const conjuntoTotal = (c) => (c.unidades || []).reduce((t, u) => t + (Number(u.precio_tarifa) || 0) * (Number(u.cantidad) || 1), 0);
 function conjuntosHTML(lista, accion) {
@@ -7935,7 +7951,7 @@ function presuResultadosHTML() {
   }
   return `<div style="margin-top:10px">${conjuntosHTML(p.conjuntos, 'presuAnadirConjunto')}${p.resultados.map((x) => `<div class="card row" data-a="presuAnadir" data-ref="${esc(x.referencia)}" style="margin-bottom:8px;cursor:pointer;padding:11px 13px">
     <div class="grow"><div style="font:600 14px/1.25 var(--sans)">${esc(x.nombre)}</div>
-    <div class="sub" style="font-size:12px;margin-top:3px">${esc(x.referencia)}${x.familia ? ' · ' + esc(x.familia) : ''}</div></div>
+    <div class="sub" style="font-size:12px;margin-top:3px">${esc(x.referencia)}${x.familia ? ' · ' + esc(x.familia) : ''}</div>${costeCatalogoHTML(x, p.cat)}</div>
     <div class="num" style="font-size:14px;flex:none">${eur(x.precio_tarifa)}</div>
   </div>`).join('')}${crear}</div>`;
 }
@@ -8154,6 +8170,11 @@ function presuPanelHTML() {
           <span class="tiny" data-a="presuQuitarExtra" data-i="${i}" style="color:var(--rojo);cursor:pointer">Quitar</span>
         </div>`).join('')}
         <button class="pill" data-a="presuRecalcular" style="margin-top:10px;padding:10px;width:100%;text-align:center">Recalcular con lo añadido</button></div>` : ''}
+      </div>
+
+      <div style="margin-top:18px;padding-top:12px;border-top:1px solid var(--l1)">
+        <div class="lbl" style="font-size:11px">Nota para el cliente (opcional)</div>
+        <textarea class="inp" data-f="presuObs" rows="3" maxlength="4000" placeholder="Observaciones, plazos, lo que no incluye… Sale al final del presupuesto." style="margin-top:8px;font-size:14px">${esc(presuObsActual())}</textarea>
       </div>
 
       <button class="btn btn-verde" data-a="presuGuardar" style="margin-top:16px" ${p.guardando ? 'disabled' : ''}>${p.guardando ? 'Guardando…' : p.guardado ? 'Guardar otra versión' : 'Guardar este presupuesto'}</button>
@@ -8502,10 +8523,12 @@ A.presuFusionQuitar = (c) => {
 };
 
 /** "Aire acondicionado · Casa de Ana", para reconocerlo en la lista. */
+/** El tipo de un presupuesto sin visita: la categoría o, en «Otro», lo escrito (o «Presupuesto»). */
+const tipoDelSuelto = (f) => (f && f.cat === 'otro' ? String(f.cat_texto || '').trim() || 'Presupuesto' : nombreCat(f && f.cat));
 function tituloDelSuelto() {
   const f = V.suelto || {};
   const quien = String(f.titulo || f.cliente || '').trim();
-  return nombreCat(f.cat) + (quien ? ' · ' + quien : '');
+  return tipoDelSuelto(f) + (quien ? ' · ' + quien : '');
 }
 
 A.presuDto = (v) => {
@@ -8524,9 +8547,11 @@ A.presuGuardar = async () => {
       ? await visitasDB.presupuestarSuelto(p.cat, enLibre() ? {} : datosConOpcion(datosDelSuelto(V.suelto)), {
           guardar: true, dtoGlobalPct: p.dto, lineasExtra: extrasEnvio(p), lineasQuitar: p.quitadas, lineasAjustar: Object.values(p.ajustes || {}), tituloSufijo: sufijoFusion(p),
           clienteId: V.suelto.clienteId, titulo: tituloDelSuelto(), libre: enLibre(),
+          categoriaTexto: p.cat === 'otro' ? String(V.suelto.cat_texto || '').trim() : undefined, observaciones: presuObsActual(),
         })
       : await visitasDB.presupuestarVisita(vv.visita.id, p.cat, {
           guardar: true, dtoGlobalPct: p.dto, lineasExtra: extrasEnvio(p), lineasQuitar: p.quitadas, lineasAjustar: Object.values(p.ajustes || {}), tituloSufijo: sufijoFusion(p),
+          observaciones: presuObsActual(),
           datos: p.opcion && ficha ? datosConOpcion(ficha.datos || {}) : undefined,
           fichaId: p.opcion && ficha ? ficha.id : undefined,
           titulo: undefined,
@@ -8542,7 +8567,7 @@ A.presuGuardar = async () => {
     }
     toast('Presupuesto guardado. Subiéndolo a Teamleader…');
     V.presuLista.cargado = false; A.cargarPresupuestos();
-    anotar(suelto ? V.suelto.clienteId : (vv.visita && vv.visita.cliente_id), 'presupuesto', 'Presupuesto de ' + nombreCat(p.cat) + sufijoOpcion() + ' creado' + (r && r.total_venta != null ? ' · ' + eur(r.total_venta) : ''));
+    anotar(suelto ? V.suelto.clienteId : (vv.visita && vv.visita.cliente_id), 'presupuesto', 'Presupuesto de ' + (suelto ? tipoDelSuelto(V.suelto) : nombreCat(p.cat)) + sufijoOpcion() + ' creado' + (r && r.total_venta != null ? ' · ' + eur(r.total_venta) : ''));
   } catch (e) { avisar('No se pudo guardar: ' + msgError(e)); p.guardando = false; render(); return; }
   p.guardando = false; render();
   // Guardado = a Teamleader, sin más botones.
@@ -8565,7 +8590,7 @@ A.presuBuscar = async () => {
   const p = V.presu;
   if (String(p.buscar || '').trim().length < 2 || p.buscando) return;
   p.buscando = true; pintarPresuBusqueda();
-  try { const [r, c] = await Promise.all([visitasDB.buscarProductos(p.buscar), buscarConjuntosSeguro(p.buscar)]); p.resultados = r; p.conjuntos = c; }
+  try { const [r, c] = await Promise.all([visitasDB.buscarProductos(p.buscar), buscarConjuntosSeguro(p.buscar), cargarCoefPrecios()]); p.resultados = r; p.conjuntos = c; }
   catch (e) { p.resultados = []; p.conjuntos = []; avisar('No se pudo buscar en el catálogo: ' + msgError(e)); }
   p.buscando = false; pintarPresuBusqueda();
 };
@@ -8658,8 +8683,17 @@ function prEstado() {
   return V.precios;
 }
 /** De la tarifa a coste y venta, como el motor (motor.js · preciosProducto). `cat`: la categoría del presupuesto. */
+/* Los coeficientes de precio (recargo y costes complementarios por categoría),
+ * también fuera de Ajustes → Precios: para enseñar el coste de un producto al
+ * añadirlo a un presupuesto (Enzo, 13-11-2026). Se piden una vez. */
+let coefPreciosPide = null;
+function cargarCoefPrecios() {
+  if (V.coefPrecios || (V.precios && V.precios.coef)) return Promise.resolve();
+  if (!coefPreciosPide) coefPreciosPide = Promise.resolve().then(() => visitasDB.coeficientesPrecios()).then((c) => { V.coefPrecios = c || []; }).catch(() => { coefPreciosPide = null; });
+  return coefPreciosPide;
+}
 function prPreciosDe(base, p, cat) {
-  const coef = (V.precios && V.precios.coef) || [];
+  const coef = (V.precios && V.precios.coef) || V.coefPrecios || [];
   const fila = (clave) => coef.find((x) => x.categoria === cat && x.clave === clave);
   const rf = fila('recargo_sobre_coste'), cf = fila('costes_complementarios_pct');
   const recargoCat = rf && Number(rf.valor) > 0 ? Number(rf.valor) : 1, cdc = cf ? Number(cf.valor) || 0 : 0;
@@ -10305,8 +10339,9 @@ function presuCliListaHTML(s) {
  * lleva el nombre de la categoría vieja, se cambia por la nueva. */
 A.presuCatAbrir = () => {
   const v = V.presuVer; if (!v || !v.datos) return;
-  V.sheet = { tipo: 'presuCategoria', id: v.datos.id, busy: false }; render();
+  V.sheet = { tipo: 'presuCategoria', id: v.datos.id, busy: false, otro: v.datos.categoria === 'otro', texto: v.datos.categoria_texto || '' }; render();
 };
+A.presuCatOtro = () => { const s = V.sheet; if (!s || s.tipo !== 'presuCategoria' || s.busy) return; s.otro = true; render(); const i = document.querySelector('[data-f="presuCatTexto"]'); if (i) i.focus(); };
 /* El nombre del presupuesto se puede cambiar (Enzo, 4-11-2026). */
 A.presuTituloAbrir = () => {
   const v = V.presuVer; if (!v || !v.datos) return;
@@ -10331,22 +10366,23 @@ A.presuCatDe = async (cat) => {
   const s = V.sheet; const v = V.presuVer;
   if (!s || s.tipo !== 'presuCategoria' || s.busy || !v || !v.datos || v.datos.id !== s.id) return;
   const d = v.datos;
-  if (cat === d.categoria) { V.sheet = null; render(); return; }
+  const texto = cat === 'otro' ? String(s.texto || '').trim().slice(0, 80) : '';
+  if (cat === d.categoria && texto === String(d.categoria_texto || '')) { V.sheet = null; render(); return; }
   if (!navigator.onLine) { avisar('Sin conexión.'); return; }
   s.busy = true; render();
   try {
-    const r = await visitasDB.cambiarCategoriaPresupuesto(d.id, cat);
-    const antes = nombreCat(d.categoria) || d.categoria;
-    d.categoria = cat;
+    const r = await visitasDB.cambiarCategoriaPresupuesto(d.id, cat, texto);
+    const antes = nombreCatDe(d) || d.categoria;
+    d.categoria = cat; d.categoria_texto = texto || null;
     // El título «Cliente · Aerotermia» pasa a «Cliente · Electricidad».
     const reAnt = antes ? new RegExp(String(antes).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i') : null;
     if (d.titulo && reAnt && reAnt.test(d.titulo)) {
-      const t = d.titulo.replace(reAnt, nombreCat(cat)).slice(0, 200);
+      const t = d.titulo.replace(reAnt, nombreCatDe(d)).slice(0, 200);
       try { Object.assign(d, await visitasDB.seguimientoPresupuesto(d.id, { titulo: t })); } catch (_) { /* el título es lo de menos */ }
     }
-    anotar(d.cliente && d.cliente.id, 'presupuesto', 'Presupuesto cambiado de ' + antes + ' a ' + nombreCat(cat));
+    anotar(d.cliente && d.cliente.id, 'presupuesto', 'Presupuesto cambiado de ' + antes + ' a ' + nombreCatDe(d));
     V.sheet = null; V.presuLista.cargado = false;
-    toast('Ahora es de ' + nombreCat(cat) + (r && r.movida ? '. En Teamleader, la oportunidad va al embudo «' + (r.embudo || '') + '».' : '.'));
+    toast('Ahora es de ' + nombreCatDe(d) + (r && r.movida ? '. En Teamleader, la oportunidad va al embudo «' + (r.embudo || '') + '».' : '.'));
     if (r && r.aviso) avisar(r.aviso);
     if (V.agenda.cargado) A.cargarAgenda();
   } catch (e) { s.busy = false; avisar('No se pudo cambiar la categoría: ' + msgError(e)); }
@@ -10357,7 +10393,11 @@ function presuCategoriaSheetHTML(s) {
   return `<div class="sheet"><div>
     <div style="font:600 25px/1.15 var(--cond)">Categoría del presupuesto</div>
     <div class="tiny" style="margin-top:6px">Cambia la cabecera del PDF y cómo se agrupan las líneas. Las líneas y los precios no se tocan. Si ya está en Teamleader, la oportunidad se mueve al embudo de la categoría nueva.</div>
-    <div class="lista-obras" style="margin-top:12px">${vSchemas.CATEGORIAS.map((c) => `<button class="fila-obra" data-a="presuCatDe" data-cat="${c.key}" ${s.busy ? 'disabled' : ''}>${esc(c.nombre)}${d && d.categoria === c.key ? '<small>✓ la de ahora</small>' : ''}</button>`).join('')}</div>
+    <div class="lista-obras" style="margin-top:12px">${vSchemas.CATEGORIAS.map((c) => `<button class="fila-obra" data-a="presuCatDe" data-cat="${c.key}" ${s.busy ? 'disabled' : ''}>${esc(c.nombre)}${d && d.categoria === c.key ? '<small>✓ la de ahora</small>' : ''}</button>`).join('')}
+      <button class="fila-obra" data-a="presuCatOtro" ${s.busy ? 'disabled' : ''}>Otro${d && d.categoria === 'otro' ? '<small>✓ la de ahora' + (d.categoria_texto ? ' · ' + esc(d.categoria_texto) : '') + '</small>' : '<small>Lo que no es de ninguno de los cuatro; puedes escribir de qué es</small>'}</button></div>
+    ${s.otro ? `<div class="lbl" style="margin:14px 0 6px">¿De qué es? (opcional)</div>
+      <input class="inp" data-f="presuCatTexto" value="${esc(s.texto || '')}" maxlength="80" placeholder="Cargador de coche, reforma…">
+      <button class="btn btn-verde" data-a="presuCatDe" data-cat="otro" style="margin-top:10px" ${s.busy ? 'disabled' : ''}>Guardar como «${esc(String(s.texto || '').trim() || 'Otro')}»</button>` : ''}
     ${s.busy ? '<div class="sub" style="margin-top:8px;color:var(--verde-o)">Cambiando…</div>' : ''}
     <button class="btn btn-gris" data-a="cerrarSheet" style="border-radius:99px;margin-top:14px">Cancelar</button>
   </div></div>`;
@@ -10415,7 +10455,7 @@ A.presuCliDe = async (id) => {
       if (reAnt && reAnt.test(t)) t = t.replace(reAnt, c.nombre);
       else if (!sinTildes(t).includes(sinTildes(c.nombre))) t = (c.nombre + ' · ' + t).replace(/ · $/, '');
       const nuevo = await visitasDB.duplicarPresupuesto(d.id, { cliente_id: c.id, titulo: t.slice(0, 200) });
-      anotar(c.id, 'presupuesto', 'Presupuesto de ' + nombreCat(d.categoria) + ' creado (copia de otro)' + (d.total_venta != null ? ' · ' + eur(d.total_venta) : ''));
+      anotar(c.id, 'presupuesto', 'Presupuesto de ' + nombreCatDe(d) + ' creado (copia de otro)' + (d.total_venta != null ? ' · ' + eur(d.total_venta) : ''));
       V.sheet = null; V.presuLista.cargado = false;
       toast('Presupuesto nuevo para ' + c.nombre + '. Subiéndolo a Teamleader…');
       await abrirPresuSinOrigen(nuevo.id);
@@ -10490,7 +10530,7 @@ function sincronizarEnlace() {
     let titulo = '';
     if (quiero.startsWith('#presupuesto=')) {
       const d = V.presuVer && V.presuVer.datos;
-      const nombre = d ? String(d.titulo || (d.cliente && d.cliente.nombre) || nombreCat(d.categoria) || '').trim() : '';
+      const nombre = d ? String(d.titulo || (d.cliente && d.cliente.nombre) || nombreCatDe(d) || '').trim() : '';
       if (nombre) titulo = 'Presupuesto · ' + nombre;
     } else if (quiero.startsWith('#cliente=')) {
       const c = agCliente(V.clienteVerId);
@@ -10971,7 +11011,7 @@ function vPresupuestos() {
     ${l.error ? `<div class="card" style="background:var(--rojo-cl)"><div class="sub" style="color:var(--rojo)">${esc(l.error)}</div></div>` : ''}
     ${!l.cargado && l.cargando ? '<div class="tiny">Cargando…</div>' : ''}
     ${l.filas.map((x) => `<div class="card" data-a="presuAbrir" data-id="${x.id}" style="margin-bottom:10px;cursor:pointer">
-      <div class="row g8"><span class="badge" style="background:rgba(20,23,15,.06);color:var(--tinta)">${esc(nombreCat(x.categoria) || x.categoria)}</span>
+      <div class="row g8"><span class="badge" style="background:rgba(20,23,15,.06);color:var(--tinta)">${esc(nombreCatDe(x) || x.categoria)}</span>
         ${(() => { const sg = seguimientoPresu(x); return `<span class="badge" style="background:${sg.k === 'aceptado' ? '#e3efe5' : sg.k === 'rechazado' ? 'var(--rojo-cl)' : sg.k === 'esperando' ? '#f8efdc' : 'rgba(20,23,15,.06)'};color:${sg.color}">${esc(sg.txt)}</span>`; })()}
         <div class="grow"></div><span class="tiny">${fechaCorta(x.created_at)}</span></div>
       <div class="h2" style="margin-top:9px">${x.tl_numero ? '<span class="tiny" style="font-weight:600;margin-right:6px">Nº ' + esc(x.tl_numero) + '</span>' : ''}${esc(x.titulo || (x.cliente && x.cliente.nombre) || 'Sin título')}</div>
@@ -11009,13 +11049,15 @@ function vPresuNuevo() {
       <div class="tiny" style="margin-top:7px"><span data-a="presuCliAbrir" data-modo="suelto" style="color:var(--verde-o);cursor:pointer;text-decoration:underline">Buscar el cliente en la app o en Teamleader</span> (también empresas)</div>
 
       <div class="lbl" style="margin:16px 0 8px">Qué se presupuesta</div>
-      <div class="wrap">${vSchemas.CATEGORIAS.map((c) => `<div class="chip ${f.cat === c.key ? 'sel' : ''}" data-a="presuSueltoChip" data-k="cat" data-v="${c.key}">${esc(c.nombre)}</div>`).join('')}</div>
+      <div class="wrap">${CATS_PRESU.map((c) => `<div class="chip ${f.cat === c.key ? 'sel' : ''}" data-a="presuSueltoChip" data-k="cat" data-v="${c.key}">${esc(c.nombre)}</div>`).join('')}</div>
+      ${f.cat === 'otro' ? `<input class="inp" data-f="presuCampo" data-k="cat_texto" value="${esc(String(f.cat_texto || ''))}" maxlength="80" placeholder="¿De qué es? Cargador de coche, reforma… (opcional)" style="margin-top:10px">
+      <div class="tiny" style="margin-top:6px">Lo que escribas sale como tipo del presupuesto en la lista y en la cabecera del PDF.</div>` : ''}
 
       <div class="lbl" style="margin:16px 0 8px">Cómo se hace</div>
       <div class="wrap">${CATS_CON_MOTOR.includes(f.cat) ? `<div class="chip ${!f.libre ? 'sel' : ''}" data-a="presuSueltoChip" data-k="libre" data-v="">Con el motor</div>` : ''}<div class="chip ${f.libre ? 'sel' : ''}" data-a="presuSueltoChip" data-k="libre" data-v="1">Libre, de cero</div></div>
-      ${f.libre ? `<div class="tiny" style="margin-top:8px">${CATS_CON_MOTOR.includes(f.cat) ? 'Sin datos que rellenar: el presupuesto empieza vacío y lo montas tú línea a línea, del catálogo o creando conceptos nuevos.' : 'Todavía no hay reglas para ' + esc(nombreCat(f.cat)) + ': se monta línea a línea, del catálogo o creando conceptos nuevos.'}</div>
+      ${f.libre ? `<div class="tiny" style="margin-top:8px">${CATS_CON_MOTOR.includes(f.cat) ? 'Sin datos que rellenar: el presupuesto empieza vacío y lo montas tú línea a línea, del catálogo o creando conceptos nuevos.' : (f.cat === 'otro' ? 'Se' : 'Todavía no hay reglas para ' + esc(nombreCat(f.cat)) + ': se') + ' monta línea a línea, del catálogo o creando conceptos nuevos.'}</div>
       <div class="lbl" style="margin:16px 0 8px">Título del presupuesto (opcional)</div>
-      <input class="inp" data-f="presuCampo" data-k="titulo" value="${esc(String(f.titulo || ''))}" placeholder="${esc(nombreCat(f.cat))} · ${esc(f.cliente || 'cliente')}">`
+      <input class="inp" data-f="presuCampo" data-k="titulo" value="${esc(String(f.titulo || ''))}" placeholder="${esc(tipoDelSuelto(f))} · ${esc(f.cliente || 'cliente')}">`
       : f.cat === 'aerotermia' ? camposAeroHTML(f) : f.cat === 'solar' ? camposSolarHTML(f) : camposAireHTML(f)}
 
       ${f.libre && p.datos && p.cat === f.cat ? '' : `<button class="btn btn-verde" data-a="presuCalcular" data-c="${esc(f.cat)}" style="margin-top:16px" ${p.cargando ? 'disabled' : ''}>${p.cargando ? (f.libre ? 'Preparando…' : 'Calculando…') : (f.libre ? 'Empezar de cero' : 'Calcular')}</button>`}
@@ -11219,6 +11261,7 @@ A.presuEditar = () => {
     guardando: false,
   };
   render();
+  cargarCoefPrecios();
 };
 A.presuEditarCancelar = () => { V.presuEdit = null; render(); };
 
@@ -11254,7 +11297,28 @@ A.presuLineaNueva = () => {
   const ult = document.querySelectorAll('[data-f="presuNueva"][data-k="descripcion"]'); if (ult.length) ult[ult.length - 1].focus();
 };
 A.presuNuevaQuitar = (i) => { const e = V.presuEdit; if (!e) return; e.nuevas.splice(Number(i), 1); render(); };
-A.presuNuevaCampo = (i, campo, valor) => { const e = V.presuEdit; if (e && e.nuevas[Number(i)]) e.nuevas[Number(i)][campo] = valor; };
+A.presuNuevaCampo = (i, campo, valor) => {
+  const e = V.presuEdit; const n = e && e.nuevas[Number(i)]; if (!n) return;
+  const d = V.presuVer && V.presuVer.datos;
+  const pon = (k, v) => { const inp = document.querySelector(`[data-f="presuNueva"][data-i="${Number(i)}"][data-k="${k}"]`); if (inp && document.activeElement !== inp) inp.value = v; };
+  // En una línea del catálogo, como en las ya guardadas: escribir un margen
+  // cambia el coste que lo da; escribir coste o precio enseña el margen.
+  if (campo === 'margen_pct') {
+    if (n.libre) return;
+    const m = Number(String(valor).replace(',', '.')), venta = nuevaPrecios(n, d && d.categoria).venta;
+    if (venta > 0 && m >= 0 && m < 100 && String(valor).trim() !== '') { n.precio_coste = Math.round(venta * (1 - m / 100) * 100) / 100; pon('precio_coste', n.precio_coste); }
+  } else {
+    n[campo] = valor;
+    if (!n.libre && (campo === 'precio_coste' || campo === 'precio_tarifa')) pon('margen_pct', nuevaPrecios(n, d && d.categoria).margen);
+  }
+  if (!n.libre) { const info = document.getElementById('pn-info-' + Number(i)); if (info) info.innerHTML = nuevaInfoHTML(n, d && d.categoria); }
+};
+/** La línea «Interno · …» de una línea nueva del catálogo. */
+function nuevaInfoHTML(n, cat) {
+  const p = nuevaPrecios(n, cat), cant = Number(String(n.cantidad == null ? '' : n.cantidad).replace(',', '.')) || 1;
+  const benef = Math.round((p.venta - p.coste) * cant * 100) / 100;
+  return `<span style="color:${benef >= 0 ? 'var(--verde-o)' : 'var(--rojo)'}">Interno · venta ${eur(p.venta)}/ud${p.sinTocar && Math.abs(p.venta - (Number(n.precio_catalogo) || 0)) > 0.005 ? ' (catálogo ' + eur(n.precio_catalogo) + ' con el recargo de la categoría)' : ''} · coste ${eur(p.coste)}/ud${p.costeEscrito ? ' (escrito; el del catálogo es ' + eur(p.costeCatalogo) + ')' : ''} · beneficio ${eur(benef)}</span>`;
+}
 /* El catálogo al modificar un presupuesto guardado (Enzo, 6-11-2026): se busca
  * igual que al generar y el producto entra como línea nueva; su precio de venta
  * (con el recargo de la categoría) lo pone el servidor al guardar. */
@@ -11272,13 +11336,31 @@ const pintarPresuEditBusqueda = () => {
 A.presuEditBuscar = async () => {
   const e = V.presuEdit; if (!e || String(e.buscar || '').trim().length < 2 || e.buscando) return;
   e.buscando = true; pintarPresuEditBusqueda();
-  try { const [r, c] = await Promise.all([visitasDB.buscarProductos(e.buscar), buscarConjuntosSeguro(e.buscar)]); e.resultados = r; e.conjuntos = c; }
+  try { const [r, c] = await Promise.all([visitasDB.buscarProductos(e.buscar), buscarConjuntosSeguro(e.buscar), cargarCoefPrecios()]); e.resultados = r; e.conjuntos = c; }
   catch (err) { e.resultados = []; e.conjuntos = []; avisar('No se pudo buscar en el catálogo: ' + msgError(err)); }
   e.buscando = false; pintarPresuEditBusqueda();
 };
 const presuNuevaDe = (x, cantidad) => ({ producto_ref: x.referencia, descripcion: x.nombre, detalle_tecnico: x.detalle_tecnico || null, especificaciones: x.especificaciones || [],
   cantidad: String(cantidad || 1), unidad: x.unidad || 'ud', precio_tarifa: x.precio_tarifa, precio_catalogo: x.precio_tarifa, iva: x.iva == null ? 21 : x.iva,
-  seccion: x.familia === 'mano_obra' ? 'Mano de obra' : 'Equipos', libre: false });
+  seccion: x.familia === 'mano_obra' ? 'Mano de obra' : 'Equipos', libre: false,
+  // Lo que hace falta para saber su coste sin esperar a guardar (13-11-2026).
+  prod: { familia: x.familia, descuento_proveedor: x.descuento_proveedor, recargo: x.recargo, aplica_cdc: x.aplica_cdc, atributos: x.atributos } });
+/**
+ * Venta, coste y margen por unidad de una línea nueva del catálogo, con la misma
+ * regla que el servidor (lineaManual): si el precio no se toca, la venta es la
+ * del catálogo con el recargo de la categoría; si se escribe otro, ese. El coste
+ * es el del catálogo salvo que se escriba uno.
+ */
+function nuevaPrecios(n, cat) {
+  const num = (v) => Number(String(v == null ? '' : v).replace(',', '.')) || 0;
+  const pr = prPreciosDe(n.precio_catalogo, n.prod || {}, cat);
+  const escrito = num(n.precio_tarifa);
+  const sinTocar = !escrito || Math.abs(escrito - num(n.precio_catalogo)) < 0.005;
+  const venta = sinTocar ? pr.venta : escrito;
+  const costeEscrito = String(n.precio_coste == null ? '' : n.precio_coste).trim() !== '';
+  const coste = costeEscrito ? num(n.precio_coste) : pr.coste;
+  return { venta, coste, costeCatalogo: pr.coste, costeEscrito, sinTocar, margen: venta > 0 ? Math.round((1 - coste / venta) * 1000) / 10 : '' };
+}
 A.presuEditAnadir = (ref) => {
   const e = V.presuEdit; if (!e) return;
   const x = (e.resultados || []).find((r) => r.referencia === ref); if (!x) return;
@@ -11303,7 +11385,7 @@ function presuEditResultadosHTML() {
   if (!e.resultados.length && !(e.conjuntos || []).length) return q.length < 2 ? crear : '<div class="sub" style="font-size:12px;margin-top:10px">Nada con ese nombre.</div>' + crear;
   return `<div style="margin-top:10px">${conjuntosHTML(e.conjuntos, 'presuEditAnadirConjunto')}${e.resultados.map((x) => `<div class="card row" data-a="presuEditAnadir" data-ref="${esc(x.referencia)}" style="margin-bottom:8px;cursor:pointer;padding:11px 13px">
     <div class="grow"><div style="font:600 14px/1.25 var(--sans)">${esc(x.nombre)}</div>
-    <div class="sub" style="font-size:12px;margin-top:3px">${esc(x.referencia)}${x.familia ? ' · ' + esc(x.familia) : ''}</div></div>
+    <div class="sub" style="font-size:12px;margin-top:3px">${esc(x.referencia)}${x.familia ? ' · ' + esc(x.familia) : ''}</div>${costeCatalogoHTML(x, V.presuVer && V.presuVer.datos && V.presuVer.datos.categoria)}</div>
     <div class="num" style="font-size:14px;flex:none">${eur(x.precio_tarifa)}</div>
   </div>`).join('')}${crear}</div>`;
 }
@@ -11398,7 +11480,9 @@ function previaEditHTML(d) {
     const cRaw = c.precio_coste != null ? c.precio_coste : l.precio_coste;
     if (cRaw == null || String(cRaw).trim() === '') sinCoste++; else coste += cant * num(cRaw);
   });
-  (e.nuevas || []).forEach((n) => { if (!(num(n.precio_tarifa) > 0)) return; bruto += num(n.cantidad || 1) * num(n.precio_tarifa); if (String(n.precio_coste == null ? '' : n.precio_coste).trim()) coste += num(n.cantidad || 1) * num(n.precio_coste); else sinCoste++; });
+  (e.nuevas || []).forEach((n) => {
+    if (n.producto_ref && !n.libre && n.prod) { const np = nuevaPrecios(n, d.categoria); if (!(np.venta > 0)) return; bruto += num(n.cantidad || 1) * np.venta; coste += num(n.cantidad || 1) * np.coste; return; }
+    if (!(num(n.precio_tarifa) > 0)) return; bruto += num(n.cantidad || 1) * num(n.precio_tarifa); if (String(n.precio_coste == null ? '' : n.precio_coste).trim()) coste += num(n.cantidad || 1) * num(n.precio_coste); else sinCoste++; });
   bruto = Math.round(bruto * 100) / 100; coste = Math.round(coste * 100) / 100;
   const total = Math.round(bruto * (1 - num(e.dto) / 100) * 100) / 100;
   return `<div class="row" style="justify-content:space-between;margin-top:12px">
@@ -11464,7 +11548,15 @@ function presuLineasEditHTML(d) {
       <input class="inp grow" data-f="presuNueva" data-i="${i}" data-k="precio_tarifa" value="${esc(String(n.precio_tarifa))}" inputmode="decimal" placeholder="Precio por unidad">
       <span class="tiny">€</span>
     </div>
-    <div class="tiny" style="margin-top:8px">Precio del catálogo. Si no lo tocas, al guardar se le aplica el recargo de ${esc(nombreCat(d.categoria))}, como a las líneas del motor; si lo cambias, ese es el precio de venta.</div>
+    ${veMargenPresu(d.categoria) ? (() => { const np = nuevaPrecios(n, d.categoria); return `<div class="row g8" style="margin-top:7px;align-items:center;flex-wrap:wrap">
+      <span class="tiny" style="color:var(--t2)">Interno · coste</span>
+      <input class="inp" data-f="presuNueva" data-i="${i}" data-k="precio_coste" value="${esc(String(np.costeEscrito ? n.precio_coste : np.costeCatalogo))}" inputmode="decimal" placeholder="€/ud" style="width:92px;padding:8px;text-align:right">
+      <span class="tiny" style="color:var(--t2)">€ · margen</span>
+      <input class="inp" data-f="presuNueva" data-i="${i}" data-k="margen_pct" value="${esc(String(np.margen))}" inputmode="decimal" placeholder="%" style="width:64px;padding:8px;text-align:right">
+      <span class="tiny" style="color:var(--t2)">% sobre venta</span>
+    </div>
+    <div class="tiny" id="pn-info-${i}" style="margin-top:6px">${nuevaInfoHTML(n, d.categoria)}</div>`; })() : ''}
+    <div class="tiny" style="margin-top:8px">Precio del catálogo. Si no lo tocas, al guardar se le aplica el recargo de ${esc(nombreCatDe(d))}, como a las líneas del motor; si lo cambias, ese es el precio de venta.</div>
     <span class="tiny" data-a="presuNuevaQuitar" data-i="${i}" style="display:inline-block;margin-top:10px;cursor:pointer;text-decoration:underline">Quitar esta línea</span>
   </div>`).join('')}
   <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--l1)">
@@ -11602,7 +11694,7 @@ function textosDelPresu(d) {
     t.push(l.descripcion, l.detalle_tecnico, partesSeccion(l.seccion)[1]);
     if (l.origen_inputs && l.origen_inputs.fv2) t.push(l.origen_inputs.nota, l.origen_inputs.condiciones);
   });
-  t.push(d.titulo);
+  t.push(d.titulo, d.observaciones, d.categoria === 'otro' ? d.categoria_texto : null);
   return [...new Set(t.map((x) => String(x == null ? '' : x).trim()).filter(Boolean))];
 }
 /** Trae (y guarda) las traducciones del presupuesto; devuelve la función que traduce un texto. */
@@ -11621,7 +11713,8 @@ async function traduccionesPresu(d, idioma) {
 /** Una copia del presupuesto con las líneas traducidas, lista para el PDF. */
 function presuTraducido(d, tr) {
   const trSec = (n) => { const [pre, nombre] = partesSeccion(n); return nombre ? pre + tr(nombre) : n; };
-  return Object.assign({}, d, { titulo: d.titulo ? tr(d.titulo) : d.titulo, lineas: (d.lineas || []).map((l) => Object.assign({}, l, {
+  return Object.assign({}, d, { titulo: d.titulo ? tr(d.titulo) : d.titulo, observaciones: d.observaciones ? tr(String(d.observaciones).trim()) : d.observaciones,
+    categoria_texto: d.categoria_texto ? tr(String(d.categoria_texto).trim()) : d.categoria_texto, lineas: (d.lineas || []).map((l) => Object.assign({}, l, {
     descripcion: tr(l.descripcion), detalle_tecnico: l.detalle_tecnico ? tr(l.detalle_tecnico) : l.detalle_tecnico, seccion: trSec(l.seccion),
     origen_inputs: l.origen_inputs && l.origen_inputs.fv2 ? Object.assign({}, l.origen_inputs, { nota: l.origen_inputs.nota ? tr(l.origen_inputs.nota) : l.origen_inputs.nota, condiciones: l.origen_inputs.condiciones ? tr(l.origen_inputs.condiciones) : l.origen_inputs.condiciones }) : l.origen_inputs,
   })) });
@@ -11651,7 +11744,7 @@ function imprimirPresupuestoHTML(d, idioma, tr) {
       <div><img src="logo-trans.png?v=3" alt="" style="height:17mm">
       ${S.cif ? `<div style="font:400 10px var(--mono);color:#666;margin-top:2px">${esc(S.empresa)} · ${esc(S.cif)}</div>` : ''}</div>
       <div style="text-align:right"><div style="font:600 11px var(--mono);letter-spacing:.1em">${esc(T.presupuesto)}</div>
-      <div style="font:700 16px var(--cond);margin-top:2px">${esc(idiomas.categoriaIdioma(d.categoria, idioma) || nombreCat(d.categoria) || d.categoria)}</div>
+      <div style="font:700 16px var(--cond);margin-top:2px">${esc(d.categoria === 'otro' ? String(d.categoria_texto || '').trim() : (idiomas.categoriaIdioma(d.categoria, idioma) || nombreCatDe(d) || d.categoria))}</div>
       <div style="font:400 10px var(--mono);color:#666;margin-top:2px">${d.created_at ? fechaCorta(d.created_at) : ''}</div></div>
     </div>
     <div style="height:2px;background:#14170f;margin:10px 0 14px"></div>
@@ -11693,6 +11786,10 @@ function imprimirPresupuestoHTML(d, idioma, tr) {
         <span style="font:700 18px var(--cond)">${eur(total * (1 + iva / 100))}</span>
       </div>
     </div>
+    ${String(d.observaciones || '').trim() ? `<div style="margin-top:16px;break-inside:avoid;page-break-inside:avoid">
+      <div style="font:600 10px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:#666;margin-bottom:5px">${esc(T.observaciones || 'Observaciones')}</div>
+      <div style="font:400 11.5px/1.5 var(--sans);white-space:pre-wrap">${esc(String(d.observaciones).trim())}</div>
+    </div>` : ''}
     <div style="font:400 10px/1.5 var(--sans);color:#666;margin-top:14px">${esc(idiomas.rellena(T.pie, { n: Number(d.validez_dias || 15) + Number(d.prorroga_dias || 0) }))}</div>
     ${condicionesPresupuestoHTML(d, idioma)}
   </div>`;
@@ -11708,7 +11805,7 @@ function imprimirPresupuestoHTML(d, idioma, tr) {
 const PDF_PREFIJO = { es: 'Presupuesto', en: 'Quotation', ca: 'Pressupost', de: 'Angebot' };
 const nombrePdfPresu = (d, idioma) => {
   idioma = idiomas.idiomaValido(idioma);
-  let t = String(d.titulo || [(d.cliente && d.cliente.nombre) || '', nombreCat(d.categoria) || ''].filter(Boolean).join(' · ') || 'Sysefen')
+  let t = String(d.titulo || [(d.cliente && d.cliente.nombre) || '', nombreCatDe(d) || ''].filter(Boolean).join(' · ') || 'Sysefen')
     .replace(/\s*[·\-–—(]?\s*Hecho en Teamleader\s*[)]?\s*/gi, ' ').replace(/[\\/:*?"<>|\u0000-\u001f]+/g, '-').replace(/\s+/g, ' ').trim().slice(0, 120).replace(/[ .\-·]+$/, '');
   if (idioma !== 'es') t = PDF_PREFIJO[idioma] + ' · ' + t.replace(/^presupuesto\s*[·\-–—]?\s*/i, '');
   else if (!/^presupuesto\b/i.test(t)) t = 'Presupuesto ' + t;
@@ -11786,7 +11883,7 @@ A.presuPdf = async () => {
   imprimirPresupuestoHTML(v.datos, v.idioma, tr);
   const cli = (v.datos.cliente && v.datos.cliente.nombre) || '';
   await salidaImpresion(nombrePdfPresu(v.datos, v.idioma),
-    'Presupuesto ' + (nombreCat(v.datos.categoria) || ''),
+    'Presupuesto ' + (nombreCatDe(v.datos) || ''),
     S.empresa + ' · Presupuesto' + (cli ? ' · ' + cli : ''));
 };
 // Descargar el PDF como archivo, con el nombre del presupuesto (también en ordenador, donde «PDF» imprime).
@@ -11817,7 +11914,7 @@ function vPresupuestoVer() {
   return `<div class="hdr-dark">
     <div class="row" style="justify-content:space-between;align-items:center">${volverHTML('<div class="back" data-a="ir" data-v="presupuestos">‹ Presupuestos</div>')}${abrirAparteIcono(true)}</div>
     <div ${d ? 'data-a="presuTituloAbrir" style="font:600 27px/1.1 var(--cond);cursor:pointer" title="Cambiar el nombre"' : 'style="font:600 27px/1.1 var(--cond)"'}>${esc((d && (d.titulo || (d.cliente && d.cliente.nombre))) || 'Presupuesto')}${d ? ' <span style="font-size:15px;opacity:.5;vertical-align:middle">✎</span>' : ''}</div>
-    <div class="sub" style="color:rgba(255,255,255,.5);margin-top:6px">${d ? `<span data-a="presuCatAbrir" style="cursor:pointer;text-decoration:underline dotted;text-underline-offset:3px" title="Cambiar la categoría">${esc(nombreCat(d.categoria) || d.categoria)}</span> · ${fechaCorta(d.created_at)}` : v.cargando ? 'Cargando…' : ''}</div>
+    <div class="sub" style="color:rgba(255,255,255,.5);margin-top:6px">${d ? `<span data-a="presuCatAbrir" style="cursor:pointer;text-decoration:underline dotted;text-underline-offset:3px" title="Cambiar la categoría">${esc(nombreCatDe(d) || d.categoria)}</span> · ${fechaCorta(d.created_at)}` : v.cargando ? 'Cargando…' : ''}</div>
   </div>
   <div class="scroll pad pb-nav">
     ${v.error ? `<div class="card" style="background:var(--rojo-cl)"><div class="sub" style="color:var(--rojo)">${esc(v.error)}</div></div>` : ''}
@@ -11844,6 +11941,7 @@ function vPresupuestoVer() {
       ${d.dto_global_pct ? `<div class="tiny" style="margin-top:6px;text-align:right">Incluye −${d.dto_global_pct} % al pie</div>` : ''}
       ${costeMargenHTML(d.total_coste, d.total_venta, lineas.filter((l) => l.precio_coste == null).length, Number(d.total_bruto || 0) + Number(d.total_dto_linea || 0), d.categoria)}
       ${avisoTeslaHTML(lineas, d.categoria)}
+      ${presuObsHTML(d)}
       ${d.motor_version === 'teamleader'
         ? (lineas.length
           ? `<div class="tiny" style="margin-top:12px">Hecho en Teamleader: las líneas son las de la oferta de allí. Lo que se cambie allí llega solo; lo que se cambie aquí con «Modificar» se actualiza allí.</div>
@@ -11873,7 +11971,7 @@ function vPresupuestoVer() {
 }
 // El seguimiento del presupuesto, en su ficha: los pasos de crearlo a la
 // respuesta del cliente, y los botones para marcar cada uno (sql/etapa64).
-const CAT_A_OBRA = { aerotermia: 'AE', solar: 'FV', aire_acondicionado: 'AC', electricidad: 'EL' };
+const CAT_A_OBRA = { aerotermia: 'AE', solar: 'FV', aire_acondicionado: 'AC', electricidad: 'EL', otro: 'OT' };
 /* ---------- enviar el presupuesto al cliente por correo (Enzo, 27-10-2026) ---------- */
 A.presuEnviarAbrir = async () => {
   const d = V.presuVer && V.presuVer.datos; if (!d) return;
@@ -12034,14 +12132,14 @@ function seguimientoHTML(d) {
 A.presuRevisado = async () => {
   const d = V.presuVer && V.presuVer.datos; if (!d || V.presuSegBusy) return;
   V.presuSegBusy = true; render();
-  try { Object.assign(d, await visitasDB.seguimientoPresupuesto(d.id, { revisado_at: new Date().toISOString(), revisado_por: miEmpId() || null, estado: d.estado === 'revisar' || d.estado === 'generado' ? 'aprobado' : d.estado })); toast('Apuntado: revisado.'); if (V.agenda.cargado) A.cargarAgenda(); anotar(d.cliente && d.cliente.id, 'presupuesto', 'Presupuesto de ' + nombreCat(d.categoria) + ' revisado'); }
+  try { Object.assign(d, await visitasDB.seguimientoPresupuesto(d.id, { revisado_at: new Date().toISOString(), revisado_por: miEmpId() || null, estado: d.estado === 'revisar' || d.estado === 'generado' ? 'aprobado' : d.estado })); toast('Apuntado: revisado.'); if (V.agenda.cargado) A.cargarAgenda(); anotar(d.cliente && d.cliente.id, 'presupuesto', 'Presupuesto de ' + nombreCatDe(d) + ' revisado'); }
   catch (e) { avisar(/revisado_at/i.test(msgError(e)) ? 'Falta ejecutar sql/etapa65 en Supabase.' : 'No se pudo guardar: ' + msgError(e)); }
   V.presuSegBusy = false; render();
 };
 A.presuEnviadoCliente = async () => {
   const d = V.presuVer && V.presuVer.datos; if (!d || V.presuSegBusy) return;
   V.presuSegBusy = true; render();
-  try { Object.assign(d, await visitasDB.seguimientoPresupuesto(d.id, { estado: 'enviado', enviado_cliente_at: new Date().toISOString(), enviado_cliente_por: miEmpId() || null, revisado_at: d.revisado_at || new Date().toISOString(), revisado_por: d.revisado_por || miEmpId() || null })); toast('Apuntado: enviado al cliente.'); if (V.agenda.cargado) A.cargarAgenda(); anotar(d.cliente && d.cliente.id, 'presupuesto', 'Presupuesto de ' + nombreCat(d.categoria) + ' enviado al cliente · ' + eur(d.total_venta)); }
+  try { Object.assign(d, await visitasDB.seguimientoPresupuesto(d.id, { estado: 'enviado', enviado_cliente_at: new Date().toISOString(), enviado_cliente_por: miEmpId() || null, revisado_at: d.revisado_at || new Date().toISOString(), revisado_por: d.revisado_por || miEmpId() || null })); toast('Apuntado: enviado al cliente.'); if (V.agenda.cargado) A.cargarAgenda(); anotar(d.cliente && d.cliente.id, 'presupuesto', 'Presupuesto de ' + nombreCatDe(d) + ' enviado al cliente · ' + eur(d.total_venta)); }
   catch (e) { avisar(/enviado_cliente/i.test(msgError(e)) ? 'Falta ejecutar sql/etapa64 en Supabase.' : 'No se pudo guardar: ' + msgError(e)); }
   V.presuSegBusy = false; render();
 };
@@ -12052,7 +12150,7 @@ A.presuRespuesta = async (r) => {
     if (r === 'aceptado' && d.tl_quotation_id) visitasDB.aceptarEnTeamleader(d.id).then(() => toast('La oferta queda aceptada también en Teamleader.')).catch((e) => avisar('Aceptado en la app, pero no en Teamleader: ' + msgError(e)));
     // Aceptado → la obra se crea sola (Enzo, 27-10-2026) y el cliente sale de Otros/Rechazados si estaba colocado a mano.
     if (r === 'aceptado' && !d.obra_id) { try { await crearObraDePresupuesto(d); } catch (e) { avisar('Aceptado, pero no se pudo crear la obra: ' + msgError(e)); } }
-    if (r === 'aceptado' && d.cliente_id) { const c = agCliente(d.cliente_id); if (c && c.tablero_col && c.tablero_col !== 'finalizado') { try { await visitasDB.guardarCliente({ id: c.id, tablero_col: null, tablero_motivo: null }); c.tablero_col = null; c.tablero_motivo = null; } catch (_) { /* da igual */ } } } if (r !== 'pendiente') anotar(d.cliente && d.cliente.id, 'presupuesto', 'El cliente ' + ({ aceptado: 'aceptó', rechazado: 'rechazó', caducado: 'dejó caducar' })[r] + ' el presupuesto de ' + nombreCat(d.categoria)); }
+    if (r === 'aceptado' && d.cliente_id) { const c = agCliente(d.cliente_id); if (c && c.tablero_col && c.tablero_col !== 'finalizado') { try { await visitasDB.guardarCliente({ id: c.id, tablero_col: null, tablero_motivo: null }); c.tablero_col = null; c.tablero_motivo = null; } catch (_) { /* da igual */ } } } if (r !== 'pendiente') anotar(d.cliente && d.cliente.id, 'presupuesto', 'El cliente ' + ({ aceptado: 'aceptó', rechazado: 'rechazó', caducado: 'dejó caducar' })[r] + ' el presupuesto de ' + nombreCatDe(d)); }
   catch (e) { avisar('No se pudo guardar: ' + msgError(e)); }
   V.presuSegBusy = false; render();
 };
@@ -12113,6 +12211,42 @@ A.presuCrearObra = async () => {
   try { const obra = await crearObraDePresupuesto(d); V.presuSegBusy = false; A.verObra(obra.id); }
   catch (e) { V.presuSegBusy = false; avisar('No se pudo crear la obra: ' + msgError(e)); render(); }
 };
+/* ---------- la nota para el cliente (Enzo, 13-11-2026) ----------
+ * «Debería haber una sección al final del presupuesto donde sea capaz de agregar
+ * una nota u observación o lo que sea.» Texto libre (presupuestos.observaciones,
+ * sql/etapa110) que ve el cliente: al final del PDF, bajo el total, y en la
+ * página donde lo acepta. Se escribe al generar o después, desde la ficha. */
+// La nota que se escribe al generar es de ESA visita (o de ese presupuesto sin
+// visita): V.presu sigue vivo al abrir otra, y la nota no debe irse con ella.
+const presuObsContexto = () => (enSuelto() ? 'suelto' : (V.visitaVer && V.visitaVer.visita && V.visitaVer.visita.id) || '');
+const presuObsActual = () => (V.presu && V.presu.obsDe === presuObsContexto() ? String(V.presu.observaciones || '') : '');
+function presuObsHTML(d) {
+  const t = String(d.observaciones || '').trim();
+  return `<div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--l1)">
+    <div class="row" style="justify-content:space-between;align-items:baseline;gap:10px">
+      <span class="lbl" style="font-size:11px">Nota para el cliente</span>
+      <span class="tiny" data-a="presuObsAbrir" style="cursor:pointer;text-decoration:underline;color:var(--verde-o);flex:none">${t ? 'Cambiar' : '+ Añadir una nota'}</span>
+    </div>
+    ${t ? `<div style="font:400 13px/1.5 var(--sans);white-space:pre-wrap;margin-top:6px">${esc(t)}</div>`
+        : '<div class="tiny" style="margin-top:6px">Observaciones, plazos, lo que no incluye… Sale al final del PDF y en la página donde el cliente lo acepta.</div>'}
+  </div>`;
+}
+A.presuObsAbrir = () => {
+  const d = V.presuVer && V.presuVer.datos; if (!d) return;
+  V.sheet = { tipo: 'presuObs', id: d.id, texto: d.observaciones || '', enviado: !!d.enviado_correo_at, firmado: !!d.firmado_at, busy: false }; render();
+};
+A.presuObsGuardar = async () => {
+  const s = V.sheet; if (!s || s.tipo !== 'presuObs' || s.busy) return;
+  const v = V.presuVer; if (!v || !v.datos || v.datos.id !== s.id) return;
+  const t = String(s.texto || '').trim().slice(0, 4000);
+  if (!navigator.onLine) { avisar('Sin conexión: no se ha guardado.'); return; }
+  s.busy = true; render();
+  try {
+    const fila = await visitasDB.seguimientoPresupuesto(s.id, { observaciones: t || null });
+    v.datos.observaciones = fila && fila.observaciones !== undefined ? fila.observaciones : (t || null);
+    V.sheet = null; toast(t ? 'Nota guardada.' : 'Nota quitada.'); render();
+  } catch (e) { s.busy = false; render(); avisar('No se pudo guardar la nota: ' + msgError(e)); }
+};
 // Borrar un presupuesto: con confirmación. Lo normal es que sea una prueba.
 A.presuBorrar = (id) => { const d = V.presuVer && V.presuVer.datos; if (!d || d.id !== id) return; V.sheet = { tipo: 'borrarPresu', id, busy: false }; render(); };
 A.confirmarBorrarPresu = async () => {
@@ -12124,7 +12258,18 @@ A.confirmarBorrarPresu = async () => {
     const r = await visitasDB.borrarPresupuesto(s.id, d && d.id === s.id ? d.tl_quotation_id : null);
     V.sheet = null; V.presuVer = null; V.presuEdit = null;
     V.presuLista.filas = (V.presuLista.filas || []).filter((x) => x.id !== s.id);
-    V.view = 'presupuestos'; render();
+    // Se vuelve a donde se estaba (Enzo, 13-11-2026): si el presupuesto se abrió
+    // desde la ficha del cliente (o de una visita o una cita), allí; si se abrió
+    // desde la lista de presupuestos, a la lista. Los pasos de la pila que sean
+    // este mismo presupuesto (se llegó a él desde otro) se saltan.
+    // Y deja de salir en la ficha del cliente sin esperar a recargar la agenda.
+    ((V.agenda && V.agenda.clientes) || []).forEach((c) => {
+      if (Array.isArray(c.presupuestos)) c.presupuestos = c.presupuestos.filter((x) => x.id !== s.id);
+      (c.visitas || []).forEach((vi) => { if (Array.isArray(vi.presupuestos)) vi.presupuestos = vi.presupuestos.filter((x) => x.id !== s.id); });
+    });
+    V.volverPila = (V.volverPila || []).filter((o) => !(o.view === 'presupuestoVer' && o.id === s.id));
+    V.volverA = V.volverPila[V.volverPila.length - 1] || null;
+    if (V.volverA) A.volverA(); else { V.view = 'presupuestos'; render(); }
     if (r && r.aviso) avisar(r.aviso); else toast(r && r.en_teamleader ? 'Presupuesto borrado, también en Teamleader.' : 'Presupuesto borrado.');
     A.cargarPresupuestos();
   } catch (e) { s.busy = false; avisar('No se pudo borrar: ' + msgError(e)); render(); }
@@ -13473,7 +13618,7 @@ function vAgenda() {
     const pl = V.presuLista;
     if (pl.cargado) {
       pl.filas.filter((p) => !p.tl_quotation_id && p.sync_estado !== 'sincronizado').slice(0, 3).forEach((p) => {
-        tarea('var(--ambar)', 'Presupuesto de ' + esc(nombreCat(p.categoria) || p.categoria).toLowerCase() + (p.cliente && p.cliente.nombre ? ' · ' + esc(p.cliente.nombre) : ''),
+        tarea('var(--ambar)', 'Presupuesto de ' + esc(nombreCatDe(p) || p.categoria).toLowerCase() + (p.cliente && p.cliente.nombre ? ' · ' + esc(p.cliente.nombre) : ''),
           p.sync_estado === 'error' ? 'No se pudo subir a Teamleader' : 'Guardado, sin subir a Teamleader', 'Subir', `data-a="presuAbrir" data-id="${p.id}"`);
       });
     } else if (!pl.cargando) { A.cargarPresupuestos(); }
@@ -13968,7 +14113,7 @@ function vClienteVer() {
       const ob = p.obra_id ? obraById(p.obra_id) : null;
       return `<div class="ag-hito ${sg.k === 'aceptado' ? 'ahora' : 'hecho'}"><div class="card" data-a="presuAbrir" data-id="${p.id}" style="cursor:pointer">
         <div class="row g8"><span class="dot" style="width:8px;height:8px;background:${sg.color}"></span><span class="lbl">Presupuesto · ${esc(sg.txt)}</span></div>
-        <div class="row" style="align-items:baseline;justify-content:space-between;margin-top:7px"><span style="font:600 15px/1.25 var(--sans)">${esc(nombreCat(p.categoria) || p.categoria)}</span><span class="num" style="font-size:16px">${eur(p.total_venta)}</span></div>
+        <div class="row" style="align-items:baseline;justify-content:space-between;margin-top:7px"><span style="font:600 15px/1.25 var(--sans)">${esc(nombreCatDe(p) || p.categoria)}</span><span class="num" style="font-size:16px">${eur(p.total_venta)}</span></div>
         <div class="tiny" style="margin-top:3px">${fechaCorta(p.created_at)}${p.enviado_cliente_at ? ' · enviado al cliente el ' + fechaCorta(p.enviado_cliente_at) : ''}${ob ? ' · obra ' + esc(codigoObra(ob) || ob.titulo) : ''}</div>
       </div></div>`;
     }
@@ -14350,7 +14495,7 @@ function sheet() {
     const tl = d && d.tl_quotation_id;
     return `<div class="sheet"><div>
       <div style="font:600 23px/1.15 var(--cond)">¿Borrar este presupuesto?</div>
-      <div class="sub" style="margin-top:8px">${d ? esc(nombreCat(d.categoria)) + (d.cliente && d.cliente.nombre ? ' · ' + esc(d.cliente.nombre) : '') + (d.visita && d.visita.codigo ? ' · ' + esc(d.visita.codigo) : '') + ' · ' + eur(d.total_venta) : ''}</div>
+      <div class="sub" style="margin-top:8px">${d ? esc(nombreCatDe(d)) + (d.cliente && d.cliente.nombre ? ' · ' + esc(d.cliente.nombre) : '') + (d.visita && d.visita.codigo ? ' · ' + esc(d.visita.codigo) : '') + ' · ' + eur(d.total_venta) : ''}</div>
       <div class="sub" style="margin-top:10px">Se borra con todas sus líneas. <b>No se puede recuperar.</b> La visita y el cliente se quedan.</div>
       ${tl ? '<div class="sub" style="margin-top:8px;color:var(--ambar-o)">Este presupuesto está en Teamleader: <b>se borra también la oferta del CRM</b> y no volverá a importarse.</div>' : ''}
       <div class="row g8" style="margin-top:18px">
@@ -14711,6 +14856,19 @@ function sheet() {
       <button class="btn btn-gris" data-a="cerrarSheet" style="border-radius:99px;margin-top:12px">Cancelar</button>
     </div></div>`;
   }
+  if (s.tipo === 'presuObs') {
+    return `<div class="sheet"><div>
+      <div style="font:600 23px/1.15 var(--cond)">Nota para el cliente</div>
+      <div class="sub" style="margin-top:6px">Sale al final del PDF, debajo del total, y en la página donde el cliente ve y acepta el presupuesto. Déjala vacía para quitarla.</div>
+      ${s.firmado ? '<div class="tiny" style="margin-top:8px;color:var(--ambar-o)">Este presupuesto ya está firmado: lo que escribas ahora no está en el PDF que firmó el cliente.</div>'
+        : s.enviado ? '<div class="tiny" style="margin-top:8px;color:var(--ambar-o)">Ya se envió por correo: el PDF que recibió el cliente no cambia (la página de aceptar sí la enseña). Vuelve a enviárselo si quieres que le llegue.</div>' : ''}
+      <textarea class="inp" data-f="presuObsTxt" rows="6" maxlength="4000" placeholder="Observaciones, plazos, lo que no incluye…" style="margin-top:12px;font-size:14px">${esc(s.texto || '')}</textarea>
+      <div class="row g8" style="margin-top:18px">
+        <button class="btn btn-gris" data-a="cerrarSheet" style="border-radius:99px">Cancelar</button>
+        <button class="btn" data-a="presuObsGuardar" style="font-size:14px" ${s.busy ? 'disabled' : ''}>${s.busy ? 'Guardando…' : 'Guardar'}</button>
+      </div>
+    </div></div>`;
+  }
   if (s.tipo === 'presuTitulo') {
     return `<div class="sheet"><div>
       <div style="font:600 23px/1.15 var(--cond)">Nombre del presupuesto</div>
@@ -14848,7 +15006,7 @@ function sheet() {
     if (s.confirmar) return `<div class="sheet"><div>
       <div style="font:600 23px/1.15 var(--cond)">¿Seguro que quieres enviarlo?</div>
       <div class="sub" style="margin-top:8px">Se manda a <b>${esc(v.para)}</b>${String(v.cc || '').trim() ? ' con copia a ' + esc(v.cc) : ''}${v.idioma !== 'es' ? ', en <b>' + esc(idiomas.nombreIdioma(v.idioma)) + '</b> (PDF y correo)' : ''}:</div>
-      <div style="margin-top:10px">${elegidos.map((p) => `<div class="row" style="justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--l1)"><span style="font:500 14px var(--sans)">${esc(p.titulo || nombreCat(p.categoria))}</span><span class="num">${eur(p.total_venta)}</span></div>`).join('')}</div>
+      <div style="margin-top:10px">${elegidos.map((p) => `<div class="row" style="justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--l1)"><span style="font:500 14px var(--sans)">${esc(p.titulo || nombreCatDe(p))}</span><span class="num">${eur(p.total_venta)}</span></div>`).join('')}</div>
       ${(() => { const t = presuEnviarTextos(s); return (t.asunto && v.idioma !== 'es' ? `<div class="tiny" style="margin-top:10px"><b>Asunto:</b> ${esc(t.asunto)}</div>` : '') + (t.mensaje ? `<div class="tiny" style="margin-top:10px;white-space:pre-wrap">${esc(t.mensaje)}</div>` : '') + (v.idioma !== 'es' && (t.asunto || t.mensaje) ? '<div class="tiny" style="margin-top:4px;opacity:.7">Así va traducido tu mensaje. Si no te convence, vuelve y cámbialo.</div>' : ''); })()}
       <div class="tiny" style="margin-top:10px">Cada presupuesto va con su PDF y un enlace para verlo, aceptarlo y firmarlo. Al firmar, queda aceptado en la app y el PDF firmado llega por correo y al Drive.</div>
       ${s.paso ? `<div class="sub" style="margin-top:12px;color:var(--verde-o)">${esc(s.paso)}</div>` : ''}
@@ -14872,7 +15030,7 @@ function sheet() {
       ${(s.otros || []).length ? `<div class="lbl" style="margin:14px 0 6px">Qué va en el correo</div>
       ${todos.map((p) => `<div class="row g8" data-a="presuEnviarToggle" data-id="${p.id}" style="align-items:center;padding:8px 0;border-bottom:1px solid var(--l1);cursor:${p.id === s.id ? 'default' : 'pointer'}">
         <span class="chip ${s.ids.includes(p.id) ? 'on' : ''}" style="flex:none">${s.ids.includes(p.id) ? '✓' : '+'}</span>
-        <span class="grow" style="font:500 14px var(--sans)">${esc(p.titulo || nombreCat(p.categoria))}</span><span class="num" style="font-size:13px">${eur(p.total_venta)}</span></div>`).join('')}
+        <span class="grow" style="font:500 14px var(--sans)">${esc(p.titulo || nombreCatDe(p))}</span><span class="num" style="font-size:13px">${eur(p.total_venta)}</span></div>`).join('')}
       <div class="tiny" style="margin-top:6px">Marca las opciones que quieras mandar juntas; cada una lleva su PDF y su enlace.</div>` : ''}
       <div class="row g8" style="margin-top:18px">
         <button class="btn btn-gris" data-a="cerrarSheet" style="border-radius:99px">Cancelar</button>
@@ -15422,6 +15580,9 @@ document.addEventListener('click', (e) => {
   if (a === 'elegirObraAbrir') return A.elegirObraAbrir(d.o, +d.i);
   if (a === 'elegirObraOk') return A.elegirObraOk(d.id);
   if (a === 'presuCatDe') return A.presuCatDe(d.cat);
+  if (a === 'presuCatOtro') return A.presuCatOtro();
+  if (a === 'presuObsAbrir') return A.presuObsAbrir();
+  if (a === 'presuObsGuardar') return A.presuObsGuardar();
   if (a === 'fv2DesgloseAplicar') return A.fv2DesgloseAplicar();
   if (a === 'presuProductoNuevoAbrir') return A.presuProductoNuevoAbrir(d.modo);
   if (a === 'presuProductoNuevoFamilia') return A.presuProductoNuevoFamilia(d.f);
@@ -15825,6 +15986,9 @@ document.addEventListener('input', (e) => {
   }
   if (f === 'elegirObraBuscar') { if (V.sheet) { V.sheet.buscar = t.value; const box = document.getElementById('elegir-obras'); if (box) box.innerHTML = elegirObraListaHTML(V.sheet); } return; }
   if (f === 'presuTituloTxt') { if (V.sheet) V.sheet.texto = t.value; return; }
+  if (f === 'presuCatTexto') { if (V.sheet) { V.sheet.texto = t.value; const b = document.querySelector('[data-a="presuCatDe"][data-cat="otro"]'); if (b) b.textContent = 'Guardar como «' + (t.value.trim() || 'Otro') + '»'; } return; }
+  if (f === 'presuObsTxt') { if (V.sheet) V.sheet.texto = t.value; return; }
+  if (f === 'presuObs') { V.presu.observaciones = t.value; V.presu.obsDe = presuObsContexto(); return; }
   if (f === 'moverBuscar') { if (V.sheet) { V.sheet.buscar = t.value; const box = document.getElementById('mover-obras'); if (box) box.innerHTML = moverParteListaHTML(V.sheet); } return; }
   if (f === 'sinCitaOtro') { if (V.sheet) V.sheet.otro = t.value; return; }
   if (f === 'presuExtImporte') { if (V.sheet) V.sheet.importe = t.value; return; }

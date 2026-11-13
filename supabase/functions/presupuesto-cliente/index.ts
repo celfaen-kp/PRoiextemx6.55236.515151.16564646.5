@@ -268,7 +268,7 @@ Deno.serve(async (req) => {
     const ls = (lineas || []).map((l) => ({ descripcion: l.descripcion, detalle_tecnico: l.detalle_tecnico, cantidad: l.cantidad, unidad: l.unidad, precio_tarifa: l.precio_tarifa, dto_linea_pct: l.dto_linea_pct, precio_venta: l.precio_venta, seccion: l.seccion }));
     const fv2 = (lineas || []).map((l) => l.origen_inputs).find((o) => o && o.fv2);
     const idiomaP = idiomaValido(p.idioma_cliente);
-    const tr = await traducirTextos(idiomaP, [tituloCliente(p), ...ls.flatMap((l) => [l.descripcion, l.detalle_tecnico, partesSeccion(l.seccion)[1]]), fv2?.nota, fv2?.condiciones]);
+    const tr = await traducirTextos(idiomaP, [tituloCliente(p), ...ls.flatMap((l) => [l.descripcion, l.detalle_tecnico, partesSeccion(l.seccion)[1]]), fv2?.nota, fv2?.condiciones, p.observaciones, p.categoria_texto]);
     if (idiomaP !== 'es') ls.forEach((l) => { l.descripcion = tr(l.descripcion); if (l.detalle_tecnico) l.detalle_tecnico = tr(l.detalle_tecnico); const [pre, nom] = partesSeccion(l.seccion); if (nom) l.seccion = pre + tr(nom); l.unidad = unidadIdioma(l.unidad, idiomaP); });
     const condiciones = fv2 ? [fv2.nota, fv2.condiciones].filter(Boolean).map(tr).join(' ') : rellena(txt(idiomaP).orientativo, { n: p.validez_dias || 15 });
     const bruto = ls.reduce((a, l) => a + (Number(l.precio_venta) || 0), 0);
@@ -280,7 +280,9 @@ Deno.serve(async (req) => {
     if (rutaPdf) { const { data: su } = await sb.storage.from(BUCKET).createSignedUrl(rutaPdf, 3600); pdf_url = su?.signedUrl || null; }
     return json({
       idioma: idiomaP,
-      presupuesto: { titulo: tr(tituloCliente(p)), categoria: txt(idiomaP)['cat_' + p.categoria] || CATS[p.categoria] || p.categoria, tl_numero: p.tl_numero, enviado_correo_at: p.enviado_correo_at, firmado_at: p.firmado_at, firma_nombre: p.firma_nombre, validez_dias: p.validez_dias },
+      // La nota para el cliente (etapa 110) va aparte de las condiciones; «otro» enseña su tipo escrito o nada.
+      observaciones: limpio(p.observaciones) ? tr(String(p.observaciones).trim()) : null,
+      presupuesto: { titulo: tr(tituloCliente(p)), categoria: p.categoria === 'otro' ? (limpio(p.categoria_texto) ? tr(limpio(p.categoria_texto)) : '') : (txt(idiomaP)['cat_' + p.categoria] || CATS[p.categoria] || p.categoria), tl_numero: p.tl_numero, enviado_correo_at: p.enviado_correo_at, firmado_at: p.firmado_at, firma_nombre: p.firma_nombre, validez_dias: p.validez_dias },
       cliente: p.cliente?.nombre || '', lineas: ls, condiciones, vence: vence(p),
       totales: { bruto: Math.round(bruto * 100) / 100, dto_global_pct: dtoG, base, iva, total: Math.round((base + iva) * 100) / 100 }, pdf_url,
     });
@@ -466,7 +468,7 @@ Deno.serve(async (req) => {
     const tit = tituloEnIdioma(p);
     tarjetas.push(`<div style="border:1.5px solid #e6e5df;border-radius:14px;padding:16px 18px;margin:14px 0">
       <div style="font:700 17px/1.2 Arial,Helvetica,sans-serif">${esc(tit)}</div>
-      <div style="font-size:14px;color:#555;margin-top:6px">${esc(T['cat_' + p.categoria] || CATS[p.categoria] || '')}${p.tl_numero ? ' · ' + T.num + ' ' + esc(p.tl_numero) : ''}</div>
+      <div style="font-size:14px;color:#555;margin-top:6px">${esc(p.categoria === 'otro' ? limpio(p.categoria_texto) : (T['cat_' + p.categoria] || CATS[p.categoria] || ''))}${p.tl_numero ? (p.categoria === 'otro' && !limpio(p.categoria_texto) ? '' : ' · ') + T.num + ' ' + esc(p.tl_numero) : ''}</div>
       <div style="font-size:15px;margin-top:10px">${T.base} <b>${eurI(p.total_venta, idioma)}</b> · ${T.iva} · ${T.total} <b>${eurI(totalIva, idioma)}</b></div>
       ${venceTxt ? `<div style="font-size:13px;color:#777;margin-top:4px">${esc(rellena(T.valido, { f: venceTxt }))}</div>` : ''}
       <a href="${esc(enlace)}" style="display:inline-block;margin-top:14px;background:#206028;color:#fff;text-decoration:none;font-weight:700;padding:12px 18px;border-radius:12px">${T.ver}</a>

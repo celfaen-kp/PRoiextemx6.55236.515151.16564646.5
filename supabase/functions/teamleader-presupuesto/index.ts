@@ -280,7 +280,7 @@ function mismaClave(a: string, b: string) {
   return dif === 0;
 }
 const esUuid = (v: unknown) => /^[0-9a-f-]{36}$/i.test(String(v || ''));
-const CATEGORIAS_TITULO: Record<string, string> = { solar: 'Fotovoltaica', aerotermia: 'Aerotermia', aire_acondicionado: 'Aire acondicionado', electricidad: 'Electricidad' };
+const CATEGORIAS_TITULO: Record<string, string> = { solar: 'Fotovoltaica', aerotermia: 'Aerotermia', aire_acondicionado: 'Aire acondicionado', electricidad: 'Electricidad', otro: 'Otros' };
 /**
  * Las líneas de una oferta de Teamleader, tal cual, como líneas del presupuesto
  * de la app (19-10-2026, Heim Desarrollos): descripción, cantidad, precio,
@@ -928,7 +928,9 @@ Deno.serve(async (req) => {
     const { data: p } = await sb.from('presupuestos').select('id, categoria, cliente_id, visita_id, tl_quotation_id').eq('id', pid).maybeSingle();
     if (!p) return json({ error: 'Ese presupuesto no existe.' }, 404);
     if (!(await clienteDeColaborador(sb, yo, p.cliente_id, p.visita_id))) return json({ error: SOLO_SUS_CLIENTES }, 403);
-    const { error } = await sb.from('presupuestos').update({ categoria: cat, updated_at: new Date().toISOString() }).eq('id', pid);
+    // «Otro» puede llevar su tipo escrito (etapa 110); al pasar a otra categoría se borra.
+    const catTexto = cat === 'otro' ? (limpio(b.categoria_texto).slice(0, 80) || null) : null;
+    const { error } = await sb.from('presupuestos').update({ categoria: cat, categoria_texto: catTexto, updated_at: new Date().toISOString() }).eq('id', pid);
     if (error) return json({ error: 'No se pudo cambiar: ' + error.message }, 500);
     const r: Record<string, unknown> = { ok: true, categoria: cat, antes: p.categoria, movida: false };
     try {
@@ -1002,7 +1004,7 @@ Deno.serve(async (req) => {
 
   // --- el presupuesto ---------------------------------------------------------
   const { data: p } = await sb.from('presupuestos')
-    .select('id, categoria, titulo, cliente_id, visita_id, total_venta, dto_global_pct, tl_quotation_id, validez_dias')
+    .select('id, categoria, categoria_texto, titulo, cliente_id, visita_id, total_venta, dto_global_pct, tl_quotation_id, validez_dias')
     .eq('id', id).maybeSingle();
   if (!p) return json({ error: 'Ese presupuesto no existe.' }, 404);
   if (!(await clienteDeColaborador(sb, yo, p.cliente_id, p.visita_id))) return json({ error: SOLO_SUS_CLIENTES }, 403);
@@ -1145,7 +1147,7 @@ Deno.serve(async (req) => {
       // título del presupuesto ya lleva marca · kWp · batería; en las demás se
       // compone con la categoría y el equipo (la primera línea de «Equipos» o
       // la primera línea). Se quita el nombre del cliente de delante si está.
-      const CATS: Record<string, string> = { solar: 'Fotovoltaica', aerotermia: 'Aerotermia', aire_acondicionado: 'Aire acondicionado', electricidad: 'Electricidad' };
+      const CATS: Record<string, string> = { solar: 'Fotovoltaica', aerotermia: 'Aerotermia', aire_acondicionado: 'Aire acondicionado', electricidad: 'Electricidad', otro: limpio(p.categoria_texto) || 'Otros' };
       let nombreOferta = limpio(p.titulo);
       if (cli?.nombre && nombreOferta.startsWith(cli.nombre + ' · ')) nombreOferta = nombreOferta.slice(cli.nombre.length + 3);
       if (!nombreOferta || /^(Fotovoltaica|Aerotermia|Aire acondicionado|Electricidad|Paneles solares)( · .*)?$/.test(nombreOferta) && !/kWp|kW/.test(nombreOferta)) {

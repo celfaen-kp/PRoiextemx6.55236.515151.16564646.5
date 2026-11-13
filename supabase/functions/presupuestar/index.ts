@@ -465,6 +465,12 @@ Deno.serve(async (req) => {
         const prod = prodsNuevas[String(l.producto_ref || '')] || null;
         const m = lineaManual(l, prod, lookupRec || []);
         if (!prod && !String(l.descripcion || '').trim()) return null;
+        // El coste del catálogo se puede corregir al añadir la línea (13-11-2026):
+        // si viene escrito, manda sobre el que sale del producto.
+        if (prod && l.precio_coste != null && l.precio_coste !== '' && Number.isFinite(Number(l.precio_coste)) && Number(l.precio_coste) >= 0) {
+          m.precio_coste = Math.round(Number(l.precio_coste) * 100) / 100;
+          m.origen_inputs = Object.assign({}, m.origen_inputs || {}, { coste_escrito: m.precio_coste });
+        }
         orden += 1;
         return {
           presupuesto_id: id, orden, seccion: m.seccion || 'Otros', producto_ref: m.producto_ref, descripcion: m.descripcion,
@@ -846,6 +852,10 @@ Deno.serve(async (req) => {
     cliente_id: clienteId,
     titulo,
     categoria,
+    // Etapa 110 (13-11-2026): el tipo escrito a mano cuando la categoría es «otro»
+    // y la nota para el cliente al final del presupuesto.
+    ...(categoria === 'otro' && String(b.categoria_texto || '').trim() ? { categoria_texto: String(b.categoria_texto).trim().slice(0, 80) } : {}),
+    ...(String(b.observaciones || '').trim() ? { observaciones: String(b.observaciones).trim().slice(0, 4000) } : {}),
     conjunto_reglas_id: conjuntoId,
     tarifa_id: tarifaId,
     motor_version: motorVersion,

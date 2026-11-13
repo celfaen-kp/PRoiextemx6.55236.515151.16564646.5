@@ -572,7 +572,7 @@ footer{margin-top:60px;padding-top:20px;border-top:1px solid var(--l1);color:var
   <div class="txt">
     <h4>Presupuesto suelto</h4>
     <div class="paso"><b class="n">1</b><div><b>Para quién</b>: escribe el nombre o <i>Buscar el cliente en la app o en Teamleader</i> (particulares y empresas).</div></div>
-    <div class="paso"><b class="n">2</b><div><b>Qué se presupuesta</b> y <b>cómo</b>: <b>Con el motor</b> (pide cuatro datos: en aire, sistema y por equipo m² y metros; en aerotermia, potencia y circuitos; en fotovoltaica, paneles, inversor, batería…) o <b>Libre, de cero</b>, que empieza vacío y lo montas línea a línea.</div></div>
+    <div class="paso"><b class="n">2</b><div><b>Qué se presupuesta</b> y <b>cómo</b>: <b>Con el motor</b> (pide cuatro datos: en aire, sistema y por equipo m² y metros; en aerotermia, potencia y circuitos; en fotovoltaica, paneles, inversor, batería…) o <b>Libre, de cero</b>, que empieza vacío y lo montas línea a línea. Si no es de ninguno de los cuatro oficios, elige <b>Otro</b>: siempre es libre y puedes escribir de qué es («Cargador de coche», «Reforma»…); eso sale como tipo en la lista y en la cabecera del PDF.</div></div>
     <div class="paso"><b class="n">3</b><div><span class="btn verde">Calcular</span>. Salen las líneas por secciones, los avisos y el total.</div></div>
     <div class="paso"><b class="n">4</b><div>Retoca lo que haga falta (abajo) y <span class="btn verde">Guardar este presupuesto</span>: se guarda con la tarifa de ese día y <b>se sube solo a Teamleader</b>, con su PDF.</div></div>
   </div>
@@ -581,7 +581,8 @@ footer{margin-top:60px;padding-top:20px;border-top:1px solid var(--l1);color:var
 <ul>
   <li><b>Editar</b> cualquier línea: concepto, descripción larga, cantidad, precio, descuento y, para quien ve costes, el coste y el margen. El motor respeta el retoque si vuelves a calcular.</li>
   <li><b>Quitar</b> una línea: queda en una lista abajo, <i>Quitadas de este presupuesto</i>, de donde se recupera.</li>
-  <li><b>Añadir del catálogo</b>: el buscador encuentra por palabras en cualquier orden («arotherm 8») o por referencia. Lo que no exista se crea ahí mismo como producto nuevo y queda en el catálogo para la próxima vez. Los equipos que la tarifa vende <b>por conjunto</b> salen los primeros, con el rótulo «Conjunto»: se buscan por el modelo del conjunto (por ejemplo «MTJU-71(24)N8Q-1») o por cualquiera de sus unidades y, al tocarlos, entran la interior y la exterior de una vez, cada una en su línea y con su precio. Están los Midea 1x1 domésticos (Zenith, Solstice, Breezeless E y consola), los conductos A7 hasta 7,1 kW y los cassettes con su panel.</li>
+  <li><b>Añadir del catálogo</b>: el buscador encuentra por palabras en cualquier orden («arotherm 8») o por referencia. Lo que no exista se crea ahí mismo como producto nuevo y queda en el catálogo para la próxima vez. Los equipos que la tarifa vende <b>por conjunto</b> salen los primeros, con el rótulo «Conjunto»: se buscan por el modelo del conjunto (por ejemplo «MTJU-71(24)N8Q-1») o por cualquiera de sus unidades y, al tocarlos, entran la interior y la exterior de una vez, cada una en su línea y con su precio. Están los Midea 1x1 domésticos (Zenith, Solstice, Breezeless E y consola), los conductos A7 hasta 7,1 kW y los cassettes con su panel. Quien ve costes tiene, en cada resultado, el <b>coste y el margen</b> que saldrán en ese presupuesto.</li>
+  <li><b>Nota para el cliente</b> (opcional), antes de guardar: observaciones, plazos, lo que no incluye… Sale al final del PDF, debajo del total, y en la página donde el cliente lo acepta.</li>
   <li><b>Descuento al pie</b>, en tanto por ciento, y <span class="btn gris">Aplicar</span>.</li>
   <li>Debajo del total, <b>coste, beneficio y margen</b>: lo ven presupuestos y Administración, nunca el cliente.</li>
 </ul>
@@ -601,12 +602,13 @@ footer{margin-top:60px;padding-top:20px;border-top:1px solid var(--l1);color:var
   <div class="txt">
     <h4>La ficha de un presupuesto guardado</h4>
     <ul>
-      <li>El <b>título</b> se cambia tocándolo (✎) y la <b>categoría</b>, tocándola debajo.</li>
+      <li>El <b>título</b> se cambia tocándolo (✎) y la <b>categoría</b>, tocándola debajo (también a <b>Otro</b>, con el tipo que escribas).</li>
+      <li><b>Nota para el cliente</b>, debajo del total: «+ Añadir una nota» o «Cambiar». Sale al final del PDF y en la página de aceptar. Si el presupuesto ya se envió por correo, el PDF que recibió el cliente no cambia: hay que volver a enviárselo.</li>
       <li><b>Cliente</b>: si no tiene, <span class="btn verde">Asignar cliente</span>; si tiene, <span class="btn gris">Copiar para otro cliente</span> hace un presupuesto nuevo con las mismas líneas para otro.</li>
       <li>Las líneas con cantidad, precio y, en las máquinas, su detalle técnico; el total y, debajo, coste y margen.</li>
       <li><b>Idioma del PDF</b>: español, inglés, catalán o alemán. Las líneas se traducen al preparar el PDF.</li>
       <li><span class="btn gris">PDF</span> lo enseña, <span class="btn gris">Descargar PDF</span> lo baja con su nombre. Lleva siempre las condiciones generales y el bloque de aceptación.</li>
-      <li><span class="btn gris">Modificar</span>: cambia concepto, descripción larga, cantidad, precio, descuento por línea, coste o margen; quita líneas o añade otras del catálogo o a mano. Si el presupuesto está en Teamleader, la oferta de allí se actualiza.</li>
+      <li><span class="btn gris">Modificar</span>: cambia concepto, descripción larga, cantidad, precio, descuento por línea, coste o margen; quita líneas o añade otras del catálogo o a mano. Una línea añadida del catálogo enseña desde el primer momento su coste y su margen, y se pueden corregir ahí mismo sin guardar antes. Si el presupuesto está en Teamleader, la oferta de allí se actualiza.</li>
       <li><span class="btn gris">Lista de compra</span> (qué habría que pedir) y <span class="btn gris">Abrir aparte</span>, para tenerlo en otra ventana y comparar dos.</li>
     </ul>
     <div class="nota ok">Los precios salen de la tarifa cargada. Un presupuesto guardado se queda con los precios del día en que se hizo, aunque después cambie la tarifa.</div>
@@ -654,7 +656,7 @@ footer{margin-top:60px;padding-top:20px;border-top:1px solid var(--l1);color:var
   </div>
 </div>
 <div class="nota">Un presupuesto enviado vale <b>15 días</b>. Dos días laborables antes de que venza os llega un aviso a presupuestos y Administración. Al cliente no se le avisa solo: en la ficha están <b>Avisar al cliente de que vence</b> (un correo con la fecha y el enlace para aceptar) y <b>Prorrogar 15 días</b>.</div>
-<p><b>Borrar presupuesto</b>, al final de la ficha, lo borra con sus líneas y, si estaba en Teamleader, borra también la oferta de allí. No se puede recuperar.</p>
+<p><b>Borrar presupuesto</b>, al final de la ficha, lo borra con sus líneas y, si estaba en Teamleader, borra también la oferta de allí. No se puede recuperar. Al borrarlo se vuelve a donde se estaba: a la ficha del cliente si se abrió desde ella, o a la lista de presupuestos.</p>
 
 <h3 id="pres-facturas">Facturas</h3>
 <p>Las facturas se <b>componen en la app</b> y las <b>emite Teamleader</b>, que es quien les pone el número. En la pestaña <b>Facturas</b> están todas, las hechas desde la app y las hechas en Teamleader, de todas las empresas; se ponen al día solas cada media hora y con <span class="btn gris">↻</span>.</p>
@@ -899,7 +901,7 @@ footer{margin-top:60px;padding-top:20px;border-top:1px solid var(--l1);color:var
   <tr><td>Un cliente no está en la hoja de clientes</td><td>En su ficha, <b>Apuntarlo en la hoja</b>. Los que se crean desde la app van solos.</td></tr>
 </table>
 
-<footer>Manual de la app Sysefen · al día con la versión 32.2 (13-11-2026) · las pantallas son de ejemplo, con datos inventados · se regenera con <code>herramientas/manual/capturar.py</code></footer>
+<footer>Manual de la app Sysefen · al día con la versión 32.3 (13-11-2026) · las pantallas son de ejemplo, con datos inventados · se regenera con <code>herramientas/manual/capturar.py</code></footer>
 </main>
 </div>
 </body>
