@@ -17,6 +17,9 @@ CÓMO:
 USO:
   python3 herramientas/manual/capturar.py            todas
   python3 herramientas/manual/capturar.py jefe-hoy   solo esa (o varias)
+  python3 herramientas/manual/capturar.py --oscuro --a=/tmp/oscuro
+      todas con el tema oscuro, en otra carpeta: para repasar que se lee todo
+      (las del manual son en claro). --sufijo=-oscuro añade eso al nombre.
 """
 import os, re, subprocess, sys, json, time, socket
 
@@ -61,8 +64,16 @@ if !done { print("fallo: tiempo") }
 '''
 
 
-def pagina_prueba():
+def pagina_prueba(oscuro=False):
     s = open(os.path.join(RAIZ, 'index.html'), encoding='utf-8').read()
+    # El tema se fuerza aquí, sin tocar las escenas ni depender de lo que el
+    # navegador de las capturas tenga guardado de otra pasada.
+    tema = 'oscuro' if oscuro else 'claro'
+    for viejo, nuevo in (("var t = localStorage.getItem('ch_tema');", "var t = '%s';" % tema),
+                         ("const temaPref = () => {", "const temaPref = () => { return '%s';" % tema)):
+        if viejo not in s:
+            sys.exit('capturar.py: no encuentro en index.html: ' + viejo)
+        s = s.replace(viejo, nuevo, 1)
     i = s.rfind('</script>')
     gancho = """
 window.__m = { S, V, A, render, hojaHTML: () => sheet(), agNuevoCliente, agNuevaCita, limpiarBorradorVisita, pdfDeImpresion,
@@ -89,9 +100,12 @@ def puerto_libre(p):
 
 def main():
     pedidas = [a for a in sys.argv[1:] if not a.startswith('--')]
-    os.makedirs(IMG, exist_ok=True)
+    oscuro = '--oscuro' in sys.argv
+    destino = next((a[4:] for a in sys.argv[1:] if a.startswith('--a=')), IMG)
+    sufijo = next((a[9:] for a in sys.argv[1:] if a.startswith('--sufijo=')), '')
+    os.makedirs(destino, exist_ok=True)
     prueba = os.path.join(RAIZ, 'zz-manual.html')
-    open(prueba, 'w', encoding='utf-8').write(pagina_prueba())
+    open(prueba, 'w', encoding='utf-8').write(pagina_prueba(oscuro))
     swift = os.path.join(AQUI, 'snap.swift')
     open(swift, 'w').write(SNAP)
     # compilar una vez: correr `swift archivo.swift` 40 veces tarda minutos
@@ -110,7 +124,7 @@ def main():
             escenas = [e for e in escenas if e in pedidas]
         mal = []
         for e in escenas:
-            out = os.path.join(IMG, e + '.png')
+            out = os.path.join(destino, e + sufijo + '.png')
             ancho, alto, escala = TAMANOS.get(e, (ANCHO, ALTO, ESCALA))
             r = subprocess.run([bin_, f'http://localhost:{PUERTO}/zz-manual.html', out, e, str(ancho), str(alto), str(escala)],
                                capture_output=True, text=True, timeout=40)
@@ -118,7 +132,7 @@ def main():
             print(('  ✓ ' if ok else '  ✗ ') + e + ('' if ok else '  ' + (r.stdout + r.stderr).strip()[:200]))
             if not ok:
                 mal.append(e)
-        print(f'\n{len(escenas) - len(mal)} capturas en manual/img/' + (f' · {len(mal)} fallaron: {", ".join(mal)}' if mal else ''))
+        print(f'\n{len(escenas) - len(mal)} capturas en ' + (destino if destino != IMG else 'manual/img/') + (f' · {len(mal)} fallaron: {", ".join(mal)}' if mal else ''))
     finally:
         if servidor:
             servidor.terminate()

@@ -55,7 +55,7 @@ function campoHTML(c, valor, tocado) {
       <div class="chip ${si ? 'on' : ''}" data-a="vfBool" data-k="${k}" data-v="1"
         style="cursor:pointer;${si ? 'background:var(--verde-c);color:#fff' : ''}">Sí</div>
       <div class="chip ${no ? 'on' : ''}" data-a="vfBool" data-k="${k}" data-v="0"
-        style="cursor:pointer;${no ? 'background:rgba(20,23,15,.14)' : ''}">No</div>
+        style="cursor:pointer;${no ? 'background:rgba(var(--tinta-rgb),.14)' : ''}">No</div>
     </div>`;
 
   } else if (c.tipo === 'opcion') {
@@ -166,7 +166,7 @@ export function resumenHTML(esquema, datos) {
     if (!filas.length) return '';
     return `<div style="margin-top:18px">
       <div class="lbl">${esc(sec.titulo)}</div>
-      ${filas.map(([c, v]) => `<div class="row" style="align-items:flex-start;gap:10px;padding:6px 0;border-bottom:1px solid rgba(20,23,15,.07)">
+      ${filas.map(([c, v]) => `<div class="row" style="align-items:flex-start;gap:10px;padding:6px 0;border-bottom:1px solid var(--l1)">
         <div class="grow tiny" style="opacity:.6">${esc(c.etiqueta)}</div>
         <div style="font:500 14px/1.35 var(--sans);text-align:right;white-space:pre-line">${esc(v)}</div>
       </div>`).join('')}

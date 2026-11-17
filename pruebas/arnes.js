@@ -22,13 +22,15 @@ globalThis.localStorage = {
 globalThis.sessionStorage = globalThis.localStorage;
 
 function nodo() {
+  var at = {};   // atributos de verdad: el tema se pone con data-tema en <html>
   return {
+    getAttribute: function (k) { return k in at ? at[k] : null; },
     innerHTML: '', value: '', style: {}, dataset: {}, scrollTop: 0,
     classList: { add: function () {}, remove: function () {}, toggle: function () {}, contains: function () { return false; } },
     appendChild: function () {}, addEventListener: function () {}, removeEventListener: function () {},
     querySelector: function () { return nodo(); }, querySelectorAll: function () { return []; },
     getBoundingClientRect: function () { return { top: 0, bottom: 0, left: 0, right: 0, width: 0, height: 0 }; },
-    setAttribute: function () {}, removeAttribute: function () {}, focus: function () {}, click: function () {},
+    setAttribute: function (k, x) { at[k] = String(x); }, removeAttribute: function (k) { delete at[k]; }, focus: function () {}, click: function () {},
     closest: function () { return null; }, scrollIntoView: function () {}, insertAdjacentHTML: function () {}, remove: function () {},
   };
 }

@@ -104,6 +104,7 @@ footer{margin-top:60px;padding-top:20px;border-top:1px solid var(--l1);color:var
   <a href="#op-hoy-obra">Tu obra de hoy y el parte</a>
   <a href="#op-obras">Obras y horas</a>
   <a href="#op-perfil">Perfil</a>
+  <a href="#aspecto">Claro u oscuro</a>
   <h4>Jefe de obra</h4>
   <a class="rol" href="#jefe">Tu día a día</a>
   <a href="#jefe-obras">Obras</a>
@@ -249,9 +250,16 @@ footer{margin-top:60px;padding-top:20px;border-top:1px solid var(--l1);color:var
 
 <h3 id="op-perfil">Perfil</h3>
 <div class="dos">
-  <figure><img src="img/op-perfil.png" alt="Perfil del operario"><figcaption><b>Perfil.</b> Cambiar tu PIN, activar o quitar la ubicación al fichar y el aviso de la tarde, e instalar la app. Abajo, la versión.</figcaption></figure>
-  <figure><img src="img/op-menu.png" alt="Menú del usuario"><figcaption><b>Tu foto, arriba a la derecha.</b> Cambiar tu foto (o un emoji) y <b>Salir</b>.</figcaption></figure>
+  <figure><img src="img/op-perfil.png" alt="Perfil del operario"><figcaption><b>Perfil.</b> Cambiar tu PIN, elegir el aspecto (claro u oscuro), activar o quitar la ubicación al fichar y el aviso de la tarde, e instalar la app. Abajo, la versión.</figcaption></figure>
+  <figure><img src="img/op-menu.png" alt="Menú del usuario"><figcaption><b>Tu foto, arriba a la derecha.</b> Cambiar tu foto (o un emoji), el aspecto y <b>Salir</b>.</figcaption></figure>
 </div>
+
+<h3 id="aspecto">Claro u oscuro</h3>
+<div class="dos">
+  <figure><img src="img/op-hoy-plan.png" alt="La app en claro"><figcaption><b>Claro.</b> Como ha sido siempre, y lo que sale si no tocas nada.</figcaption></figure>
+  <figure><img src="img/op-hoy-plan-oscuro.png" alt="La app en oscuro"><figcaption><b>Oscuro.</b> Lo mismo, con el fondo negro: cansa menos de noche o en un sitio con poca luz.</figcaption></figure>
+</div>
+<div class="nota">Se elige en <b>Perfil → Aspecto</b> (o tocando tu foto): <b>Claro</b>, <b>Oscuro</b> o <b>Automático</b>, que sigue lo que tenga puesto el móvil o el ordenador en cada momento. Vale para todos los tipos de usuario y <b>es de cada uno</b>: no cambia el de los demás, y lo verás igual en tus otros aparatos. Los PDF (partes, presupuestos, planillas), los correos y lo que ve el cliente no cambian: salen siempre en claro.</div>
 
 <!-- ============================================================ JEFE -->
 <h2 id="jefe"><span class="quien jefe">Jefe de obra</span> Tu día a día</h2>
@@ -420,7 +428,7 @@ footer{margin-top:60px;padding-top:20px;border-top:1px solid var(--l1);color:var
 </div>
 <div class="nota">Las horas se imputan en tramos de 15 minutos y solo hasta lo que se fichó. Si alguien echó horas sin fichar, primero corrige el fichaje (Administración) y después imputa.</div>
 <div class="dos">
-  <figure><img src="img/jefe-ajustes.png" alt="Ajustes del jefe"><figcaption><b>Ajustes.</b> PIN, ubicación al fichar, aviso de la tarde e instalar.</figcaption></figure>
+  <figure><img src="img/jefe-ajustes.png" alt="Ajustes del jefe"><figcaption><b>Ajustes.</b> PIN, <a href="#aspecto">aspecto claro u oscuro</a>, ubicación al fichar, aviso de la tarde e instalar.</figcaption></figure>
 </div>
 
 <!-- ============================================================ PRESUPUESTOS -->
@@ -941,7 +949,7 @@ footer{margin-top:60px;padding-top:20px;border-top:1px solid var(--l1);color:var
   <tr><td>Un cliente no está en la hoja de clientes</td><td>En su ficha, <b>Apuntarlo en la hoja</b>. Los que se crean desde la app van solos.</td></tr>
 </table>
 
-<footer>Manual de la app Sysefen · al día con la versión 32.7 (17-11-2026) · las pantallas son de ejemplo, con datos inventados · se regenera con <code>herramientas/manual/capturar.py</code></footer>
+<footer>Manual de la app Sysefen · al día con la versión 32.8 (17-11-2026) · las pantallas son de ejemplo, con datos inventados · se regenera con <code>herramientas/manual/capturar.py</code></footer>
 </main>
 </div>
 </body>

@@ -753,6 +753,14 @@ export async function guardarMiAvatar(emoji, foto) {
   return true;
 }
 
+// El tema (claro, oscuro o automático) que elige cada uno: sql/etapa113. Igual
+// que el avatar, por función del servidor y solo en la fila propia.
+export async function guardarMiTema(tema) {
+  const { error } = await supabase.rpc('guardar_mi_tema', { p_tema: tema });
+  if (error) throw new Error(error.message);
+  return true;
+}
+
 // Administración puede cambiar el de cualquiera (su política ya lo permite).
 export async function guardarAvatarDe(empleadoId, emoji, foto) {
   return unwrap(await supabase.from('empleados')

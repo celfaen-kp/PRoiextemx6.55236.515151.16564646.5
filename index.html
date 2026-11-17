@@ -14,15 +14,55 @@
 <link rel="icon" href="icon-192.png?v=2">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Semi+Condensed:wght@600;700&family=IBM+Plex+Mono:wght@400;500&family=Dancing+Script:wght@500;700&display=swap" rel="stylesheet">
+<script>
+/* El tema, antes de pintar nada, para que al abrir no haya un destello en claro.
+   'ch_tema' es lo último que eligió quien usó este aparato (claro, oscuro o auto). */
+(function () { try { var t = localStorage.getItem('ch_tema'); if (t === 'auto') t = matchMedia('(prefers-color-scheme: dark)').matches ? 'oscuro' : 'claro'; if (t === 'oscuro') document.documentElement.setAttribute('data-tema', 'oscuro'); } catch (e) {} })();
+</script>
 <style>
-:root{
-  --tinta:#14170f; --papel:#f5f4ef; --blanco:#fff;
+/* Tema (V32.8). Los colores van por variable. El claro es el de siempre; el
+   oscuro los redefine más abajo, en html[data-tema="oscuro"]. Lo que es un
+   documento (el PDF, la vista previa del parte, la caja de la firma) lleva
+   SIEMPRE los claros: por eso este bloque vale también para esos sitios.
+   --tinta es el color del texto; --tinta-f, el fondo de los botones negros;
+   --tinta-s, el de las cabeceras y tarjetas negras; --alza, lo que resalta
+   sobre una pista gris (la pestaña elegida). */
+:root,#print,.docu,.firma-box,.claro{
+  color-scheme:light;
+  --tinta:#14170f; --tinta-rgb:20,23,15; --tinta-f:#14170f; --tinta-s:#14170f;
+  --papel:#f5f4ef; --blanco:#fff; --alza:#fff; --tb-base:#f6f6f1;
   --verde:#206028; --verde-c:#3d8f4a; --verde-o:#164a1d;
   --ambar:#c98a24; --ambar-o:#7d5410;
-  --rojo:#a8402a; --rojo-cl:#f7eae6;
+  --rojo:#a8402a; --rojo-cl:#f7eae6; --rojo-cl2:#fde6e3; --rojo-o:#8f2a20; --rojo-v:#b8372b;
+  --verde-cl:#e3efe5; --verde-cl2:#eaf3ec; --ambar-cl:#f8efdc; --ambar-cl2:#fdf3dc; --ambar-cl3:#f6eddb; --ambar-t:#8a5a0a;
+  --lila:#5b3f99; --lila-cl:#f1ecf9; --teal:#1a857f; --teal-cl:#e2f3f1; --teal-cl2:#e2f5f1;
+  --azul:#2c4f70; --azul-cl:#e6ecf2; --gris-cl:#eeece5;
+  --aus-vac:#8a5a00; --aus-fes:#1e5b2a; --aus-baja:#8a2f1c; --aus-per:#3b3a6b; --no-resp:#7a2e1f;
+  --g-este:#206028; --g-antes:#4f7fc4;
   --l1:rgba(20,23,15,.07); --l2:rgba(20,23,15,.14);
   --t2:rgba(20,23,15,.56); --t3:rgba(20,23,15,.42);
   --sh:0 2px 8px rgba(20,23,15,.06);
+  --nav:rgba(252,251,249,.97); --pie:rgba(247,246,243,.96);
+}
+#print,.docu,.firma-box,.claro{color:var(--tinta)}
+html[data-tema="oscuro"]{
+  color-scheme:dark;
+  --tinta:#ecebe4; --tinta-rgb:236,235,228; --tinta-f:#4b5341; --tinta-s:#262b20;
+  --papel:#121410; --blanco:#1d2119; --alza:#3d4435; --tb-base:#191c16;
+  --verde:#3d8f4a; --verde-c:#4fa35c; --verde-o:#9fd8ab;
+  --ambar:#c98a24; --ambar-o:#e3b563;
+  --rojo:#cf5a41; --rojo-cl:#3a211b; --rojo-cl2:#3d1f1b; --rojo-o:#f09a8a; --rojo-v:#ef8672;
+  --verde-cl:#1f3323; --verde-cl2:#1c2e20; --ambar-cl:#3a2e16; --ambar-cl2:#3a2e16; --ambar-cl3:#352a15; --ambar-t:#e3b563;
+  --lila:#b9a3ea; --lila-cl:#2a2440; --teal:#5cc4bb; --teal-cl:#17322f; --teal-cl2:#17322f;
+  --azul:#9cc0e3; --azul-cl:#1f2c3a; --gris-cl:#2c3026;
+  --aus-vac:#e6b65c; --aus-fes:#8fd19a; --aus-baja:#f09a8a; --aus-per:#b3b1ee; --no-resp:#e08a76;
+  --g-este:#4fa35c; --g-antes:#5f8ed6;
+  --l1:rgba(236,235,228,.09); --l2:rgba(236,235,228,.17);
+  --t2:rgba(236,235,228,.64); --t3:rgba(236,235,228,.46);
+  --sh:0 2px 8px rgba(0,0,0,.35);
+  --nav:rgba(22,25,19,.97); --pie:rgba(22,25,19,.96);
+}
+:root{
   --safe-t:env(safe-area-inset-top,0px); --safe-b:env(safe-area-inset-bottom,0px);
   --sans:'Barlow',system-ui,-apple-system,sans-serif;
   --cond:'Barlow Semi Condensed','Barlow',system-ui,sans-serif;
@@ -34,7 +74,7 @@ html,body{margin:0;height:100%;overflow:hidden}
 body{font-family:var(--sans);background:var(--papel);color:var(--tinta);-webkit-font-smoothing:antialiased;font-size:16px}
 button,input,textarea,select{font-family:inherit;font-size:16px;color:inherit;background:none;border:none;outline:none}
 textarea{resize:none}
-::placeholder{color:rgba(20,23,15,.3)}
+::placeholder{color:rgba(var(--tinta-rgb),.3)}
 a{color:var(--verde-o);text-decoration:none}
 a:hover{color:var(--tinta)}
 #app{height:100%;display:flex;flex-direction:column;overflow:hidden}
@@ -43,11 +83,11 @@ a:hover{color:var(--tinta)}
 .pb-nav{padding-bottom:calc(96px + var(--safe-b))}
 
 .mono{font-family:var(--mono)}
-.lbl{font:400 10px/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:rgba(20,23,15,.45)}
+.lbl{font:400 10px/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:rgba(var(--tinta-rgb),.45)}
 /* Ficha de visita (visitas-form.js): un campo = etiqueta + control + ayuda, con aire entre ellos */
 .campo{margin-top:20px}
 .campo:first-of-type{margin-top:14px}
-.campo>.lbl{font-size:11px;line-height:1.3;margin-bottom:9px;color:rgba(20,23,15,.6)}
+.campo>.lbl{font-size:11px;line-height:1.3;margin-bottom:9px;color:rgba(var(--tinta-rgb),.6)}
 .campo>.tiny{font:400 12px/1.4 var(--sans);color:var(--t3);margin-top:7px}
 .campo .row.g8{gap:9px}
 .campo .chip{padding:11px 15px;font-size:14px}
@@ -62,7 +102,7 @@ a:hover{color:var(--tinta)}
 
 .card{background:var(--blanco);border-radius:18px;padding:15px;box-shadow:var(--sh)}
 /* Tarjeta marcable (categorías de la visita): elegida = borde y fondo verdes, y el tick en un círculo verde. */
-.card.elegida{background:#eaf3ec;box-shadow:var(--sh),inset 0 0 0 2px var(--verde)}
+.card.elegida{background:var(--verde-cl2);box-shadow:var(--sh),inset 0 0 0 2px var(--verde)}
 .tick{width:30px;height:30px;border-radius:50%;flex:none;align-self:center;display:flex;align-items:center;justify-content:center;margin-left:10px}
 .tick.no{background:var(--l1)}
 .tick.si{background:var(--verde)}
@@ -72,32 +112,32 @@ a:hover{color:var(--tinta)}
 .grow{flex:1;min-width:0}
 .ell{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 
-.btn{display:block;width:100%;text-align:center;font:700 17px/1 var(--cond);letter-spacing:.06em;text-transform:uppercase;padding:18px;border-radius:99px;cursor:pointer;background:var(--tinta);color:#fff}
+.btn{display:block;width:100%;text-align:center;font:700 17px/1 var(--cond);letter-spacing:.06em;text-transform:uppercase;padding:18px;border-radius:99px;cursor:pointer;background:var(--tinta-f);color:#fff}
 .btn:active{transform:scale(.985)}
-.btn[disabled]{background:rgba(20,23,15,.11);color:rgba(20,23,15,.4)}
+.btn[disabled]{background:rgba(var(--tinta-rgb),.11);color:rgba(var(--tinta-rgb),.4)}
 .btn-verde{background:var(--verde)}
-.btn-enviar{font-size:21px;padding:22px 18px;background:linear-gradient(180deg,#2a7a34,var(--verde-o,#206028));box-shadow:0 6px 18px rgba(32,96,40,.35);border:2px solid #fff;display:flex;align-items:center;justify-content:center;gap:12px}
+.btn-enviar{font-size:21px;padding:22px 18px;background:linear-gradient(180deg,#2a7a34,#164a1d);box-shadow:0 6px 18px rgba(32,96,40,.35);border:2px solid #fff;display:flex;align-items:center;justify-content:center;gap:12px}
 .btn-enviar:active{transform:scale(.985)}
 .btn-enviar svg{width:26px;height:26px;flex:none}
 .btn-reenviar{display:inline-flex;align-items:center;gap:8px;margin-top:10px;padding:11px 16px;border-radius:99px;background:var(--verde);color:#fff;font:700 14px var(--sans);cursor:pointer}
 .btn-reenviar svg{width:18px;height:18px}
 .btn-rojo{background:var(--rojo)}
-.btn-gris{background:rgba(20,23,15,.06);color:var(--tinta);font-weight:600;font-family:var(--sans);font-size:14px;letter-spacing:0;text-transform:none}
+.btn-gris{background:rgba(var(--tinta-rgb),.06);color:var(--tinta);font-weight:600;font-family:var(--sans);font-size:14px;letter-spacing:0;text-transform:none}
 /* Cuatro botones en una tarjeta: en una fila no caben («COMPARTIR» se salía
    del óvalo). En rejilla de dos columnas respiran, y en pantallas anchas
    vuelven a ir en fila. */
 .botonera{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px}
 .botonera .pill{min-width:0;overflow:hidden;text-overflow:ellipsis}
-.pill{font:600 11px/1 var(--mono);letter-spacing:.07em;text-transform:uppercase;padding:10px 12px;border-radius:99px;cursor:pointer;background:rgba(20,23,15,.06);color:var(--tinta);border:none;white-space:nowrap}
+.pill{font:600 11px/1 var(--mono);letter-spacing:.07em;text-transform:uppercase;padding:10px 12px;border-radius:99px;cursor:pointer;background:rgba(var(--tinta-rgb),.06);color:var(--tinta);border:none;white-space:nowrap}
 .pill-verde{background:var(--verde);color:#fff}
 .pill-rojo{background:var(--rojo-cl);color:var(--rojo)}
-.chip{font:500 13px/1 var(--sans);padding:10px 13px;border-radius:99px;cursor:pointer;background:#fff;color:var(--t2);border:1px solid var(--l2)}
-.chip.on{background:var(--tinta);color:#fff;border-color:var(--tinta)}
-.chip.sel{background:var(--tinta);color:#fff;border-color:var(--tinta)} /* el elegido en el presupuesto suelto */
+.chip{font:500 13px/1 var(--sans);padding:10px 13px;border-radius:99px;cursor:pointer;background:var(--blanco);color:var(--t2);border:1px solid var(--l2)}
+.chip.on{background:var(--tinta-f);color:#fff;border-color:var(--tinta-f)}
+.chip.sel{background:var(--tinta-f);color:#fff;border-color:var(--tinta-f)} /* el elegido en el presupuesto suelto */
 /* El camino del cliente: contacto → cita → visita → presupuesto → enviado → respuesta → obra */
 .camino{display:flex;gap:4px;align-items:flex-start}
 .camino .p{flex:1;min-width:0}
-.camino .p i{display:block;height:5px;border-radius:99px;background:rgba(20,23,15,.1)}
+.camino .p i{display:block;height:5px;border-radius:99px;background:rgba(var(--tinta-rgb),.1)}
 .camino .p.hecho i{background:var(--verde)}
 .camino .p.ahora i{background:var(--ambar)}
 .camino .p.saltado i{background:rgba(61,143,74,.35)}
@@ -117,7 +157,7 @@ a:hover{color:var(--tinta)}
 .chip.alerta{background:var(--rojo);color:#fff;border-color:var(--rojo)}
 .chip.ok{background:var(--verde);color:#fff;border-color:var(--verde)}
 .wrap{display:flex;flex-wrap:wrap;gap:7px}
-.inp{width:100%;background:#fff;border:1px solid var(--l2);border-radius:14px;padding:14px}
+.inp{width:100%;background:var(--blanco);border:1px solid var(--l2);border-radius:14px;padding:14px}
 .inp-lg{font:600 22px var(--cond)}
 .dot{width:9px;height:9px;border-radius:99px;flex:none}
 .badge{font:600 9px/1 var(--mono);letter-spacing:.08em;text-transform:uppercase;padding:6px 8px;border-radius:99px;flex:none}
@@ -126,11 +166,11 @@ a:hover{color:var(--tinta)}
 .sw{width:44px;height:26px;border-radius:99px;flex:none;padding:3px;display:flex;transition:.15s}
 .sw i{width:20px;height:20px;border-radius:99px;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.2)}
 .hr{height:1px;background:var(--l2);margin:14px 0}
-.stat{flex:1;background:#fff;border-radius:18px;padding:14px;box-shadow:var(--sh)}
+.stat{flex:1;background:var(--blanco);border-radius:18px;padding:14px;box-shadow:var(--sh)}
 .stat b{display:block;font:600 26px/1 var(--cond);margin-top:8px}
 
-.hdr{flex:none;background:#fff;border-bottom:1px solid var(--l1);padding:calc(14px + var(--safe-t)) 20px 14px}
-.hdr-dark{flex:none;background:var(--tinta);color:#fff;padding:calc(14px + var(--safe-t)) 20px 18px}
+.hdr{flex:none;background:var(--blanco);border-bottom:1px solid var(--l1);padding:calc(14px + var(--safe-t)) 20px 14px}
+.hdr-dark{flex:none;background:var(--tinta-s);color:#fff;padding:calc(14px + var(--safe-t)) 20px 18px}
 /* Volver / cancelar / cerrar. Eran textos de 13px casi sin margen: con el
    pulgar costaba acertarles. Ahora todos tienen 44px de alto real de toque
    (el mínimo cómodo en móvil), aunque el texto siga siendo discreto. */
@@ -163,8 +203,8 @@ a:hover{color:var(--tinta)}
   .scroll::before,.hoja::before{height:76px;margin-bottom:10px}
 }
 
-.nav{flex:none;display:flex;align-items:flex-start;padding:10px 6px calc(6px + var(--safe-b));background:rgba(252,251,249,.97);border-top:1px solid rgba(20,23,15,.08);backdrop-filter:blur(12px)}
-.nav div{flex:1;display:flex;flex-direction:column;align-items:center;gap:6px;cursor:pointer;padding:3px 0;color:rgba(20,23,15,.32)}
+.nav{flex:none;display:flex;align-items:flex-start;padding:10px 6px calc(6px + var(--safe-b));background:var(--nav);border-top:1px solid rgba(var(--tinta-rgb),.08);backdrop-filter:blur(12px)}
+.nav div{flex:1;display:flex;flex-direction:column;align-items:center;gap:6px;cursor:pointer;padding:3px 0;color:rgba(var(--tinta-rgb),.32)}
 .nav div.on{color:var(--tinta)}
 .nav i{width:20px;height:20px;background:currentColor;display:block}
 .nav span{font:500 10px/1 var(--sans)}
@@ -182,39 +222,39 @@ a:hover{color:var(--tinta)}
 .vista-pdf-barra .btn-gris{background:rgba(255,255,255,.16);color:#fff}
 .vista-pdf-hojas{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:14px;padding-bottom:calc(14px + var(--safe-b))}
 .vista-pdf-hojas img{display:block;width:100%;max-width:820px;margin:0 auto 12px;background:#fff;box-shadow:0 2px 10px rgba(0,0,0,.35)}
-.sheet>div{width:100%;background:#fff;border-radius:26px;padding:24px 22px 22px;animation:up .22s cubic-bezier(.2,.9,.3,1);max-height:calc(100vh - 40px - var(--safe-b) - var(--safe-t));overflow-y:auto;-webkit-overflow-scrolling:touch}
+.sheet>div{width:100%;background:var(--blanco);border-radius:26px;padding:24px 22px 22px;animation:up .22s cubic-bezier(.2,.9,.3,1);max-height:calc(100vh - 40px - var(--safe-b) - var(--safe-t));overflow-y:auto;-webkit-overflow-scrolling:touch}
 .lista-obras{margin-top:12px;max-height:46vh;overflow-y:auto;-webkit-overflow-scrolling:touch;border-top:1px solid var(--l1)}
 .lista-obras .fila-obra{display:block;width:100%;text-align:left;padding:13px 4px;border-bottom:1px solid var(--l1);font:500 15px/1.3 var(--sans);color:var(--tinta);background:none;cursor:pointer}
 .lista-obras .fila-obra small{display:block;font:400 12px var(--sans);color:var(--t3);margin-top:2px}
 /* Selector de obra compacto en la imputación de horas (V31.4): dos líneas, nombre y dirección. */
-.sel-obra{display:block;width:100%;text-align:left;padding:9px 12px;border-radius:12px;border:1.5px solid var(--l2);background:#fff;font:500 14px/1.3 var(--sans);color:var(--tinta);cursor:pointer}
+.sel-obra{display:block;width:100%;text-align:left;padding:9px 12px;border-radius:12px;border:1.5px solid var(--l2);background:var(--blanco);font:500 14px/1.3 var(--sans);color:var(--tinta);cursor:pointer}
 .sel-obra small{display:block;font:400 12px/1.3 var(--sans);color:var(--t3);margin-top:1px}
 .sel-obra.vacio{color:var(--t2);border-style:dashed}
 .sel-obra[disabled]{cursor:default;opacity:.7}
 @keyframes fade{from{opacity:0}}
 @keyframes up{from{transform:translateY(18px)}}
-.toast{position:fixed;left:20px;right:20px;top:calc(56px + var(--safe-t));max-width:520px;margin:0 auto;background:var(--tinta);color:#fff;padding:14px 16px;border-radius:14px;font:500 14px/1.4 var(--sans);z-index:70;box-shadow:0 8px 24px rgba(0,0,0,.25);animation:toastIn .2s ease-out}
+.toast{position:fixed;left:20px;right:20px;top:calc(56px + var(--safe-t));max-width:520px;margin:0 auto;background:var(--tinta-f);color:#fff;padding:14px 16px;border-radius:14px;font:500 14px/1.4 var(--sans);z-index:70;box-shadow:0 8px 24px rgba(0,0,0,.25);animation:toastIn .2s ease-out}
 /* Aviso de error: rojo, más grande y con temblor, para que no pase inadvertido
    cuando bloquea una acción (falta la descripción, falta la firma…). */
 .toast.err{background:var(--rojo);font:600 15px/1.35 var(--sans);padding:15px 17px;box-shadow:0 10px 30px rgba(168,64,42,.45);display:flex;gap:10px;align-items:flex-start}
 .toast.err::before{content:'!';flex:none;width:21px;height:21px;border-radius:99px;background:#fff;color:var(--rojo);font:700 14px/21px var(--sans);text-align:center}
 @keyframes toastIn{from{opacity:0;transform:translateY(-10px)}}
-.offline{flex:none;background:var(--ambar);color:var(--tinta);font:500 12px/1 var(--sans);text-align:center;padding:7px}
+.offline{flex:none;background:var(--ambar);color:#14170f;font:500 12px/1 var(--sans);text-align:center;padding:7px}
 
 #firma,#firmaPlan{width:100%;height:190px;display:block;border-radius:10px;touch-action:none}
 .firma-box{background:#fff;border:1.5px solid var(--l2);border-radius:18px;padding:10px;position:relative;box-shadow:var(--sh)}
-.firma-box .ph{position:absolute;left:0;right:0;bottom:44px;text-align:center;pointer-events:none;font:400 13px var(--sans);color:rgba(20,23,15,.3)}
+.firma-box .ph{position:absolute;left:0;right:0;bottom:44px;text-align:center;pointer-events:none;font:400 13px var(--sans);color:rgba(var(--tinta-rgb),.3)}
 .firma-box .linea{position:absolute;left:34px;right:34px;bottom:38px;height:1px;background:var(--l2);pointer-events:none}
 
 .docu{background:#fff;border-radius:8px;padding:20px;box-shadow:0 6px 18px rgba(20,23,15,.08)}
-.docu .fila{display:flex;justify-content:space-between;gap:12px;padding:4px 0;font:400 13px var(--sans);color:rgba(20,23,15,.78)}
+.docu .fila{display:flex;justify-content:space-between;gap:12px;padding:4px 0;font:400 13px var(--sans);color:rgba(var(--tinta-rgb),.78)}
 .docu .fila span{font-family:var(--mono);font-size:12px;white-space:nowrap}
 .docu .tot{display:flex;justify-content:space-between;padding-top:9px;margin-top:7px;border-top:1px solid var(--l2);font:600 14px var(--sans)}
 
 .bar{display:flex;gap:3px;height:34px;align-items:flex-end;margin-top:14px}
 .bar i{flex:1;border-radius:3px 3px 0 0;background:var(--verde-c)}
-.bar i.off{background:rgba(20,23,15,.13)}
-.prog{height:6px;border-radius:99px;background:rgba(20,23,15,.07);margin-top:8px;overflow:hidden}
+.bar i.off{background:rgba(var(--tinta-rgb),.13)}
+.prog{height:6px;border-radius:99px;background:rgba(var(--tinta-rgb),.07);margin-top:8px;overflow:hidden}
 .prog i{display:block;height:6px;border-radius:99px;background:var(--verde-c)}
 
 .pin-pad{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:24px}
@@ -227,9 +267,9 @@ a:hover{color:var(--tinta)}
 .shake{animation:shake .3s}
 @keyframes shake{25%{transform:translateX(-7px)}75%{transform:translateX(7px)}}
 
-.adj{background:#fff;border-radius:14px;padding:12px 13px;box-shadow:var(--sh)}
+.adj{background:var(--blanco);border-radius:14px;padding:12px 13px;box-shadow:var(--sh)}
 .adj .tipo{width:34px;height:34px;border-radius:9px;flex:none;display:flex;align-items:center;justify-content:center;font:600 9px var(--mono)}
-.dash{text-align:center;font:500 13px var(--sans);padding:14px;border-radius:14px;border:1.5px dashed rgba(20,23,15,.22);color:var(--t2);cursor:pointer;flex:1}
+.dash{text-align:center;font:500 13px var(--sans);padding:14px;border-radius:14px;border:1.5px dashed rgba(var(--tinta-rgb),.22);color:var(--t2);cursor:pointer;flex:1}
 
 /* Toma de datos (rol presupuestos) */
 .scroll.sin-marca::before{display:none}
@@ -295,16 +335,16 @@ body.con-captcha #captcha{display:block}
 .pl-grid{display:grid;grid-template-columns:84px repeat(var(--n),minmax(118px,1fr));gap:4px;min-width:max-content}
 .pl-h{font:500 10px/1.2 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--t3);text-align:center;padding:6px 2px;border-radius:10px;cursor:pointer}
 .pl-h b{display:block;font:700 17px/1 var(--cond);color:var(--tinta);margin-top:3px}
-.pl-h.sel{background:var(--tinta);color:rgba(255,255,255,.6)}.pl-h.sel b{color:#fff}
+.pl-h.sel{background:var(--tinta-f);color:rgba(255,255,255,.6)}.pl-h.sel b{color:#fff}
 .pl-h.hoy b{color:var(--verde)}
 .pl-nom{font:600 13px/1.2 var(--sans);padding:8px 4px 0;position:sticky;left:0;background:var(--papel);z-index:1;overflow-wrap:anywhere}
 .pl-nom small{display:block;font:500 10px/1 var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--t3);margin-top:3px}
-.pl-cel{background:#fff;border:1px solid var(--l2);border-radius:10px;min-height:54px;padding:4px;cursor:pointer;display:flex;flex-direction:column;gap:3px}
-.pl-cel.libre{background:rgba(20,23,15,.025);border-style:dashed}
+.pl-cel{background:var(--blanco);border:1px solid var(--l2);border-radius:10px;min-height:54px;padding:4px;cursor:pointer;display:flex;flex-direction:column;gap:3px}
+.pl-cel.libre{background:rgba(var(--tinta-rgb),.025);border-style:dashed}
 .pl-cel.sel{border-color:var(--tinta)}
-.pl-chip{display:block;background:#e3efe5;color:var(--verde-o);border-radius:8px;padding:5px 7px;font:600 11px/1.25 var(--sans);text-align:left;overflow:hidden;cursor:pointer}
+.pl-chip{display:block;background:var(--verde-cl);color:var(--verde-o);border-radius:8px;padding:5px 7px;font:600 11px/1.25 var(--sans);text-align:left;overflow:hidden;cursor:pointer}
 .pl-chip small{display:block;font:400 10px/1.2 var(--sans);color:var(--t2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.pl-chip.plan{background:#f8efdc;color:var(--ambar-o)}
+.pl-chip.plan{background:var(--ambar-cl);color:var(--ambar-o)}
 .pl-mas{font:400 18px/1 var(--sans);color:var(--t3);text-align:center;margin:auto}
 
 /* Tablero de clientes por fases (sql/etapa71): columnas con scroll lateral. */
@@ -319,68 +359,68 @@ body.con-captcha #captcha{display:block}
 .tb-wrap.arrastre{cursor:grabbing;user-select:none}
 .tb-wrap.arrastre .tb-card{pointer-events:none}
 .tb-cols{display:flex;gap:10px;align-items:flex-start;min-width:max-content}
-.tb-col{width:252px;flex:none;background:color-mix(in srgb,var(--col,var(--tinta)) 9%,#f6f6f1);border-radius:16px;padding:10px;border-top:4px solid var(--col,var(--tinta))}
-@supports not (background:color-mix(in srgb,red 9%,white)){.tb-col{background:rgba(20,23,15,.04)}}
+.tb-col{width:252px;flex:none;background:color-mix(in srgb,var(--col,var(--tinta)) 9%,var(--tb-base));border-radius:16px;padding:10px;border-top:4px solid var(--col,var(--tinta))}
+@supports not (background:color-mix(in srgb,red 9%,white)){.tb-col{background:rgba(var(--tinta-rgb),.04)}}
 /* Título de columna grande y en el color de la fase (Enzo, 16-10-2026). */
 .tb-cab{display:flex;justify-content:space-between;align-items:baseline;gap:8px;position:sticky;top:0;z-index:2;background:inherit;margin:-10px -10px 10px;padding:12px 10px 8px;border-radius:16px 16px 0 0}
 .tb-tit{font:600 17px/1.15 var(--cond);color:var(--col,var(--tinta));letter-spacing:.01em}
-.tb-n{display:inline-block;min-width:22px;padding:1px 7px;border-radius:99px;background:var(--col,var(--tinta));color:#fff;font:600 12px/18px var(--mono);text-align:center;vertical-align:2px}
-.tb-card{background:#fff;border-radius:12px;padding:10px 12px;margin-bottom:8px;box-shadow:var(--sh);cursor:pointer;border-left:3px solid var(--l2)}
+.tb-n{display:inline-block;min-width:22px;padding:1px 7px;border-radius:99px;background:var(--col,var(--tinta-f));color:#fff;font:600 12px/18px var(--mono);text-align:center;vertical-align:2px}
+.tb-card{background:var(--blanco);border-radius:12px;padding:10px 12px;margin-bottom:8px;box-shadow:var(--sh);cursor:pointer;border-left:3px solid var(--l2)}
 /* El último cliente abierto, resaltado al volver a la lista o al tablero: para saber dónde se quedó uno. */
-.card.ultimo,.tb-card.ultimo{background:#eaf3ec;box-shadow:var(--sh),inset 0 0 0 2px var(--verde)}
+.card.ultimo,.tb-card.ultimo{background:var(--verde-cl2);box-shadow:var(--sh),inset 0 0 0 2px var(--verde)}
 .tb-card.antes{box-shadow:var(--sh),0 -4px 0 0 var(--verde)}   /* el arrastrado caerá encima de esta */
 .tb-card .n{font:600 14px/1.25 var(--sans)}
 .tb-card .s{font:400 12px/1.35 var(--sans);color:var(--t2);margin-top:3px}
 .tb-card .tb-mas{flex:none;font:700 15px/1 var(--sans);color:var(--t3);padding:0 2px 0 6px;cursor:pointer}
 .tb-card.arrastrando{opacity:.4}
 .tb-col.sobre{outline:2px dashed var(--verde);outline-offset:-2px;background:rgba(61,143,74,.08)}
-.tb-card .a{font:500 12px/1.3 var(--sans);margin-top:6px;padding:5px 8px;border-radius:8px;background:rgba(20,23,15,.05)}
+.tb-card .a{font:500 12px/1.3 var(--sans);margin-top:6px;padding:5px 8px;border-radius:8px;background:rgba(var(--tinta-rgb),.05)}
 .tb-card .a.vence{background:var(--rojo-cl);color:var(--rojo)}
 
 /* Agenda de presupuestos */
 .ag-cita{display:grid;grid-template-columns:58px minmax(0,1fr);gap:12px;align-items:start}
 .ag-hora{font:700 22px/1 var(--cond);letter-spacing:-.01em}
 .ag-hora small{display:block;font:400 10px/1.2 var(--mono);color:var(--t3);margin-top:4px}
-.ag-seg{display:flex;background:rgba(20,23,15,.06);border-radius:99px;padding:3px}
+.ag-seg{display:flex;background:rgba(var(--tinta-rgb),.06);border-radius:99px;padding:3px}
 .ag-seg span{flex:1;text-align:center;font:600 13px/1 var(--sans);padding:10px 0;border-radius:99px;color:var(--t2);cursor:pointer}
-.ag-seg span.on{background:#fff;color:var(--tinta);box-shadow:var(--sh)}
+.ag-seg span.on{background:var(--alza);color:var(--tinta);box-shadow:var(--sh)}
 /* Calendario de la agenda: un mes, con un punto por cita en cada día. */
-.ag-cal{background:#fff;border-radius:18px;padding:12px 10px 10px;box-shadow:var(--sh);margin-bottom:16px}
+.ag-cal{background:var(--blanco);border-radius:18px;padding:12px 10px 10px;box-shadow:var(--sh);margin-bottom:16px}
 .ag-cal-cab{display:flex;align-items:center;justify-content:space-between;padding:0 6px 8px}
 .ag-cal-cab b{font:600 16px var(--sans)}
 .ag-cal-cab span{font:400 22px/1 var(--sans);color:var(--t2);cursor:pointer;padding:2px 10px}
 .ag-cal-g{display:grid;grid-template-columns:repeat(7,1fr);gap:2px;text-align:center}
 .ag-cal-g i{font:500 10px/1 var(--mono);color:var(--t3);font-style:normal;padding:4px 0}
 .ag-cal-d{position:relative;height:40px;border-radius:10px;cursor:pointer;font:500 14px/28px var(--sans);color:var(--tinta)}
-.ag-cal-d.fuera{color:rgba(20,23,15,.22);cursor:default}
+.ag-cal-d.fuera{color:rgba(var(--tinta-rgb),.22);cursor:default}
 .ag-cal-d.hoy{box-shadow:inset 0 0 0 1.5px var(--ambar)}
-.ag-cal-d.sel{background:var(--tinta);color:#fff}
+.ag-cal-d.sel{background:var(--tinta-f);color:#fff}
 .ag-cal-d em{position:absolute;left:0;right:0;bottom:5px;display:flex;justify-content:center;gap:2px;font-style:normal}
 .ag-cal-d em u{width:5px;height:5px;border-radius:99px;background:var(--verde-c);text-decoration:none}
 .ag-cal-d.sel em u{background:#fff}
 .ag-dias{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:6px}
-.ag-dia{background:#fff;border:1px solid var(--l2);border-radius:14px;padding:9px 0 8px;text-align:center;cursor:pointer}
+.ag-dia{background:var(--blanco);border:1px solid var(--l2);border-radius:14px;padding:9px 0 8px;text-align:center;cursor:pointer}
 .ag-dia span{font:500 10px/1 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--t3)}
 .ag-dia b{display:block;font:700 20px/1 var(--cond);margin-top:5px}
 .ag-dia small{display:block;margin:6px auto 0;width:5px;height:5px;border-radius:99px;background:var(--verde-c)}
 .ag-dia small.vacio{background:transparent}
-.ag-dia.on{background:var(--tinta);border-color:var(--tinta);color:#fff}
+.ag-dia.on{background:var(--tinta-f);border-color:var(--tinta-f);color:#fff}
 .ag-dia.on span{color:rgba(255,255,255,.6)}
 .ag-acciones{display:flex;justify-content:space-around;margin-top:18px}
 /* La agenda «hoy primero»: la tira de la semana, la cita grande y las tareas */
-.ag-semana{display:flex;gap:2px;background:rgba(20,23,15,.06);border-radius:16px;padding:4px;margin-top:14px}
+.ag-semana{display:flex;gap:2px;background:rgba(var(--tinta-rgb),.06);border-radius:16px;padding:4px;margin-top:14px}
 .ag-semana .ag-cal-d{flex:1;height:auto;display:flex;flex-direction:column;align-items:center;gap:3px;padding:8px 0 7px;border-radius:13px;font:600 17px/1 var(--cond)}
 .ag-semana .ag-cal-d i{font:500 10px/1 var(--mono);letter-spacing:.1em;color:var(--t3);font-style:normal}
 .ag-semana .ag-cal-d em{position:static;height:5px;margin-top:2px}
-.ag-semana .ag-cal-d.hoy{box-shadow:none;background:var(--tinta);color:#fff}
+.ag-semana .ag-cal-d.hoy{box-shadow:none;background:var(--tinta-f);color:#fff}
 .ag-semana .ag-cal-d.hoy i{color:rgba(255,255,255,.6)}
-.ag-semana .ag-cal-d.sel:not(.hoy){background:#fff;box-shadow:inset 0 0 0 1.5px var(--tinta)}
-.ag-prox{background:#fff;border-radius:22px;padding:18px 18px 16px;box-shadow:0 0 0 1.5px var(--ambar),var(--sh)}
+.ag-semana .ag-cal-d.sel:not(.hoy){background:var(--alza);box-shadow:inset 0 0 0 1.5px var(--tinta)}
+.ag-prox{background:var(--blanco);border-radius:22px;padding:18px 18px 16px;box-shadow:0 0 0 1.5px var(--ambar),var(--sh)}
 .ag-prox.lejos{box-shadow:var(--sh)}
 .ag-prox .ag-acciones{margin-top:14px;gap:8px}
-.ag-prox .ag-accion{flex:1;flex-direction:row;justify-content:center;gap:8px;padding:12px;border-radius:14px;background:rgba(20,23,15,.06);color:var(--tinta);font:600 14px/1 var(--sans)}
+.ag-prox .ag-accion{flex:1;flex-direction:row;justify-content:center;gap:8px;padding:12px;border-radius:14px;background:rgba(var(--tinta-rgb),.06);color:var(--tinta);font:600 14px/1 var(--sans)}
 .ag-prox .ag-accion i{width:auto;height:auto;background:none;color:var(--tinta)}
-.ag-tarea{display:flex;align-items:center;gap:12px;padding:13px 14px;background:#fff;border-radius:16px;box-shadow:var(--sh);margin-bottom:8px;cursor:pointer}
+.ag-tarea{display:flex;align-items:center;gap:12px;padding:13px 14px;background:var(--blanco);border-radius:16px;box-shadow:var(--sh);margin-bottom:8px;cursor:pointer}
 .ag-tarea .dot{width:10px;height:10px;flex:none}
 .ag-tarea b{display:block;font:600 15px/1.25 var(--sans)}
 .ag-tarea small{display:block;font:400 12.5px/1.3 var(--sans);color:var(--t2);margin-top:2px}
@@ -405,13 +445,20 @@ body.con-captcha #captcha{display:block}
    nativo. El desplazamiento vertical con encastre (scroll-snap) es un gesto
    que ya se conoce de los pickers de fecha/hora del propio teléfono — mucho
    más preciso al dedo que un dial circular de arrastre. */
-.rueda-marco{position:absolute;left:0;right:0;top:50%;transform:translateY(-50%);background:rgba(20,23,15,.06);border-radius:12px;pointer-events:none;z-index:0}
+.rueda-marco{position:absolute;left:0;right:0;top:50%;transform:translateY(-50%);background:rgba(var(--tinta-rgb),.06);border-radius:12px;pointer-events:none;z-index:0}
 .rueda-col{overflow-y:auto;scroll-snap-type:y mandatory;-webkit-overflow-scrolling:touch;scrollbar-width:none;position:relative;z-index:1;-webkit-mask-image:linear-gradient(to bottom,transparent 0,#000 32%,#000 68%,transparent 100%);mask-image:linear-gradient(to bottom,transparent 0,#000 32%,#000 68%,transparent 100%)}
 .rueda-col::-webkit-scrollbar{display:none}
 .rueda-track{display:flex;flex-direction:column}
 .rueda-item{display:flex;align-items:center;justify-content:center;font:500 19px var(--mono);color:var(--t3);scroll-snap-align:center}
 .rueda-item.on{color:var(--tinta);font:700 24px var(--cond)}
 
+/* Solo en oscuro: la marca de agua en blanco, y el tablero, cuyas columnas llevan
+   el color de la fase (a veces muy oscuro) en el título y en el contador. */
+html[data-tema="oscuro"] .scroll:not(.login-fondo):not(.marca-clara)::before,html[data-tema="oscuro"] .hoja::before{background-image:url('logo-blanco.png?v=3');opacity:.2}
+html[data-tema="oscuro"] .tb-tit{color:color-mix(in srgb,var(--col,var(--tinta)) 62%,#fff)}
+html[data-tema="oscuro"] .tb-n,html[data-tema="oscuro"] .tb-ord.on{background:color-mix(in srgb,var(--col,var(--tinta)) 30%,transparent);color:color-mix(in srgb,var(--col,var(--tinta)) 45%,#fff)}
+html[data-tema="oscuro"] .tb-col{background:color-mix(in srgb,var(--col,var(--tinta)) 11%,var(--tb-base))}
+html[data-tema="oscuro"] .card.elegida,html[data-tema="oscuro"] .card.ultimo,html[data-tema="oscuro"] .tb-card.ultimo{box-shadow:var(--sh),inset 0 0 0 2px var(--verde-c)}
 #print{display:none}
 /* Para generar el PDF hay que "fotografiar" el parte, y html2canvas no puede
    con un elemento oculto. Se saca fuera de la pantalla, con ancho de A4. */
@@ -429,10 +476,10 @@ body.con-captcha #captcha{display:block}
 .rej2{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
 .rej3{display:grid;grid-template-columns:repeat(auto-fill,minmax(118px,1fr));gap:8px}
 .foto-v,.foto-hueco{position:relative;aspect-ratio:4/3;border-radius:14px;overflow:hidden;cursor:pointer;-webkit-tap-highlight-color:transparent}
-.foto-v{background:#dfe1da center/cover no-repeat}
+.foto-v{background:rgba(var(--tinta-rgb),.12) center/cover no-repeat}
 .foto-v span{position:absolute;left:0;right:0;bottom:0;padding:18px 9px 7px;font:500 12px/1.2 var(--sans);color:#fff;background:linear-gradient(transparent,rgba(20,23,15,.74));white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .foto-v em{position:absolute;top:7px;left:7px;width:20px;height:20px;border-radius:50%;background:var(--verde);display:flex;align-items:center;justify-content:center}
-.foto-hueco{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;border:1.5px dashed var(--l2);background:rgba(20,23,15,.025);color:var(--t2);font:500 12px/1.2 var(--sans);text-align:center;padding:8px}
+.foto-hueco{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;border:1.5px dashed var(--l2);background:rgba(var(--tinta-rgb),.025);color:var(--t2);font:500 12px/1.2 var(--sans);text-align:center;padding:8px}
 .foto-hueco svg{width:22px;height:22px}
 .visor{position:fixed;inset:0;z-index:60;background:#14170f;display:flex;flex-direction:column;animation:fade .15s;user-select:none;-webkit-user-select:none}
 .visor-barra{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 14px;padding-top:calc(10px + var(--safe-t));color:#fff}
@@ -453,12 +500,12 @@ body.con-captcha #captcha{display:block}
 .visor-pie .puntos i.on{background:#fff}
 /* Tablero: fecha de ingreso en la tarjeta y botón de orden en la cabecera (20-10-2026). */
 .tb-card .ing{font:500 10.5px/1 var(--mono);letter-spacing:.04em;color:var(--t3);margin-bottom:5px}
-.tb-ord{flex:none;cursor:pointer;font:600 11px/1 var(--sans);padding:4px 8px;border-radius:99px;background:rgba(20,23,15,.07);color:var(--t2);white-space:nowrap}
-.tb-ord.on{background:var(--col,var(--tinta));color:#fff}
+.tb-ord{flex:none;cursor:pointer;font:600 11px/1 var(--sans);padding:4px 8px;border-radius:99px;background:rgba(var(--tinta-rgb),.07);color:var(--t2);white-space:nowrap}
+.tb-ord.on{background:var(--col,var(--tinta-f));color:#fff}
 /* Agenda (20-10-2026): títulos de sección grandes y la etiqueta de cuándo es la cita. */
 .ag-sec{font:600 22px/1.1 var(--cond);letter-spacing:-.01em;min-width:0}
 .ag-sec-n{font:500 13px/1 var(--sans);color:var(--t2);flex:none}
-.ag-cuando{font:600 13px/1 var(--sans);padding:7px 12px;border-radius:99px;background:rgba(20,23,15,.07);color:var(--tinta);flex:none}
+.ag-cuando{font:600 13px/1 var(--sans);padding:7px 12px;border-radius:99px;background:rgba(var(--tinta-rgb),.07);color:var(--tinta);flex:none}
 .ag-cuando.hoy{background:var(--ambar);color:#fff}
 /* La casita de la obra (V31.3, 3-11-2026): la furgoneta lleva el material del
    almacén a la casa según el avance de las fases; al 100 % se enciende y, con la
@@ -515,7 +562,7 @@ import * as idiomas from './presu-idiomas.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '32.7'; // versión visible de la app (única fuente)
+const APP_VERSION = '32.8'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -795,11 +842,14 @@ async function cargarMapaEmpleados() {
       local.email = e.email || null;
       local.telefono = e.telefono || null;
       local.empId = e.id;
+      // El tema elegido va con la persona. Si aquí hay un cambio sin subir, manda el de aquí.
+      if (!local.temaPend && temaVale(e.tema)) local.tema = e.tema;
       local.altaEn = e.creado_en || null;
       local.bajaEn = e.fecha_baja || null;
     });
   })();
   try { await mapaEmpPromesa; } finally { mapaEmpPromesa = null; }
+  aplicarTema(); subirTema();
 }
 const empRowById = (empId) => empRows.find((e) => e.id === empId) || null;
 // ¿Existe ya esa columna en public.empleados? Las de la Etapa 11
@@ -898,7 +948,7 @@ const codigoObra = (o) => (o && o.numero != null ? 'OB-' + String(o.numero).padS
 // Nombre completo para correos, PDF y listas: «OB-137 · Casa Can Roca».
 const nombreObra = (o) => { const c = codigoObra(o); return c ? c + ' · ' + (o.titulo || o.cliente || '') : (o.titulo || o.cliente || '—'); };
 // Chips de categoría: [AE] [FV].
-const chipsCategorias = (o, claro) => (o.categorias || []).map((k) => `<span class="badge" style="background:${claro ? 'rgba(255,255,255,.16)' : 'rgba(20,23,15,.07)'};color:${claro ? '#fff' : 'var(--t2)'};font-weight:600">${esc(k === 'OT' && o.categoriaOtra ? o.categoriaOtra : k)}</span>`).join('');
+const chipsCategorias = (o, claro) => (o.categorias || []).map((k) => `<span class="badge" style="background:${claro ? 'rgba(255,255,255,.16)' : 'rgba(var(--tinta-rgb),.07)'};color:${claro ? '#fff' : 'var(--t2)'};font-weight:600">${esc(k === 'OT' && o.categoriaOtra ? o.categoriaOtra : k)}</span>`).join('');
 // Lo que se escribe en el buscador puede ser «137», «OB-137», «ob137» o
 // «OB-0137»: todo es la obra número 137. Devuelve el número o null.
 const numeroBuscado = (q) => { const m = String(q || '').trim().match(/^(?:ob[\s-]?)?0*(\d+)$/i); return m ? Number(m[1]) : null; };
@@ -1094,13 +1144,13 @@ const etiqAusencia = (au) => (au && au.comun && au.nota) ? au.nota : ETIQ_AUSENC
 // Colores por tipo, para que en la planilla no se confundan de un vistazo con
 // un "Sin fichaje" cualquiera.
 const COLOR_AUSENCIA = {
-  vacaciones: ['#8a5a00', 'rgba(224,168,58,.22)'],
-  festivo:    ['#1e5b2a', 'rgba(45,122,62,.16)'],
-  baja:       ['#8a2f1c', 'rgba(168,64,42,.16)'],
-  permiso:    ['#3b3a6b', 'rgba(70,68,140,.14)'],
+  vacaciones: ['var(--aus-vac)', 'rgba(224,168,58,.22)'],
+  festivo:    ['var(--aus-fes)', 'rgba(45,122,62,.16)'],
+  baja:       ['var(--aus-baja)', 'rgba(168,64,42,.16)'],
+  permiso:    ['var(--aus-per)', 'rgba(70,68,140,.14)'],
 };
 function insignia(tipo, texto) {
-  const [tinta, fondo] = COLOR_AUSENCIA[tipo] || ['var(--t2)', 'rgba(20,23,15,.08)'];
+  const [tinta, fondo] = COLOR_AUSENCIA[tipo] || ['var(--t2)', 'rgba(var(--tinta-rgb),.08)'];
   return `<span style="display:inline-block;padding:2px 8px;border-radius:99px;background:${fondo};color:${tinta};font:600 11px var(--sans)">${esc(texto || ETIQ_AUSENCIA[tipo])}</span>`;
 }
 // Día de la semana abreviado y si cae en fin de semana.
@@ -1152,6 +1202,41 @@ const impLineasDe = (userId, fecha) => S.imputaciones.filter((i) => i.userId ===
 const impMinImputados = (userId, fecha) => impLineasDe(userId, fecha).reduce((t, i) => t + (i.minutos || 0), 0);
 
 const yo = () => (V.user ? S.users.find((u) => u.id === V.user.id) : null);
+
+/* ---------- tema claro / oscuro (V32.8) ----------
+ * Enzo, 17-11-2026: «en ajustes de cada usuario que permita cambiar el tema
+ * oscuro a claro, que es lo predeterminado ahora». Cada persona elige el suyo
+ * (claro, oscuro o como tenga puesto el aparato). Se guarda en su ficha
+ * (empleados.tema, sql/etapa113) para que lo vea igual en el móvil y en el
+ * ordenador, y en el aparato ('ch_tema') para pintarlo al abrir sin esperar.
+ * Los colores están en el CSS: aquí solo se pone data-tema="oscuro" en <html>. */
+const TEMAS = [['claro', 'Claro'], ['oscuro', 'Oscuro'], ['auto', 'Automático']];
+const temaVale = (t) => t === 'claro' || t === 'oscuro' || t === 'auto';
+const temaUltimo = () => { try { const t = localStorage.getItem('ch_tema'); return temaVale(t) ? t : 'claro'; } catch (_) { return 'claro'; } };
+// Con sesión, el de la persona (claro si no ha elegido); sin sesión, el último que se usó aquí.
+const temaPref = () => { const u = yo(); return u ? (temaVale(u.tema) ? u.tema : 'claro') : temaUltimo(); };
+const temaOscuro = () => document.documentElement.getAttribute('data-tema') === 'oscuro';
+const sistemaOscuro = () => { try { return !!(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches); } catch (_) { return false; } };
+function aplicarTema() {
+  const pref = temaPref();
+  const oscuro = pref === 'oscuro' || (pref === 'auto' && sistemaOscuro());
+  const raiz = document.documentElement;
+  if (oscuro !== temaOscuro()) { if (oscuro) raiz.setAttribute('data-tema', 'oscuro'); else raiz.removeAttribute('data-tema'); }
+  if (V.user) { try { if (localStorage.getItem('ch_tema') !== pref) localStorage.setItem('ch_tema', pref); } catch (_) { /* da igual */ } }
+  return oscuro;
+}
+// Sube a la ficha lo elegido. Si no hay red se queda apuntado como pendiente y
+// se reintenta en la siguiente sincronización de empleados.
+async function subirTema() {
+  const u = yo(); if (!u || !u.temaPend || !navigator.onLine) return;
+  const t = u.tema;
+  try { await Sysefen.db.guardarMiTema(t); if (u.tema === t) { u.temaPend = false; save(); } }
+  catch (_) { /* sigue valiendo en este aparato */ }
+}
+const temaSelectorHTML = () => `<div class="ag-seg">${TEMAS.map(([k, n]) => `<span class="${temaPref() === k ? 'on' : ''}" data-a="ponerTema" data-t="${k}">${n}</span>`).join('')}</div>`;
+// El logotipo negro no se ve sobre fondo oscuro: ahí va el blanco.
+const logoApp = () => (temaOscuro() ? 'logo-blanco.png?v=3' : 'logo-trans.png?v=3');
+try { window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { if (temaPref() === 'auto') { aplicarTema(); render(); } }); } catch (_) { /* navegador antiguo */ }
 const rol = () => { const u = yo(); return u ? u.rol : null; };
 const esAdmin = () => rol() === 'admin';
 const puedeCrear = () => ['admin', 'jefe'].includes(rol());
@@ -2511,6 +2596,11 @@ A.pedirFichaje = (userId) => {
 };
 A.cerrarSheet = () => { V.sheet = null; render(); };
 A.menuUsuario = () => { V.sheet = { tipo: 'menuUsuario' }; render(); };
+A.ponerTema = (t) => {
+  const u = yo(); if (!u || !temaVale(t) || temaPref() === t) return;
+  u.tema = t; u.temaPend = true; save(); render();
+  subirTema();
+};
 
 // Emojis para el avatar: oficios y cosas de obra, más algunas caras. Es una
 // lista corta a propósito — un teclado de emojis entero en el móvil es peor.
@@ -2766,8 +2856,8 @@ function gruposParaSubfase(obraId) {
   lista.push(['fin', 'Cierre']);
   return lista;
 }
-const barraPct = (pct, color, alto) => `<div style="height:${alto || 6}px;border-radius:99px;background:rgba(20,23,15,.08);overflow:hidden"><div style="width:${Math.max(0, Math.min(100, pct))}%;height:100%;background:${color || 'var(--verde)'}"></div></div>`;
-const colorPct = (pct) => (pct >= 100 ? 'var(--verde)' : pct > 0 ? 'var(--verde-c)' : 'rgba(20,23,15,.2)');
+const barraPct = (pct, color, alto) => `<div style="height:${alto || 6}px;border-radius:99px;background:rgba(var(--tinta-rgb),.08);overflow:hidden"><div style="width:${Math.max(0, Math.min(100, pct))}%;height:100%;background:${color || 'var(--verde)'}"></div></div>`;
+const colorPct = (pct) => (pct >= 100 ? 'var(--verde)' : pct > 0 ? 'var(--verde-c)' : 'rgba(var(--tinta-rgb),.2)');
 /* ---------- la casita de la obra (V31.3) ----------------------------------------
  * Un dibujo con los datos que ya hay: el avance medio de las fases mueve la
  * furgoneta del almacén a la casa; al 100 % se instala lo que llevaba y la casa
@@ -2902,7 +2992,7 @@ function avanceParteHTML(d) {
     <div class="tiny" style="margin-bottom:8px">Con este parte, ¿hasta dónde queda cada subfase? Toca el porcentaje. Lo que no cambie, se queda como está.</div>
     <div class="card" style="padding:2px 15px">
       ${pendientes.length ? pendientes.map((f) => { const v = avance[f.id] != null ? avance[f.id] : f.pct; return `<div style="padding:11px 0;border-bottom:1px solid var(--l1)">
-        <div class="row" style="justify-content:space-between;align-items:baseline"><span style="font:500 15px/1.25 var(--sans)">${esc(faseNombre(f))}${f.categoria || f.grupo ? ` <span class="badge" style="background:rgba(20,23,15,.07);color:var(--t2)">${esc(f.categoria || f.grupo)}</span>` : ''}</span><span class="tiny">${avance[f.id] != null && avance[f.id] !== f.pct ? 'antes ' + f.pct + ' %' : ''}</span></div>
+        <div class="row" style="justify-content:space-between;align-items:baseline"><span style="font:500 15px/1.25 var(--sans)">${esc(faseNombre(f))}${f.categoria || f.grupo ? ` <span class="badge" style="background:rgba(var(--tinta-rgb),.07);color:var(--t2)">${esc(f.categoria || f.grupo)}</span>` : ''}</span><span class="tiny">${avance[f.id] != null && avance[f.id] !== f.pct ? 'antes ' + f.pct + ' %' : ''}</span></div>
         <div class="row g8" style="margin-top:8px">${PCTS.map((pc) => `<span class="chip ${v === pc ? 'on' : ''}" data-a="parteAvance" data-id="${f.id}" data-p="${pc}" style="padding:8px 0;flex:1;text-align:center;${pc < f.pct ? 'opacity:.35' : ''}">${pc}</span>`).join('')}</div>
       </div>`; }).join('') : '<div class="sub" style="padding:12px 0">Todas las fases están al 100 %.</div>'}
     </div>`;
@@ -3230,7 +3320,7 @@ function planObrasListaHTML(s) {
   const obras = [...S.obras].filter((x) => !obraCerrada(x)).filter((x) => !q || (num != null && x.numero === num) || sinTildes([codigoObra(x), x.titulo, x.cliente, x.dir, x.poblacion].join(' ')).includes(q))
     .sort((a, b) => (sinNadie.has(b.id) ? 1 : 0) - (sinNadie.has(a.id) ? 1 : 0) || porNumeroDesc(a, b));
   if (!obras.length) return '<div class="sub">Ninguna obra con eso.</div>';
-  return obras.slice(0, 80).map((x) => `<button class="fila-obra" data-a="planElegirObra" data-id="${x.id}">${esc(codigoObra(x) || x.titulo)} · ${esc(x.cliente || x.titulo)}${sinNadie.has(x.id) ? ' <span class="badge" style="background:#f8efdc;color:var(--ambar-o)">sin nadie</span>' : ''}<small>${esc([x.nombre !== x.cliente ? x.nombre : '', direccionObra(x)].filter(Boolean).join(' · '))}</small></button>`).join('');
+  return obras.slice(0, 80).map((x) => `<button class="fila-obra" data-a="planElegirObra" data-id="${x.id}">${esc(codigoObra(x) || x.titulo)} · ${esc(x.cliente || x.titulo)}${sinNadie.has(x.id) ? ' <span class="badge" style="background:var(--ambar-cl);color:var(--ambar-o)">sin nadie</span>' : ''}<small>${esc([x.nombre !== x.cliente ? x.nombre : '', direccionObra(x)].filter(Boolean).join(' · '))}</small></button>`).join('');
 }
 function planChipHTML(f) {
   return `<span class="pl-chip ${f.obra_estado === 'planificada' ? 'plan' : ''}" data-a="planVer" data-id="${f.id}">${esc(f.codigo || '')}${f.hora_prevista ? ' · ' + esc(String(f.hora_prevista).slice(0, 5)) : ''}<small>${esc(f.cliente || f.obra || '')}${f.nota ? ' · ' + esc(f.nota) : ''}</small></span>`;
@@ -3285,10 +3375,10 @@ function planHoyHTML() {
     const filas = mio.filter((f) => f.fecha === fecha);
     if (!filas.length) return '';
     return filas.map((f) => `<div class="card" style="margin-bottom:10px;${fecha === hoy ? 'box-shadow:0 0 0 1.5px var(--verde),var(--sh)' : ''}">
-      <div class="row g8" style="align-items:center"><span class="lbl" style="color:${fecha === hoy ? 'var(--verde-o)' : 'var(--t2)'}">${etiqueta}${f.hora_prevista ? ' · ' + esc(String(f.hora_prevista).slice(0, 5)) : ''}</span><span class="grow"></span>${(f.categorias || []).map((k) => `<span class="badge" style="background:rgba(20,23,15,.07);color:var(--t2)">${esc(k)}</span>`).join('')}</div>
+      <div class="row g8" style="align-items:center"><span class="lbl" style="color:${fecha === hoy ? 'var(--verde-o)' : 'var(--t2)'}">${etiqueta}${f.hora_prevista ? ' · ' + esc(String(f.hora_prevista).slice(0, 5)) : ''}</span><span class="grow"></span>${(f.categorias || []).map((k) => `<span class="badge" style="background:rgba(var(--tinta-rgb),.07);color:var(--t2)">${esc(k)}</span>`).join('')}</div>
       <div class="row g8" style="align-items:baseline;margin-top:8px"><span style="font:600 22px/1.1 var(--cond)">${esc(f.codigo || '')}</span><span style="font:600 16px/1.3 var(--sans)">${esc(f.cliente || f.obra || '')}</span></div>
       ${[f.direccion, f.poblacion].filter(Boolean).length ? `<div style="font:400 15px/1.35 var(--sans);color:var(--t2);margin-top:3px">${esc([f.direccion, f.poblacion].filter(Boolean).join(' · '))}</div>` : ''}
-      ${f.nota ? `<div style="margin-top:8px;padding:8px 10px;border-radius:10px;background:#f8efdc;color:var(--ambar-o);font:500 13px/1.4 var(--sans)">${esc(f.nota)}${f.planificador ? ` <span class="tiny">· ${esc(f.planificador)}</span>` : ''}</div>` : ''}
+      ${f.nota ? `<div style="margin-top:8px;padding:8px 10px;border-radius:10px;background:var(--ambar-cl);color:var(--ambar-o);font:500 13px/1.4 var(--sans)">${esc(f.nota)}${f.planificador ? ` <span class="tiny">· ${esc(f.planificador)}</span>` : ''}</div>` : ''}
       ${avanceLineaHTML(f.obra_id)}
       <div class="row g8" style="margin-top:10px">
         ${f.direccion ? `<a class="pill grow" style="text-align:center;padding:9px" href="${esc(urlComoLlegar([f.direccion, f.poblacion].filter(Boolean).join(', ')))}" target="_blank" rel="noopener">Cómo llegar</a>` : ''}
@@ -3360,7 +3450,7 @@ function economiaHTML(o) {
   const e = d.eco || {};
   const sem = semaforoEco(e);
   const pct = e.pct_horas == null ? null : Math.min(140, Number(e.pct_horas));
-  const barra = (v, color) => `<div style="height:8px;border-radius:99px;background:rgba(20,23,15,.07);overflow:hidden;margin-top:6px"><div style="width:${Math.max(2, Math.min(100, v))}%;height:100%;background:${color}"></div></div>`;
+  const barra = (v, color) => `<div style="height:8px;border-radius:99px;background:rgba(var(--tinta-rgb),.07);overflow:hidden;margin-top:6px"><div style="width:${Math.max(2, Math.min(100, v))}%;height:100%;background:${color}"></div></div>`;
   // Cada dato en su fila: la etiqueta a la izquierda, el número a la derecha
   // y, debajo del número, con qué se compara.
   const fila = (k, a, b) => `<div class="row" style="justify-content:space-between;align-items:flex-start;gap:12px;padding:7px 0;border-bottom:1px solid var(--l1)">
@@ -4492,6 +4582,7 @@ A.instalar = async () => {
 
 /* ---------- render ---------- */
 function render() {
+  aplicarTema();
   // Legalizaciones apagadas: quien llegue a esas vistas (un enlace viejo) vuelve a su sitio.
   if (!LEGALIZACIONES && ['legalizaciones', 'legalizacion'].includes(V.view)) V.view = esPresupuestos() ? 'agenda' : 'ajustes';
   // Ramón entra directo a sus visitas: ninguna pantalla de fichar, obras ni partes.
@@ -4564,7 +4655,7 @@ function render() {
   // En el iPhone con la app instalada, la pantalla a veces queda un pelo más
   // corta que el móvil y por abajo asoma el fondo de la página: sin esto, una
   // franja clara bajo la portada y el PIN, que son oscuros.
-  document.documentElement.style.background = V.user ? '' : v === 'login' ? '#0d1a12' : 'var(--tinta)';
+  document.documentElement.style.background = V.user ? '' : v === 'login' ? '#0d1a12' : '#14170f';
   const sc = app.querySelector('.scroll,.hoja'); if (sc && scrollMemo[V.view] != null) sc.scrollTop = scrollMemo[V.view];
   if (V.agenda && V.agenda.verUltimo && v === 'clientes') {
     V.agenda.verUltimo = false;
@@ -4698,7 +4789,7 @@ function vLogin() {
   </div>`;
 }
 function vOtroUsuario() {
-  return `<div class="scroll marca-clara" style="background:var(--tinta);padding:calc(44px + var(--safe-t)) 24px calc(26px + var(--safe-b))">
+  return `<div class="scroll marca-clara" style="background:#14170f;padding:calc(44px + var(--safe-t)) 24px calc(26px + var(--safe-b))">
     <div class="volver" data-a="volverLogin" style="color:rgba(255,255,255,.6)">‹ Volver</div>
     <div style="font:600 27px/1.1 var(--cond);color:#fff;margin-top:18px">Entra con tu nombre</div>
     <div class="sub" style="color:rgba(255,255,255,.5);margin-top:8px">Para la primera vez en este móvil. Después ya sales en la lista.</div>
@@ -4711,10 +4802,10 @@ function vOtroUsuario() {
 function vPin() {
   const u = V.pinUser;
   const teclas = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '', '0', 'del'];
-  return `<div class="scroll marca-clara" style="background:var(--tinta);padding:calc(44px + var(--safe-t)) 24px calc(26px + var(--safe-b))">
+  return `<div class="scroll marca-clara" style="background:#14170f;padding:calc(44px + var(--safe-t)) 24px calc(26px + var(--safe-b))">
     <div class="volver" data-a="volverLogin" style="color:rgba(255,255,255,.6)">‹ Cambiar de usuario</div>
     <div class="col" style="align-items:center;margin-top:22px">
-      ${!u.id ? `<div class="av ${V.err ? 'shake' : ''}" style="width:64px;height:64px;font-size:25px;background:rgba(255,255,255,.16);color:#fff">${esc(ini(u.nombre || '?'))}</div>` : avatarHTML(u.id, `width:64px;height:64px;font-size:25px;background:${u.rol === 'admin' ? 'var(--ambar);color:var(--tinta)' : u.rol === 'jefe' ? 'var(--verde-c);color:#fff' : 'rgba(255,255,255,.16);color:#fff'}`, '', V.err ? 'shake' : '')}
+      ${!u.id ? `<div class="av ${V.err ? 'shake' : ''}" style="width:64px;height:64px;font-size:25px;background:rgba(255,255,255,.16);color:#fff">${esc(ini(u.nombre || '?'))}</div>` : avatarHTML(u.id, `width:64px;height:64px;font-size:25px;background:${u.rol === 'admin' ? 'var(--ambar);color:#14170f' : u.rol === 'jefe' ? 'var(--verde-c);color:#fff' : 'rgba(255,255,255,.16);color:#fff'}`, '', V.err ? 'shake' : '')}
       <div style="font:600 25px/1.1 var(--cond);color:#fff;margin-top:14px">${esc(u.nombre)}</div>
       <div class="tiny" style="color:rgba(255,255,255,.45);margin-top:7px;letter-spacing:.1em;text-transform:uppercase">${V.err ? 'PIN incorrecto' : V.captchaToca ? 'Toca la casilla de abajo' : V.pinBusy ? 'Comprobando…' : 'Introduce tu PIN'}</div>
     </div>
@@ -4731,7 +4822,7 @@ function vHoy() {
   const dentro = !!f;
   const mins = minutosDia(u.id, hoyISO());
   const dentroN = equipo().filter((x) => fichajeAbierto(x.id)).length;
-  return `<div class="semaforo" style="background:${dentro ? 'var(--verde)' : 'var(--tinta)'}">
+  return `<div class="semaforo" style="background:${dentro ? 'var(--verde)' : 'var(--tinta-s)'}">
     ${marcaSysefen(true)}
     <div class="row" style="justify-content:space-between">
       <div class="row g8"><span class="dot" style="background:${dentro ? '#fff' : 'var(--ambar)'}"></span><div class="lbl" style="color:${dentro ? 'rgba(255,255,255,.72)' : 'var(--ambar)'}">${dentro ? 'Estás dentro' : 'Estás fuera'}</div></div>
@@ -4742,7 +4833,7 @@ function vHoy() {
     </div>
     <div style="font:600 60px/1 var(--cond);margin-top:10px;color:#fff">${dentro ? durMin(minEntre(f.entrada, new Date().toISOString())) : hhmm(new Date().toISOString())}</div>
     <div style="font:400 14px/1.35 var(--sans);margin-top:7px;color:rgba(255,255,255,.55)">${dentro ? 'Entrada a las ' + hhmm(f.entrada) : 'Sin fichar'}</div>
-    <button class="btn" data-a="pedirFichaje" data-id="${u.id}" style="margin-top:20px;background:${dentro ? '#fff' : 'var(--verde)'};color:${dentro ? 'var(--rojo)' : '#fff'};box-shadow:0 6px 16px rgba(20,23,15,.2)">${dentro ? 'Fichar salida' : 'Fichar entrada'}</button>
+    <button class="btn claro" data-a="pedirFichaje" data-id="${u.id}" style="margin-top:20px;background:${dentro ? '#fff' : 'var(--verde)'};color:${dentro ? 'var(--rojo)' : '#fff'};box-shadow:0 6px 16px rgba(20,23,15,.2)">${dentro ? 'Fichar salida' : 'Fichar entrada'}</button>
     ${S.opts.gps ? `<div class="row" style="justify-content:center;gap:7px;margin-top:12px"><span class="dot" style="width:6px;height:6px;background:rgba(255,255,255,.6)"></span><span class="tiny" style="color:rgba(255,255,255,.5)">Ubicación registrada al fichar</span></div>` : ''}
   </div>
   <div class="hoja"><div class="hoja-contenido">
@@ -4770,16 +4861,16 @@ function vHoy() {
     <div class="col g8">${equipo().map((x) => {
       const fx = fichajeAbierto(x.id);
       return `<div class="card row" style="padding:12px 14px">
-        <span class="dot" style="background:${fx ? 'var(--verde)' : 'rgba(20,23,15,.22)'}"></span>
+        <span class="dot" style="background:${fx ? 'var(--verde)' : 'rgba(var(--tinta-rgb),.22)'}"></span>
         <div class="grow"><div style="font:500 15px/1.1 var(--sans)">${esc(x.nombre)}</div>
         <div class="tiny" style="margin-top:4px">${fx ? 'Entrada ' + hhmm(fx.entrada) + ' · ' + durMin(minEntre(fx.entrada, new Date().toISOString())) : (minutosDia(x.id, hoyISO()) ? 'Hoy ' + durMin(minutosDia(x.id, hoyISO())) + ' · fuera' : 'Sin fichar')}</div></div>
         <button class="pill ${fx ? '' : 'pill-verde'}" data-a="pedirFichaje" data-id="${x.id}">${fx ? 'Salida' : 'Entrada'}</button>
       </div>`; }).join('')}</div>
 
-    ${S.obras.length ? `<div class="card row" data-a="nuevoParteElegir" style="margin-top:14px;background:var(--tinta);cursor:pointer">
+    ${S.obras.length ? `<div class="card row" data-a="nuevoParteElegir" style="margin-top:14px;background:var(--tinta-s);cursor:pointer">
       <div class="grow"><div style="font:600 16px/1 var(--sans);color:#fff">Nuevo parte de trabajo</div>
       <div class="tiny" style="color:rgba(255,255,255,.5);margin-top:6px">Selecciona una obra</div></div>
-      <div class="av" style="width:28px;height:28px;background:var(--ambar);color:var(--tinta);font-size:16px">+</div>
+      <div class="av" style="width:28px;height:28px;background:var(--ambar);color:#14170f;font-size:16px">+</div>
     </div>` : ''}`
     : ((V.planMio || []).some((f) => f.fecha === hoyISO()) ? '' : `<div style="margin-top:16px;padding:15px;border-radius:16px;border:1px dashed var(--l2);font:400 13px/1.5 var(--sans);color:var(--t2)">Los partes de trabajo los crea el jefe de obra, o tú mismo el día que estés planificado en una obra. Lo que siempre toca es fichar bien tus horas.</div>`)}
   </div></div>`;
@@ -4788,7 +4879,7 @@ function vHoy() {
 /* --- hoy · administración (no ficha) --- */
 function vHoyAdmin(u) {
   const dentroN = equipo().filter((x) => fichajeAbierto(x.id)).length;
-  return `<div class="semaforo" style="background:var(--tinta)">
+  return `<div class="semaforo" style="background:var(--tinta-s)">
     ${marcaSysefen(true)}
     <div class="row" style="justify-content:space-between">
       <div class="lbl" style="color:var(--ambar)">Administración</div>
@@ -4802,7 +4893,7 @@ function vHoyAdmin(u) {
     <div class="col g8">${equipo().map((x) => {
       const fx = fichajeAbierto(x.id);
       return `<div class="card row" data-a="abrirEmpleado" data-id="${x.id}" style="padding:12px 14px;cursor:pointer">
-        <span class="dot" style="background:${fx ? 'var(--verde)' : 'rgba(20,23,15,.22)'}"></span>
+        <span class="dot" style="background:${fx ? 'var(--verde)' : 'rgba(var(--tinta-rgb),.22)'}"></span>
         <div class="grow"><div style="font:500 15px/1.1 var(--sans)">${esc(x.nombre)}</div>
         <div class="tiny" style="margin-top:4px">${fx ? 'Dentro · entrada ' + hhmm(fx.entrada) : (minutosDia(x.id, hoyISO()) ? 'Hoy ' + durMin(minutosDia(x.id, hoyISO())) + ' · fuera' : 'Sin fichar hoy')}</div></div>
         <button class="pill ${fx ? 'pill-rojo' : 'pill-verde'}" data-a="adminFichar" data-id="${x.id}">${fx ? 'Fichar salida' : 'Fichar entrada'}</button>
@@ -4833,7 +4924,7 @@ function vObras() {
     ${marcaSysefen(false)}
     <div class="row" style="justify-content:space-between">
       <div class="h1">Obras</div>
-      ${puedeObras() ? '<button class="pill" data-a="nuevaObra" style="background:var(--tinta);color:#fff">+ Nueva</button>' : ''}
+      ${puedeObras() ? '<button class="pill" data-a="nuevaObra" style="background:var(--tinta-f);color:#fff">+ Nueva</button>' : ''}
     </div>
     <input class="inp" id="obras-buscar" data-f="obrasBuscar" value="${esc(V.obrasBuscar || '')}" placeholder="Número (137), cliente, obra o dirección" autocomplete="off" style="margin-top:14px">
     <div class="wrap" style="margin-top:12px">
@@ -4864,7 +4955,7 @@ function cabeceraObraHTML(o) {
       <span style="font:600 ${cod ? '22px' : '19px'}/1.1 var(--cond);letter-spacing:.01em">${esc(cod || o.titulo)}</span>
       ${chipsCategorias(o)}
       <span class="grow"></span>
-      <span class="row g8" style="align-items:center"><span class="dot" style="width:8px;height:8px;background:${obraCerrada(o) ? 'rgba(20,23,15,.22)' : o.estado === 'planificada' ? 'var(--ambar)' : 'var(--verde)'}"></span><span class="lbl">${esc(estadoObraTxt(o))}</span></span>
+      <span class="row g8" style="align-items:center"><span class="dot" style="width:8px;height:8px;background:${obraCerrada(o) ? 'rgba(var(--tinta-rgb),.22)' : o.estado === 'planificada' ? 'var(--ambar)' : 'var(--verde)'}"></span><span class="lbl">${esc(estadoObraTxt(o))}</span></span>
     </div>
     <div style="font:600 16px/1.3 var(--sans);margin-top:${cod ? '9px' : '6px'}">${esc(descr || o.cliente || (cod ? o.titulo : '') || 'Sin cliente')}</div>
     ${descr && o.cliente ? `<div class="sub" style="margin-top:2px">${esc(o.cliente)}</div>` : ''}
@@ -4934,7 +5025,7 @@ function vObra() {
     ${puedeObras() ? comentariosObraHTML(o) : ''}
     <div class="row" style="justify-content:space-between;align-items:baseline;margin-bottom:10px">
       <div class="lbl" style="font-weight:600;font-size:12px;color:var(--t2)">Horas por empleado</div>
-      <div class="wrap">${OBRA_RANGOS.map(([r, l]) => `<div class="chip" style="padding:6px 11px;font-size:11px${r === rango ? ';background:var(--tinta);color:#fff;border-color:var(--tinta)' : ''}" data-a="obraRango" data-r="${r}">${l}</div>`).join('')}</div>
+      <div class="wrap">${OBRA_RANGOS.map(([r, l]) => `<div class="chip" style="padding:6px 11px;font-size:11px${r === rango ? ';background:var(--tinta-f);color:#fff;border-color:var(--tinta-f)' : ''}" data-a="obraRango" data-r="${r}">${l}</div>`).join('')}</div>
     </div>
     <div class="card" style="padding:6px 15px 13px">
       ${filas.map(({ x, m }) => `<div style="padding:11px 0;border-bottom:1px solid var(--l1)">
@@ -4946,7 +5037,7 @@ function vObra() {
       <div class="row" style="justify-content:space-between;padding-top:12px"><div class="sub">Total ${rango === 'total' ? 'obra' : OBRA_RANGOS.find((r) => r[0] === rango)[1].toLowerCase()}</div><div class="num" style="font-size:19px">${durMin(filas.reduce((t, f) => t + f.m, 0))}</div></div>
     </div>
     ${puedeCrear() ? `<div class="row g8" style="margin-top:10px">
-      <button class="pill grow" data-a="imprimirHorasObra" style="padding:12px;text-align:center;background:var(--tinta);color:#fff">Imprimir PDF</button>
+      <button class="pill grow" data-a="imprimirHorasObra" style="padding:12px;text-align:center;background:var(--tinta-f);color:#fff">Imprimir PDF</button>
       <button class="pill grow" data-a="exportarHorasObraCSV" style="padding:12px;text-align:center">Exportar CSV</button>
     </div>` : ''}
     ${proyectoHTML(o)}
@@ -5126,10 +5217,10 @@ function docsObraHTML(o) {
     const url = V.obraDocsUrls[d.ruta];
     const miniatura = d.es_imagen && url
       ? `<div style="width:46px;height:46px;border-radius:10px;flex:none;background:#2b3024 center/cover no-repeat;background-image:url('${url}')"></div>`
-      : `<div style="width:46px;height:46px;border-radius:10px;flex:none;display:flex;align-items:center;justify-content:center;background:rgba(20,23,15,.06);font:600 10px var(--mono);color:var(--t2)">${d.es_imagen ? 'FOTO' : 'PDF'}</div>`;
+      : `<div style="width:46px;height:46px;border-radius:10px;flex:none;display:flex;align-items:center;justify-content:center;background:rgba(var(--tinta-rgb),.06);font:600 10px var(--mono);color:var(--t2)">${d.es_imagen ? 'FOTO' : 'PDF'}</div>`;
     const cuerpo = `${miniatura}
       <div class="grow">
-        <div class="row g8"><span class="badge" style="background:rgba(20,23,15,.06);color:var(--tinta)">${esc(docTipoNombre(d.tipo))}</span><span class="tiny" style="white-space:nowrap">${d.fecha ? fechaCorta(d.fecha + 'T12:00') : ''}</span></div>
+        <div class="row g8"><span class="badge" style="background:rgba(var(--tinta-rgb),.06);color:var(--tinta)">${esc(docTipoNombre(d.tipo))}</span><span class="tiny" style="white-space:nowrap">${d.fecha ? fechaCorta(d.fecha + 'T12:00') : ''}</span></div>
         <div class="ell" style="font:500 15px/1.25 var(--sans);margin-top:6px">${esc(d.proveedor || d.nombre || 'Sin proveedor')}</div>
         ${d.nota ? `<div class="tiny ell" style="margin-top:3px">${esc(d.nota)}</div>` : ''}
       </div>
@@ -5160,7 +5251,7 @@ function docsObraHTML(o) {
 /** El cliente de la obra, buscado en Teamleader en vez de escrito a mano. */
 function obraCRMHTML(d) {
   if (d.tlId) {
-    return `<div class="card row" style="background:#e3efe5;margin-bottom:6px">
+    return `<div class="card row" style="background:var(--verde-cl);margin-bottom:6px">
       <div class="grow"><div class="row g8"><span class="dot" style="width:8px;height:8px;background:var(--verde)"></span>
         <span class="lbl" style="color:var(--verde-o)">Cliente de Teamleader</span></div>
         <div style="font:600 15px var(--sans);margin-top:7px">${esc(d.cliente || '')}</div>
@@ -5168,7 +5259,7 @@ function obraCRMHTML(d) {
       <span class="tiny" data-a="obraSoltarCRM" style="cursor:pointer;text-decoration:underline;color:var(--t2)">Soltar</span>
     </div>`;
   }
-  return `<div class="card" style="margin-bottom:6px;background:rgba(20,23,15,.03)">
+  return `<div class="card" style="margin-bottom:6px;background:rgba(var(--tinta-rgb),.03)">
     <div class="lbl">Buscar el cliente en Teamleader</div>
     <div class="sub" style="font-size:12px;margin-top:6px">Si lo enganchas, el nombre queda igual que en el CRM y la obra se queda enlazada con su ficha. Opcional.</div>
     <div class="row g8" style="margin-top:12px">
@@ -5195,7 +5286,7 @@ function vAlta() {
     <div data-a="guardarObra" style="font:600 13px var(--sans);color:var(--verde-o);cursor:pointer">Guardar</div>
   </div>
   <div class="scroll pad" style="padding-bottom:40px">
-    ${conCodigo ? `<div class="card" style="padding:12px 15px;margin-bottom:16px;background:rgba(20,23,15,.03)">
+    ${conCodigo ? `<div class="card" style="padding:12px 15px;margin-bottom:16px;background:rgba(var(--tinta-rgb),.03)">
       <div class="lbl">Código de obra</div>
       <div style="font:600 24px/1.1 var(--cond);margin-top:5px;color:${d.numero != null ? 'var(--tinta)' : 'var(--t3)'}">${d.numero != null ? esc(codigoObra(d)) : 'OB-··· · se asignará al guardar'}</div>
       <div class="tiny" style="margin-top:5px">Correlativo y único. Lo pone el sistema; no se puede cambiar.</div>
@@ -5214,7 +5305,7 @@ function vAlta() {
 /* --- partes --- */
 function cardParte(p) {
   const o = obraById(p.obraId) || { titulo: '—', cliente: '' };
-  const bg0 = { enviado: ['rgba(20,23,15,.07)', 'var(--t2)', 'Enviado'], firmado: ['#e3efe5', 'var(--verde-o)', 'Firmado'], anulado: ['var(--rojo-cl)', 'var(--rojo)', 'Anulado'] }[p.estado];
+  const bg0 = { enviado: ['rgba(var(--tinta-rgb),.07)', 'var(--t2)', 'Enviado'], firmado: ['var(--verde-cl)', 'var(--verde-o)', 'Firmado'], anulado: ['var(--rojo-cl)', 'var(--rojo)', 'Anulado'] }[p.estado];
   const bg = bg0 && p.estado === 'firmado' && !p.firma ? [bg0[0], bg0[1], 'Sin firma'] : bg0;
   const inc = p.nivel !== 'Sin incidencias';
   return `<div class="card" style="margin-bottom:10px;${p.estado === 'anulado' ? 'opacity:.62' : ''}">
@@ -5265,7 +5356,7 @@ function moverParteListaHTML(s) {
   const obras = S.obras.filter((o) => o.id !== s.desdeObra).filter((o) => !q || (num != null && o.numero === num) || sinTildes([codigoObra(o), o.titulo, o.cliente, o.dir, o.poblacion].join(' ')).includes(q))
     .sort((a, b) => (obraCerrada(a) ? 1 : 0) - (obraCerrada(b) ? 1 : 0) || porNumeroDesc(a, b));
   if (!obras.length) return '<div class="sub">Ninguna obra con eso.</div>';
-  return obras.slice(0, 80).map((o) => `<button class="fila-obra" data-a="moverParteA" data-id="${o.id}" ${s.busy ? 'disabled' : ''}>${esc(codigoObra(o) || o.titulo)} · ${esc(o.cliente || o.titulo)}${obraCerrada(o) ? ' <span class="badge" style="background:rgba(20,23,15,.07);color:var(--t2)">cerrada</span>' : ''}<small>${esc([o.nombre !== o.cliente ? o.nombre : '', direccionObra(o)].filter(Boolean).join(' · '))}</small></button>`).join('');
+  return obras.slice(0, 80).map((o) => `<button class="fila-obra" data-a="moverParteA" data-id="${o.id}" ${s.busy ? 'disabled' : ''}>${esc(codigoObra(o) || o.titulo)} · ${esc(o.cliente || o.titulo)}${obraCerrada(o) ? ' <span class="badge" style="background:rgba(var(--tinta-rgb),.07);color:var(--t2)">cerrada</span>' : ''}<small>${esc([o.nombre !== o.cliente ? o.nombre : '', direccionObra(o)].filter(Boolean).join(' · '))}</small></button>`).join('');
 }
 function vPartes() {
   const lista = puedeCrear() ? S.partes : S.partes.filter((p) => p.horas && p.horas[V.user.id] != null);
@@ -5274,7 +5365,7 @@ function vPartes() {
     ${marcaSysefen(false)}
     <div class="row" style="justify-content:space-between">
       <div class="h1">Partes</div>
-      ${puedeCrear() ? '<button class="pill" data-a="nuevoParteElegir" style="background:var(--tinta);color:#fff">+ Nuevo parte</button>' : ''}
+      ${puedeCrear() ? '<button class="pill" data-a="nuevoParteElegir" style="background:var(--tinta-f);color:#fff">+ Nuevo parte</button>' : ''}
     </div>
     <div class="sub" style="margin-top:8px">${lista.length} en total${inc ? ' · ' + inc + ' con incidencia' : ''}</div>
   </div>
@@ -5331,10 +5422,10 @@ function vHoras() {
     </div>` : '<div style="height:16px"></div>'}
   </div>
   <div class="scroll pad pb-nav">
-    ${puedeCrear() ? `<div class="card row" data-a="abrirImputar" style="margin-bottom:12px;cursor:pointer;background:var(--tinta)">
+    ${puedeCrear() ? `<div class="card row" data-a="abrirImputar" style="margin-bottom:12px;cursor:pointer;background:var(--tinta-s)">
       <div class="grow"><div style="font:600 15px/1 var(--sans);color:#fff">Imputar / repartir horas</div>
       <div class="tiny" style="color:rgba(255,255,255,.5);margin-top:5px">Distribuir la jornada por obra, despacho, desplazamiento…</div></div>
-      <div class="av" style="width:28px;height:28px;background:var(--ambar);color:var(--tinta);font-size:15px">→</div>
+      <div class="av" style="width:28px;height:28px;background:var(--ambar);color:#14170f;font-size:15px">→</div>
     </div>` : ''}
     ${esAdmin() ? `<div class="card row" data-a="abrirRevisarImp" style="margin-bottom:12px;cursor:pointer">
       <div class="grow"><div style="font:600 15px/1 var(--sans)">Revisar imputaciones</div>
@@ -5351,7 +5442,7 @@ function vHoras() {
       <div class="tiny" style="margin-top:5px">Mes a mes, día por día, con tus totales y el histórico. Se puede imprimir.</div></div>
       <div style="font:400 20px/1 var(--sans);color:var(--t3)">›</div>
     </div>
-    ${esAdmin() ? '<div class="row g8" style="margin-bottom:14px"><button class="pill grow" data-a="exportar" style="padding:13px;text-align:center;background:var(--tinta);color:#fff">Exportar CSV</button><button class="pill grow" data-a="copia" style="padding:13px;text-align:center">Copia de seguridad</button></div>' : ''}
+    ${esAdmin() ? '<div class="row g8" style="margin-bottom:14px"><button class="pill grow" data-a="exportar" style="padding:13px;text-align:center;background:var(--tinta-f);color:#fff">Exportar CSV</button><button class="pill grow" data-a="copia" style="padding:13px;text-align:center">Copia de seguridad</button></div>' : ''}
     ${filas.map((f) => { const max = Math.max(60, ...f.barras); return `<div class="card" style="margin-bottom:10px">
       <div class="row" style="align-items:baseline;justify-content:space-between;gap:14px">
         <div class="h2 grow">${esc(f.nombre)}</div>
@@ -5370,7 +5461,7 @@ function vHoras() {
         <div><div class="lbl">Imputado</div><div class="num" style="font-size:15px;margin-top:4px">${durMin(f.det.imp)}</div></div>
         <div><div class="lbl">Sin imputar</div><div class="num" style="font-size:15px;margin-top:4px;color:${f.det.disp > 0 && f.det.sinImp > 0 ? 'var(--ambar-o)' : 'var(--verde-o)'}">${f.det.disp > 0 ? durMin(f.det.sinImp) : '—'}</div></div>
         <div class="grow"></div>
-        ${f.det.disp > 0 ? `<div class="pill" data-a="abrirImputHoy" data-id="${f.id}" style="background:var(--tinta);color:#fff;padding:9px 14px;cursor:pointer">Imputar hoy</div>` : `<div class="tiny">${f.det.entrada === '—' ? 'Sin fichar hoy' : 'Jornada en curso'}</div>`}
+        ${f.det.disp > 0 ? `<div class="pill" data-a="abrirImputHoy" data-id="${f.id}" style="background:var(--tinta-f);color:#fff;padding:9px 14px;cursor:pointer">Imputar hoy</div>` : `<div class="tiny">${f.det.entrada === '—' ? 'Sin fichar hoy' : 'Jornada en curso'}</div>`}
       </div>` : ''}
     </div>`; }).join('')}
     ${!filas.length ? '<div class="card"><div class="sub">Todavía no hay horas fichadas.</div></div>' : ''}
@@ -5644,7 +5735,7 @@ function vRevisarImp() {
       return `<div class="card" data-a="revDia" data-f="${d.fecha}" style="margin-bottom:10px;cursor:pointer">
         <div class="row" style="align-items:baseline;justify-content:space-between;gap:12px">
           <div class="h2 grow" style="font-size:16px">${esc(agMayus(fechaLarga(d.fecha)))}</div>
-          <span class="badge" style="background:rgba(20,23,15,.05);color:${color}">${txt}</span>
+          <span class="badge" style="background:rgba(var(--tinta-rgb),.05);color:${color}">${txt}</span>
         </div>
         <div class="row" style="gap:14px;margin-top:10px">
           <div><div class="lbl">Jornada</div><div class="num" style="font-size:14px;margin-top:3px">${durMin(d.disp)}</div></div>
@@ -5701,7 +5792,7 @@ function vResumenImp() {
             <div style="font:500 14px/1.3 var(--sans)">${esc(f.lab)}</div></div>
           <div class="num" style="font-size:14px;flex:none">${durMin(f.min)} · ${f.pct}%</div>
         </div>
-        <div style="margin-top:7px;height:10px;border-radius:99px;background:rgba(20,23,15,.06)">
+        <div style="margin-top:7px;height:10px;border-radius:99px;background:rgba(var(--tinta-rgb),.06)">
           <i style="display:block;height:100%;width:${Math.max(2, (f.min / ordenadas[0].min) * 100)}%;border-radius:99px;background:${IMP_COLORES[f.cat]}"></i>
         </div>
       </div>`).join('')}
@@ -5744,7 +5835,7 @@ function vImputar() {
       return `<div class="card" data-a="abrirImputEmp" data-id="${u.id}" style="margin-bottom:10px;cursor:pointer">
         <div class="row" style="align-items:baseline;justify-content:space-between">
           <div class="h2 grow">${esc(u.nombre)}</div>
-          ${exceso ? '<span class="badge" style="background:var(--rojo-cl);color:var(--rojo)">⚠ Revisar</span>' : (completa ? '<span class="badge" style="background:#e3efe5;color:var(--verde-o)">✓ Completa</span>' : `<span class="num" style="font-size:16px;color:var(--ambar-o)">${durMin(sinImp)} sin imputar</span>`)}
+          ${exceso ? '<span class="badge" style="background:var(--rojo-cl);color:var(--rojo)">⚠ Revisar</span>' : (completa ? '<span class="badge" style="background:var(--verde-cl);color:var(--verde-o)">✓ Completa</span>' : `<span class="num" style="font-size:16px;color:var(--ambar-o)">${durMin(sinImp)} sin imputar</span>`)}
         </div>
         <div class="row" style="gap:12px;margin-top:12px">
           <div><div class="lbl">Presencia</div><div class="num" style="font-size:15px;margin-top:4px">${durMin(pres)}</div></div>
@@ -5791,7 +5882,7 @@ function vImputarGrupo() {
     <div class="lbl" style="margin-bottom:8px">Quiénes estuvieron (desmarca quien no)</div>
     <div class="col g8" style="margin-bottom:18px">
       ${cand.map((x) => { const on = sel.includes(x.u.id); return `<div class="card row" data-a="impGrupoToggle" data-id="${x.u.id}" style="padding:12px 14px;cursor:pointer">
-        <div style="width:22px;height:22px;border-radius:7px;flex:none;display:flex;align-items:center;justify-content:center;font:700 12px var(--sans);color:#fff;background:${on ? 'var(--verde)' : 'transparent'};border:1.5px solid ${on ? 'var(--verde)' : 'rgba(20,23,15,.25)'}">${on ? '✓' : ''}</div>
+        <div style="width:22px;height:22px;border-radius:7px;flex:none;display:flex;align-items:center;justify-content:center;font:700 12px var(--sans);color:#fff;background:${on ? 'var(--verde)' : 'transparent'};border:1.5px solid ${on ? 'var(--verde)' : 'rgba(var(--tinta-rgb),.25)'}">${on ? '✓' : ''}</div>
         <div class="grow" style="font:500 15px var(--sans)">${esc(x.u.nombre)}</div>
         <div class="tiny">${durMin(x.restante)} pendiente</div>
       </div>`; }).join('')}
@@ -5800,7 +5891,7 @@ function vImputarGrupo() {
       <div class="lbl">Reparto</div>
       <div class="tiny"><span data-num="grupoAsignado">${durMin(asignado)}</span> de ${durMin(tope)} · <span data-num="grupoLibre">${durMin(libre)}</span> sin repartir</div>
     </div>
-    ${V.impGrupoNota ? `<div style="margin-bottom:10px;padding:9px 12px;border-radius:12px;background:#e3efe5;color:var(--verde-o);font:500 13px/1.4 var(--sans)">${esc(V.impGrupoNota)}</div>` : ''}
+    ${V.impGrupoNota ? `<div style="margin-bottom:10px;padding:9px 12px;border-radius:12px;background:var(--verde-cl);color:var(--verde-o);font:500 13px/1.4 var(--sans)">${esc(V.impGrupoNota)}</div>` : ''}
     ${lineas.map((l, i) => `<div class="card" style="margin-bottom:10px">
       <div class="wrap">${IMP_CATS.map(([c, lab]) => `<div class="chip ${l.categoria === c ? 'on' : ''}" data-a="impGrupoCat" data-i="${i}" data-c="${c}">${lab}</div>`).join('')}</div>
       ${l.categoria === 'obra' ? `<div class="lbl" style="margin:12px 0 7px">Obra</div>
@@ -5813,7 +5904,7 @@ function vImputarGrupo() {
     ${exceso ? `<div class="tiny" style="text-align:center;color:var(--rojo);margin-top:10px">El total supera lo pendiente de alguien del grupo. Baja el tiempo o desmárcalo.</div>` : ''}
     ` : `<div class="card"><div class="sub">Nadie tiene horas pendientes de imputar este día.</div></div>`}
   </div>
-  ${cand.length ? `<div style="flex:none;padding:12px 20px calc(12px + var(--safe-b));background:rgba(247,246,243,.96);border-top:1px solid var(--l1)">
+  ${cand.length ? `<div style="flex:none;padding:12px 20px calc(12px + var(--safe-b));background:var(--pie);border-top:1px solid var(--l1)">
     <button class="btn btn-verde" data-a="impGrupoGuardar" ${puedeGuardar ? '' : 'disabled'}>${V.impGrupoBusy ? 'Guardando…' : 'Guardar ' + durMin(asignado) + ' a ' + seleccionados.length + (seleccionados.length === 1 ? ' persona' : ' personas')}</button>
   </div>` : ''}`;
 }
@@ -5855,7 +5946,7 @@ function vImputarEmpleado() {
     </div>`).join('') : '<div class="card"><div class="sub">Sin líneas. Añade las categorías donde estuvo.</div></div>') : ''}
     ${editable ? '<button class="btn btn-gris" data-a="impAddLinea" style="border-radius:14px;margin-top:4px">+ Añadir categoría</button>' : ''}
   </div>
-  ${editable ? `<div style="flex:none;padding:12px 20px calc(12px + var(--safe-b));background:rgba(247,246,243,.96);border-top:1px solid var(--l1)">
+  ${editable ? `<div style="flex:none;padding:12px 20px calc(12px + var(--safe-b));background:var(--pie);border-top:1px solid var(--l1)">
     ${exceso ? `<div class="tiny" style="text-align:center;color:var(--rojo);margin-bottom:8px">Excede la disponibilidad en ${durMin(imp - disp)}. Ajusta antes de guardar.</div>` : ''}
     <button class="btn btn-verde" data-a="impGuardar" ${(V.impBusy || exceso) ? 'disabled' : ''}>${V.impBusy ? 'Guardando…' : 'Guardar imputación'}</button>
   </div>` : ''}`;
@@ -5871,15 +5962,15 @@ function vEmpleados() {
     ${marcaSysefen(false)}
     <div class="row" style="justify-content:space-between">
       <div class="h1">Empleados</div>
-      <button class="pill" data-a="empNuevo" style="background:var(--tinta);color:#fff">+ Nuevo empleado</button>
+      <button class="pill" data-a="empNuevo" style="background:var(--tinta-f);color:#fff">+ Nuevo empleado</button>
     </div>
     <div class="sub" style="margin-top:8px">${lista.filter((u) => u.activo !== false).length} activos · ${lista.filter((u) => u.activo === false).length} inactivos</div>
   </div>
   <div class="scroll pad pb-nav">
     ${lista.map((u) => `<div class="card row" data-a="abrirEmpleado" data-id="${u.id}" style="margin-bottom:9px;cursor:pointer${u.activo === false ? ';opacity:.6' : ''}">
-      ${avatarHTML(u.id, `width:38px;height:38px;font-size:15px;background:${u.rol === 'admin' ? 'var(--ambar);color:var(--tinta)' : u.rol === 'jefe' ? 'var(--verde-c);color:#fff' : 'rgba(20,23,15,.08);color:var(--tinta)'}`)}
+      ${avatarHTML(u.id, `width:38px;height:38px;font-size:15px;background:${u.rol === 'admin' ? 'var(--ambar);color:#14170f' : u.rol === 'jefe' ? 'var(--verde-c);color:#fff' : 'rgba(var(--tinta-rgb),.08);color:var(--tinta)'}`)}
       <div class="grow"><div style="font:600 15px/1.1 var(--sans)">${esc(u.nombre)}</div>
-      <div class="row g8" style="margin-top:5px"><span class="dot" style="background:${u.activo === false ? 'rgba(20,23,15,.25)' : 'var(--verde)'}"></span><div class="lbl">${rolLabel(u.rol)} · ${u.activo === false ? 'Inactivo' : 'Activo'}</div></div></div>
+      <div class="row g8" style="margin-top:5px"><span class="dot" style="background:${u.activo === false ? 'rgba(var(--tinta-rgb),.25)' : 'var(--verde)'}"></span><div class="lbl">${rolLabel(u.rol)} · ${u.activo === false ? 'Inactivo' : 'Activo'}</div></div></div>
       <div style="font:400 20px/1 var(--sans);color:var(--t3)">›</div>
     </div>`).join('')}
   </div>`;
@@ -5900,11 +5991,11 @@ function vEmpleado() {
     <div data-a="empGuardar" style="font:600 13px var(--sans);color:var(--verde-o);cursor:pointer">${V.empBusy ? '…' : 'Guardar'}</div>
   </div>
   <div class="scroll pad pb-nav">
-    ${!d.nuevo && V.empEmp && !['admin', 'presupuestos'].includes(d.rol) ? `<div class="card" style="margin-bottom:14px;background:${fx ? 'var(--verde-o)' : 'var(--tinta)'};color:#fff">
+    ${!d.nuevo && V.empEmp && !['admin', 'presupuestos'].includes(d.rol) ? `<div class="card" style="margin-bottom:14px;background:${fx ? '#164a1d' : 'var(--tinta-s)'};color:#fff">
       <div class="row" style="justify-content:space-between;align-items:center">
         <div><div class="lbl" style="color:rgba(255,255,255,.6)">Fichaje de hoy</div>
         <div style="font:600 15px var(--sans);margin-top:4px">${fx ? 'Entrada ' + hhmm(fx.entrada) + ' · dentro' : (minutosDia(V.empEmp, hoyISO()) ? 'Hoy ' + durMin(minutosDia(V.empEmp, hoyISO())) + ' · fuera' : 'Sin fichar hoy')}</div></div>
-        <button class="pill" data-a="adminFichar" data-id="${V.empEmp}" style="background:#fff;color:${fx ? 'var(--rojo)' : 'var(--verde-o)'}">${fx ? 'Fichar salida' : 'Fichar entrada'}</button>
+        <button class="pill claro" data-a="adminFichar" data-id="${V.empEmp}" style="background:#fff;color:${fx ? 'var(--rojo)' : 'var(--verde-o)'}">${fx ? 'Fichar salida' : 'Fichar entrada'}</button>
       </div>
     </div>` : ''}
 
@@ -5949,7 +6040,7 @@ function vEmpleado() {
     <div class="card row" data-a="empToggleActivo" style="margin-top:18px;cursor:pointer">
       <div class="grow"><div style="font:500 15px var(--sans)">Empleado activo</div>
       <div class="sub" style="font-size:12px;margin-top:4px">${d.activo ? 'Participa en fichajes, imputaciones y partes.' : 'Inactivo: conserva su historial pero no aparece en operaciones nuevas.'}</div></div>
-      <div class="sw" style="background:${d.activo ? 'var(--verde)' : 'rgba(20,23,15,.16)'};justify-content:${d.activo ? 'flex-end' : 'flex-start'}"><i></i></div>
+      <div class="sw" style="background:${d.activo ? 'var(--verde)' : 'rgba(var(--tinta-rgb),.16)'};justify-content:${d.activo ? 'flex-end' : 'flex-start'}"><i></i></div>
     </div>
 
     ${!d.nuevo ? `<div class="card row" data-a="editarPin" data-id="${V.empEmp}" style="margin-top:18px;cursor:pointer">
@@ -6051,12 +6142,12 @@ function vPlanilla() {
   </div>
   <div class="scroll pad pb-nav">
     <div class="row g8" style="margin-bottom:12px">
-      <button class="pill grow" data-a="abrirRangoPlanilla" data-m="pdf" style="padding:12px;text-align:center;background:var(--tinta);color:#fff">Imprimir PDF</button>
+      <button class="pill grow" data-a="abrirRangoPlanilla" data-m="pdf" style="padding:12px;text-align:center;background:var(--tinta-f);color:#fff">Imprimir PDF</button>
       <button class="pill grow" data-a="abrirRangoPlanilla" data-m="csv" style="padding:12px;text-align:center">Exportar CSV</button>
     </div>
     ${editable ? '<div class="tiny" style="margin-bottom:10px">Toca cualquier día para corregir sus horas, añadir un fichaje o marcarlo como vacaciones.</div>' : ''}
     <div class="card" style="padding:0;overflow:hidden">
-      <div class="row" style="padding:9px 12px;background:rgba(20,23,15,.04);font:600 10px var(--mono);text-transform:uppercase;letter-spacing:.06em;color:var(--t2)">
+      <div class="row" style="padding:9px 12px;background:rgba(var(--tinta-rgb),.04);font:600 10px var(--mono);text-transform:uppercase;letter-spacing:.06em;color:var(--t2)">
         <div style="width:58px">Día</div><div class="grow">Entrada / Salida</div><div style="width:52px;text-align:right">Horas</div>
       </div>
       ${pl.dias.map((x) => `<div class="row" ${editable ? `data-a="planDia" data-fecha="${x.fecha}"` : ''} style="padding:9px 12px;border-top:1px solid var(--l1)${editable ? ';cursor:pointer' : ''}">
@@ -6071,7 +6162,7 @@ function vPlanilla() {
     <div class="card" style="margin-top:12px">
       <div class="row" style="justify-content:space-between"><div class="sub">Horas trabajadas</div><div class="num" style="font-size:17px">${horasLargas(pl.totalMin)}</div></div>
       <div class="row" style="justify-content:space-between;margin-top:6px"><div class="sub">Días trabajados</div><div class="num" style="font-size:17px">${pl.diasTrab}</div></div>
-      <div class="row" style="justify-content:space-between;margin-top:6px"><div class="sub">Días de vacaciones</div><div class="num" style="font-size:17px;color:${(pl.ausencias.vacaciones || 0) ? 'var(--ambar-o, #a8792a)' : 'var(--t3)'}">${pl.ausencias.vacaciones || 0}</div></div>
+      <div class="row" style="justify-content:space-between;margin-top:6px"><div class="sub">Días de vacaciones</div><div class="num" style="font-size:17px;color:${(pl.ausencias.vacaciones || 0) ? 'var(--ambar-o)' : 'var(--t3)'}">${pl.ausencias.vacaciones || 0}</div></div>
       <div class="row" style="justify-content:space-between;margin-top:6px"><div class="sub">Festivos</div><div class="num" style="font-size:17px;color:${(pl.ausencias.festivo || 0) ? 'var(--verde-o)' : 'var(--t3)'}">${pl.ausencias.festivo || 0}</div></div>
       <div class="row" style="justify-content:space-between;margin-top:6px"><div class="sub">Bajas y permisos</div><div class="num" style="font-size:17px;color:var(--t3)">${(pl.ausencias.baja || 0) + (pl.ausencias.permiso || 0)}</div></div>
       <div class="hr"></div>
@@ -6084,7 +6175,7 @@ function vPlanilla() {
         <div class="row" style="justify-content:space-between"><div class="sub">Generadas</div>
           <div class="num" style="font-size:17px">${nDias(gen)} días</div></div>
         <div class="row" style="justify-content:space-between;margin-top:6px"><div class="sub">Disfrutadas</div>
-          <div class="num" style="font-size:17px;color:${dis ? 'var(--ambar-o, #a8792a)' : 'var(--t3)'}">${nDias(dis)} días</div></div>
+          <div class="num" style="font-size:17px;color:${dis ? 'var(--ambar-o)' : 'var(--t3)'}">${nDias(dis)} días</div></div>
         <div class="row" style="justify-content:space-between;margin-top:6px"><div class="sub"><b>Pendientes a disfrutar</b></div>
           <div class="num" style="font-size:19px;color:${pend < 0 ? 'var(--rojo)' : 'var(--verde-o)'}">${nDias(pend)} días</div></div>
         <div class="tiny" style="margin-top:8px">Generadas a día de hoy, prorrateadas desde el alta sobre ${((empRowById(empIdDeUser(userId)) || {}).vacaciones_anuales) || 30} días naturales al año.</div>`;
@@ -6253,12 +6344,12 @@ function vAjustes() {
   return `<div class="hdr"><div class="h1">${esAdmin() ? 'Ajustes' : 'Perfil'}</div></div>
   <div class="scroll pad pb-nav">
     <div class="row g10" style="align-items:center;margin-bottom:16px">
-      <img src="logo-trans.png?v=3" alt="Sysefen" style="height:32px;flex:none">
+      <img src="${logoApp()}" alt="Sysefen" style="height:32px;flex:none">
       <div class="grow"><div style="font:700 15px/1 var(--cond)">Sysefen</div>
       <div class="tiny" style="margin-top:3px">Eficiencia Energética</div></div>
     </div>
     <div class="card row" style="margin-bottom:12px">
-      ${avatarHTML(u.id, `width:46px;height:46px;font-size:18px;background:${u.rol === 'admin' ? 'var(--ambar);color:var(--tinta)' : u.rol === 'jefe' ? 'var(--verde-c);color:#fff' : 'rgba(20,23,15,.08);color:var(--tinta)'}`)}
+      ${avatarHTML(u.id, `width:46px;height:46px;font-size:18px;background:${u.rol === 'admin' ? 'var(--ambar);color:#14170f' : u.rol === 'jefe' ? 'var(--verde-c);color:#fff' : 'rgba(var(--tinta-rgb),.08);color:var(--tinta)'}`)}
       <div class="grow"><div style="font:600 18px/1.1 var(--sans)">${esc(u.nombre)}</div>
       <div class="lbl" style="margin-top:5px">${rolNombre(u.rol)}</div></div>
       <button class="pill" data-a="salir">Salir</button>
@@ -6276,8 +6367,14 @@ function vAjustes() {
       <div style="font:400 20px/1 var(--sans);color:var(--t3)">›</div>
     </div>
 
+    <div class="card" style="margin-bottom:12px">
+      <div style="font:600 15px var(--sans)">Aspecto</div>
+      <div class="sub" style="font-size:12px;margin:4px 0 12px">Claro, oscuro, o automático: como tenga puesto el móvil o el ordenador en cada momento. Es solo para ti, y lo verás igual en tus otros aparatos.</div>
+      ${temaSelectorHTML()}
+    </div>
+
     ${esAdmin() ? `<div class="card" style="margin-bottom:12px">
-      <div class="row" style="gap:12px;margin-bottom:12px"><img src="logo-trans.png?v=3" alt="" style="height:38px"><div class="lbl grow">Empresa</div></div>
+      <div class="row" style="gap:12px;margin-bottom:12px"><img src="${logoApp()}" alt="" style="height:38px"><div class="lbl grow">Empresa</div></div>
       <input class="inp" data-f="empresa" value="${esc(S.empresa)}" placeholder="Nombre de la empresa">
       <input class="inp" data-f="cif" value="${esc(S.cif)}" style="margin-top:8px" placeholder="CIF (sale en el PDF)">
       <input class="inp" data-f="emailCopia" value="${esc(S.emailCopia)}" style="margin-top:8px" type="email" inputmode="email" autocapitalize="off" placeholder="Email de copia (gestoría)">
@@ -6286,7 +6383,7 @@ function vAjustes() {
     ${opts.length ? `<div class="card" style="padding:0;overflow:hidden;margin-bottom:12px">
       ${opts.map(([k, n, d], i) => `<div class="row" data-a="toggleOpt" data-k="${k}" style="padding:14px 16px;cursor:pointer;${i ? 'border-top:1px solid var(--l1)' : ''}">
         <div class="grow"><div style="font:500 15px/1.2 var(--sans)">${n}</div><div class="sub" style="font-size:12px;margin-top:4px">${d}</div></div>
-        <div class="sw" style="background:${S.opts[k] ? 'var(--verde)' : 'rgba(20,23,15,.16)'};justify-content:${S.opts[k] ? 'flex-end' : 'flex-start'}"><i></i></div>
+        <div class="sw" style="background:${S.opts[k] ? 'var(--verde)' : 'rgba(var(--tinta-rgb),.16)'};justify-content:${S.opts[k] ? 'flex-end' : 'flex-start'}"><i></i></div>
       </div>`).join('')}
     </div>` : ''}
 
@@ -6320,7 +6417,7 @@ function vAjustes() {
       <div class="sub" style="font-size:12px;margin-top:4px">Salen en cada certificado. El correo es a donde llegan los PDF (Xavi).</div>
       ${[['email_legalizaciones', 'Correo de legalizaciones', 'email'], ['instalador_razon_social', 'Razón social de la empresa instaladora', 'text'], ['instalador_numero', 'Nº de instalador autorizado', 'text'], ['instalador_nombre', 'Nombre del instalador', 'text'], ['instalador_nif', 'DNI / NIF del instalador', 'text'], ['instalador_direccion', 'Dirección', 'text'], ['instalador_cp_localidad', 'CP y localidad', 'text'], ['instalador_telefono', 'Teléfono', 'text'], ['aparato_verificador', 'Aparato verificador (marca, modelo y nº de serie)', 'text']]
         .map(([k, et, tipo]) => `<input class="inp" data-f="legEmpresa" data-k="${k}" type="${tipo}" value="${esc((S.leg || {})[k] || '')}" placeholder="${esc(et)}" style="margin-top:8px" autocapitalize="off">`).join('')}
-      <button class="pill" data-a="legGuardarEmpresa" style="margin-top:12px;padding:11px;width:100%;text-align:center;background:var(--tinta);color:#fff">Guardar</button>
+      <button class="pill" data-a="legGuardarEmpresa" style="margin-top:12px;padding:11px;width:100%;text-align:center;background:var(--tinta-f);color:#fff">Guardar</button>
     </div>` : ''}
 
     <a class="card row" href="manual/index.html" style="margin-top:14px;text-decoration:none;color:inherit">
@@ -6348,7 +6445,7 @@ function vAjustes() {
     <div class="lbl" style="font-weight:600;font-size:12px;color:var(--t2);margin:22px 0 10px">Registro anterior a la app</div>
     <div class="row g8">
       <button class="pill grow" data-a="descargarPlantilla" style="padding:14px;text-align:center">Plantilla CSV</button>
-      <button class="pill grow" data-a="abrirImportar" style="padding:14px;text-align:center;background:var(--tinta);color:#fff">Importar CSV</button>
+      <button class="pill grow" data-a="abrirImportar" style="padding:14px;text-align:center;background:var(--tinta-f);color:#fff">Importar CSV</button>
     </div>
     <div class="sub" style="font-size:12px;margin-top:10px">Para pasar a la app las horas que ya tenías anotadas fuera. Antes de guardar nada verás qué entra y qué se descarta.</div>` : ''}
 
@@ -6362,7 +6459,7 @@ function vAjustes() {
       ${V.crm.error ? `<div class="sub" style="font-size:12px;margin-top:8px;color:var(--rojo)">${esc(V.crm.error)}</div>` : ''}
       <div class="row g8" style="margin-top:14px">
         <button class="pill grow" data-a="crmEstado" style="padding:11px;text-align:center" ${V.crm.busy ? 'disabled' : ''}>Comprobar</button>
-        <button class="pill grow" data-a="crmConectar" style="padding:11px;text-align:center;background:var(--tinta);color:#fff" ${V.crm.busy ? 'disabled' : ''}>${V.crm.conectado ? 'Volver a conectar' : 'Conectar'}</button>
+        <button class="pill grow" data-a="crmConectar" style="padding:11px;text-align:center;background:var(--tinta-f);color:#fff" ${V.crm.busy ? 'disabled' : ''}>${V.crm.conectado ? 'Volver a conectar' : 'Conectar'}</button>
       </div>
       ${esAdmin() && V.crm.conectado ? `<button class="pill ${V.crm.confirmar ? 'pill-rojo' : ''}" data-a="crmDesconectar" style="margin-top:8px;padding:11px;width:100%;text-align:center">${V.crm.confirmar ? '¿Seguro? Toca otra vez' : 'Desconectar'}</button>` : ''}
     </div>` : ''}
@@ -6397,7 +6494,7 @@ function vCopiasSeguridad() {
       ${c.error ? `<div class="sub" style="font-size:12px;margin-top:8px;color:var(--rojo)">${esc(c.error)}</div>` : ''}
       <div class="row g8" style="margin-top:14px">
         <button class="pill grow" data-a="copiasEstado" style="padding:11px;text-align:center" ${c.busy ? 'disabled' : ''}>Comprobar</button>
-        <button class="pill grow" data-a="copiaAhora" style="padding:11px;text-align:center;background:var(--tinta);color:#fff" ${c.busy ? 'disabled' : ''}>${c.busy && enCurso ? 'Copiando…' : enCurso ? 'Continuar la copia' : 'Hacer una copia ahora'}</button>
+        <button class="pill grow" data-a="copiaAhora" style="padding:11px;text-align:center;background:var(--tinta-f);color:#fff" ${c.busy ? 'disabled' : ''}>${c.busy && enCurso ? 'Copiando…' : enCurso ? 'Continuar la copia' : 'Hacer una copia ahora'}</button>
       </div>
     </div>`;
 }
@@ -6451,9 +6548,9 @@ function vImportar() {
 
     <div class="sub" style="font-size:12px">Los días que no aparecen en el archivo quedan como <b>Sin fichaje</b> en la planilla: es lo correcto para fines de semana, festivos, vacaciones o bajas. No se rellenan solos.</div>
   </div>
-  <div style="position:fixed;left:0;right:0;bottom:0;padding:14px 20px calc(14px + var(--safe-b));background:rgba(247,246,243,.96);border-top:1px solid var(--l1)">
+  <div style="position:fixed;left:0;right:0;bottom:0;padding:14px 20px calc(14px + var(--safe-b));background:var(--pie);border-top:1px solid var(--l1)">
     ${im.busy ? `<div class="lbl" style="text-align:center;margin-bottom:8px">Cargando ${im.hechas} de ${im.ok.length} (${pct}%)</div>
-      <div style="height:6px;border-radius:99px;background:rgba(20,23,15,.1);overflow:hidden"><div style="height:100%;width:${pct}%;background:var(--verde)"></div></div>` : ''}
+      <div style="height:6px;border-radius:99px;background:rgba(var(--tinta-rgb),.1);overflow:hidden"><div style="height:100%;width:${pct}%;background:var(--verde)"></div></div>` : ''}
     <button class="btn" data-a="importarConfirmar" ${im.busy || !im.ok.length ? 'disabled' : ''} style="${im.busy ? 'margin-top:12px' : ''}">${im.busy ? 'Cargando…' : 'Cargar ' + im.ok.length + ' ' + (im.ok.length === 1 ? 'tramo' : 'tramos')}</button>
   </div>`;
 }
@@ -6494,9 +6591,9 @@ function vP1() {
     <div class="card" style="padding:0;overflow:hidden">
       ${(puedeCrear() ? equipo() : equipo().filter((uu) => uu.id === V.user.id)).map((uu, i) => { const id = uu.id; const on = d.incluidos.includes(id); return `<div style="padding:12px 13px;${i ? 'border-top:1px solid var(--l1)' : ''}">
         <div class="row" data-a="togglePersona" data-id="${id}" style="gap:10px;cursor:pointer;padding:4px 0">
-          <div style="width:22px;height:22px;border-radius:7px;flex:none;display:flex;align-items:center;justify-content:center;font:700 12px var(--sans);color:#fff;background:${on ? 'var(--verde)' : 'transparent'};border:1.5px solid ${on ? 'var(--verde)' : 'rgba(20,23,15,.25)'}">${on ? '✓' : ''}</div>
-          <div class="grow" style="font:500 15px/1.1 var(--sans);color:${on ? 'var(--tinta)' : 'rgba(20,23,15,.35)'}">${esc(uu.nombre)}</div>
-          <div class="num" data-num="parteHoras" data-id="${id}" style="font-size:16px;color:${on ? 'var(--tinta)' : 'rgba(20,23,15,.3)'}">${on ? fmtH(d.horas[id] || 0) + ' h' : 'tocar para incluir'}</div>
+          <div style="width:22px;height:22px;border-radius:7px;flex:none;display:flex;align-items:center;justify-content:center;font:700 12px var(--sans);color:#fff;background:${on ? 'var(--verde)' : 'transparent'};border:1.5px solid ${on ? 'var(--verde)' : 'rgba(var(--tinta-rgb),.25)'}">${on ? '✓' : ''}</div>
+          <div class="grow" style="font:500 15px/1.1 var(--sans);color:${on ? 'var(--tinta)' : 'rgba(var(--tinta-rgb),.35)'}">${esc(uu.nombre)}</div>
+          <div class="num" data-num="parteHoras" data-id="${id}" style="font-size:16px;color:${on ? 'var(--tinta)' : 'rgba(var(--tinta-rgb),.3)'}">${on ? fmtH(d.horas[id] || 0) + ' h' : 'tocar para incluir'}</div>
         </div>
         ${on ? relojHTML('parte', id, (d.horas[id] || 0) * 60, RELOJ_MAX_DEFECTO, true, 15) : ''}
       </div>`; }).join('')}
@@ -6510,9 +6607,9 @@ function vP1() {
       </div>
       ${abierto ? EXTERNOS.map(([id, nombre], i) => { const on = d.incluidos.includes(id); return `<div style="padding:12px 13px;${i ? 'border-top:1px solid var(--l1)' : ''}">
         <div class="row" data-a="togglePersona" data-id="${id}" style="gap:10px;cursor:pointer;padding:4px 0">
-          <div style="width:22px;height:22px;border-radius:7px;flex:none;display:flex;align-items:center;justify-content:center;font:700 12px var(--sans);color:#fff;background:${on ? 'var(--ambar)' : 'transparent'};border:1.5px solid ${on ? 'var(--ambar)' : 'rgba(20,23,15,.25)'}">${on ? '✓' : ''}</div>
-          <div class="grow" style="font:500 15px/1.1 var(--sans);color:${on ? 'var(--tinta)' : 'rgba(20,23,15,.35)'}">${nombre}</div>
-          <div class="num" data-num="parteHoras" data-id="${id}" style="font-size:16px;color:${on ? 'var(--tinta)' : 'rgba(20,23,15,.3)'}">${on ? fmtH(d.horas[id] || 0) + ' h' : 'tocar para incluir'}</div>
+          <div style="width:22px;height:22px;border-radius:7px;flex:none;display:flex;align-items:center;justify-content:center;font:700 12px var(--sans);color:#fff;background:${on ? 'var(--ambar)' : 'transparent'};border:1.5px solid ${on ? 'var(--ambar)' : 'rgba(var(--tinta-rgb),.25)'}">${on ? '✓' : ''}</div>
+          <div class="grow" style="font:500 15px/1.1 var(--sans);color:${on ? 'var(--tinta)' : 'rgba(var(--tinta-rgb),.35)'}">${nombre}</div>
+          <div class="num" data-num="parteHoras" data-id="${id}" style="font-size:16px;color:${on ? 'var(--tinta)' : 'rgba(var(--tinta-rgb),.3)'}">${on ? fmtH(d.horas[id] || 0) + ' h' : 'tocar para incluir'}</div>
         </div>
         ${on ? relojHTML('parte', id, (d.horas[id] || 0) * 60, RELOJ_MAX_DEFECTO, true, 15) : ''}
       </div>`; }).join('') + '<div class="tiny" style="padding:0 13px 12px">Solo cuentan en este parte: no fichan ni van a ninguna planilla. Su coste se pone en Costes de personal.</div>' : ''}
@@ -6529,11 +6626,11 @@ function vP1() {
         <div class="grow">
           <input data-fm="${m.id}:nombre" value="${esc(m.nombre)}" placeholder="Descripción (p. ej. Cable 3x2,5)" style="width:100%;font:500 15px var(--sans)">
           <div class="row" style="gap:6px;margin-top:5px">
-            <div class="badge" data-a="toggleCompra" data-id="${m.id}" style="cursor:pointer;background:${m.compra ? '#f6eddb' : 'rgba(20,23,15,.06)'};color:${m.compra ? 'var(--ambar-o)' : 'var(--t2)'}">${m.compra ? 'Comprado en obra' : 'De almacén'}</div>
+            <div class="badge" data-a="toggleCompra" data-id="${m.id}" style="cursor:pointer;background:${m.compra ? 'var(--ambar-cl3)' : 'rgba(var(--tinta-rgb),.06)'};color:${m.compra ? 'var(--ambar-o)' : 'var(--t2)'}">${m.compra ? 'Comprado en obra' : 'De almacén'}</div>
             <input data-fm="${m.id}:cant" value="${esc(m.cant)}" placeholder="cantidad (p. ej. 50 m)" style="flex:1;font:400 13px var(--sans);color:var(--t2)">
           </div>
         </div>
-        <button class="av" data-a="quitarMat" data-id="${m.id}" style="width:26px;height:26px;background:#eeece5;font-size:14px;color:var(--t2)">×</button>
+        <button class="av" data-a="quitarMat" data-id="${m.id}" style="width:26px;height:26px;background:var(--gris-cl);font-size:14px;color:var(--t2)">×</button>
       </div>`).join('')}
     </div>
     <div class="wrap" style="margin-top:10px">${frec.map((n) => `<div class="chip" data-a="addMat" data-n="${esc(n)}">+ ${esc(n)}</div>`).join('')}</div>
@@ -6547,9 +6644,9 @@ function vP1() {
     </div>
     <div class="col g8">
       ${d.adjuntos.map((a) => `<div class="adj row">
-        <div class="tipo" style="background:${a.img ? '#e6ecf2' : 'var(--rojo-cl)'};color:${a.img ? '#2c4f70' : 'var(--rojo)'}">${esc(a.ext)}</div>
+        <div class="tipo" style="background:${a.img ? 'var(--azul-cl)' : 'var(--rojo-cl)'};color:${a.img ? 'var(--azul)' : 'var(--rojo)'}">${esc(a.ext)}</div>
         <div class="grow"><div class="ell" style="font:500 14px/1.1 var(--sans)">${esc(a.nombre)}</div><div class="tiny" style="margin-top:4px">${esc(a.peso)}</div></div>
-        <button class="av" data-a="quitarAdj" data-id="${a.id}" style="width:26px;height:26px;background:#eeece5;font-size:14px;color:var(--t2)">×</button>
+        <button class="av" data-a="quitarAdj" data-id="${a.id}" style="width:26px;height:26px;background:var(--gris-cl);font-size:14px;color:var(--t2)">×</button>
       </div>`).join('')}
     </div>
     <div class="row g8" style="margin-top:9px">
@@ -6558,7 +6655,7 @@ function vP1() {
     </div>
 
   </div>
-  <div style="flex:none;padding:14px 20px calc(14px + var(--safe-b));background:rgba(247,246,243,.96);border-top:1px solid var(--l1)">
+  <div style="flex:none;padding:14px 20px calc(14px + var(--safe-b));background:var(--pie);border-top:1px solid var(--l1)">
     <button class="btn" data-a="aPaso" data-p="p2">Continuar a la firma</button>
   </div>`;
 }
@@ -6580,9 +6677,9 @@ function vP2() {
     <div class="card row" data-a="toggleAusente" style="margin-top:18px;cursor:pointer">
       <div class="grow"><div style="font:500 15px var(--sans)">Cliente no presente</div>
       <div class="sub" style="font-size:12px;margin-top:4px">El parte se emite sin firma del cliente.</div></div>
-      <div class="sw" style="background:${d.clienteAusente ? 'var(--verde)' : 'rgba(20,23,15,.16)'};justify-content:${d.clienteAusente ? 'flex-end' : 'flex-start'}"><i></i></div>
+      <div class="sw" style="background:${d.clienteAusente ? 'var(--verde)' : 'rgba(var(--tinta-rgb),.16)'};justify-content:${d.clienteAusente ? 'flex-end' : 'flex-start'}"><i></i></div>
     </div>
-    ${d.clienteAusente ? `<div class="card" style="margin-top:12px;background:rgba(20,23,15,.04)">
+    ${d.clienteAusente ? `<div class="card" style="margin-top:12px;background:rgba(var(--tinta-rgb),.04)">
       <div class="sub" style="font-size:13px">Constará en el parte: <b>«Cliente no presente en la finalización de los trabajos. Parte emitido sin firma del cliente.»</b></div>
     </div>` : `<div class="row" style="justify-content:space-between;align-items:baseline;margin:22px 0 8px">
       <div class="lbl">Lo que va a firmar el cliente</div>
@@ -6603,7 +6700,7 @@ function vP2() {
     </div>
     <div class="sub" style="font-size:12px;margin-top:12px">Al firmar, el cliente conforma los trabajos, las horas y los materiales de este parte. Se guarda con fecha y hora.</div>`}
   </div>
-  <div style="flex:none;padding:14px 20px calc(14px + var(--safe-b));background:rgba(247,246,243,.96);border-top:1px solid var(--l1)">
+  <div style="flex:none;padding:14px 20px calc(14px + var(--safe-b));background:var(--pie);border-top:1px solid var(--l1)">
     <button class="btn" data-a="aPaso" data-p="p3" ${d.firma || d.clienteAusente ? '' : 'disabled'}>${d.firma || d.clienteAusente ? 'Revisar y enviar' : 'Falta la firma del cliente'}</button>
   </div>`;
 }
@@ -6660,7 +6757,7 @@ function docParteHTML(d, previa) {
       <div class="hr"></div>
       <div style="font:600 16px/1.2 var(--sans)">${esc(nombreObra(o))}</div>
       <div class="sub" style="font-size:12px;margin-top:4px">${esc(o.dir || '')} · ${fechaLarga(d.fecha)} · ${esc(yo().nombre)}</div>
-      <div style="font:400 13px/1.5 var(--sans);color:rgba(20,23,15,.78);margin-top:12px">${esc(d.desc)}</div>
+      <div style="font:400 13px/1.5 var(--sans);color:rgba(var(--tinta-rgb),.78);margin-top:12px">${esc(d.desc)}</div>
       <div class="hr"></div>
       ${d.incluidos.filter((id) => (d.horas[id] || 0) > 0).map((id) => `<div class="fila"><div>${esc(nombreHoras(id))}</div><span>${fmtH(d.horas[id])} h</span></div>`).join('') || '<div class="fila"><div style="color:var(--rojo)">Sin horas asignadas</div><span></span></div>'}
       <div class="tot"><div>Total horas</div><div>${fmtH(total)} h</div></div>
@@ -6668,12 +6765,12 @@ function docParteHTML(d, previa) {
         ${d.mats.filter((m) => m.nombre && m.nombre.trim()).map((m) => `<div class="fila"><div>${esc(m.nombre)}</div><span>${m.cant ? esc(m.cant) : '—'}</span></div>`).join('')}` : ''}
       ${d.nivel !== 'Sin incidencias' ? `<div style="margin-top:14px;padding:11px 13px;border-radius:8px;background:var(--rojo-cl)">
         <div class="lbl" style="color:var(--rojo)">Incidencia · ${esc(d.nivel)}</div>
-        <div style="font:400 13px/1.45 var(--sans);color:rgba(20,23,15,.78);margin-top:6px">${esc(d.inc || '—')}</div></div>` : ''}
+        <div style="font:400 13px/1.45 var(--sans);color:rgba(var(--tinta-rgb),.78);margin-top:6px">${esc(d.inc || '—')}</div></div>` : ''}
       ${d.adjuntos.length ? `<div class="lbl" style="margin:14px 0 7px">Adjuntos · ${d.adjuntos.length}</div>
         <div class="wrap">${d.adjuntos.map((a) => a.img ? `<img src="${a.data}" style="width:64px;height:64px;object-fit:cover;border-radius:6px">` : `<div class="tiny" style="padding:8px 10px;background:#efede6;border-radius:6px">${esc(a.nombre)}</div>`).join('')}</div>` : ''}
       <div class="hr"></div>
       <div class="lbl">Conforme el cliente</div>
-      ${previa && !d.firma && !d.clienteAusente ? '<div style="margin-top:8px;height:64px;border:1.5px dashed rgba(20,23,15,.3);border-radius:8px;display:flex;align-items:center;justify-content:center;font:600 13px var(--sans);color:var(--t2);letter-spacing:.04em">FIRMA PENDIENTE</div>' : d.clienteAusente ? '<div class="sub" style="font-size:13px;margin-top:4px">Cliente no presente en la finalización de los trabajos. Parte emitido sin firma del cliente.</div>' : (d.firma ? `<img src="${d.firma}" style="width:100%;max-height:90px;object-fit:contain;margin-top:4px">` : '')}
+      ${previa && !d.firma && !d.clienteAusente ? '<div style="margin-top:8px;height:64px;border:1.5px dashed rgba(var(--tinta-rgb),.3);border-radius:8px;display:flex;align-items:center;justify-content:center;font:600 13px var(--sans);color:var(--t2);letter-spacing:.04em">FIRMA PENDIENTE</div>' : d.clienteAusente ? '<div class="sub" style="font-size:13px;margin-top:4px">Cliente no presente en la finalización de los trabajos. Parte emitido sin firma del cliente.</div>' : (d.firma ? `<img src="${d.firma}" style="width:100%;max-height:90px;object-fit:contain;margin-top:4px">` : '')}
       <div class="tiny" style="margin-top:2px">${d.clienteAusente ? 'Sin firma' : esc(d.firmante || 'Firmado por el cliente')} · ${new Date().toLocaleString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</div>
     </div>`;
 }
@@ -6695,7 +6792,7 @@ function vP3() {
     <div class="sub" style="font-size:12px;margin-top:10px">Al pulsar «Firmar y enviar informe», el PDF firmado llega a este correo desde noreply@sysefen.com. Viene puesto el correo de la obra; si está vacío, escríbelo.</div>
     <button class="btn btn-gris" data-a="guardarEnviar" data-enviar="" style="margin-top:14px;border-radius:99px" ${V.parteBusy ? 'disabled' : ''}>Guardar sin enviar</button>
   </div>
-  <div style="flex:none;padding:14px 20px calc(14px + var(--safe-b));background:rgba(247,246,243,.96);border-top:1px solid var(--l1)">
+  <div style="flex:none;padding:14px 20px calc(14px + var(--safe-b));background:var(--pie);border-top:1px solid var(--l1)">
     <button class="btn btn-verde" data-a="guardarEnviar" data-enviar="1" ${V.parteBusy ? 'disabled' : ''}>${V.parteBusy ? 'Guardando…' : 'Firmar y enviar informe'}</button>
   </div>`;
 }
@@ -6703,7 +6800,7 @@ function vOk() {
   const p = S.partes.find((x) => x.id === V.verParte);
   return `<div class="scroll sin-marca" style="background:var(--verde);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px;text-align:center">
     <img src="logo-blanco.png?v=3" alt="" style="width:150px;max-width:52%;margin-bottom:26px">
-    <div class="av" style="width:78px;height:78px;background:#fff;color:var(--verde-o);font-size:34px">✓</div>
+    <div class="av claro" style="width:78px;height:78px;background:#fff;color:var(--verde-o);font-size:34px">✓</div>
     <div style="font:600 30px/1.1 var(--cond);color:#fff;margin-top:22px">Parte guardado</div>
     <div style="font:400 15px/1.5 var(--sans);color:rgba(255,255,255,.85);margin-top:10px;max-width:260px">${esc(p.ref)} ${p.firma ? 'firmado por el cliente.' : 'guardado sin firma: cliente no presente.'}${
       V.okEnvio && V.okEnvio.enviando ? '<br>Enviando a ' + esc(V.okEnvio.a) + '…'
@@ -6715,7 +6812,7 @@ function vOk() {
       : V.okDrive.estado === 'ok' ? '✓ Copiado a Drive' + (V.okDrive.archivo ? ' como ' + esc(V.okDrive.archivo) : '')
       : 'No se pudo copiar a Drive: ' + esc(V.okDrive.error || '')}</div>
       ${V.okDrive.estado === 'error' ? `<button class="pill" data-a="parteDrive" data-id="${p.id}" style="margin-top:10px;padding:12px 22px;background:rgba(255,255,255,.22);color:#fff">Reintentar Drive</button>` : ''}` : ''}
-    <button class="pill" data-a="abrirEnvioParte" data-id="${p.id}" style="margin-top:26px;padding:16px 26px;background:#fff;color:var(--verde-o);font-weight:600">Enviar el parte</button>
+    <button class="pill claro" data-a="abrirEnvioParte" data-id="${p.id}" style="margin-top:26px;padding:16px 26px;background:#fff;color:var(--verde-o);font-weight:600">Enviar el parte</button>
     <button class="pill" data-a="verPdf" data-id="${p.id}" style="margin-top:10px;padding:14px 24px;background:rgba(255,255,255,.22);color:#fff">Solo ver el PDF</button>
     <button class="pill" data-a="compartirParte" data-id="${p.id}" style="margin-top:10px;padding:14px 24px;background:rgba(255,255,255,.22);color:#fff">Compartir (WhatsApp…)</button>
     <button class="pill" data-a="ir" data-v="hoy" style="margin-top:10px;padding:16px 24px;background:rgba(255,255,255,.22);color:#fff">Volver al inicio</button>
@@ -6755,7 +6852,7 @@ const inicialesCli = (n) => String(n || '?').trim().split(/\s+/).slice(0, 2).map
 const tipoCliente = (c) => (c && c.tl_tipo === 'company' ? 'Empresa' : 'Particular');
 
 const SVG_TICK = (color = '#fff', s = 14) => `<svg width="${s}" height="${s}" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7" stroke="${color}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
-const SVG_MAS = '<svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 3v10M3 8h10" stroke="rgba(20,23,15,.45)" stroke-width="2" stroke-linecap="round"/></svg>';
+const SVG_MAS = '<svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 3v10M3 8h10" stroke="rgba(var(--tinta-rgb),.45)" stroke-width="2" stroke-linecap="round"/></svg>';
 const SVG_CHEV = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true" style="flex:none;color:var(--t3)"><path d="M6 3.5L10.5 8 6 12.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 const SVG_CAMARA = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 8.5A1.5 1.5 0 015.5 7h2l1.5-2h6l1.5 2h2A1.5 1.5 0 0120 8.5v9a1.5 1.5 0 01-1.5 1.5h-13A1.5 1.5 0 014 17.5v-9z" stroke="currentColor" stroke-width="1.6"/><circle cx="12" cy="13" r="3.2" stroke="currentColor" stroke-width="1.6"/></svg>';
 
@@ -7574,7 +7671,7 @@ function vVisitas() {
       <div class="h2" style="margin-top:9px">${esc((v.cliente && v.cliente.nombre) || 'Sin cliente')}</div>
       <div class="sub" style="margin-top:4px">${esc([v.direccion, v.poblacion].filter(Boolean).join(' · ') || 'Sin dirección')}</div>
       <div class="row" style="gap:6px;flex-wrap:wrap;margin-top:13px;padding-top:12px;border-top:1px solid var(--l1)">
-        ${cats.map((c) => `<span class="badge" style="background:rgba(20,23,15,.06);color:var(--tinta)">${esc(nombreCat(c))}</span>`).join('')}
+        ${cats.map((c) => `<span class="badge" style="background:rgba(var(--tinta-rgb),.06);color:var(--tinta)">${esc(nombreCat(c))}</span>`).join('')}
         <div class="grow"></div><span class="tiny">${v.fecha_visita ? fechaCorta(v.fecha_visita + 'T12:00') : ''}</span>
       </div>
     </div>`;
@@ -7617,13 +7714,13 @@ function vVisitas() {
   return `<div class="hdr">
     <div class="row" style="justify-content:space-between;align-items:center;margin-bottom:14px">
       ${marcaSysefen(false)}
-      ${avatarHTML(V.user.id, 'width:32px;height:32px;font-size:13px;background:rgba(20,23,15,.08);color:var(--tinta);cursor:pointer', 'data-a="menuUsuario"')}
+      ${avatarHTML(V.user.id, 'width:32px;height:32px;font-size:13px;background:rgba(var(--tinta-rgb),.08);color:var(--tinta);cursor:pointer', 'data-a="menuUsuario"')}
     </div>
     <div class="row" style="justify-content:space-between">
       <div class="h1">Visitas</div>
       <div class="row g8">
         ${lista.length ? '<button class="pill" data-a="exportarVisitasCSV">CSV</button>' : ''}
-        <button class="pill" data-a="nuevaVisita" style="background:var(--tinta);color:#fff">+ Nueva</button>
+        <button class="pill" data-a="nuevaVisita" style="background:var(--tinta-f);color:#fff">+ Nueva</button>
       </div>
     </div>
     <div class="sub" style="margin-top:8px">${V.visitasCargadas ? `${n(sinCerrar) + (medias ? 1 : 0) + aparcadas.length} sin cerrar · ${n(porEnviar)} por enviar · ${n(enTL)} en Teamleader` : 'Cargando…'}</div>
@@ -7641,7 +7738,7 @@ function resultadosClientesHTML() {
   if (!l) return '';
   if (!l.length) return String(V.visitaBuscarTxt || '').trim().length < 2 ? '' : '<div class="sub">No aparece. Dalo de alta abajo.</div>';
   return l.map((c) => `<div class="card row" data-a="visitaElegirCliente" data-id="${c.id}" style="cursor:pointer">
-    <div class="av" style="width:38px;height:38px;background:rgba(20,23,15,.06);color:var(--t2);font-size:14px">${esc(inicialesCli(c.nombre))}</div>
+    <div class="av" style="width:38px;height:38px;background:rgba(var(--tinta-rgb),.06);color:var(--t2);font-size:14px">${esc(inicialesCli(c.nombre))}</div>
     <div class="grow"><div style="font:600 16px/1.2 var(--sans)">${esc(c.nombre)}</div>
     <div class="sub" style="margin-top:2px">${esc([tipoCliente(c), c.telefono, c.pendiente_alta ? 'pendiente de alta' : ''].filter(Boolean).join(' · '))}</div></div>
   </div>`).join('');
@@ -7992,7 +8089,7 @@ function presupuestoHTML(v, fichas) {
 
     <div class="row g8" style="margin-top:14px;flex-wrap:wrap">
       ${cats.map((c) => { const activa = d && p.cat === c; const fusionada = !!(p.fusion || {})[c];
-        return `<button class="pill grow" data-a="presuCalcular" data-c="${c}" style="padding:12px;text-align:center;background:${activa ? 'var(--verde)' : fusionada ? 'var(--verde-c)' : 'var(--tinta)'};color:#fff" ${p.cargando ? 'disabled' : ''}>${p.cargando && p.cat === c ? 'Calculando…' : (activa ? 'Recalcular ' : fusionada ? 'Ya está en el conjunto · ' : 'Calcular ') + esc(nombreCat(c))}</button>`; }).join('')}
+        return `<button class="pill grow" data-a="presuCalcular" data-c="${c}" style="padding:12px;text-align:center;background:${activa ? 'var(--verde)' : fusionada ? 'var(--verde-c)' : 'var(--tinta-f)'};color:#fff" ${p.cargando ? 'disabled' : ''}>${p.cargando && p.cat === c ? 'Calculando…' : (activa ? 'Recalcular ' : fusionada ? 'Ya está en el conjunto · ' : 'Calcular ') + esc(nombreCat(c))}</button>`; }).join('')}
     </div>
     ${d && cats.length > 1 ? `<div class="row g8" style="margin-top:8px;flex-wrap:wrap;align-items:center">
       <span class="tiny">Presupuesto conjunto:</span>
@@ -8044,7 +8141,7 @@ function costeMargenHTML(coste, venta, sinCoste, ventaSinDto, cat) {
   const dtoMax = (mg) => Math.max(0, Math.round((1 - c / (base * (1 - mg / 100))) * 1000) / 10);
   const fv = cat === 'solar';
   const bien = fv ? pct >= MARGEN_OBJETIVO_FV : m >= 0;
-  return `<div style="margin-top:10px;padding:9px 11px;border-radius:12px;background:rgba(20,23,15,.045)">
+  return `<div style="margin-top:10px;padding:9px 11px;border-radius:12px;background:rgba(var(--tinta-rgb),.045)">
     <div class="row" style="justify-content:space-between">
       <span class="tiny" style="font-size:12px">Interno · coste ${eur(c)} · venta ${eur(v)}${sinCoste ? ' · ' + sinCoste + ' línea' + (sinCoste === 1 ? '' : 's') + ' sin coste' : ''}</span>
       <span class="tiny" style="font-size:12px;font-weight:600;color:${bien ? 'var(--verde-o)' : 'var(--rojo)'}">beneficio ${eur(m)} · margen ${String(pct).replace('.', ',')} %${fv ? ' (objetivo ' + MARGEN_OBJETIVO_FV + ' %)' : ''}</span>
@@ -8132,7 +8229,7 @@ function presuPanelHTML() {
       ${opcionesAeroHTML()}
       ${(d.incidencias || []).concat(Object.keys(p.fusion || {}).flatMap((c) => p.fusion[c].incidencias || [])).length ? `<div style="margin-top:12px">${(d.incidencias || []).concat(Object.keys(p.fusion || {}).flatMap((c) => p.fusion[c].incidencias || [])).map((i) => `<div class="tiny" style="margin-top:6px;color:${i.nivel === 'error' ? 'var(--rojo)' : 'var(--ambar-o)'}">${i.nivel === 'error' ? '⚠' : '·'} ${esc(i.mensaje)}</div>`).join('')}</div>` : ''}
 
-      ${!(d.lineas || []).length ? `<div class="sub" style="margin-top:14px;padding:12px 14px;border-radius:12px;background:rgba(20,23,15,.045)">${enLibre() ? 'Presupuesto vacío: busca abajo en el catálogo o crea un concepto nuevo. Cada línea que añadas aparece aquí con su precio.' : 'El motor no ha propuesto ninguna línea.'}</div>` : ''}
+      ${!(d.lineas || []).length ? `<div class="sub" style="margin-top:14px;padding:12px 14px;border-radius:12px;background:rgba(var(--tinta-rgb),.045)">${enLibre() ? 'Presupuesto vacío: busca abajo en el catálogo o crea un concepto nuevo. Cada línea que añadas aparece aquí con su precio.' : 'El motor no ha propuesto ninguna línea.'}</div>` : ''}
       ${grupos.map((g) => `${grupos.length > 1 ? `<div style="margin-top:24px;padding-top:12px;border-top:3px solid var(--tinta)"><div style="font:600 19px/1.1 var(--cond)">${esc(g.titulo)}</div>${g.total != null ? `<div class="tiny" style="margin-top:3px">${eur(g.total)} sin IVA</div>` : ''}</div>` : ''}${g.secciones.map((s) => `<div style="margin-top:16px">
         <div class="lbl" style="font-size:11px">${esc(s.nombre)}</div>
         ${s.lineas.map((l) => `<div style="padding:9px 0;border-bottom:1px solid var(--l1)">
@@ -8145,7 +8242,7 @@ function presuPanelHTML() {
           <div class="tiny row" style="margin-top:3px;opacity:.75;justify-content:space-between;gap:10px"><span>${esc(String(l.cantidad))} ${esc(l.unidad || 'ud')} × ${eur(l.precio_tarifa)}${l.dto_linea_pct ? ' · −' + l.dto_linea_pct + '%' : ''}${l.origen === 'manual' ? ' · añadida a mano' : ''}</span><span style="flex:none"><span data-a="presuAjustarAbrir" data-clave="${esc(claveLineaPresu(l))}" style="color:var(--verde-o);cursor:pointer;margin-right:12px">${(p.ajustes || {})[claveLineaPresu(l)] ? 'Editada ✎' : 'Editar'}</span><span data-a="presuQuitarCalculada" data-clave="${esc(claveLineaPresu(l))}" style="color:var(--rojo);cursor:pointer">Quitar</span></span></div>
         </div>`).join('')}
       </div>`).join('')}`).join('')}
-      ${(p.quitadas || []).length ? `<div style="margin-top:14px;padding:10px 12px;border-radius:12px;background:rgba(20,23,15,.045)">
+      ${(p.quitadas || []).length ? `<div style="margin-top:14px;padding:10px 12px;border-radius:12px;background:rgba(var(--tinta-rgb),.045)">
         <div class="lbl" style="font-size:11px">Quitadas de este presupuesto · ${(p.quitadas || []).length}</div>
         ${(p.quitadas || []).map((k) => `<div class="row tiny" style="justify-content:space-between;gap:10px;margin-top:6px"><span style="text-decoration:line-through;color:var(--t2)">${esc(k.split('|').slice(1).join('|') || k)}</span><span data-a="presuRecuperarLinea" data-clave="${esc(k)}" style="color:var(--verde-o);cursor:pointer;flex:none">Recuperar</span></div>`).join('')}
       </div>` : ''}
@@ -8358,7 +8455,7 @@ function opcionesAeroHTML() {
   const p = t.holder;
   const ficha = fichaVisitaActual('aerotermia');
   const actual = (p.opcion && p.opcion.marca_aerotermia) || (ficha && ficha.datos && ficha.datos.marca_aerotermia) || (enSuelto() && V.suelto.marca_aerotermia) || 'vaillant';
-  return `<div style="margin-top:12px;padding:10px 12px;border-radius:12px;background:rgba(20,23,15,.045)">
+  return `<div style="margin-top:12px;padding:10px 12px;border-radius:12px;background:rgba(var(--tinta-rgb),.045)">
     ${t.conjunto ? '<div class="lbl" style="font-size:11px;margin-bottom:8px;color:var(--verde-o)">Aerotermia · dentro del conjunto</div>' : ''}
     <div class="row g8" style="align-items:center;flex-wrap:wrap">
       <span class="lbl" style="font-size:11px">Bomba de calor</span>
@@ -8400,7 +8497,7 @@ function opcionesMarcaHTML() {
   const t = fvObjetivo(); if (!t) return '';
   const p = t.holder;
   const actual = (p.opcion && p.opcion.inversor_marca) || marcaBaseFV();
-  return `<div style="margin-top:12px;padding:10px 12px;border-radius:12px;background:rgba(20,23,15,.045)">
+  return `<div style="margin-top:12px;padding:10px 12px;border-radius:12px;background:rgba(var(--tinta-rgb),.045)">
     ${t.conjunto ? '<div class="lbl" style="font-size:11px;margin-bottom:8px;color:var(--verde-o)">Paneles solares · dentro del conjunto</div>' : ''}
     <div class="row g8" style="align-items:center;flex-wrap:wrap">
       <span class="lbl" style="font-size:11px">Opción con</span>
@@ -8909,7 +9006,7 @@ function prProductoSheetHTML(s) {
       <div><div class="lbl" style="margin-bottom:6px">Dto. proveedor %</div><input class="inp" data-f="prp:descuento_proveedor" value="${esc(v.descuento_proveedor)}" inputmode="decimal" style="width:96px;text-align:right"></div>
       <div><div class="lbl" style="margin-bottom:6px">Recargo propio ×</div><input class="inp" data-f="prp:recargo" value="${esc(v.recargo)}" placeholder="—" inputmode="decimal" style="width:96px;text-align:right"></div>
     </div>
-    <div id="prp-previa" style="margin-top:12px;padding:10px 12px;border-radius:12px;background:rgba(20,23,15,.04)">${prPreviaHTML(x, v)}</div>
+    <div id="prp-previa" style="margin-top:12px;padding:10px 12px;border-radius:12px;background:rgba(var(--tinta-rgb),.04)">${prPreviaHTML(x, v)}</div>
     <div class="tiny" style="margin-top:10px">Cómo se lee: el coste es la tarifa menos el descuento de proveedor. Con recargo (el propio, o el 1,30 de fotovoltaica si está en blanco) la venta es coste × recargo; sin recargo, la tarifa es el precio de venta. 1,5 = vender un 50 % por encima del coste.</div>
     <div class="row g8" style="margin-top:18px">
       <button class="btn btn-gris" data-a="cerrarSheet" style="border-radius:99px">Cancelar</button>
@@ -8922,7 +9019,7 @@ function prLineaSheetHTML(s) {
   return `<div class="sheet"><div>
     <div style="font:600 23px/1.15 var(--cond)">Guardar el precio en la base de datos</div>
     <div class="sub" style="margin-top:6px">«${esc(s.descripcion)}» pasará a salir así en todos los presupuestos nuevos de ${esc(nombreCat(s.categoria))}:</div>
-    <div style="margin-top:12px;padding:10px 12px;border-radius:12px;background:rgba(20,23,15,.04);font:600 15px var(--sans)">Venta ${eur(prNum(s.venta) || 0)} por ${esc(s.unidad || 'ud')}${prNum(s.coste) != null && !Number.isNaN(prNum(s.coste)) ? ' · coste ' + eur(prNum(s.coste)) : ' · el coste no se toca'}</div>
+    <div style="margin-top:12px;padding:10px 12px;border-radius:12px;background:rgba(var(--tinta-rgb),.04);font:600 15px var(--sans)">Venta ${eur(prNum(s.venta) || 0)} por ${esc(s.unidad || 'ud')}${prNum(s.coste) != null && !Number.isNaN(prNum(s.coste)) ? ' · coste ' + eur(prNum(s.coste)) : ' · el coste no se toca'}</div>
     <div class="tiny" style="margin-top:10px">Los presupuestos ya guardados no cambian. Queda apuntado en Ajustes → Precios → Cambios, donde se puede deshacer.</div>
     <div class="row g8" style="margin-top:18px">
       <button class="btn btn-gris" data-a="pr_lineaCancelar" style="border-radius:99px">Cancelar</button>
@@ -9102,12 +9199,12 @@ function facAbonadas(lista) {
 /** Cómo se enseña una factura: la clave del estado, el texto y sus colores (los de Teamleader). */
 function facEstado(f, abonadas) {
   const ab = (abonadas || {})[f.tl_id];
-  if (f.tipo === 'abono') return { k: 'abono', txt: 'Abono', bg: '#f1ecf9', color: '#5b3f99' };
-  if (ab && ab >= fac2(f.base) - 0.005) return { k: 'abonada', txt: 'Abonada', bg: '#f1ecf9', color: '#5b3f99' };
-  if (f.estado === 'borrador') return { k: 'borrador', txt: 'Borrador', bg: 'rgba(20,23,15,.06)', color: 'var(--t2)' };
-  if (f.estado === 'pagada' || f.pagada) return { k: 'pagada', txt: 'Pagado', bg: '#e2f3f1', color: '#1a857f' };
-  if (f.vence && f.vence < hoyISO()) { const dias = Math.round((new Date(hoyISO() + 'T12:00') - new Date(f.vence + 'T12:00')) / 864e5); return { k: 'vencida', txt: 'Vencido (' + dias + ' d)', bg: '#fde6e3', color: '#b8372b' }; }
-  return { k: 'pendiente', txt: 'Por cobrar', bg: '#fdf3dc', color: '#8a5a0a' };
+  if (f.tipo === 'abono') return { k: 'abono', txt: 'Abono', bg: 'var(--lila-cl)', color: 'var(--lila)' };
+  if (ab && ab >= fac2(f.base) - 0.005) return { k: 'abonada', txt: 'Abonada', bg: 'var(--lila-cl)', color: 'var(--lila)' };
+  if (f.estado === 'borrador') return { k: 'borrador', txt: 'Borrador', bg: 'rgba(var(--tinta-rgb),.06)', color: 'var(--t2)' };
+  if (f.estado === 'pagada' || f.pagada) return { k: 'pagada', txt: 'Pagado', bg: 'var(--teal-cl)', color: 'var(--teal)' };
+  if (f.vence && f.vence < hoyISO()) { const dias = Math.round((new Date(hoyISO() + 'T12:00') - new Date(f.vence + 'T12:00')) / 864e5); return { k: 'vencida', txt: 'Vencido (' + dias + ' d)', bg: 'var(--rojo-cl2)', color: 'var(--rojo-v)' }; }
+  return { k: 'pendiente', txt: 'Por cobrar', bg: 'var(--ambar-cl2)', color: 'var(--ambar-t)' };
 }
 const facPildora = (e) => `<span class="badge" style="background:${e.bg};color:${e.color}">${esc(e.txt)}</span>`;
 const facFecha = (iso) => (iso ? String(iso).slice(8, 10) + '/' + String(iso).slice(5, 7) + '/' + String(iso).slice(0, 4) : '—');
@@ -9132,7 +9229,7 @@ function facListaHTML() {
       <div class="row g8"><span style="font:700 14px var(--mono)">${esc(f.numero || 'Borrador')}</span>${facPildora(facEstado(f, ab))}<div class="grow"></div><span class="tiny">${facFecha(f.fecha)}</span></div>
       <div class="row" style="align-items:baseline;justify-content:space-between;margin-top:7px">
         <div class="grow" style="font:500 14px/1.25 var(--sans)">${esc(f.cliente_nombre || 'Sin cliente')}</div>
-        <div class="num" style="font-size:17px;flex:none;${f.tipo === 'abono' ? 'color:#5b3f99' : ''}">${f.tipo === 'abono' ? '−' : ''}${eur(Math.abs(Number(f.base) || 0))}</div>
+        <div class="num" style="font-size:17px;flex:none;${f.tipo === 'abono' ? 'color:var(--lila)' : ''}">${f.tipo === 'abono' ? '−' : ''}${eur(Math.abs(Number(f.base) || 0))}</div>
       </div>
       ${/sysefen group/i.test(f.entidad || '') ? '' : `<div class="tiny" style="margin-top:3px">${esc(f.entidad || '')}</div>`}
     </div>`).join('') + (filas.length > 300 ? `<div class="tiny" style="text-align:center;margin-top:8px">Se enseñan 300 de ${filas.length}: afina con el buscador.</div>` : '');
@@ -9175,7 +9272,7 @@ async function facCargarLista() {
 const INF_MESES = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
 const INF_MESES_LARGO = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
 // Año elegido y año anterior: pareja comprobada para daltonismo sobre blanco.
-const INF_COLOR = { este: '#206028', antes: '#4f7fc4' };
+const INF_COLOR = { este: 'var(--g-este)', antes: 'var(--g-antes)' };   // cambian con el tema
 function infEstado() { if (!V.inf) V.inf = { tab: 'ventas', anio: null, entidad: '', embudo: '', medida: 'base', medidaV: 'importe', medidaC: 'clientes', mes: null }; return V.inf; }
 const infEntidadDe = (f) => f.entidad_tl_id || f.entidad || '';
 /** Las que cuentan: con fecha y emitidas; de una empresa o de todas. */
@@ -9257,13 +9354,13 @@ function infGraficaHTML(D, mesSel, fmt) {
     return `<path d="M${x},${arr + alto}V${yy + r}Q${x},${yy} ${x + r},${yy}H${x + bw - r}Q${x + bw},${yy} ${x + bw},${yy + r}V${arr + alto}Z" fill="${color}"/>`; };
   const marcas = [0, 0.25, 0.5, 0.75, 1].map((k) => k * tope);
   return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Por meses en ${D.anio}, comparado con ${D.anio - 1}" style="display:block;width:100%;height:auto;font-family:var(--mono)">
-    ${marcas.map((v) => `<line x1="${izq}" x2="${W - der}" y1="${y(v)}" y2="${y(v)}" stroke="rgba(20,23,15,.08)" stroke-width="1"/><text x="${izq - 7}" y="${y(v) + 4}" text-anchor="end" font-size="${letra}" fill="rgba(20,23,15,.5)">${infCorto(v)}</text>`).join('')}
+    ${marcas.map((v) => `<line x1="${izq}" x2="${W - der}" y1="${y(v)}" y2="${y(v)}" stroke="rgba(var(--tinta-rgb),.08)" stroke-width="1"/><text x="${izq - 7}" y="${y(v) + 4}" text-anchor="end" font-size="${letra}" fill="rgba(var(--tinta-rgb),.5)">${infCorto(v)}</text>`).join('')}
     ${D.este.map((x, i) => { const cx = izq + paso * i + paso / 2; const sel = mesSel === i;
       return `<g data-a="fac_infMes" data-m="${i}" style="cursor:pointer"><title>${INF_MESES_LARGO[i]} · ${D.anio}: ${F_(x.valor)} · ${D.anio - 1}: ${F_(D.antes[i].valor)}</title>
-        <rect x="${izq + paso * i}" y="${arr}" width="${paso}" height="${alto + aba}" fill="${sel ? 'rgba(20,23,15,.05)' : 'transparent'}"/>
+        <rect x="${izq + paso * i}" y="${arr}" width="${paso}" height="${alto + aba}" fill="${sel ? 'rgba(var(--tinta-rgb),.05)' : 'transparent'}"/>
         ${col(cx - bw - hueco / 2, D.antes[i].valor, INF_COLOR.antes)}${col(cx + hueco / 2, x.valor, INF_COLOR.este)}
-        <text x="${cx}" y="${H - 9}" text-anchor="middle" font-size="${letra}" font-weight="${sel ? 700 : 400}" fill="${sel ? '#14170f' : 'rgba(20,23,15,.56)'}">${INF_MESES[i]}</text></g>`; }).join('')}
-    <line x1="${izq}" x2="${W - der}" y1="${arr + alto}" y2="${arr + alto}" stroke="rgba(20,23,15,.3)" stroke-width="1"/>
+        <text x="${cx}" y="${H - 9}" text-anchor="middle" font-size="${letra}" font-weight="${sel ? 700 : 400}" fill="${sel ? 'var(--tinta)' : 'rgba(var(--tinta-rgb),.56)'}">${INF_MESES[i]}</text></g>`; }).join('')}
+    <line x1="${izq}" x2="${W - der}" y1="${arr + alto}" y2="${arr + alto}" stroke="rgba(var(--tinta-rgb),.3)" stroke-width="1"/>
   </svg>`;
 }
 const infLeyenda = (D) => `<div class="row" style="gap:16px;flex-wrap:wrap"><span class="row g8" style="align-items:center"><i style="width:12px;height:12px;border-radius:3px;background:${INF_COLOR.este}"></i><span class="tiny" style="color:var(--tinta)">${D.anio}</span></span><span class="row g8" style="align-items:center"><i style="width:12px;height:12px;border-radius:3px;background:${INF_COLOR.antes}"></i><span class="tiny" style="color:var(--tinta)">${D.anio - 1}</span></span></div>`;
@@ -9338,7 +9435,7 @@ function estTablaHTML(D, mes, fmt, nota) {
       <thead><tr style="text-align:right;color:var(--t2)"><th style="text-align:left;padding:9px 6px 9px 15px;font:500 11px var(--mono);text-transform:uppercase">Mes</th><th style="${th}">${D.anio}</th><th style="${th}">${D.anio - 1}</th><th style="${th}">DIF.</th><th style="padding:9px 15px 9px 6px;font:500 11px var(--mono)">ACUM. ${D.anio}</th></tr></thead>
       <tbody>${D.este.map((x, i) => { acum = fac2(acum + x.valor);
         const futuro = D.enCurso && i + 1 > D.mesesContados && !x.valor;
-        return `<tr data-a="fac_infMes" data-m="${i}" style="text-align:right;border-top:1px solid var(--l1);cursor:pointer;${m === i ? 'background:rgba(20,23,15,.04);' : ''}${futuro ? 'color:var(--t3);' : ''}"><td style="text-align:left;padding:9px 6px 9px 15px;font-weight:500">${INF_MESES_LARGO[i]}</td><td class="num" style="padding:9px 6px;white-space:nowrap">${futuro ? '—' : fmt(x.valor)}</td><td class="num" style="padding:9px 6px;white-space:nowrap;color:var(--t2)">${fmt(D.antes[i].valor)}</td><td style="padding:9px 6px;white-space:nowrap;color:var(--t2)">${futuro ? '—' : infDifTxt(infDif(x.valor, D.antes[i].valor))}</td><td class="num" style="padding:9px 15px 9px 6px;white-space:nowrap">${futuro ? '—' : fmt(acum)}</td></tr>`; }).join('')}
+        return `<tr data-a="fac_infMes" data-m="${i}" style="text-align:right;border-top:1px solid var(--l1);cursor:pointer;${m === i ? 'background:rgba(var(--tinta-rgb),.04);' : ''}${futuro ? 'color:var(--t3);' : ''}"><td style="text-align:left;padding:9px 6px 9px 15px;font-weight:500">${INF_MESES_LARGO[i]}</td><td class="num" style="padding:9px 6px;white-space:nowrap">${futuro ? '—' : fmt(x.valor)}</td><td class="num" style="padding:9px 6px;white-space:nowrap;color:var(--t2)">${fmt(D.antes[i].valor)}</td><td style="padding:9px 6px;white-space:nowrap;color:var(--t2)">${futuro ? '—' : infDifTxt(infDif(x.valor, D.antes[i].valor))}</td><td class="num" style="padding:9px 15px 9px 6px;white-space:nowrap">${futuro ? '—' : fmt(acum)}</td></tr>`; }).join('')}
         <tr style="text-align:right;border-top:2px solid var(--l2);font-weight:600"><td style="text-align:left;padding:10px 6px 10px 15px">Total</td><td class="num" style="padding:10px 6px;white-space:nowrap">${fmt(D.total)}</td><td class="num" style="padding:10px 6px;white-space:nowrap;color:var(--t2)">${fmt(D.totalAntes)}</td><td style="padding:10px 6px;white-space:nowrap;color:var(--t2)">${D.enCurso ? '' : infDifTxt(infDif(D.total, D.totalAntes))}</td><td class="num" style="padding:10px 15px 10px 6px;white-space:nowrap">${fmt(D.total)}</td></tr>
       </tbody>
     </table>
@@ -9364,7 +9461,7 @@ function estIngresosHTML(F, I) {
       estTile('Facturado en ' + D.anio, eur0(D.total), (conIva ? 'Con IVA' : 'Sin IVA') + ' · ' + D.nFacturas + (D.nFacturas === 1 ? ' factura' : ' facturas') + (D.nAbonos ? ' y ' + D.nAbonos + (D.nAbonos === 1 ? ' abono' : ' abonos') : '')),
       estFrenteA(D, eur0),
       estTile('Media por mes', eur0(D.media), D.mejor >= 0 ? 'El mejor, ' + INF_MESES_LARGO[D.mejor].toLowerCase() + ': ' + eur0(D.este[D.mejor].valor) : 'Sin facturas este año'),
-      estTile('Por cobrar ahora', eur0(D.porCobrar), D.nSinCobrar ? D.nSinCobrar + (D.nSinCobrar === 1 ? ' factura' : ' facturas') + ', con IVA' + (D.nVencidas ? ' · ' + eur0(D.vencido) + ' ya vencido' : '') : 'Todo cobrado', D.nVencidas ? '#b8372b' : ''),
+      estTile('Por cobrar ahora', eur0(D.porCobrar), D.nSinCobrar ? D.nSinCobrar + (D.nSinCobrar === 1 ? ' factura' : ' facturas') + ', con IVA' + (D.nVencidas ? ' · ' + eur0(D.vencido) + ' ya vencido' : '') : 'Todo cobrado', D.nVencidas ? 'var(--rojo-v)' : ''),
     ]) + estGraficaCard('Facturado por meses · ' + (conIva ? 'con IVA' : 'sin IVA'), D, I.mes, eur0, extra) + estTablaHTML(D, I.mes, eur0)
     + estCajas([
       estPorAnios(D, eur0, 'Por años · ' + (conIva ? 'con IVA' : 'sin IVA')),
@@ -9588,7 +9685,7 @@ function facVerSheetHTML(s) {
   const secciones = []; (f.lineas || []).forEach((l) => { let g = secciones[secciones.length - 1]; if (!g || g.t !== (l.seccion || '')) { g = { t: l.seccion || '', ls: [] }; secciones.push(g); } g.ls.push(l); });
   const dato = (k, v) => (v ? `<div class="row g8" style="padding:4px 0;align-items:baseline"><span class="tiny" style="width:104px;flex:none">${k}</span><span style="font:500 13px/1.3 var(--sans)">${v}</span></div>` : '');
   const c = s.confirmar;
-  const acciones = c === 'contabilizar' ? `<div style="margin-top:14px;padding:12px 14px;border-radius:14px;background:#fdf3dc">
+  const acciones = c === 'contabilizar' ? `<div style="margin-top:14px;padding:12px 14px;border-radius:14px;background:var(--ambar-cl2)">
         <div style="font:600 15px var(--sans)">Contabilizar la factura</div>
         <div class="sub" style="font-size:12px;margin-top:4px">Teamleader le pone el siguiente número de la serie y ya no se puede cambiar ni borrar: si luego hay un error, se rectifica con un abono. Comprueba el cliente, las líneas y el total (${eur(f.total)} con IVA).</div>
         <div class="row g8" style="margin-top:10px;align-items:center"><span class="tiny">Fecha</span><input class="inp" type="date" data-f="fac:v:fecha" value="${esc(s.v.fecha)}" style="width:170px;padding:9px"></div>
@@ -9596,11 +9693,11 @@ function facVerSheetHTML(s) {
     : c === 'borrar' ? `<div style="margin-top:14px;padding:12px 14px;border-radius:14px;background:var(--rojo-cl)">
         <div style="font:600 15px var(--sans)">Borrar el borrador</div><div class="sub" style="font-size:12px;margin-top:4px">Se borra también en Teamleader. No ha gastado número.</div>
         <div class="row g8" style="margin-top:12px"><button class="btn btn-gris" data-a="fac_confirmar" data-k="" style="border-radius:99px">No borrar</button><button class="btn btn-rojo" data-a="fac_borrar" ${s.busy ? 'disabled' : ''}>${s.busy ? 'Borrando…' : 'Borrar'}</button></div></div>`
-    : c === 'cobro' ? `<div style="margin-top:14px;padding:12px 14px;border-radius:14px;background:#e2f5f1">
+    : c === 'cobro' ? `<div style="margin-top:14px;padding:12px 14px;border-radius:14px;background:var(--teal-cl2)">
         <div style="font:600 15px var(--sans)">Apuntar un cobro</div>
         <div class="row g8" style="margin-top:10px;align-items:center;flex-wrap:wrap"><span class="tiny">Importe (con IVA)</span><input class="inp" data-f="fac:v:importe" value="${esc(s.v.importe)}" inputmode="decimal" style="width:120px;padding:9px;text-align:right"><span class="tiny">€ · el</span><input class="inp" type="date" data-f="fac:v:fecha" value="${esc(s.v.fecha)}" style="width:170px;padding:9px"></div>
         <div class="row g8" style="margin-top:12px"><button class="btn btn-gris" data-a="fac_confirmar" data-k="" style="border-radius:99px">Cancelar</button><button class="btn" data-a="fac_cobro" style="background:#76923c" ${s.busy ? 'disabled' : ''}>${s.busy ? 'Guardando…' : 'Apuntar cobro'}</button></div></div>`
-    : c === 'correo' ? `<div style="margin-top:14px;padding:12px 14px;border-radius:14px;background:rgba(20,23,15,.045)">
+    : c === 'correo' ? `<div style="margin-top:14px;padding:12px 14px;border-radius:14px;background:rgba(var(--tinta-rgb),.045)">
         <div style="font:600 15px var(--sans)">Enviar al cliente por correo</div>
         <div class="sub" style="font-size:12px;margin-top:4px">Sale desde noreply@sysefen.com con el PDF adjunto. Si el cliente contesta, la respuesta llega a la oficina.</div>
         <div class="lbl" style="margin:10px 0 5px">Para</div><input class="inp" type="email" data-f="fac:v:para" value="${esc(s.v.para || '')}" placeholder="correo del cliente" autocapitalize="off" style="padding:10px">
@@ -9608,7 +9705,7 @@ function facVerSheetHTML(s) {
         <div class="lbl" style="margin:10px 0 5px">Asunto</div><input class="inp" data-f="fac:v:asunto" value="${esc(s.v.asunto || '')}" style="padding:10px">
         <div class="lbl" style="margin:10px 0 5px">Mensaje</div><textarea class="inp" data-f="fac:v:texto" rows="9" style="padding:10px;font-size:13px;line-height:1.45">${esc(s.v.texto || '')}</textarea>
         <div class="row g8" style="margin-top:12px"><button class="btn btn-gris" data-a="fac_confirmar" data-k="" style="border-radius:99px">Cancelar</button><button class="btn" data-a="fac_correo" style="background:#76923c" ${s.busy ? 'disabled' : ''}>${s.busy ? 'Enviando…' : 'Enviar'}</button></div></div>`
-    : c === 'abonar' ? `<div style="margin-top:14px;padding:12px 14px;border-radius:14px;background:#f1ecf9">
+    : c === 'abonar' ? `<div style="margin-top:14px;padding:12px 14px;border-radius:14px;background:var(--lila-cl)">
         <div style="font:600 15px var(--sans)">Abonar la factura</div>
         <div class="sub" style="font-size:12px;margin-top:4px">Crea en Teamleader una nota de abono (factura rectificativa) con su propio número. Deja el importe en blanco para abonarla entera, o pon una parte sin IVA.</div>
         <div class="row g8" style="margin-top:10px;align-items:center;flex-wrap:wrap"><span class="tiny">Importe sin IVA</span><input class="inp" data-f="fac:v:importe" value="${esc(s.v.importe)}" placeholder="toda" inputmode="decimal" style="width:120px;padding:9px;text-align:right"><span class="tiny">€ · el</span><input class="inp" type="date" data-f="fac:v:fecha" value="${esc(s.v.fecha)}" style="width:170px;padding:9px"></div>
@@ -9733,7 +9830,7 @@ function facNuevaSheetHTML(s) {
       <div class="grow"><div class="lbl" style="margin-bottom:6px">Forma de pago</div><select class="inp" data-f="fac:n:pago" style="padding:10px">${(op.formas_pago || []).map((p) => { const k = p.type + ':' + p.days; return `<option value="${k}" ${v.pago === k ? 'selected' : ''}>${esc(facPagoTxt(k))}</option>`; }).join('')}</select></div>
     </div>
     <input class="inp" data-f="fac:n:nota" value="${esc(v.nota)}" placeholder="Observaciones en la factura${pre && pre.numero ? ' (por defecto: Nuestra referencia: ' + esc(pre.numero) + ')' : ' (opcional)'}" style="margin-top:10px">
-    <div id="fac-previa" style="margin-top:14px;padding:12px 14px;border-radius:14px;background:rgba(20,23,15,.045)">${facPreviaHTML(s)}</div>
+    <div id="fac-previa" style="margin-top:14px;padding:12px 14px;border-radius:14px;background:rgba(var(--tinta-rgb),.045)">${facPreviaHTML(s)}</div>
     <div class="tiny" style="margin-top:8px">Se crea como <b>borrador</b> en Teamleader, sin número. Lo revisas y, si está bien, lo contabilizas desde aquí.</div>
     <div class="row g8" style="margin-top:14px">
       <button class="btn btn-gris" data-a="cerrarSheet" style="border-radius:99px">Cancelar</button>
@@ -9803,7 +9900,7 @@ function facEditarSheetHTML(s) {
     <div style="font:600 23px/1.15 var(--cond)">Editar el borrador</div>
     <div class="sub" style="margin-top:6px">${esc(s.f.cliente_nombre || '')} · ${esc(s.f.entidad || '')}. Cambia, quita o añade líneas; al guardar se cambia también en Teamleader. Para cambiar de cliente, borra el borrador y hazlo de nuevo.</div>
     ${v.lineas.map((l, i) => `<div style="padding:10px 0;border-bottom:1px solid var(--l1)">
-      ${i === 0 || l.nueva || (v.lineas[i - 1] && v.lineas[i - 1].seccion !== l.seccion) ? `<input class="inp" data-f="fac:e:${i}:seccion" value="${esc(l.seccion)}" placeholder="Sección (opcional): Equipos, Instalación…" style="padding:7px 10px;font-size:12px;margin-bottom:6px;background:rgba(20,23,15,.03)">` : ''}
+      ${i === 0 || l.nueva || (v.lineas[i - 1] && v.lineas[i - 1].seccion !== l.seccion) ? `<input class="inp" data-f="fac:e:${i}:seccion" value="${esc(l.seccion)}" placeholder="Sección (opcional): Equipos, Instalación…" style="padding:7px 10px;font-size:12px;margin-bottom:6px;background:rgba(var(--tinta-rgb),.03)">` : ''}
       <input class="inp" data-f="fac:e:${i}:descripcion" value="${esc(l.descripcion)}" placeholder="Concepto" style="padding:9px 11px">
       ${l.detalle ? `<textarea class="inp" data-f="fac:e:${i}:detalle" rows="2" placeholder="Descripción larga" style="margin-top:6px;padding:8px 11px;font-size:12px">${esc(l.detalle)}</textarea>` : ''}
       <div class="row g8" style="margin-top:6px;align-items:center;flex-wrap:wrap">
@@ -9821,7 +9918,7 @@ function facEditarSheetHTML(s) {
     </div>
     <div class="lbl" style="margin:12px 0 6px">Observaciones</div>
     <textarea class="inp" data-f="fac:n:nota" rows="2" style="padding:10px;font-size:13px">${esc(v.nota)}</textarea>
-    <div id="fac-ed-tot" style="margin-top:14px;padding:12px 14px;border-radius:14px;background:rgba(20,23,15,.045)">${facEditarTotales(s)}</div>
+    <div id="fac-ed-tot" style="margin-top:14px;padding:12px 14px;border-radius:14px;background:rgba(var(--tinta-rgb),.045)">${facEditarTotales(s)}</div>
     <div class="row g8" style="margin-top:14px">
       <button class="btn btn-gris" data-a="fac_edCancelar" style="border-radius:99px">Cancelar</button>
       <button class="btn" data-a="fac_edGuardar" style="background:#76923c" ${s.busy ? 'disabled' : ''}>${s.busy ? 'Guardando…' : 'Guardar cambios'}</button>
@@ -9870,7 +9967,7 @@ function facGestoriaSheetHTML(s) {
     <div class="row g8" style="flex-wrap:wrap">${[1, 2, 3, 4].map((t) => chip('T' + t, t + 'T')).join('')}${chip('anio', 'Todo el año')}</div>
     <div class="lbl" style="margin:14px 0 6px">O un mes</div>
     <div class="row g8" style="overflow-x:auto;padding-bottom:2px">${FAC_MESES.map((m, i) => chip(String(i + 1), m.slice(0, 3))).join('')}</div>
-    <div style="margin-top:14px;padding:12px 14px;border-radius:14px;background:rgba(20,23,15,.045)">
+    <div style="margin-top:14px;padding:12px 14px;border-radius:14px;background:rgba(var(--tinta-rgb),.045)">
       <div style="font:600 15px var(--sans)">${esc(per.nombre.charAt(0).toUpperCase() + per.nombre.slice(1))}</div>
       ${r.fs.length ? `<div class="sub" style="margin-top:4px">${r.facturas} ${r.facturas === 1 ? 'factura' : 'facturas'}${r.abonos ? ' y ' + r.abonos + (r.abonos === 1 ? ' abono' : ' abonos') : ''}</div>
         <div class="row" style="justify-content:space-between;margin-top:8px"><span class="sub">Base imponible</span><span class="num" style="font-size:15px">${eur(r.base)}</span></div>
@@ -10327,7 +10424,7 @@ function fv2DesgloseSheetHTML(s) {
           <input class="inp" data-f="fvd:${i}:coste_ud" value="${esc(String(Math.round(Number(x.coste_ud) * 10000) / 10000))}" inputmode="decimal" style="width:90px;padding:7px;text-align:right" ${x.bloque === 'PEQUEÑO MATERIAL' && !x.manual ? 'disabled' : ''}>
           <span class="tiny">€ = <b id="fvd-c-${i}">${eur(x.coste)}</b></span>${x.aviso ? `<span class="tiny" style="color:var(--ambar-o)">⚠ ${esc(x.aviso)}</span>` : ''}${x.manual ? '<span class="tiny" style="opacity:.6">añadida a mano</span>' : ''}
         </div></div>`).join('')}`).join('')}
-    <div class="card" style="margin-top:14px;background:rgba(20,23,15,.03)">
+    <div class="card" style="margin-top:14px;background:rgba(var(--tinta-rgb),.03)">
       <div class="lbl">Añadir una partida</div>
       <div class="row g8" style="margin-top:8px"><select class="inp" data-f="fvdn:bloque" style="flex:1">${bloquesSel.map((b) => `<option value="${esc(b)}" ${s.nueva.bloque === b ? 'selected' : ''}>${esc(b)}</option>`).join('')}</select></div>
       <input class="inp" data-f="fvdn:nombre" value="${esc(s.nueva.nombre)}" placeholder="Nombre (p. ej. Estructura coplanar para teja, 20 paneles)" style="margin-top:8px">
@@ -10342,7 +10439,7 @@ function fv2DesgloseSheetHTML(s) {
     ${ceros ? `<div class="tiny" style="margin-top:10px"><span data-a="fv2DesgloseCeros" style="color:var(--verde-o);cursor:pointer;text-decoration:underline">${s.verCeros ? 'Ocultar' : 'Mostrar'} las ${ceros} partidas del modelo que salen a 0</span></div>` : ''}
     ${r.completo ? '' : '<div class="tiny" style="margin-top:10px;color:var(--ambar-o)">Esta línea es de antes de este cambio: lo que se quite seguirá en la descripción larga para el cliente. Retócala a mano si hace falta.</div>'}
     <div id="fvd-pie" class="tiny" style="margin-top:12px;color:var(--tinta);font-size:14px">${fv2PieHTML(r)}</div>
-    ${s.bd ? `<div style="margin-top:14px;padding:12px 14px;border-radius:14px;background:rgba(20,23,15,.045);border:1px solid var(--l2)">
+    ${s.bd ? `<div style="margin-top:14px;padding:12px 14px;border-radius:14px;background:rgba(var(--tinta-rgb),.045);border:1px solid var(--l2)">
       <div style="font:600 15px var(--sans)">Guardar en la base de datos</div>
       <div class="sub" style="font-size:12px;margin-top:4px">Estos costes cambian para todos los presupuestos nuevos. Los ya guardados no se tocan y el cambio se puede deshacer en Ajustes → Precios → Cambios.</div>
       ${s.bd.map((x) => `<div class="tiny" style="margin-top:6px;color:var(--tinta);font-size:13px">· ${esc(x.nombre)}: ${eur(x.antes)} → <b>${eur(x.coste_ud)}</b>${x.otras > 0 ? ' <span style="color:var(--ambar-o)">(comparte precio con ' + x.otras + (x.otras === 1 ? ' partida más' : ' partidas más') + ')</span>' : ''}</div>`).join('')}
@@ -10589,8 +10686,8 @@ function docsClienteHTML(c) {
   if (!(esAdmin() || puedeCrear() || rol() === 'presupuestos')) return '';
   const docs = V.cliDocs[c.id]; const err = V.cliDocsError[c.id];
   const fila = (d) => { const url = V.cliDocsUrls[d.ruta]; const conf = V.confirmarBorrarCliDoc === d.id;
-    const cuerpo = `${d.es_imagen && url ? `<div style="width:46px;height:46px;border-radius:10px;flex:none;background:#2b3024 center/cover no-repeat;background-image:url('${url}')"></div>` : `<div style="width:46px;height:46px;border-radius:10px;flex:none;display:flex;align-items:center;justify-content:center;background:rgba(20,23,15,.06);font:600 10px var(--mono);color:var(--t2)">${d.es_imagen ? 'FOTO' : 'PDF'}</div>`}
-      <div class="grow" style="min-width:0"><div class="row g8"><span class="badge" style="background:rgba(20,23,15,.06);color:var(--tinta)">${esc(cliDocTipoNombre(d.tipo))}</span><span class="tiny">${fechaCorta(d.creado_en)}</span></div>
+    const cuerpo = `${d.es_imagen && url ? `<div style="width:46px;height:46px;border-radius:10px;flex:none;background:#2b3024 center/cover no-repeat;background-image:url('${url}')"></div>` : `<div style="width:46px;height:46px;border-radius:10px;flex:none;display:flex;align-items:center;justify-content:center;background:rgba(var(--tinta-rgb),.06);font:600 10px var(--mono);color:var(--t2)">${d.es_imagen ? 'FOTO' : 'PDF'}</div>`}
+      <div class="grow" style="min-width:0"><div class="row g8"><span class="badge" style="background:rgba(var(--tinta-rgb),.06);color:var(--tinta)">${esc(cliDocTipoNombre(d.tipo))}</span><span class="tiny">${fechaCorta(d.creado_en)}</span></div>
       <div class="ell" style="font:500 14px/1.25 var(--sans);margin-top:5px">${esc(d.nombre || 'Documento')}</div></div>`;
     return `<div class="row" style="gap:10px;padding:10px 0;border-top:1px solid var(--l1)">
       ${url ? `<a href="${esc(url)}" target="_blank" rel="noopener" class="row grow" style="gap:12px;color:inherit;min-width:0">${cuerpo}</a>` : `<div class="row grow" style="gap:12px;min-width:0">${cuerpo}</div>`}
@@ -11285,7 +11382,7 @@ function vLegalizaciones() {
     ${esPresupuestos() ? marcaSysefen(false) : `<div class="volver" data-a="ir" data-v="ajustes">‹ ${esAdmin() ? 'Ajustes' : 'Perfil'}</div>`}
     <div class="row" style="justify-content:space-between;margin-top:6px">
       <div class="h1">Legalizaciones</div>
-      <button class="pill" data-a="legNueva" style="background:var(--tinta);color:#fff">+ Nueva</button>
+      <button class="pill" data-a="legNueva" style="background:var(--tinta-f);color:#fff">+ Nueva</button>
     </div>
     <div class="sub" style="margin-top:8px">Modelo 034 y certificado de verificación, por obra. Al enviar van a Drive y a ${esc(S.leg && S.leg.email_legalizaciones ? S.leg.email_legalizaciones : 'quien legaliza')}.</div>
   </div>
@@ -11380,7 +11477,7 @@ function vPresupuestos() {
       <div class="h1">Presupuestos</div>
       <div class="row g8">
         ${esAdmin() || rol() === 'presupuestos' ? `<button class="pill" data-a="tlSincronizar" style="padding:8px 12px;background:var(--l1);color:var(--tinta)" ${V.tlSyncBusy ? 'disabled' : ''} title="Traer de Teamleader lo enviado, aceptado o rechazado, y las ofertas hechas allí">${V.tlSyncBusy ? 'Mirando…' : '↻ Teamleader'}</button>` : ''}
-        <button class="pill" data-a="presuNuevo" style="background:var(--tinta);color:#fff">+ Nuevo</button>
+        <button class="pill" data-a="presuNuevo" style="background:var(--tinta-f);color:#fff">+ Nuevo</button>
       </div>
     </div>
     <div class="sub" style="margin-top:8px">Los de las visitas y los sueltos, juntos. Lo que pasa en Teamleader (enviado, aceptado, ofertas hechas allí) entra solo cada cinco minutos (y al volver a la app se refresca), o al momento con ↻.</div>
@@ -11389,8 +11486,8 @@ function vPresupuestos() {
     ${l.error ? `<div class="card" style="background:var(--rojo-cl)"><div class="sub" style="color:var(--rojo)">${esc(l.error)}</div></div>` : ''}
     ${!l.cargado && l.cargando ? '<div class="tiny">Cargando…</div>' : ''}
     ${l.filas.map((x) => `<div class="card" data-a="presuAbrir" data-id="${x.id}" style="margin-bottom:10px;cursor:pointer">
-      <div class="row g8"><span class="badge" style="background:rgba(20,23,15,.06);color:var(--tinta)">${esc(nombreCatDe(x) || x.categoria)}</span>
-        ${(() => { const sg = seguimientoPresu(x); return `<span class="badge" style="background:${sg.k === 'aceptado' ? '#e3efe5' : sg.k === 'rechazado' ? 'var(--rojo-cl)' : sg.k === 'esperando' ? '#f8efdc' : 'rgba(20,23,15,.06)'};color:${sg.color}">${esc(sg.txt)}</span>`; })()}
+      <div class="row g8"><span class="badge" style="background:rgba(var(--tinta-rgb),.06);color:var(--tinta)">${esc(nombreCatDe(x) || x.categoria)}</span>
+        ${(() => { const sg = seguimientoPresu(x); return `<span class="badge" style="background:${sg.k === 'aceptado' ? 'var(--verde-cl)' : sg.k === 'rechazado' ? 'var(--rojo-cl)' : sg.k === 'esperando' ? 'var(--ambar-cl)' : 'rgba(var(--tinta-rgb),.06)'};color:${sg.color}">${esc(sg.txt)}</span>`; })()}
         <div class="grow"></div><span class="tiny">${fechaCorta(x.created_at)}</span></div>
       <div class="h2" style="margin-top:9px">${x.tl_numero ? '<span class="tiny" style="font-weight:600;margin-right:6px">Nº ' + esc(x.tl_numero) + '</span>' : ''}${esc(x.titulo || (x.cliente && x.cliente.nombre) || 'Sin título')}</div>
       <div class="row" style="align-items:baseline;justify-content:space-between;margin-top:8px">
@@ -11906,7 +12003,7 @@ function presuLineasEditHTML(d) {
       ${l.origen_regla_id ? '<div class="tiny" style="margin-top:5px;opacity:.7">La propuso el motor: si la cambias, queda apuntado.</div>' : ''}
     </div>`;
   }).join('')}
-  ${(e.nuevas || []).map((n, i) => n.libre ? `<div class="card" style="margin-top:12px;background:rgba(20,23,15,.03)">
+  ${(e.nuevas || []).map((n, i) => n.libre ? `<div class="card" style="margin-top:12px;background:rgba(var(--tinta-rgb),.03)">
     <div class="lbl">Línea nueva</div>
     <input class="inp" data-f="presuNueva" data-i="${i}" data-k="descripcion" value="${esc(n.descripcion)}" placeholder="Concepto" style="margin-top:8px">
     <div class="row g8" style="margin-top:8px">
@@ -11916,7 +12013,7 @@ function presuLineasEditHTML(d) {
     </div>
     <div class="tiny" style="margin-top:8px">Se guarda también en el catálogo propio, para encontrarla la próxima vez desde «Añadir del catálogo».</div>
     <span class="tiny" data-a="presuNuevaQuitar" data-i="${i}" style="display:inline-block;margin-top:10px;cursor:pointer;text-decoration:underline">Quitar esta línea</span>
-  </div>` : `<div class="card" style="margin-top:12px;background:rgba(20,23,15,.03)">
+  </div>` : `<div class="card" style="margin-top:12px;background:rgba(var(--tinta-rgb),.03)">
     <div class="lbl">Del catálogo</div>
     <div style="font:600 14px/1.25 var(--sans);margin-top:8px">${esc(n.descripcion)}</div>
     <div class="sub" style="font-size:12px;margin-top:3px">${esc(n.producto_ref)}</div>
@@ -12480,14 +12577,14 @@ function seguimientoHTML(d) {
     <div class="row g8" style="align-items:center"><span class="dot" style="width:10px;height:10px;background:${sg.color}"></span><span style="font:600 15px var(--sans)">${esc(sg.txt)}</span></div>
     <div class="row g8" style="align-items:center;margin-top:10px"><span class="lbl" style="font-size:11px;flex:none">Nº Teamleader</span><input class="inp" data-f="presuTlNumero" value="${esc(d.tl_numero || '')}" placeholder="2026/634" style="width:120px;padding:7px 9px"><span class="tiny">La API no lo da: se apunta a mano y sale en la lista.</span></div>
     <div style="margin-top:10px">${pasos.map(([t, sub, ok]) => `<div class="row g10" style="align-items:center;padding:7px 0;border-bottom:1px solid var(--l1)">
-      <span class="dot" style="width:9px;height:9px;background:${ok ? 'var(--verde)' : 'rgba(20,23,15,.15)'}"></span>
+      <span class="dot" style="width:9px;height:9px;background:${ok ? 'var(--verde)' : 'rgba(var(--tinta-rgb),.15)'}"></span>
       <span class="grow" style="font:500 14px var(--sans);${ok ? '' : 'color:var(--t2)'}">${t}</span><span class="tiny">${esc(sub)}</span></div>`).join('')}</div>
     ${!d.revisado_at && !d.enviado_cliente_at ? `<button class="btn btn-verde" data-a="presuRevisado" style="margin-top:12px" ${busy ? 'disabled' : ''}>Ya lo revisé</button>
       <div class="tiny" style="margin-top:6px;text-align:center">${d.tl_quotation_id ? 'Repásalo en Teamleader (precios, textos, descuento) y márcalo aquí.' : 'Lo normal: subirlo a Teamleader, repasarlo allí y marcarlo aquí.'}</div>`
     : !d.enviado_cliente_at ? `<button class="btn btn-verde btn-enviar" data-a="presuEnviarAbrir" style="margin-top:14px" ${busy ? 'disabled' : ''}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg><span>Enviar al cliente</span></button>
       <div class="tiny" style="margin-top:6px;text-align:center">Con el PDF, un mensaje tuyo y el enlace para que lo acepte y firme. Antes de mandarlo se pide confirmación.</div>
       <button class="btn btn-gris" data-a="presuEnviadoCliente" style="margin-top:8px;border-radius:99px" ${busy ? 'disabled' : ''}>Ya se lo envié por otro lado</button>`
-    : `${d.firmado_at ? `<div style="margin-top:12px;padding:12px 14px;border-radius:12px;background:#eaf3ec;border:1.5px solid var(--verde)">
+    : `${d.firmado_at ? `<div style="margin-top:12px;padding:12px 14px;border-radius:12px;background:var(--verde-cl2);border:1.5px solid var(--verde)">
         <div style="font:600 15px var(--sans);color:var(--verde-o)">✓ Aceptado y firmado en línea</div>
         <div class="tiny" style="margin-top:4px">Por ${esc(d.firma_nombre || '')}${d.firma_dni ? ' · ' + esc(d.firma_dni) : ''} el ${fechaCorta(d.firmado_at)}</div>
         <div class="row g8" style="margin-top:8px;flex-wrap:wrap">${d.pdf_firmado_ruta ? `<button class="pill pill-verde" data-a="presuFirmadoVer" style="padding:9px 12px">PDF firmado</button>` : ''}${d.drive_firmado_url ? `<a class="pill" href="${esc(d.drive_firmado_url)}" target="_blank" rel="noopener" style="padding:9px 12px;text-decoration:none;background:var(--l1);color:var(--tinta)">En Drive</a>` : ''}</div>
@@ -12694,7 +12791,7 @@ const agCita = (id) => V.agenda.citas.find((c) => c.id === id) || null;
 const agPresupuestos = () => S.users.filter((u) => u.rol === 'presupuestos' && u.activo !== false && u.empId);
 const agNombreEmp = (empId) => { const u = S.users.find((x) => x.empId === empId); return u ? u.nombre : ''; };
 const agTipoNombre = (c) => (AG_TIPOS.find((x) => x[0] === c.tipo) || [null, c.tl_tipo === 'company' ? 'Empresa' : 'Particular'])[1];
-const agBadge = (txt) => `<span class="badge" style="background:rgba(20,23,15,.06);color:var(--tinta)">${esc(txt)}</span>`;
+const agBadge = (txt) => `<span class="badge" style="background:rgba(var(--tinta-rgb),.06);color:var(--tinta)">${esc(txt)}</span>`;
 
 // «Contactado · 1 oct · Ramón» / «No cogió el teléfono · 1 oct · Ramón · 2 intentos», o vacío si nadie lo ha llamado.
 const agContactadoTxt = (c) => {
@@ -12952,8 +13049,8 @@ function seguimientoClienteHTML(c) {
   const vencida = c.proxima_accion_at && c.proxima_accion_at < hoy;
   return `<div class="card" style="padding:12px 15px;margin-bottom:18px">
     <div class="row g8" style="align-items:center"><span class="dot" style="width:10px;height:10px;background:${e.color}"></span><span style="font:600 15px var(--sans)">${esc(e.txt)}</span></div>
-    ${c.aplazado_hasta && c.aplazado_hasta >= hoy ? `<div class="row g8" style="margin-top:10px;align-items:center;padding:8px 10px;border-radius:10px;background:#f8efdc"><span class="grow" style="font:500 13px/1.4 var(--sans);color:var(--ambar-o)">Aparcado hasta el ${esc(fechaCorta(c.aplazado_hasta + 'T12:00'))}${c.aplazado_motivo ? ' · ' + esc(c.aplazado_motivo) : ''}. Vuelve a la agenda una semana antes.</span><button class="pill" data-a="segRetomar" data-id="${c.id}" style="padding:6px 10px;font-size:11px;background:#fff;color:var(--tinta)">Retomar</button></div>` : ''}
-    <div class="row g8" style="margin-top:10px;align-items:center;padding:8px 10px;border-radius:10px;background:${c.proxima_accion ? (vencida ? 'var(--rojo-cl)' : 'rgba(20,23,15,.05)') : 'transparent'};border:${c.proxima_accion ? 'none' : '1px dashed var(--l2)'}">
+    ${c.aplazado_hasta && c.aplazado_hasta >= hoy ? `<div class="row g8" style="margin-top:10px;align-items:center;padding:8px 10px;border-radius:10px;background:var(--ambar-cl)"><span class="grow" style="font:500 13px/1.4 var(--sans);color:var(--ambar-o)">Aparcado hasta el ${esc(fechaCorta(c.aplazado_hasta + 'T12:00'))}${c.aplazado_motivo ? ' · ' + esc(c.aplazado_motivo) : ''}. Vuelve a la agenda una semana antes.</span><button class="pill" data-a="segRetomar" data-id="${c.id}" style="padding:6px 10px;font-size:11px;background:var(--blanco);color:var(--tinta)">Retomar</button></div>` : ''}
+    <div class="row g8" style="margin-top:10px;align-items:center;padding:8px 10px;border-radius:10px;background:${c.proxima_accion ? (vencida ? 'var(--rojo-cl)' : 'rgba(var(--tinta-rgb),.05)') : 'transparent'};border:${c.proxima_accion ? 'none' : '1px dashed var(--l2)'}">
       <div class="grow">
         <div class="lbl" style="color:${vencida ? 'var(--rojo)' : 'var(--t2)'}">Próxima acción${c.proxima_accion_at ? ' · ' + esc(fechaCorta(c.proxima_accion_at + 'T12:00')) + (vencida ? ' · vencida' : c.proxima_accion_at === hoy ? ' · hoy' : '') : ''}${c.proxima_accion_por ? ' · ' + esc(agNombreEmp(c.proxima_accion_por)) : ''}</div>
         <div style="font:500 14px/1.35 var(--sans);margin-top:3px">${c.proxima_accion ? esc(c.proxima_accion) : '<span class="sub">Nada pendiente. ¿Qué toca hacer con este cliente?</span>'}</div>
@@ -12968,7 +13065,7 @@ function seguimientoClienteHTML(c) {
     <div class="lbl" style="margin:14px 0 6px">Bitácora</div>
     ${!bit ? '<div class="sub">Cargando…</div>' : !bit.length ? '<div class="sub">Todavía no hay nada apuntado.</div>'
       : bit.slice(0, V.bitTodo === c.id ? 200 : 8).map((b) => `<div class="row g8" style="align-items:flex-start;padding:7px 0;border-top:1px solid var(--l1)">
-        <span class="badge" style="background:${['llamada', 'whatsapp', 'email', 'nota'].includes(b.tipo) ? '#e3efe5' : 'rgba(20,23,15,.06)'};color:${['llamada', 'whatsapp', 'email', 'nota'].includes(b.tipo) ? 'var(--verde-o)' : 'var(--t2)'};margin-top:2px">${esc(BIT_TIPOS[b.tipo] || b.tipo)}</span>
+        <span class="badge" style="background:${['llamada', 'whatsapp', 'email', 'nota'].includes(b.tipo) ? 'var(--verde-cl)' : 'rgba(var(--tinta-rgb),.06)'};color:${['llamada', 'whatsapp', 'email', 'nota'].includes(b.tipo) ? 'var(--verde-o)' : 'var(--t2)'};margin-top:2px">${esc(BIT_TIPOS[b.tipo] || b.tipo)}</span>
         <div class="grow"><div style="font:400 13.5px/1.4 var(--sans);white-space:pre-wrap">${esc(b.texto)}</div><div class="tiny" style="margin-top:2px">${esc(fechaCorta(b.at))} ${esc(hhmm(b.at))}${b.por ? ' · ' + esc(agNombreEmp(b.por)) : ''}</div></div>
         ${['llamada', 'whatsapp', 'email', 'nota'].includes(b.tipo) ? `<span data-a="segNotaBorrar" data-id="${b.id}" data-c="${c.id}" style="cursor:pointer;color:var(--t3);font-size:16px;line-height:1">×</span>` : ''}
       </div>`).join('') + (bit.length > 8 && V.bitTodo !== c.id ? `<div class="tiny" data-a="segBitTodo" data-id="${c.id}" style="margin-top:8px;cursor:pointer;text-decoration:underline">Ver las ${bit.length} anotaciones</div>` : '')}
@@ -12978,7 +13075,7 @@ function seguimientoClienteHTML(c) {
 // Orden pedido por Enzo (16-10-2026): los resueltos sin cita van entre visitados y
 // presupuesto por revisar; rechazados tiene columna propia siempre a la vista.
 const TABLERO_COLS = [
-  ['sin_cita', 'Nuevos · sin cita', 'var(--rojo)'], ['no_responde', 'No responden', '#7a2e1f'], ['citado', 'Citados', 'var(--ambar)'], ['visitado', 'Visitados · por presupuestar', 'var(--tinta)'],
+  ['sin_cita', 'Nuevos · sin cita', 'var(--rojo)'], ['no_responde', 'No responden', 'var(--no-resp)'], ['citado', 'Citados', 'var(--ambar)'], ['visitado', 'Visitados · por presupuestar', 'var(--tinta)'],
   ['sin_cita_ok', 'Resueltos sin cita', 'var(--t3)'],
   ['presupuestado', 'Presupuesto por revisar o enviar', 'var(--tinta)'], ['esperando', 'Enviado · esperando', 'var(--ambar)'],
   ['aceptado', 'Aceptados · obra', 'var(--verde)'], ['finalizado', 'Finalizados', 'var(--verde-o)'],
@@ -13157,7 +13254,7 @@ function agEstadoCliente(c) {
   if (c.tablero_col === 'otros') return { k: 'otros', color: 'var(--t3)', txt: 'Otros' + (c.tablero_motivo ? ' · ' + c.tablero_motivo : '') };
   if (c.tablero_col === 'rechazado') return { k: 'rechazado', color: 'var(--rojo)', txt: 'Rechazado' + (pm ? '' : ' · sin presupuesto') + (c.tablero_motivo ? ' · ' + c.tablero_motivo : '') };
   if (c.tablero_col === 'finalizado') return { k: 'finalizado', color: 'var(--verde-o)', txt: 'Finalizado' + (c.tablero_motivo ? ' · ' + c.tablero_motivo : '') };
-  if (c.tablero_col === 'no_responde') return { k: 'no_responde', color: '#7a2e1f', txt: 'No responde' + (c.tablero_motivo ? ' · ' + c.tablero_motivo : '') };
+  if (c.tablero_col === 'no_responde') return { k: 'no_responde', color: 'var(--no-resp)', txt: 'No responde' + (c.tablero_motivo ? ' · ' + c.tablero_motivo : '') };
   // Finalizado solo: todas sus obras están finalizadas o cerradas.
   const obrasC = typeof obrasDeCliente === 'function' ? obrasDeCliente(c) : [];
   if (obrasC.length && obrasC.every((o) => o.estado === 'finalizada' || o.estado === 'cerrada')) {
@@ -13192,7 +13289,7 @@ function agEstadoCliente(c) {
   const base = pend.length ? 'Pendiente de fecha' : 'Sin cita';
   if (c.contacto_estado === 'contactado') return { k: 'sin_cita', color: 'var(--ambar)', txt: base + ' · contactado' };
   // «No cogió» y sin cita pendiente: a la columna de los que no responden (20-10-2026).
-  if (c.contacto_estado === 'no_contesta' && !pend.length) return { k: 'no_responde', color: '#7a2e1f', txt: 'No responde · ' + ((c.contacto_intentos || 0) > 1 ? c.contacto_intentos + ' llamadas sin coger' : 'no cogió el teléfono') };
+  if (c.contacto_estado === 'no_contesta' && !pend.length) return { k: 'no_responde', color: 'var(--no-resp)', txt: 'No responde · ' + ((c.contacto_intentos || 0) > 1 ? c.contacto_intentos + ' llamadas sin coger' : 'no cogió el teléfono') };
   if (c.contacto_estado === 'no_contesta') return { k: 'sin_cita', color: 'var(--rojo)', txt: base + ' · no cogió el teléfono' };
   return { k: 'sin_cita', color: 'var(--rojo)', txt: base + ' · sin contactar' };
 }
@@ -13475,7 +13572,7 @@ function listaCompraObraHTML(o) {
       <div class="sub" style="font-size:13px">Qué hay que pedir y a quién, sumando todos los presupuestos aceptados de esta obra. Se genera sola al aceptarse cada presupuesto y llega por correo a presupuestos; aquí se abre la última versión.</div>
       ${V.listaCompra.error && V.listaCompra.errorDe === o.id ? `<div class="sub" style="font-size:12px;margin-top:8px;color:var(--rojo)">${esc(V.listaCompra.error)}</div>` : ''}
       <div class="row g8" style="margin-top:12px">
-        <button class="pill grow" data-a="listaCompraObra" data-id="${o.id}" style="padding:11px;text-align:center;background:var(--tinta);color:#fff" ${ocupado ? 'disabled' : ''}>${ocupado ? 'Preparando…' : 'Ver lista de compra'}</button>
+        <button class="pill grow" data-a="listaCompraObra" data-id="${o.id}" style="padding:11px;text-align:center;background:var(--tinta-f);color:#fff" ${ocupado ? 'disabled' : ''}>${ocupado ? 'Preparando…' : 'Ver lista de compra'}</button>
         <button class="pill" data-a="listaCompraRegenerar" data-id="${o.id}" style="padding:11px 14px;flex:none" ${ocupado ? 'disabled' : ''} title="Vuelve a calcularla con los presupuestos tal y como están ahora (sin mandar correo)">Regenerar</button>
       </div>
     </div>`;
@@ -13488,7 +13585,7 @@ function vListaCompraAjustes() {
       <div class="sub" style="font-size:12px">A quién llega el correo con la lista de compra cada vez que un cliente acepta un presupuesto. Correos separados por comas. Al cliente y a los operarios no les llega nunca.</div>
       <input class="inp" data-f="listaCompraCorreosTxt" value="${esc(lc.correosTxt != null ? lc.correosTxt : (lc.correos || []).join(', '))}" placeholder="${lc.correosBusy && lc.correos === null ? 'Cargando…' : 'ramon@…, fabrizio@…'}" style="margin-top:10px" ${lc.correosBusy ? 'disabled' : ''}>
       ${lc.error && lc.errorDe === 'correos' ? `<div class="sub" style="font-size:12px;margin-top:8px;color:var(--rojo)">${esc(lc.error)}</div>` : ''}
-      <button class="pill" data-a="listaCompraCorreosGuardar" style="margin-top:10px;padding:11px 16px;background:var(--tinta);color:#fff" ${lc.correosBusy ? 'disabled' : ''}>Guardar</button>
+      <button class="pill" data-a="listaCompraCorreosGuardar" style="margin-top:10px;padding:11px 16px;background:var(--tinta-f);color:#fff" ${lc.correosBusy ? 'disabled' : ''}>Guardar</button>
     </div>`;
 }
 // Abre el PDF en otra pestaña. La ventana se abre ANTES de esperar a la función, que si no el
@@ -13921,7 +14018,7 @@ function juntarSheetHTML(s) {
     <div style="font:600 23px/1.15 var(--cond)">¿Cuál se queda?</div>
     <div class="sub" style="margin-top:6px">Toca la ficha que se queda. Todo lo de la otra (citas, visitas, presupuestos, obras, facturas, notas y documentos) pasa a ella, y los datos que le falten se rellenan con los de la otra.</div>
     ${tarjeta(a)}${tarjeta(b)}
-    <div style="margin-top:12px;padding:10px 12px;border-radius:12px;background:#fde6e3;color:#8f2a20;font:400 13px/1.4 var(--sans)">La otra ficha se quita y no se deshace desde la app.${a.tl_id && b.tl_id ? ' En Teamleader siguen siendo dos: allí no se toca nada, pero la app recuerda que son el mismo.' : ' En Teamleader no se toca nada.'}</div>
+    <div style="margin-top:12px;padding:10px 12px;border-radius:12px;background:var(--rojo-cl2);color:var(--rojo-o);font:400 13px/1.4 var(--sans)">La otra ficha se quita y no se deshace desde la app.${a.tl_id && b.tl_id ? ' En Teamleader siguen siendo dos: allí no se toca nada, pero la app recuerda que son el mismo.' : ' En Teamleader no se toca nada.'}</div>
     <div class="row g8" style="margin-top:16px">
       <button class="btn btn-gris" data-a="ag_juntarAtras" style="border-radius:99px" ${s.busy ? 'disabled' : ''}>Elegir otra</button>
       <button class="btn" data-a="ag_juntarConfirmar" style="font-size:14px" ${s.busy ? 'disabled' : ''}>${s.busy ? 'Juntando…' : 'Juntar'}</button>
@@ -13938,7 +14035,7 @@ function duplicadoAvisoHTML(c) {
     <div class="lbl" style="color:var(--ambar-o)">Puede estar dos veces</div>
     <div style="font:400 13.5px/1.45 var(--sans);margin-top:6px">Hay ${dup.length === 1 ? 'otra ficha' : dup.length + ' fichas más'} con el mismo nombre, teléfono o correo: <b>${esc(x.nombre)}</b>${[agTipoNombre(x), x.telefono].filter(Boolean).length ? ' (' + esc([agTipoNombre(x), x.telefono].filter(Boolean).join(' · ')) + ')' : ''}${dup.length > 1 ? ' y ' + (dup.length - 1) + ' más' : ''}.</div>
     <div class="row g8" style="margin-top:10px">
-      <button class="pill" data-a="ag_juntarAbrir" data-id="${c.id}" ${dup.length === 1 ? `data-otro="${x.id}"` : ''} style="padding:8px 12px;background:var(--tinta);color:#fff">Juntar las fichas</button>
+      <button class="pill" data-a="ag_juntarAbrir" data-id="${c.id}" ${dup.length === 1 ? `data-otro="${x.id}"` : ''} style="padding:8px 12px;background:var(--tinta-f);color:#fff">Juntar las fichas</button>
       <button class="pill" data-a="ag_abrirCliente" data-id="${x.id}" style="padding:8px 12px;background:var(--l1);color:var(--tinta)">Ver la otra</button>
     </div>
   </div>`;
@@ -14200,7 +14297,7 @@ function vAgenda() {
   return `<div class="hdr">
     <div class="row" style="justify-content:space-between;align-items:center;margin-bottom:14px">
       ${marcaSysefen(false)}
-      ${avatarHTML(V.user.id, 'width:32px;height:32px;font-size:13px;background:rgba(20,23,15,.08);color:var(--tinta);cursor:pointer', 'data-a="menuUsuario"')}
+      ${avatarHTML(V.user.id, 'width:32px;height:32px;font-size:13px;background:rgba(var(--tinta-rgb),.08);color:var(--tinta);cursor:pointer', 'data-a="menuUsuario"')}
     </div>
     <div class="lbl">${esc(agMayus(fechaHoy))}</div>
     <div class="row" style="justify-content:space-between;align-items:baseline;margin-top:4px">
@@ -14273,7 +14370,7 @@ function vClientes() {
       <div class="row g8">
         ${puedeCitar() ? `<button class="pill" data-a="ag_vista" style="padding:8px 12px;background:${ag.vista === 'tablero' ? 'var(--verde)' : 'var(--l1)'};color:${ag.vista === 'tablero' ? '#fff' : 'var(--tinta)'}">${ag.vista === 'tablero' ? 'Lista' : 'Tablero'}</button>` : ''}
         ${esAdmin() || rol() === 'presupuestos' ? `<button class="pill" data-a="tlSincronizar" style="padding:8px 12px;background:var(--l1);color:var(--tinta)" ${V.tlSyncBusy ? 'disabled' : ''} title="Traer de Teamleader lo enviado, aceptado o rechazado">${V.tlSyncBusy ? '…' : '↻'}</button>` : ''}
-        ${puedeCitar() && !esColaborador() ? '<button class="pill" data-a="ag_nuevoCliente" style="background:var(--tinta);color:#fff">+ Cliente</button>' : ''}
+        ${puedeCitar() && !esColaborador() ? '<button class="pill" data-a="ag_nuevoCliente" style="background:var(--tinta-f);color:#fff">+ Cliente</button>' : ''}
       </div>
     </div>
     <input class="inp" id="ag-buscar" data-f="ag_buscar" type="search" value="${esc(ag.buscar || '')}" placeholder="Buscar: nombre, teléfono, población, dirección…" autocomplete="off" style="margin-top:14px">
@@ -14316,13 +14413,13 @@ function webListaHTML() {
   return `<div class="row" style="justify-content:space-between;align-items:center;margin-bottom:10px">
     <span class="lbl">De la web · ${web.length} sin cita</span>${boton}</div>
   ${web.sort((a, b) => String(b.lead_at).localeCompare(String(a.lead_at))).map((c) => `<div class="card" data-a="ag_abrirCliente" data-id="${c.id}" style="margin-bottom:11px;cursor:pointer;box-shadow:0 0 0 1.5px var(--ambar),var(--sh)">
-    <div class="row g8"><span class="badge" style="background:${c.origen === 'crm' ? 'rgba(20,23,15,.1)' : 'var(--ambar)'};color:var(--tinta)">${c.origen === 'crm' ? 'Teamleader' : 'Web'}</span>
+    <div class="row g8"><span class="badge" style="background:${c.origen === 'crm' ? 'rgba(var(--tinta-rgb),.1)' : 'var(--ambar)'};color:${c.origen === 'crm' ? 'var(--tinta)' : '#14170f'}">${c.origen === 'crm' ? 'Teamleader' : 'Web'}</span>
       <span class="tiny">Llegó ${cuando(c.lead_at)}</span></div>
     <div class="h2" style="margin-top:9px">${esc(c.nombre)}</div>
     <div class="sub" style="margin-top:4px">${esc([agTipoNombre(c), c.telefono, c.poblacion].filter(Boolean).join(' · ') || 'Sin más datos')}</div>
     <div style="margin-top:11px">${caminoHTML(c)}</div>
     ${seguimientoResumenHTML(c)}
-    ${c.motivo_web ? `<div style="margin-top:8px;padding:8px 10px;border-radius:10px;background:#f8efdc;color:var(--ambar-o);font:500 13px/1.4 var(--sans);display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden">${esc(c.motivo_web)}</div>` : ''}
+    ${c.motivo_web ? `<div style="margin-top:8px;padding:8px 10px;border-radius:10px;background:var(--ambar-cl);color:var(--ambar-o);font:500 13px/1.4 var(--sans);display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden">${esc(c.motivo_web)}</div>` : ''}
     ${agContactadoTxt(c) ? `<div class="tiny" style="margin-top:8px;color:${c.contacto_estado === 'contactado' ? 'var(--ambar-o)' : 'var(--rojo)'}">${esc(agContactadoTxt(c))}</div>` : ''}
     ${puedeCitar() ? `<div class="row g8" style="margin-top:12px;flex-wrap:wrap">${agContactoBotones(c)}
       <button class="pill pill-verde grow" data-a="ag_nuevaCita" data-id="${c.id}" style="padding:8px 14px;text-align:center">Citar</button>
@@ -14338,7 +14435,7 @@ function webListaHTML() {
  */
 function buscadorCRMHTML() {
   const b = V.crmBuscar;
-  return `<div class="card" style="margin-bottom:18px;background:rgba(20,23,15,.03)">
+  return `<div class="card" style="margin-bottom:18px;background:rgba(var(--tinta-rgb),.03)">
     <div class="lbl">¿Ya está en Teamleader?</div>
     <div class="sub" style="font-size:12px;margin-top:6px">Los que entran por la web y los clientes de siempre ya están en el CRM. Búscalo antes de escribirlo a mano.</div>
     <div class="row g8" style="margin-top:12px">
@@ -14352,10 +14449,10 @@ function buscadorCRMHTML() {
 function crmResultadosHTML() {
   const b = V.crmBuscar;
   const fila = (x) => `<div class="card row" data-a="crmTraer" data-id="${esc(x.tl_id)}" data-t="${esc(x.tipo)}" data-en="${esc(x.cliente_id || '')}" style="margin-bottom:8px;cursor:pointer">
-    <div class="av" style="width:36px;height:36px;background:rgba(20,23,15,.06);color:var(--t2);font-size:13px">${esc(inicialesCli(x.nombre))}</div>
+    <div class="av" style="width:36px;height:36px;background:rgba(var(--tinta-rgb),.06);color:var(--t2);font-size:13px">${esc(inicialesCli(x.nombre))}</div>
     <div class="grow"><div style="font:600 15px/1.2 var(--sans)">${esc(x.nombre)}</div>
     <div class="sub" style="font-size:12px;margin-top:3px">${esc([x.tipo === 'company' ? 'Empresa' : 'Particular', x.telefono, x.poblacion].filter(Boolean).join(' · '))}</div></div>
-    ${x.cliente_id ? '<span class="badge" style="background:rgba(20,23,15,.06);color:var(--t2)">Ya está</span>' : '<div style="font:400 20px/1 var(--sans);color:var(--t3)">›</div>'}
+    ${x.cliente_id ? '<span class="badge" style="background:rgba(var(--tinta-rgb),.06);color:var(--t2)">Ya está</span>' : '<div style="font:400 20px/1 var(--sans);color:var(--t3)">›</div>'}
   </div>`;
   if (b.busy) return '<div class="sub" style="font-size:12px;margin-top:10px">Buscando en el CRM…</div>';
   if (b.error) return `<div class="sub" style="font-size:12px;margin-top:10px;color:var(--rojo)">${esc(b.error)}</div>`;
@@ -14718,7 +14815,7 @@ function vClienteVer() {
         <div class="row g8" style="align-items:baseline">
           <span style="font:700 18px/1 var(--cond)">${esc(codigoObra(o) || o.titulo)}</span>
           <span class="grow" style="font:500 14px var(--sans)">${esc((o.categorias || []).map((k) => catObraNombre(k, o)).join(' · '))}</span>
-          <span class="badge" style="background:${o.estado === 'finalizada' || o.estado === 'cerrada' ? 'var(--verde)' : o.estado === 'en_curso' ? 'var(--ambar)' : 'rgba(20,23,15,.1)'};color:${o.estado === 'planificada' ? 'var(--tinta)' : '#fff'}">${esc(estadoObraTxt(o))}</span>
+          <span class="badge" style="background:${o.estado === 'finalizada' || o.estado === 'cerrada' ? 'var(--verde)' : o.estado === 'en_curso' ? 'var(--ambar)' : 'rgba(var(--tinta-rgb),.1)'};color:${o.estado === 'planificada' ? 'var(--tinta)' : '#fff'}">${esc(estadoObraTxt(o))}</span>
         </div>
         ${direccionObra(o) ? `<div class="sub" style="margin-top:4px">${esc(direccionObra(o))}</div>` : ''}
         ${av ? `<div class="row" style="justify-content:space-between;margin-top:8px"><span class="tiny">Avance · ${av.hechas} de ${av.total} fases</span><span class="num" style="font-size:13px">${av.pct} %</span></div><div class="prog"><i style="width:${av.pct}%"></i></div>` : ''}
@@ -14817,11 +14914,13 @@ function sheet() {
   if (s.tipo === 'menuUsuario') {
     const u = yo();
     return `<div class="sheet"><div>
-      ${avatarHTML(u.id, 'width:52px;height:52px;font-size:22px;background:rgba(20,23,15,.08);color:var(--tinta)')}
+      ${avatarHTML(u.id, 'width:52px;height:52px;font-size:22px;background:rgba(var(--tinta-rgb),.08);color:var(--tinta)')}
       <div style="font:600 22px/1.15 var(--cond);margin-top:14px">${esc(u.nombre)}</div>
       <div class="sub" style="margin-top:4px">${rolNombre(u.rol)}</div>
       <button class="btn btn-gris" data-a="abrirAvatar" style="margin-top:18px;border-radius:14px">Cambiar mi foto</button>
-      <div class="row g8" style="margin-top:8px">
+      <div class="lbl" style="margin:18px 0 8px">Aspecto</div>
+      ${temaSelectorHTML()}
+      <div class="row g8" style="margin-top:16px">
         <button class="btn btn-gris" data-a="cerrarSheet" style="border-radius:99px">Cancelar</button>
         <button class="btn btn-rojo" data-a="salir" style="font-size:14px">Salir</button>
       </div>
@@ -14835,7 +14934,7 @@ function sheet() {
       <div style="font:600 23px/1.15 var(--cond)">Tu foto</div>
       <div class="sub" style="margin-top:4px">Elige un emoji o sube una foto. Si no pones nada, salen tus iniciales.</div>
       <div style="display:flex;justify-content:center;margin:16px 0">
-        ${avatarHTML(u.id, 'width:76px;height:76px;font-size:32px;background:rgba(20,23,15,.08);color:var(--tinta)')}
+        ${avatarHTML(u.id, 'width:76px;height:76px;font-size:32px;background:rgba(var(--tinta-rgb),.08);color:var(--tinta)')}
       </div>
       <button class="btn btn-verde" data-a="subirAvatar" ${s.busy ? 'disabled' : ''}>${s.busy ? 'Subiendo…' : 'Subir una foto'}</button>
       <div class="lbl" style="margin:16px 0 8px">O un emoji</div>
@@ -14852,7 +14951,7 @@ function sheet() {
       <div class="sub" style="margin-top:6px">Marca a quiénes les aplica y pon el tiempo una sola vez.</div>
       <div class="col g8" style="margin-top:14px;max-height:180px;overflow-y:auto">
         ${equipo().map((uu) => { const on = sel.includes(uu.id); return `<div class="row" data-a="horasGrupoToggle" data-id="${uu.id}" style="padding:9px 4px;cursor:pointer">
-          <div style="width:22px;height:22px;border-radius:7px;flex:none;display:flex;align-items:center;justify-content:center;font:700 12px var(--sans);color:#fff;background:${on ? 'var(--verde)' : 'transparent'};border:1.5px solid ${on ? 'var(--verde)' : 'rgba(20,23,15,.25)'}">${on ? '✓' : ''}</div>
+          <div style="width:22px;height:22px;border-radius:7px;flex:none;display:flex;align-items:center;justify-content:center;font:700 12px var(--sans);color:#fff;background:${on ? 'var(--verde)' : 'transparent'};border:1.5px solid ${on ? 'var(--verde)' : 'rgba(var(--tinta-rgb),.25)'}">${on ? '✓' : ''}</div>
           <div class="grow" style="font:500 15px var(--sans)">${esc(uu.nombre)}</div>
         </div>`; }).join('')}
       </div>
@@ -14867,7 +14966,7 @@ function sheet() {
     const n = userById(s.userId).nombre;
     const fx = fichajeAbierto(s.userId);
     return `<div class="sheet"><div>
-      <div class="av" style="width:52px;height:52px;font-size:22px;background:${s.salida ? '#f7eae6;color:var(--rojo)' : '#e3efe5;color:var(--verde-o)'}">?</div>
+      <div class="av" style="width:52px;height:52px;font-size:22px;background:${s.salida ? 'var(--rojo-cl);color:var(--rojo)' : 'var(--verde-cl);color:var(--verde-o)'}">?</div>
       <div style="font:600 25px/1.15 var(--cond);margin-top:16px">${s.salida ? '¿Fichar la salida de ' + esc(n) + '?' : '¿Fichar la entrada de ' + esc(n) + '?'}</div>
       <div class="sub" style="margin-top:8px">${s.salida
         ? (fx ? 'Entró a las ' + hhmm(fx.entrada) + '. Se cerrará su jornada a las ' + hhmm(new Date().toISOString()) + '. Corrección administrativa.' : 'No tiene ningún fichaje abierto.')
@@ -14975,9 +15074,9 @@ function sheet() {
       ${(() => {
         const au = ausenciaDe(s.userId, s.fecha);
         const propia = au && !au.comun;
-        const cabecera = au ? `<div class="card row" style="margin-top:10px;background:var(--ambar);color:var(--tinta)">
+        const cabecera = au ? `<div class="card row claro" style="margin-top:10px;background:var(--ambar);color:var(--tinta)">
           <div class="grow"><div style="font:600 14px var(--sans)">${esc(etiqAusencia(au))}</div>
-          <div class="tiny" style="color:rgba(20,23,15,.65);margin-top:3px">${au.comun ? 'Festivo del calendario, para todo el equipo.' : 'Marcado solo para esta persona.'}</div></div>
+          <div class="tiny" style="color:rgba(var(--tinta-rgb),.65);margin-top:3px">${au.comun ? 'Festivo del calendario, para todo el equipo.' : 'Marcado solo para esta persona.'}</div></div>
           <button class="pill" data-a="${au.comun ? 'quitarFestivo' : 'quitarAusencia'}" data-id="${s.userId}" data-fecha="${s.fecha}" style="background:#fff">Quitar</button>
         </div>` : '';
         const tipos = ['vacaciones', 'baja', 'permiso'].filter(() => !propia);
@@ -15193,7 +15292,7 @@ function sheet() {
     return `<div class="sheet"><div>
       <div style="font:600 25px/1.15 var(--cond)">Falta crear el acceso</div>
       <div class="sub" style="margin-top:8px">El perfil de <b>${esc(s.nombre)}</b> ya está creado, pero todavía no puede entrar.${s.motivo ? ' ' + esc(s.motivo) : ' Falta desplegar la función <b>admin-usuarios</b>; mientras tanto se hace en el panel:'}</div>
-      <div class="card" style="margin-top:12px;background:rgba(20,23,15,.04)">
+      <div class="card" style="margin-top:12px;background:rgba(var(--tinta-rgb),.04)">
         <div class="tiny">1. Supabase → Authentication → Users → <b>Add user</b></div>
         <div class="tiny" style="margin-top:6px">2. Email: <b>${esc(s.email || 'nombre@sysefen.app')}</b></div>
         <div class="tiny" style="margin-top:6px">3. Password: <b>${esc(s.pin || '<PIN de 4 cifras>')}sysefen</b></div>
@@ -15205,7 +15304,7 @@ function sheet() {
   }
   if (s.tipo === 'trasSalida') {
     return `<div class="sheet"><div>
-      <div class="av" style="width:52px;height:52px;font-size:22px;background:#e3efe5;color:var(--verde-o)">✓</div>
+      <div class="av" style="width:52px;height:52px;font-size:22px;background:var(--verde-cl);color:var(--verde-o)">✓</div>
       <div style="font:600 25px/1.15 var(--cond);margin-top:16px">Jornada cerrada</div>
       <div class="sub" style="margin-top:8px">${esc(userById(s.userId).nombre)} — salida registrada. Ahora puedes repartir esas horas por obra, despacho, desplazamiento…</div>
       <div class="row g8" style="margin-top:20px">
@@ -15277,7 +15376,7 @@ function sheet() {
       ${abiertas.length > 5 ? `<input class="inp" data-f="buscarObraParte" value="${esc(s.buscar || '')}" placeholder="Buscar obra o cliente" autocomplete="off" style="margin-top:14px">` : ''}
       ${abiertas.length ? '' : '<div class="sub" style="margin-top:10px">Todavía no hay obras. Créala aquí y sigues con el parte.</div>'}
       <div class="lista-obras">
-        ${lista.map((o) => `<button class="fila-obra" data-a="nuevoParte" data-id="${o.id}">${esc(nombreObra(o))}${planificadoHoyEn(o.id) ? ' <span class="badge" style="background:#e3efe5;color:var(--verde-o)">hoy</span>' : ''}${o.cliente || o.dir ? `<small>${esc([o.cliente, direccionObra(o)].filter(Boolean).join(' · '))}</small>` : ''}</button>`).join('')}
+        ${lista.map((o) => `<button class="fila-obra" data-a="nuevoParte" data-id="${o.id}">${esc(nombreObra(o))}${planificadoHoyEn(o.id) ? ' <span class="badge" style="background:var(--verde-cl);color:var(--verde-o)">hoy</span>' : ''}${o.cliente || o.dir ? `<small>${esc([o.cliente, direccionObra(o)].filter(Boolean).join(' · '))}</small>` : ''}</button>`).join('')}
         ${q && !lista.length ? '<div class="sub" style="padding:14px 4px">Ninguna obra abierta con ese nombre.</div>' : ''}
       </div>
       <div class="row g8" style="margin-top:14px">
@@ -15289,7 +15388,7 @@ function sheet() {
   if (s.tipo === 'fichaje') {
     const n = userById(s.userId).nombre;
     return `<div class="sheet"><div>
-      <div class="av" style="width:52px;height:52px;font-size:22px;background:${s.salida ? '#f7eae6;color:var(--rojo)' : '#e3efe5;color:var(--verde-o)'}">?</div>
+      <div class="av" style="width:52px;height:52px;font-size:22px;background:${s.salida ? 'var(--rojo-cl);color:var(--rojo)' : 'var(--verde-cl);color:var(--verde-o)'}">?</div>
       <div style="font:600 25px/1.15 var(--cond);margin-top:16px">${s.propio ? (s.salida ? '¿Fichar tu salida?' : '¿Fichar tu entrada?') : (s.salida ? '¿Fichar la salida de ' + esc(n) + '?' : '¿Fichar la entrada de ' + esc(n) + '?')}</div>
       <div class="sub" style="margin-top:8px">${s.salida ? 'Se registrará la salida a las ' + hhmm(new Date().toISOString()) + '. Queda registrada; solo un jefe o administración pueden corregirla.' : 'Se registrará la entrada a las ' + hhmm(new Date().toISOString()) + '.'}</div>
       <div class="row g8" style="margin-top:20px">
@@ -15319,7 +15418,7 @@ function sheet() {
     const f = faseById(s.id); if (!f) { V.sheet = null; return ''; }
     const puede = puedeAvance(f.obra_id);
     return `<div class="sheet"><div>
-      <div class="row g8" style="align-items:baseline"><span style="font:600 23px/1.15 var(--cond)">${esc(f.nombre)}</span>${f.categoria ? `<span class="badge" style="background:rgba(20,23,15,.07);color:var(--t2)">${esc(f.categoria)}</span>` : ''}</div>
+      <div class="row g8" style="align-items:baseline"><span style="font:600 23px/1.15 var(--cond)">${esc(f.nombre)}</span>${f.categoria ? `<span class="badge" style="background:rgba(var(--tinta-rgb),.07);color:var(--t2)">${esc(f.categoria)}</span>` : ''}</div>
       <div class="sub" style="margin-top:6px">${f.no_aplica ? 'Marcada como «no aplica» en esta obra.' : f.pct === 100 ? 'Hecha' + (f.hecha_en ? ' el ' + fechaCorta(f.hecha_en) : '') + (f.hecha_por ? ' · ' + esc(agNombreEmp(f.hecha_por)) : '') + '.' : f.pct > 0 ? 'Al ' + f.pct + ' %.' : 'Sin empezar.'}</div>
       ${(f.opciones_posibles || []).length ? `<div class="lbl" style="margin:14px 0 8px">¿Cuál lleva esta obra? (puede ser más de uno)</div>
       <div class="wrap">${f.opciones_posibles.map((op) => `<span class="chip ${(f.opciones || []).includes(op) ? 'on' : ''}" data-a="faseOpcion" data-id="${f.id}" data-o="${esc(op)}" style="cursor:pointer;${puede ? '' : 'pointer-events:none'}">${esc(op)}</span>`).join('')}</div>` : ''}
@@ -15602,7 +15701,7 @@ function sheet() {
         <div><div class="lbl" style="margin-bottom:6px">Margen % sobre venta</div><input class="inp" data-f="paj:margen_pct" value="${esc(String(margen))}" inputmode="decimal" style="width:90px;text-align:right"></div>
         <span class="tiny" style="padding-bottom:10px">El PVP no se mueve: el margen cambia el coste.</span>
       </div>` : ''}
-      ${s.original && s.original.origen_inputs && s.original.origen_inputs.fv2 && Array.isArray(s.original.origen_inputs.desglose) ? `<div style="margin-top:14px;padding:10px 12px;border-radius:12px;background:rgba(20,23,15,.04)">
+      ${s.original && s.original.origen_inputs && s.original.origen_inputs.fv2 && Array.isArray(s.original.origen_inputs.desglose) ? `<div style="margin-top:14px;padding:10px 12px;border-radius:12px;background:rgba(var(--tinta-rgb),.04)">
         <div class="row g8" style="align-items:center;justify-content:space-between"><span style="font:600 14px var(--sans)">Partidas de la instalación</span><button class="pill pill-verde" data-a="fv2DesgloseAbrir" data-modo="ajuste" style="padding:9px 12px">Editar partidas</button></div>
         <div class="tiny" style="margin-top:4px">${v.fv2 && v.fv2.desglose ? v.fv2.desglose.length + ' partidas (editadas) · coste ' + eur(v.fv2.precio.coste_total) + ' · PVP ' + eur(v.fv2.precio.precio_objetivo) : s.original.origen_inputs.desglose.length + ' partidas del presupuestador. Cambia cantidades o costes, quita o añade; el coste y el PVP se recalculan.'}</div>
       </div>` : ''}
@@ -15799,7 +15898,7 @@ function sheet() {
           ? 'Crear accesos desde la app necesita la función <b>admin-usuarios</b> desplegada en Supabase (Edge Functions → Deploy → pegar <b>supabase/functions/admin-usuarios/index.ts</b>).'
           : 'Para cambiar PINes desde aquí falta ejecutar <b>sql/etapa10_pin_admin.sql</b> en Supabase → SQL Editor. Se pega y ya está: no hay que desplegar nada.'}</div>
         <div class="lbl" style="margin:14px 0 6px">Mientras tanto, a mano</div>
-        <div class="card" style="background:rgba(20,23,15,.04)">
+        <div class="card" style="background:rgba(var(--tinta-rgb),.04)">
           <div class="tiny">1. Supabase → Authentication → Users</div>
           <div class="tiny" style="margin-top:6px">2. ${sinAcceso ? '<b>Add user</b> con el email <b>' + esc(em) + '</b>, marcando <b>Auto Confirm User</b>' : 'Busca <b>' + esc(em) + '</b> → menú <b>···</b> → <b>Reset password</b>'}</div>
           <div class="tiny" style="margin-top:6px">3. Password: <b>${esc(s.val || '<PIN>')}sysefen</b></div>
@@ -16214,6 +16313,7 @@ document.addEventListener('click', (e) => {
   if (a === 'horasGrupoToggle') return A.horasGrupoToggle(d.id);
   if (a === 'horasGrupoAplicar') return A.horasGrupoAplicar();
   if (a === 'menuUsuario') return A.menuUsuario();
+  if (a === 'ponerTema') return A.ponerTema(d.t);
   if (a === 'abrirAvatar') return A.abrirAvatar();
   if (a === 'subirAvatar') return A.subirAvatar();
   if (a === 'ponerEmoji') return A.ponerEmoji(d.e);
