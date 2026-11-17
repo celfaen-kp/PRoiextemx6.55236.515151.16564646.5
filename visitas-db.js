@@ -816,6 +816,28 @@ export async function listarFacturas() {
   }
   return todas;
 }
+/* --- estadísticas (V32.7, 17-11-2026) -----------------------------------------
+ * Las oportunidades de Teamleader copiadas en tl_oportunidades (sql/etapa112) y
+ * los presupuestos de la app con lo justo para contarlos. */
+async function todasLasFilas(tabla, cols, orden) {
+  const todas = [];
+  for (let desde = 0; desde < 20000; desde += 1000) {
+    const pag = unwrap(await supabase.from(tabla).select(cols).order(orden, { ascending: true }).range(desde, desde + 999)) || [];
+    todas.push(...pag);
+    if (pag.length < 1000) break;
+  }
+  return todas;
+}
+export async function listarOportunidades() {
+  return todasLasFilas('tl_oportunidades', 'tl_id, titulo, estado, importe, cliente_nombre, cliente_id, fase, fase_orden, embudo, responsable, entidad_id, entidad, motivo_perdida, creado_at, cerrado_at, sincronizado_at', 'tl_id');
+}
+export async function listarPresupuestosEstadistica() {
+  return todasLasFilas('presupuestos', 'id, categoria, categoria_texto, estado, respuesta_cliente, total_venta, total_coste, created_at, enviado_cliente_at, revisado_at, respondido_at, tl_quotation_id, cliente_id, visita_id, obra_id, titulo', 'id');
+}
+/** Trae de Teamleader las oportunidades que hayan cambiado (función teamleader-ventas). */
+export async function sincronizarOportunidades() {
+  return invocar('teamleader-ventas', {});
+}
 export async function verFactura(id) {
   return unwrap(await supabase.from('facturas').select('*').eq('id', id).single());
 }

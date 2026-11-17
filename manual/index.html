@@ -718,23 +718,30 @@ footer{margin-top:60px;padding-top:20px;border-top:1px solid var(--l1);color:var
   </div>
 </div>
 <div class="pantalla">
-  <img src="img/pres-informes.png" alt="Informes de lo facturado">
+  <img src="img/pres-estadisticas.png" alt="Estadísticas: ventas">
   <div class="txt">
-    <h4>Informes: lo facturado por meses</h4>
-    <p><span class="btn gris">Informes</span>, en la lista de facturas. Sale de las facturas que la app ya tiene copiadas de Teamleader: si falta alguna reciente, primero <b>↻</b> en la lista.</p>
+    <h4>Estadísticas</h4>
+    <p><span class="btn gris">Estadísticas</span>, en la lista de facturas (presupuestos y Administración). Cuatro pestañas con la misma forma: arriba los números del año, luego la <b>gráfica por meses</b> con el año anterior al lado, la <b>tabla</b> y los repartos. En todas se elige el <b>año</b>; al tocar un mes, en la gráfica o en la tabla, se leen sus números.</p>
     <ul>
-      <li><b>Qué cuenta</b>: las facturas emitidas, por su fecha de factura. Los abonos restan y los borradores no cuentan. Es lo <b>facturado</b>, no lo cobrado.</li>
-      <li>Arriba eliges el <b>año</b>, la <b>empresa</b> (o todas) y si lo quieres <b>sin IVA</b> o <b>con IVA</b>.</li>
-      <li>Cuatro números: lo <b>facturado en el año</b>; la diferencia <b>frente al año anterior</b> (si el año está en curso, contra las mismas fechas del anterior, no contra el año entero); la <b>media por mes</b> con el mejor mes; y lo que hay <b>por cobrar ahora</b>, con IVA, diciendo cuánto está ya vencido.</li>
-      <li>La <b>gráfica</b>: cada mes, la columna verde del año elegido junto a la azul del anterior. Toca un mes y debajo salen sus importes, cuántas facturas y abonos tuvo y la diferencia.</li>
-      <li>La <b>tabla</b>, con los mismos números mes a mes, la diferencia y el acumulado del año.</li>
-      <li>Abajo, el total de <b>cada año</b> (toca uno para verlo) y <b>a quién se facturó más</b> en el año.</li>
+      <li><b>Ventas</b>: las oportunidades <b>ganadas en Teamleader</b>, por la fecha en que se ganaron y con su importe sin IVA (es el «Informe mensual de ventas» de allí). Se filtra por <b>embudo</b> (fotovoltaica, aerotermia, otros) y por <b>empresa</b>, y se mira por <b>importe</b> o por <b>número</b>. Arriba: lo ganado, la diferencia con el año anterior a las mismas fechas, la venta media y cuántas se ganan de las que se cierran. Abajo: por años, por embudo, las mayores ventas, lo que hay <b>en marcha ahora en cada fase</b> y <b>por qué se perdieron</b> las perdidas. La app copia las oportunidades cada hora; con <b>↻</b> se traen en el momento.</li>
+      <li><b>Ingresos</b>: lo <b>facturado</b>, por la fecha de la factura; los abonos restan y los borradores no cuentan. Sin IVA o con IVA, por empresa. Arriba: facturado en el año, frente al anterior, media por mes y lo que hay <b>por cobrar ahora</b> con lo ya vencido. Abajo: por años, a quién se facturó más y <b>quién debe</b>.</li>
+      <li><b>Presupuestos</b>: los hechos en la app (los anteriores siguen solo en Teamleader). Hechos, aceptados con su margen, <b>cuántos se aceptan</b> de los que tienen respuesta y lo aceptado que <b>falta por facturar</b>. Abajo: en qué punto están y por tipo.</li>
+      <li><b>Clientes</b>: los que entran por mes, y también las <b>citas</b> y las <b>visitas</b>. Cuántos de los que entraron tienen presupuesto y cuántos uno aceptado, de dónde vienen y en qué fase del tablero están ahora.</li>
     </ul>
+    <p>Si el año está en curso, la comparación con el anterior se hace contra las mismas fechas, no contra el año entero.</p>
   </div>
 </div>
 <div class="dos">
-  <figure><img src="img/pres-informes-2.png" alt="Tabla de lo facturado por meses"><figcaption><b>La tabla.</b> El mes tocado en la gráfica queda marcado también aquí.</figcaption></figure>
-  <figure><img src="img/pres-informes-ancho.png" alt="Informes en el ordenador"><figcaption><b>En el ordenador.</b> Lo mismo, a lo ancho.</figcaption></figure>
+  <figure><img src="img/pres-estadisticas-2.png" alt="Ventas: repartos"><figcaption><b>Ventas, más abajo.</b> Por embudo, las mayores, lo que hay en marcha por fase y por qué se pierden.</figcaption></figure>
+  <figure><img src="img/pres-informes.png" alt="Estadísticas: ingresos"><figcaption><b>Ingresos.</b> Lo facturado por meses, con lo que falta por cobrar.</figcaption></figure>
+</div>
+<div class="dos">
+  <figure><img src="img/pres-estadisticas-presupuestos.png" alt="Estadísticas: presupuestos"><figcaption><b>Presupuestos.</b> Hechos, aceptados y por facturar.</figcaption></figure>
+  <figure><img src="img/pres-estadisticas-clientes.png" alt="Estadísticas: clientes"><figcaption><b>Clientes.</b> Los que entran, con sus citas y visitas.</figcaption></figure>
+</div>
+<div class="dos">
+  <figure><img src="img/pres-informes-2.png" alt="Tabla por meses"><figcaption><b>La tabla.</b> El mes tocado en la gráfica queda marcado también aquí.</figcaption></figure>
+  <figure><img src="img/pres-informes-ancho.png" alt="Estadísticas en el ordenador"><figcaption><b>En el ordenador.</b> Lo mismo, a lo ancho.</figcaption></figure>
 </div>
 
 <h3 id="pres-precios">Precios</h3>
@@ -934,7 +941,7 @@ footer{margin-top:60px;padding-top:20px;border-top:1px solid var(--l1);color:var
   <tr><td>Un cliente no está en la hoja de clientes</td><td>En su ficha, <b>Apuntarlo en la hoja</b>. Los que se crean desde la app van solos.</td></tr>
 </table>
 
-<footer>Manual de la app Sysefen · al día con la versión 32.6 (17-11-2026) · las pantallas son de ejemplo, con datos inventados · se regenera con <code>herramientas/manual/capturar.py</code></footer>
+<footer>Manual de la app Sysefen · al día con la versión 32.7 (17-11-2026) · las pantallas son de ejemplo, con datos inventados · se regenera con <code>herramientas/manual/capturar.py</code></footer>
 </main>
 </div>
 </body>

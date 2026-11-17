@@ -515,7 +515,7 @@ import * as idiomas from './presu-idiomas.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '32.6'; // versión visible de la app (única fuente)
+const APP_VERSION = '32.7'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -9145,7 +9145,7 @@ function vFacturas() {
       <div class="h1">Facturas</div>
       <div class="row g8">
         <button class="pill" data-a="fac_sync" style="padding:8px 12px;background:var(--l1);color:var(--tinta)" ${F.sync && F.sync.busy ? 'disabled' : ''} title="Traer de Teamleader las facturas nuevas o cambiadas">${F.sync && F.sync.busy ? '…' : '↻'}</button>
-        <button class="pill" data-a="fac_inf" style="padding:8px 12px;background:var(--l1);color:var(--tinta)" title="Lo facturado por meses y por años, con gráficas">Informes</button>
+        <button class="pill" data-a="fac_inf" style="padding:8px 12px;background:var(--l1);color:var(--tinta)" title="Ventas, ingresos, presupuestos y clientes por meses, con gráficas">Estadísticas</button>
         <button class="pill" data-a="fac_gestoria" style="padding:8px 12px;background:var(--l1);color:var(--tinta)" title="Listado en Excel y los PDF de un mes o un trimestre, para la gestoría">Gestoría</button>
         <button class="pill" data-a="fac_nueva" style="background:#76923c;color:#fff">+ Factura</button>
       </div>
@@ -9176,7 +9176,7 @@ const INF_MESES = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep'
 const INF_MESES_LARGO = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
 // Año elegido y año anterior: pareja comprobada para daltonismo sobre blanco.
 const INF_COLOR = { este: '#206028', antes: '#4f7fc4' };
-function infEstado() { if (!V.inf) V.inf = { anio: null, entidad: '', medida: 'base', mes: null }; return V.inf; }
+function infEstado() { if (!V.inf) V.inf = { tab: 'ventas', anio: null, entidad: '', embudo: '', medida: 'base', medidaV: 'importe', medidaC: 'clientes', mes: null }; return V.inf; }
 const infEntidadDe = (f) => f.entidad_tl_id || f.entidad || '';
 /** Las que cuentan: con fecha y emitidas; de una empresa o de todas. */
 function infFilas(lista, entidad) {
@@ -9243,7 +9243,8 @@ function infDatos(lista, anio, entidad, medida, hoy) {
     nFacturas: este.reduce((t, x) => t + x.facturas, 0), nAbonos: este.reduce((t, x) => t + x.abonos, 0) };
 }
 /** Columnas agrupadas: el año elegido y el anterior, mes a mes. Se toca un mes para leerlo. */
-function infGraficaHTML(D, mesSel) {
+function infGraficaHTML(D, mesSel, fmt) {
+  const F_ = fmt || eur0;
   // En el móvil, un lienzo más pequeño: así la letra del eje no encoge con la gráfica.
   const movil = (typeof innerWidth === 'number' ? innerWidth : 400) < 640;
   const W = movil ? 380 : 720, H = movil ? 250 : 300, izq = movil ? 40 : 50, der = movil ? 2 : 8, arr = 12, aba = 28, letra = movil ? 11 : 12;
@@ -9255,10 +9256,10 @@ function infGraficaHTML(D, mesSel) {
   const col = (x, v, color) => { const h = arr + alto - y(v); if (h < 0.5) return ''; const r = Math.min(4, h, bw / 2); const yy = y(v);
     return `<path d="M${x},${arr + alto}V${yy + r}Q${x},${yy} ${x + r},${yy}H${x + bw - r}Q${x + bw},${yy} ${x + bw},${yy + r}V${arr + alto}Z" fill="${color}"/>`; };
   const marcas = [0, 0.25, 0.5, 0.75, 1].map((k) => k * tope);
-  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Facturado por meses en ${D.anio}, comparado con ${D.anio - 1}" style="display:block;width:100%;height:auto;font-family:var(--mono)">
+  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Por meses en ${D.anio}, comparado con ${D.anio - 1}" style="display:block;width:100%;height:auto;font-family:var(--mono)">
     ${marcas.map((v) => `<line x1="${izq}" x2="${W - der}" y1="${y(v)}" y2="${y(v)}" stroke="rgba(20,23,15,.08)" stroke-width="1"/><text x="${izq - 7}" y="${y(v) + 4}" text-anchor="end" font-size="${letra}" fill="rgba(20,23,15,.5)">${infCorto(v)}</text>`).join('')}
     ${D.este.map((x, i) => { const cx = izq + paso * i + paso / 2; const sel = mesSel === i;
-      return `<g data-a="fac_infMes" data-m="${i}" style="cursor:pointer"><title>${INF_MESES_LARGO[i]} · ${D.anio}: ${eur0(x.valor)} · ${D.anio - 1}: ${eur0(D.antes[i].valor)}</title>
+      return `<g data-a="fac_infMes" data-m="${i}" style="cursor:pointer"><title>${INF_MESES_LARGO[i]} · ${D.anio}: ${F_(x.valor)} · ${D.anio - 1}: ${F_(D.antes[i].valor)}</title>
         <rect x="${izq + paso * i}" y="${arr}" width="${paso}" height="${alto + aba}" fill="${sel ? 'rgba(20,23,15,.05)' : 'transparent'}"/>
         ${col(cx - bw - hueco / 2, D.antes[i].valor, INF_COLOR.antes)}${col(cx + hueco / 2, x.valor, INF_COLOR.este)}
         <text x="${cx}" y="${H - 9}" text-anchor="middle" font-size="${letra}" font-weight="${sel ? 700 : 400}" fill="${sel ? '#14170f' : 'rgba(20,23,15,.56)'}">${INF_MESES[i]}</text></g>`; }).join('')}
@@ -9267,76 +9268,252 @@ function infGraficaHTML(D, mesSel) {
 }
 const infLeyenda = (D) => `<div class="row" style="gap:16px;flex-wrap:wrap"><span class="row g8" style="align-items:center"><i style="width:12px;height:12px;border-radius:3px;background:${INF_COLOR.este}"></i><span class="tiny" style="color:var(--tinta)">${D.anio}</span></span><span class="row g8" style="align-items:center"><i style="width:12px;height:12px;border-radius:3px;background:${INF_COLOR.antes}"></i><span class="tiny" style="color:var(--tinta)">${D.anio - 1}</span></span></div>`;
 /** Barras tumbadas con el importe en la punta (por años, por cliente). */
-function infBarrasHTML(filas, accion) {
+function infBarrasHTML(filas, accion, fmt) {
+  const F_ = fmt || eur0;
   const max = Math.max(1, ...filas.map((x) => x.valor));
   return filas.map((x) => `<div ${accion ? `data-a="${accion}" data-y="${esc(String(x.clave))}" style="cursor:pointer;` : 'style="'}padding:7px 0">
-    <div class="row" style="justify-content:space-between;align-items:baseline;gap:10px"><span class="ell" style="font:${x.on ? 600 : 500} 13.5px/1.2 var(--sans);min-width:0">${esc(x.nombre)}</span><span class="num" style="font-size:14px;white-space:nowrap">${eur0(x.valor)}</span></div>
+    <div class="row" style="justify-content:space-between;align-items:baseline;gap:10px"><span class="ell" style="font:${x.on ? 600 : 500} 13.5px/1.2 var(--sans);min-width:0">${esc(x.nombre)}</span><span class="num" style="font-size:14px;white-space:nowrap">${F_(x.valor)}</span></div>
     <div style="height:8px;margin-top:5px;border-radius:0 4px 4px 0;background:${INF_COLOR.este};opacity:${x.on === false ? 0.45 : 1};width:${Math.max(0.5, (Math.max(0, x.valor) / max) * 100).toFixed(1)}%"></div>
   </div>`).join('');
 }
-function vInformes() {
-  const F = facEstadoBase(), I = infEstado();
-  const cab = (dentro) => `<div class="hdr">
-    <div class="volver" data-a="fac_abrir">‹ Facturas</div>
-    <div class="h1" style="margin-top:6px">Informes</div>
-    ${dentro}
+/* ---------- Estadísticas (V32.7): ventas, ingresos, presupuestos y clientes ----------
+ * Enzo, 17-11-2026: «no solo informe, sea como todo lo de estadísticas… donde
+ * estén todas las gráficas». Cuatro pestañas, todas con la misma forma: los
+ * números de arriba, la gráfica por meses frente al año anterior, la tabla y
+ * los repartos. Las ventas son las oportunidades de Teamleader copiadas en la
+ * app (sql/etapa112); lo demás sale de lo que la app ya guarda.
+ * ------------------------------------------------------------------------- */
+const EST_TABS = [['ventas', 'Ventas'], ['ingresos', 'Ingresos'], ['presupuestos', 'Presupuestos'], ['clientes', 'Clientes']];
+function estEstado() { if (!V.est) V.est = { ventas: null, presus: null, cargando: {}, error: {}, sync: false }; return V.est; }
+const estNum = (n) => Math.round(Number(n) || 0).toLocaleString('es-ES');
+const estPct = (a, b) => (b ? Math.round((a / b) * 1000) / 10 : null);
+const estPctTxt = (p) => (p == null ? '—' : String(p).replace('.', ',') + ' %');
+/**
+ * La serie de un año mes a mes, con el anterior al lado. `items`: [{ fecha
+ * (AAAA-MM-DD), valor }]. Con el año en curso, el anterior se compara solo
+ * hasta el mismo día.
+ */
+function estSerie(items, anio, hoy) {
+  const hoy_ = hoy || hoyISO();
+  const filas = (items || []).filter((x) => x.fecha);
+  const anios = [...new Set(filas.map((x) => Number(String(x.fecha).slice(0, 4))))].filter(Boolean).sort((a, b) => b - a);
+  const A = anio && anios.includes(Number(anio)) ? Number(anio) : (anios[0] || Number(hoy_.slice(0, 4)));
+  const porMes = (y, hasta) => { const m = INF_MESES.map(() => ({ valor: 0, n: 0 }));
+    filas.forEach((x) => { const fe = String(x.fecha); if (fe.slice(0, 4) !== String(y) || (hasta && fe.slice(0, 10) > hasta)) return; const c = m[Number(fe.slice(5, 7)) - 1]; if (!c) return; c.n++; c.valor = fac2(c.valor + (Number(x.valor) || 0)); });
+    return m; };
+  const enCurso = String(A) === hoy_.slice(0, 4);
+  const este = porMes(A), antes = porMes(A - 1), antesTramo = enCurso ? porMes(A - 1, (A - 1) + hoy_.slice(4)) : antes;
+  const total = infSuma(este), totalAntes = infSuma(antes), totalAntesTramo = infSuma(antesTramo);
+  const mesesContados = enCurso ? Number(hoy_.slice(5, 7)) : 12;
+  let mejor = -1; este.forEach((x, i) => { if (x.valor > 0 && (mejor < 0 || x.valor > este[mejor].valor)) mejor = i; });
+  return { anio: A, anios, enCurso, este, antes, total, totalAntes, totalAntesTramo, dif: infDif(total, totalAntesTramo), mesesContados,
+    media: fac2(total / (mesesContados || 1)), mejor, n: este.reduce((t, x) => t + x.n, 0), nAntesTramo: antesTramo.reduce((t, x) => t + x.n, 0),
+    porAnio: anios.slice().sort((a, b) => a - b).map((y) => ({ anio: y, valor: infSuma(porMes(y)) })) };
+}
+/** Reparto por una clave: [{ nombre, valor, n }], de más a menos. */
+function estReparto(items, clave, valor) {
+  const m = {};
+  (items || []).forEach((x) => { const k = (typeof clave === 'function' ? clave(x) : x[clave]) || 'Sin indicar'; const c = m[k] || (m[k] = { nombre: k, valor: 0, n: 0 }); c.n++; c.valor = fac2(c.valor + (valor ? Number(valor(x)) || 0 : 1)); });
+  return Object.values(m).sort((a, b) => b.valor - a.valor || b.n - a.n);
+}
+const estTile = (rotulo, valor, pie, color) => `<div class="card" style="flex:1 1 150px;min-width:0;padding:13px 15px"><div class="lbl">${rotulo}</div><div class="num" style="font-size:24px;line-height:1.1;margin-top:7px;white-space:nowrap">${valor}</div><div class="tiny" style="margin-top:5px${color ? ';color:' + color : ''}">${pie}</div></div>`;
+const estTiles = (ts) => `<div class="row" style="gap:10px;flex-wrap:wrap;align-items:stretch">${ts.join('')}</div>`;
+/** La gráfica con su leyenda y la lectura del mes tocado. `fmt` escribe los valores; `extra(i)` añade algo al mes. */
+function estGraficaCard(titulo, D, mes, fmt, extra) {
+  const m = mes != null && D.este[mes] ? mes : null;
+  const lectura = m == null ? '<span class="tiny">Toca un mes para ver sus números.</span>'
+    : `<span style="font:600 14px/1.3 var(--sans)">${INF_MESES_LARGO[m]}</span> <span class="tiny">· ${D.anio}: <b style="color:var(--tinta)">${fmt(D.este[m].valor)}</b>${extra ? extra(m) : ''} · ${D.anio - 1}: <b style="color:var(--tinta)">${fmt(D.antes[m].valor)}</b> · ${infDifTxt(infDif(D.este[m].valor, D.antes[m].valor))}</span>`;
+  return `<div class="card" style="margin-top:12px;padding:14px 12px 12px">
+    <div class="row" style="justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap;padding:0 4px 8px"><div class="lbl">${titulo}</div>${infLeyenda(D)}</div>
+    ${infGraficaHTML(D, m, fmt)}
+    <div style="padding:8px 4px 0;min-height:36px">${lectura}</div>
   </div>`;
-  if (!F.lista) return cab(`<div class="sub" style="margin-top:8px">${F.error ? 'No se pudieron leer las facturas: ' + esc(F.error) : 'Cargando las facturas…'}</div>`) + '<div class="scroll pad pb-nav"></div>';
-  // Las empresas que han facturado, la que más primero.
-  const emp = {}; (F.lista || []).forEach((f) => { const k = infEntidadDe(f); if (!k) return; (emp[k] = emp[k] || { k, nombre: f.entidad || k, n: 0 }).n++; });
+}
+/** La tabla mes a mes: el año, el anterior, la diferencia y el acumulado. */
+function estTablaHTML(D, mes, fmt, nota) {
+  const m = mes != null && D.este[mes] ? mes : null; let acum = 0;
+  const th = 'padding:9px 6px;font:500 11px var(--mono)';
+  return `<div class="card" style="margin-top:12px;padding:6px 0 4px;overflow-x:auto">
+    <table style="width:100%;border-collapse:collapse;font:400 13px/1.2 var(--sans)">
+      <thead><tr style="text-align:right;color:var(--t2)"><th style="text-align:left;padding:9px 6px 9px 15px;font:500 11px var(--mono);text-transform:uppercase">Mes</th><th style="${th}">${D.anio}</th><th style="${th}">${D.anio - 1}</th><th style="${th}">DIF.</th><th style="padding:9px 15px 9px 6px;font:500 11px var(--mono)">ACUM. ${D.anio}</th></tr></thead>
+      <tbody>${D.este.map((x, i) => { acum = fac2(acum + x.valor);
+        const futuro = D.enCurso && i + 1 > D.mesesContados && !x.valor;
+        return `<tr data-a="fac_infMes" data-m="${i}" style="text-align:right;border-top:1px solid var(--l1);cursor:pointer;${m === i ? 'background:rgba(20,23,15,.04);' : ''}${futuro ? 'color:var(--t3);' : ''}"><td style="text-align:left;padding:9px 6px 9px 15px;font-weight:500">${INF_MESES_LARGO[i]}</td><td class="num" style="padding:9px 6px;white-space:nowrap">${futuro ? '—' : fmt(x.valor)}</td><td class="num" style="padding:9px 6px;white-space:nowrap;color:var(--t2)">${fmt(D.antes[i].valor)}</td><td style="padding:9px 6px;white-space:nowrap;color:var(--t2)">${futuro ? '—' : infDifTxt(infDif(x.valor, D.antes[i].valor))}</td><td class="num" style="padding:9px 15px 9px 6px;white-space:nowrap">${futuro ? '—' : fmt(acum)}</td></tr>`; }).join('')}
+        <tr style="text-align:right;border-top:2px solid var(--l2);font-weight:600"><td style="text-align:left;padding:10px 6px 10px 15px">Total</td><td class="num" style="padding:10px 6px;white-space:nowrap">${fmt(D.total)}</td><td class="num" style="padding:10px 6px;white-space:nowrap;color:var(--t2)">${fmt(D.totalAntes)}</td><td style="padding:10px 6px;white-space:nowrap;color:var(--t2)">${D.enCurso ? '' : infDifTxt(infDif(D.total, D.totalAntes))}</td><td class="num" style="padding:10px 15px 10px 6px;white-space:nowrap">${fmt(D.total)}</td></tr>
+      </tbody>
+    </table>
+    ${D.enCurso && D.anios.includes(D.anio - 1) ? `<div class="tiny" style="padding:8px 15px 6px">El año no ha terminado: la columna de ${D.anio - 1} es el año entero. La comparación justa, a las mismas fechas, es la de arriba (${infDifTxt(D.dif)}).</div>` : ''}
+    ${nota ? `<div class="tiny" style="padding:6px 15px 6px">${nota}</div>` : ''}
+  </div>`;
+}
+const estCaja = (titulo, dentro) => `<div class="card" style="flex:1 1 300px;min-width:0;padding:13px 15px"><div class="lbl" style="margin-bottom:4px">${titulo}</div>${dentro}</div>`;
+const estCajas = (cs) => `<div class="row" style="gap:12px;flex-wrap:wrap;margin-top:12px;align-items:flex-start">${cs.filter(Boolean).join('')}</div>`;
+const estVacio = (t) => `<div class="sub" style="margin-top:6px">${t}</div>`;
+const estPorAnios = (D, fmt, titulo) => estCaja(titulo || 'Por años', infBarrasHTML(D.porAnio.map((x) => ({ clave: x.anio, nombre: String(x.anio) + (String(x.anio) === hoyISO().slice(0, 4) ? ' (en curso)' : ''), valor: x.valor, on: x.anio === D.anio })), 'fac_infAnio', fmt));
+const estFrenteA = (D, fmt) => estTile(D.enCurso ? 'Frente a ' + (D.anio - 1) + ', mismas fechas' : 'Frente a ' + (D.anio - 1), D.anios.includes(D.anio - 1) ? infDifTxt(D.dif) : '—', D.anios.includes(D.anio - 1) ? (D.enCurso ? 'A estas fechas llevaba ' : 'Fue ') + fmt(D.totalAntesTramo) : 'No hay datos de ' + (D.anio - 1));
+
+/* --- Ingresos: lo facturado (lo que ya había en la V32.6) --- */
+function estIngresosHTML(F, I) {
+  const D = infDatos(F.lista, I.anio, I.entidad, I.medida);
+  const conIva = I.medida === 'total';
+  const extra = (m) => ` (${D.este[m].facturas} ${D.este[m].facturas === 1 ? 'factura' : 'facturas'}${D.este[m].abonos ? ', ' + D.este[m].abonos + (D.este[m].abonos === 1 ? ' abono' : ' abonos') : ''})`;
+  // Lo emitido sin cobrar, por cliente.
+  const sinCobrar = infFilas(F.lista, I.entidad).filter((f) => f.tipo === 'factura' && !(f.estado === 'pagada' || f.pagada));
+  const deuda = estReparto(sinCobrar, 'cliente_nombre', (f) => (f.pendiente != null ? f.pendiente : f.total));
+  return { D, html: estTiles([
+      estTile('Facturado en ' + D.anio, eur0(D.total), (conIva ? 'Con IVA' : 'Sin IVA') + ' · ' + D.nFacturas + (D.nFacturas === 1 ? ' factura' : ' facturas') + (D.nAbonos ? ' y ' + D.nAbonos + (D.nAbonos === 1 ? ' abono' : ' abonos') : '')),
+      estFrenteA(D, eur0),
+      estTile('Media por mes', eur0(D.media), D.mejor >= 0 ? 'El mejor, ' + INF_MESES_LARGO[D.mejor].toLowerCase() + ': ' + eur0(D.este[D.mejor].valor) : 'Sin facturas este año'),
+      estTile('Por cobrar ahora', eur0(D.porCobrar), D.nSinCobrar ? D.nSinCobrar + (D.nSinCobrar === 1 ? ' factura' : ' facturas') + ', con IVA' + (D.nVencidas ? ' · ' + eur0(D.vencido) + ' ya vencido' : '') : 'Todo cobrado', D.nVencidas ? '#b8372b' : ''),
+    ]) + estGraficaCard('Facturado por meses · ' + (conIva ? 'con IVA' : 'sin IVA'), D, I.mes, eur0, extra) + estTablaHTML(D, I.mes, eur0)
+    + estCajas([
+      estPorAnios(D, eur0, 'Por años · ' + (conIva ? 'con IVA' : 'sin IVA')),
+      estCaja('A quién se facturó más en ' + D.anio, D.clientes.length ? infBarrasHTML(D.clientes.slice(0, 8).map((x) => ({ nombre: x.nombre, valor: x.valor }))) + (D.clientes.length > 8 ? `<div class="tiny" style="margin-top:6px">Y ${D.clientes.length - 8} clientes más, que suman ${eur0(D.clientes.slice(8).reduce((t, x) => t + x.valor, 0))}.</div>` : '') : estVacio('Sin facturas este año.')),
+      deuda.length ? estCaja('Quién debe · con IVA', infBarrasHTML(deuda.slice(0, 8).map((x) => ({ nombre: x.nombre + (x.n > 1 ? ' · ' + x.n + ' facturas' : ''), valor: x.valor }))) + (deuda.length > 8 ? `<div class="tiny" style="margin-top:6px">Y ${deuda.length - 8} más.</div>` : '')) : '',
+    ]) };
+}
+/* --- Ventas: las oportunidades de Teamleader --- */
+function estVentasHTML(E, I) {
+  const todas = (E.ventas || []).filter((o) => (!I.entidad || o.entidad_id === I.entidad) && (!I.embudo || o.embudo === I.embudo));
+  const porNumero = I.medidaV === 'numero';
+  const fmt = porNumero ? estNum : eur0;
+  const ganadas = todas.filter((o) => o.estado === 'won' && o.cerrado_at), perdidas = todas.filter((o) => o.estado === 'lost' && o.cerrado_at);
+  const D = estSerie(ganadas.map((o) => ({ fecha: agDiaDe(o.cerrado_at), valor: porNumero ? 1 : o.importe })), I.anio);
+  const delAnio = (o) => String(agDiaDe(o.cerrado_at)).slice(0, 4) === String(D.anio);
+  const gA = ganadas.filter(delAnio), pA = perdidas.filter(delAnio);
+  const impA = fac2(gA.reduce((t, o) => t + (Number(o.importe) || 0), 0));
+  const abiertas = todas.filter((o) => o.estado === 'open' || o.estado === 'new');
+  // Las fases, en el orden del embudo; las de mismo nombre en distinto embudo van juntas.
+  const fases = {}; abiertas.forEach((o) => { const k = String(o.fase || 'Sin fase').trim().toLowerCase(); const c = fases[k] || (fases[k] = { nombre: String(o.fase || 'Sin fase').trim(), orden: o.fase_orden == null ? 99 : o.fase_orden, n: 0, valor: 0 }); c.n++; c.valor = fac2(c.valor + (Number(o.importe) || 0)); c.orden = Math.min(c.orden, o.fase_orden == null ? 99 : o.fase_orden); });
+  const porFase = Object.values(fases).sort((a, b) => a.orden - b.orden);
+  const motivos = estReparto(pA, (o) => o.motivo_perdida || 'Sin motivo apuntado');
+  const responsables = estReparto(gA, (o) => o.responsable || 'Sin responsable', (o) => o.importe);
+  const mayores = gA.slice().sort((a, b) => (Number(b.importe) || 0) - (Number(a.importe) || 0)).slice(0, 8);
+  const extra = (m) => (porNumero ? '' : ` (${D.este[m].n} ${D.este[m].n === 1 ? 'venta' : 'ventas'})`);
+  return { D, html: estTiles([
+      estTile('Ganado en ' + D.anio, eur0(impA), 'Sin IVA · ' + gA.length + (gA.length === 1 ? ' venta' : ' ventas')),
+      estFrenteA(D, fmt),
+      estTile('Venta media', gA.length ? eur0(impA / gA.length) : '—', D.mejor >= 0 ? 'El mejor mes, ' + INF_MESES_LARGO[D.mejor].toLowerCase() + ': ' + fmt(D.este[D.mejor].valor) : 'Sin ventas este año'),
+      estTile('Se gana', estPctTxt(estPct(gA.length, gA.length + pA.length)), gA.length + pA.length ? gA.length + ' ganadas de ' + (gA.length + pA.length) + ' cerradas en ' + D.anio : 'Ninguna cerrada este año'),
+    ]) + estGraficaCard((porNumero ? 'Ventas ganadas por meses · número' : 'Ganado por meses · sin IVA'), D, I.mes, fmt, extra)
+    + estTablaHTML(D, I.mes, fmt, 'Por la fecha en que se ganó la oportunidad en Teamleader, con su importe sin IVA.')
+    + estCajas([
+      estPorAnios(D, fmt, 'Por años'),
+      !I.embudo ? estCaja('Por embudo en ' + D.anio, gA.length ? infBarrasHTML(estReparto(gA, 'embudo', (o) => o.importe).map((x) => ({ nombre: x.nombre + ' · ' + x.n, valor: x.valor }))) : estVacio('Sin ventas este año.')) : '',
+      estCaja('Las mayores de ' + D.anio, mayores.length ? infBarrasHTML(mayores.map((o) => ({ nombre: (o.cliente_nombre || 'Sin cliente') + (o.titulo ? ' · ' + o.titulo : ''), valor: Number(o.importe) || 0 }))) : estVacio('Sin ventas este año.')),
+      estCaja('En marcha ahora, por fase', porFase.length ? infBarrasHTML(porFase.map((x) => ({ nombre: x.nombre + ' · ' + x.n, valor: x.valor }))) + `<div class="tiny" style="margin-top:6px">${abiertas.length} oportunidades abiertas, ${eur0(abiertas.reduce((t, o) => t + (Number(o.importe) || 0), 0))} sin IVA. No dependen del año elegido.</div>` : estVacio('Ninguna abierta.')),
+      estCaja('Perdidas en ' + D.anio + ' · por qué', pA.length ? infBarrasHTML(motivos.map((x) => ({ nombre: x.nombre, valor: x.n })), null, estNum) + `<div class="tiny" style="margin-top:6px">${pA.length} perdidas, ${eur0(pA.reduce((t, o) => t + (Number(o.importe) || 0), 0))} sin IVA.</div>` : estVacio('Ninguna perdida este año.')),
+      responsables.length > 1 ? estCaja('Por responsable en ' + D.anio, infBarrasHTML(responsables.map((x) => ({ nombre: x.nombre + ' · ' + x.n, valor: x.valor })))) : '',
+    ]) };
+}
+/* --- Presupuestos: los hechos en la app --- */
+function estPresupuestosHTML(E, F, I) {
+  const ps = E.presus || [];
+  const porNumero = I.medidaV === 'numero';
+  const fmt = porNumero ? estNum : eur0;
+  const D = estSerie(ps.map((p) => ({ fecha: agDiaDe(p.created_at), valor: porNumero ? 1 : p.total_venta })), I.anio);
+  const del = ps.filter((p) => String(agDiaDe(p.created_at)).slice(0, 4) === String(D.anio));
+  const ac = del.filter((p) => p.respuesta_cliente === 'aceptado'), re = del.filter((p) => ['rechazado', 'caducado'].includes(p.respuesta_cliente));
+  const env = del.filter((p) => p.enviado_cliente_at || (p.respuesta_cliente && p.respuesta_cliente !== 'pendiente'));
+  const suma = (l) => fac2(l.reduce((t, p) => t + (Number(p.total_venta) || 0), 0));
+  // Margen de los aceptados que tienen coste apuntado.
+  const conCoste = ac.filter((p) => Number(p.total_coste) > 0 && Number(p.total_venta) > 0);
+  const margen = conCoste.length ? estPct(suma(conCoste) - fac2(conCoste.reduce((t, p) => t + Number(p.total_coste), 0)), suma(conCoste)) : null;
+  // Aceptados (de cualquier año) a los que les falta factura: su importe menos lo facturado.
+  const facturadoDe = {}; (F.lista || []).forEach((f) => { if (!f.presupuesto_id || f.estado === 'borrador') return; facturadoDe[f.presupuesto_id] = fac2((facturadoDe[f.presupuesto_id] || 0) + infValor(f, 'base')); });
+  const porFacturar = ps.filter((p) => p.respuesta_cliente === 'aceptado').map((p) => ({ p, falta: fac2((Number(p.total_venta) || 0) - (facturadoDe[p.id] || 0)) })).filter((x) => x.falta > 0.5);
+  const estados = estReparto(del, (p) => (seguimientoPresu(p) || {}).txt || 'Sin estado', porNumero ? null : (p) => p.total_venta);
+  const tipos = estReparto(del, (p) => nombreCatDe(p) || p.categoria, porNumero ? null : (p) => p.total_venta);
+  const extra = (m) => (porNumero ? '' : ` (${D.este[m].n})`);
+  return { D, html: estTiles([
+      estTile('Hechos en ' + D.anio, estNum(del.length), eur0(suma(del)) + ' sin IVA'),
+      estTile('Aceptados', estNum(ac.length), eur0(suma(ac)) + ' sin IVA' + (margen != null ? ' · margen ' + estPctTxt(margen) : '')),
+      estTile('Se aceptan', estPctTxt(estPct(ac.length, ac.length + re.length)), ac.length + re.length ? ac.length + ' de ' + (ac.length + re.length) + ' con respuesta' + (env.length - ac.length - re.length > 0 ? ' · ' + (env.length - ac.length - re.length) + ' esperando' : '') : 'Ninguno con respuesta todavía'),
+      estTile('Aceptados por facturar', eur0(porFacturar.reduce((t, x) => t + x.falta, 0)), porFacturar.length ? porFacturar.length + (porFacturar.length === 1 ? ' presupuesto' : ' presupuestos') + ', sin IVA' : 'Todo lo aceptado está facturado'),
+    ]) + estGraficaCard((porNumero ? 'Presupuestos hechos por meses · número' : 'Presupuestado por meses · sin IVA'), D, I.mes, fmt, extra)
+    + estTablaHTML(D, I.mes, fmt, 'Solo los presupuestos hechos o traídos a la app. Los de antes siguen solo en Teamleader.')
+    + estCajas([
+      estCaja('En qué punto están los de ' + D.anio, del.length ? infBarrasHTML(estados.map((x) => ({ nombre: x.nombre + (porNumero ? '' : ' · ' + x.n), valor: x.valor })), null, fmt) : estVacio('Sin presupuestos este año.')),
+      estCaja('Por tipo en ' + D.anio, del.length ? infBarrasHTML(tipos.map((x) => ({ nombre: x.nombre + (porNumero ? '' : ' · ' + x.n), valor: x.valor })), null, fmt) : estVacio('Sin presupuestos este año.')),
+      porFacturar.length ? estCaja('Aceptados que faltan por facturar', infBarrasHTML(porFacturar.sort((a, b) => b.falta - a.falta).slice(0, 8).map((x) => ({ nombre: x.p.titulo || nombreCatDe(x.p) || 'Presupuesto', valor: x.falta }))) + (porFacturar.length > 8 ? `<div class="tiny" style="margin-top:6px">Y ${porFacturar.length - 8} más.</div>` : '')) : '',
+    ]) };
+}
+/* --- Clientes: los que entran, las citas y las visitas --- */
+const EST_CLI_MEDIDAS = [['clientes', 'Clientes nuevos'], ['citas', 'Citas'], ['visitas', 'Visitas']];
+function estClientesHTML(I) {
+  const cs = (V.agenda && V.agenda.clientes) || [];
+  const que = EST_CLI_MEDIDAS.some((x) => x[0] === I.medidaC) ? I.medidaC : 'clientes';
+  const items = que === 'citas' ? cs.flatMap((c) => (c.citas || []).filter((x) => x.inicio && x.estado !== 'cancelada').map((x) => ({ fecha: agDiaDe(x.inicio), valor: 1 })))
+    : que === 'visitas' ? cs.flatMap((c) => (c.visitas || []).filter((v) => v.fecha_visita).map((v) => ({ fecha: String(v.fecha_visita).slice(0, 10), valor: 1 })))
+    : cs.map((c) => ({ fecha: fechaIngreso(c), valor: 1 }));
+  const D = estSerie(items, I.anio);
+  const del = cs.filter((c) => fechaIngreso(c).slice(0, 4) === String(D.anio));
+  const conPresu = del.filter((c) => presupuestosDeCliente(c).length), conAceptado = del.filter((c) => presupuestosDeCliente(c).some((p) => p.respuesta_cliente === 'aceptado'));
+  const origen = estReparto(del, (c) => (AG_ORIGENES.find((o) => o[0] === c.origen) || [null, c.origen || 'Sin indicar'])[1]);
+  const ahora = tableroColumnas(cs).filter((col) => col.clientes.length).map((col) => ({ nombre: col.titulo, valor: col.clientes.length }));
+  const rotulo = (EST_CLI_MEDIDAS.find((x) => x[0] === que) || EST_CLI_MEDIDAS[0])[1];
+  return { D, html: estTiles([
+      estTile('Clientes nuevos en ' + D.anio, estNum(del.length), 'Por su fecha de ingreso'),
+      estFrenteA(D, estNum),
+      estTile('Con presupuesto', estNum(conPresu.length), del.length ? estPctTxt(estPct(conPresu.length, del.length)) + ' de los que entraron en ' + D.anio : 'Sin clientes este año'),
+      estTile('Con uno aceptado', estNum(conAceptado.length), del.length ? estPctTxt(estPct(conAceptado.length, del.length)) + ' de los que entraron en ' + D.anio : 'Sin clientes este año'),
+    ]) + estGraficaCard(rotulo + ' por meses', D, I.mes, estNum)
+    + estTablaHTML(D, I.mes, estNum, 'Solo lo que está en la app: los clientes, citas y visitas de antes de usarla no cuentan.')
+    + estCajas([
+      estCaja('De dónde vienen los de ' + D.anio, del.length ? infBarrasHTML(origen.map((x) => ({ nombre: x.nombre, valor: x.n })), null, estNum) : estVacio('Sin clientes este año.')),
+      estCaja('Dónde están ahora (todos)', ahora.length ? infBarrasHTML(ahora, null, estNum) : estVacio('Sin clientes.')),
+    ]) };
+}
+function estCargar(tab) {
+  const E = estEstado(), F = facEstadoBase();
+  if (!F.lista && !F.cargando) facCargarLista();
+  const pide = (clave, fn) => { if (E[clave] || E.cargando[clave]) return; E.cargando[clave] = true;
+    fn().then((r) => { E[clave] = r || []; E.error[clave] = null; }).catch((e) => { E.error[clave] = msgError(e); }).then(() => { E.cargando[clave] = false; if (V.view === 'informes') render(); }); };
+  if (tab === 'ventas') pide('ventas', () => visitasDB.listarOportunidades());
+  if (tab === 'presupuestos') pide('presus', () => visitasDB.listarPresupuestosEstadistica());
+  if (tab === 'clientes' && V.agenda && !V.agenda.cargado && !V.agenda.cargando) A.cargarAgenda();
+}
+function vInformes() {
+  const F = facEstadoBase(), I = infEstado(), E = estEstado();
+  const tab = EST_TABS.some((x) => x[0] === I.tab) ? I.tab : 'ventas';
+  const corto = (t) => (String(t).length > 24 ? String(t).slice(0, 23) + '…' : String(t));
+  const chip = (on, a, datos, txt, titulo) => `<span class="chip${on ? ' on' : ''}" data-a="${a}" ${datos} style="flex:none"${titulo ? ` title="${esc(titulo)}"` : ''}>${esc(txt)}</span>`;
+  const fila = (chips) => (chips ? `<div class="row g8" style="margin-top:8px;overflow-x:auto;padding-bottom:2px">${chips}</div>` : '');
+  const pestañas = `<div class="row g8" style="margin-top:10px;overflow-x:auto;padding-bottom:2px">${EST_TABS.map(([k, n]) => chip(tab === k, 'fac_infTab', `data-k="${k}"`, n)).join('')}</div>`;
+  const cab = (dentro) => `<div class="hdr">
+    <div class="row" style="justify-content:space-between;align-items:center"><div class="volver" data-a="fac_abrir">‹ Facturas</div>${tab === 'ventas' ? `<button class="pill" data-a="fac_infSync" style="padding:7px 11px;background:var(--l1);color:var(--tinta)" ${E.sync ? 'disabled' : ''} title="Traer de Teamleader las oportunidades que hayan cambiado">${E.sync ? '…' : '↻'}</button>` : ''}</div>
+    <div class="h1" style="margin-top:6px">Estadísticas</div>
+    ${pestañas}${dentro}
+  </div>`;
+  const espera = (t) => cab('') + `<div class="scroll pad sin-marca pb-nav"><div class="card"><div class="sub">${t}</div></div></div>`;
+  // Lo que necesita cada pestaña, y si aún no ha llegado.
+  if ((tab === 'ingresos' || tab === 'presupuestos') && !F.lista) return espera(F.error ? 'No se pudieron leer las facturas: ' + esc(F.error) : 'Cargando las facturas…');
+  if (tab === 'ventas' && !E.ventas) return espera(E.error.ventas ? 'No se pudieron leer las ventas: ' + esc(E.error.ventas) : 'Cargando las ventas…');
+  if (tab === 'presupuestos' && !E.presus) return espera(E.error.presus ? 'No se pudieron leer los presupuestos: ' + esc(E.error.presus) : 'Cargando los presupuestos…');
+  if (tab === 'clientes' && !(V.agenda && V.agenda.cargado)) return espera('Cargando los clientes…');
+  // Las empresas: las que han facturado (ingresos) o las que tienen oportunidades (ventas).
+  const emp = {};
+  if (tab === 'ingresos') (F.lista || []).forEach((f) => { const k = infEntidadDe(f); if (!k) return; (emp[k] = emp[k] || { k, nombre: f.entidad || k, n: 0 }).n++; });
+  if (tab === 'ventas') (E.ventas || []).forEach((o) => { if (!o.entidad_id) return; (emp[o.entidad_id] = emp[o.entidad_id] || { k: o.entidad_id, nombre: o.entidad || o.entidad_id, n: 0 }).n++; });
   const empresas = Object.values(emp).sort((a, b) => b.n - a.n);
   if (I.entidad && !emp[I.entidad]) I.entidad = '';
-  const D = infDatos(F.lista, I.anio, I.entidad, I.medida);
-  I.anio = D.anio;
-  const conIva = I.medida === 'total';
-  const m = I.mes != null && D.este[I.mes] ? I.mes : null;
-  const corto = (t) => (String(t).length > 24 ? String(t).slice(0, 23) + '…' : String(t));
-  const tile = (rotulo, valor, pie, color) => `<div class="card" style="flex:1 1 150px;min-width:0;padding:13px 15px"><div class="lbl">${rotulo}</div><div class="num" style="font-size:24px;line-height:1.1;margin-top:7px;white-space:nowrap">${valor}</div><div class="tiny" style="margin-top:5px${color ? ';color:' + color : ''}">${pie}</div></div>`;
-  const hayAntes = D.anios.includes(D.anio - 1);
-  const lectura = m == null
-    ? `<span class="tiny">Toca un mes para ver sus números.</span>`
-    : `<span style="font:600 14px/1.3 var(--sans)">${INF_MESES_LARGO[m]}</span> <span class="tiny">· ${D.anio}: <b style="color:var(--tinta)">${eur(D.este[m].valor)}</b> (${D.este[m].facturas} ${D.este[m].facturas === 1 ? 'factura' : 'facturas'}${D.este[m].abonos ? ', ' + D.este[m].abonos + (D.este[m].abonos === 1 ? ' abono' : ' abonos') : ''}) · ${D.anio - 1}: <b style="color:var(--tinta)">${eur(D.antes[m].valor)}</b> · ${infDifTxt(infDif(D.este[m].valor, D.antes[m].valor))}</span>`;
-  let acum = 0, acumAntes = 0;
-  return cab(`<div class="sub" style="margin-top:8px">Lo facturado, por la fecha de la factura. Los abonos restan y los borradores no cuentan. No es lo cobrado: eso va en «Por cobrar».</div>
-    <div class="row g8" style="margin-top:10px;overflow-x:auto;padding-bottom:2px">${D.anios.map((y) => `<span class="chip${y === D.anio ? ' on' : ''}" data-a="fac_infAnio" data-y="${y}" style="flex:none">${y}</span>`).join('')}</div>
-    <div class="row g8" style="margin-top:8px;overflow-x:auto;padding-bottom:2px">
-      ${empresas.length > 1 ? `<span class="chip${!I.entidad ? ' on' : ''}" data-a="fac_infEntidad" data-k="" style="flex:none">Todas las empresas</span>${empresas.map((e) => `<span class="chip${I.entidad === e.k ? ' on' : ''}" data-a="fac_infEntidad" data-k="${esc(e.k)}" style="flex:none" title="${esc(e.nombre)}">${esc(corto(e.nombre))}</span>`).join('')}` : ''}
-      <span class="chip${!conIva ? ' on' : ''}" data-a="fac_infMedida" data-k="base" style="flex:none">Sin IVA</span><span class="chip${conIva ? ' on' : ''}" data-a="fac_infMedida" data-k="total" style="flex:none">Con IVA</span>
-    </div>`) + `
-  <div class="scroll pad sin-marca pb-nav"><div style="max-width:860px;margin:0 auto">
-    <div class="row" style="gap:10px;flex-wrap:wrap;align-items:stretch">
-      ${tile('Facturado en ' + D.anio, eur0(D.total), (conIva ? 'Con IVA' : 'Sin IVA') + ' · ' + D.nFacturas + (D.nFacturas === 1 ? ' factura' : ' facturas') + (D.nAbonos ? ' y ' + D.nAbonos + (D.nAbonos === 1 ? ' abono' : ' abonos') : ''))}
-      ${tile(D.enCurso ? 'Frente a ' + (D.anio - 1) + ', mismas fechas' : 'Frente a ' + (D.anio - 1), hayAntes ? infDifTxt(D.dif) : '—', hayAntes ? (D.enCurso ? 'A estas fechas llevaba ' : 'Fue ') + eur0(D.totalAntesTramo) : 'No hay facturas de ' + (D.anio - 1))}
-      ${tile('Media por mes', eur0(D.media), D.mejor >= 0 ? 'El mejor, ' + INF_MESES_LARGO[D.mejor].toLowerCase() + ': ' + eur0(D.este[D.mejor].valor) : 'Sin facturas este año')}
-      ${tile('Por cobrar ahora', eur0(D.porCobrar), D.nSinCobrar ? D.nSinCobrar + (D.nSinCobrar === 1 ? ' factura' : ' facturas') + ', con IVA' + (D.nVencidas ? ' · ' + eur0(D.vencido) + ' ya vencido' : '') : 'Todo cobrado', D.nVencidas ? '#b8372b' : '')}
-    </div>
-    <div class="card" style="margin-top:12px;padding:14px 12px 12px">
-      <div class="row" style="justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap;padding:0 4px 8px"><div class="lbl">Facturado por meses · ${conIva ? 'con IVA' : 'sin IVA'}</div>${infLeyenda(D)}</div>
-      ${infGraficaHTML(D, m)}
-      <div style="padding:8px 4px 0;min-height:36px">${lectura}</div>
-    </div>
-    <div class="card" style="margin-top:12px;padding:6px 0 4px;overflow-x:auto">
-      <table style="width:100%;border-collapse:collapse;font:400 13px/1.2 var(--sans)">
-        <thead><tr style="text-align:right;color:var(--t2)"><th style="text-align:left;padding:9px 6px 9px 15px;font:500 11px var(--mono);text-transform:uppercase">Mes</th><th style="padding:9px 6px;font:500 11px var(--mono)">${D.anio}</th><th style="padding:9px 6px;font:500 11px var(--mono)">${D.anio - 1}</th><th style="padding:9px 6px;font:500 11px var(--mono)">DIF.</th><th style="padding:9px 15px 9px 6px;font:500 11px var(--mono)">ACUM. ${D.anio}</th></tr></thead>
-        <tbody>${D.este.map((x, i) => { acum = fac2(acum + x.valor); acumAntes = fac2(acumAntes + D.antes[i].valor);
-          const futuro = D.enCurso && i + 1 > D.mesesContados;
-          return `<tr data-a="fac_infMes" data-m="${i}" style="text-align:right;border-top:1px solid var(--l1);cursor:pointer;${m === i ? 'background:rgba(20,23,15,.04);' : ''}${futuro && !x.valor ? 'color:var(--t3);' : ''}"><td style="text-align:left;padding:9px 6px 9px 15px;font-weight:500">${INF_MESES_LARGO[i]}</td><td class="num" style="padding:9px 6px;white-space:nowrap">${futuro && !x.valor ? '—' : eur0(x.valor)}</td><td class="num" style="padding:9px 6px;white-space:nowrap;color:var(--t2)">${eur0(D.antes[i].valor)}</td><td style="padding:9px 6px;white-space:nowrap;color:var(--t2)">${futuro && !x.valor ? '—' : infDifTxt(infDif(x.valor, D.antes[i].valor))}</td><td class="num" style="padding:9px 15px 9px 6px;white-space:nowrap">${futuro && !x.valor ? '—' : eur0(acum)}</td></tr>`; }).join('')}
-          <tr style="text-align:right;border-top:2px solid var(--l2);font-weight:600"><td style="text-align:left;padding:10px 6px 10px 15px">Total</td><td class="num" style="padding:10px 6px;white-space:nowrap">${eur0(D.total)}</td><td class="num" style="padding:10px 6px;white-space:nowrap;color:var(--t2)">${eur0(D.totalAntes)}</td><td style="padding:10px 6px;white-space:nowrap;color:var(--t2)">${D.enCurso ? '' : infDifTxt(infDif(D.total, D.totalAntes))}</td><td class="num" style="padding:10px 15px 10px 6px;white-space:nowrap">${eur0(D.total)}</td></tr>
-        </tbody>
-      </table>
-      ${D.enCurso && hayAntes ? `<div class="tiny" style="padding:8px 15px 6px">El año no ha terminado: la columna de ${D.anio - 1} es el año entero. La comparación justa, a las mismas fechas, es la de arriba (${infDifTxt(D.dif)}).</div>` : ''}
-    </div>
-    <div class="row" style="gap:12px;flex-wrap:wrap;margin-top:12px;align-items:flex-start">
-      <div class="card" style="flex:1 1 300px;min-width:0;padding:13px 15px">
-        <div class="lbl" style="margin-bottom:4px">Por años · ${conIva ? 'con IVA' : 'sin IVA'}</div>
-        ${infBarrasHTML(D.porAnio.map((x) => ({ clave: x.anio, nombre: String(x.anio) + (String(x.anio) === hoyISO().slice(0, 4) ? ' (en curso)' : ''), valor: x.valor, on: x.anio === D.anio })), 'fac_infAnio')}
-      </div>
-      <div class="card" style="flex:1 1 300px;min-width:0;padding:13px 15px">
-        <div class="lbl" style="margin-bottom:4px">A quién se facturó más en ${D.anio}</div>
-        ${D.clientes.length ? infBarrasHTML(D.clientes.slice(0, 8).map((x) => ({ nombre: x.nombre, valor: x.valor }))) + (D.clientes.length > 8 ? `<div class="tiny" style="margin-top:6px">Y ${D.clientes.length - 8} clientes más, que suman ${eur0(D.clientes.slice(8).reduce((t, x) => t + x.valor, 0))}.</div>` : '') : '<div class="sub" style="margin-top:6px">Sin facturas este año.</div>'}
-      </div>
-    </div>
-  </div></div>`;
+  const embudos = tab === 'ventas' ? [...new Set((E.ventas || []).map((o) => o.embudo).filter(Boolean))].sort() : [];
+  if (I.embudo && !embudos.includes(I.embudo)) I.embudo = '';
+  const R = tab === 'ingresos' ? estIngresosHTML(F, I) : tab === 'ventas' ? estVentasHTML(E, I) : tab === 'presupuestos' ? estPresupuestosHTML(E, F, I) : estClientesHTML(I);
+  const D = R.D; I.anio = D.anio;
+  const sub = { ventas: 'Las oportunidades ganadas en Teamleader, por la fecha en que se ganaron. Importes sin IVA.' + (E.ventas && E.ventas.length ? ' Copiadas ' + esc(fechaCorta(E.ventas.reduce((t, o) => (String(o.sincronizado_at || '') > t ? String(o.sincronizado_at) : t), ''))) + '.' : ''),
+    ingresos: 'Lo facturado, por la fecha de la factura. Los abonos restan y los borradores no cuentan. No es lo cobrado: eso va en «Por cobrar».',
+    presupuestos: 'Los presupuestos hechos en la app, por la fecha en que se hicieron. Importes sin IVA.',
+    clientes: 'Los clientes que entran, sus citas y sus visitas, con lo que hay en la app.' }[tab];
+  const filtros = tab === 'ingresos' ? chip(I.medida !== 'total', 'fac_infMedida', 'data-k="base"', 'Sin IVA') + chip(I.medida === 'total', 'fac_infMedida', 'data-k="total"', 'Con IVA')
+    : tab === 'clientes' ? EST_CLI_MEDIDAS.map(([k, n]) => chip((I.medidaC || 'clientes') === k, 'fac_infMedidaC', `data-k="${k}"`, n)).join('')
+    : chip(I.medidaV !== 'numero', 'fac_infMedidaV', 'data-k="importe"', 'Importe') + chip(I.medidaV === 'numero', 'fac_infMedidaV', 'data-k="numero"', 'Número');
+  return cab(`<div class="sub" style="margin-top:8px">${sub}</div>
+    ${fila(D.anios.map((y) => chip(y === D.anio, 'fac_infAnio', `data-y="${y}"`, String(y))).join(''))}
+    ${fila((embudos.length > 1 ? chip(!I.embudo, 'fac_infEmbudo', 'data-k=""', 'Todos los embudos') + embudos.map((e) => chip(I.embudo === e, 'fac_infEmbudo', `data-k="${esc(e)}"`, e.charAt(0) + e.slice(1).toLowerCase())).join('') : '')
+      + (empresas.length > 1 ? chip(!I.entidad, 'fac_infEntidad', 'data-k=""', 'Todas las empresas') + empresas.map((e) => chip(I.entidad === e.k, 'fac_infEntidad', `data-k="${esc(e.k)}"`, corto(e.nombre), e.nombre)).join('') : ''))}
+    ${fila(filtros)}`) + `
+  <div class="scroll pad sin-marca pb-nav"><div style="max-width:860px;margin:0 auto">${R.html}</div></div>`;
 }
 /** Lo ya facturado de un presupuesto: facturas con número menos sus abonos (sin IVA). */
 function facFacturado(facturas) {
@@ -9731,7 +9908,16 @@ A.fac = async (a, d) => {
   const F = facEstadoBase();
   if (a === 'fac_abrir') { V.view = 'facturas'; render(); return facCargarLista(); }
   if (a === 'fac_filtro') { F.filtro = d.k; render(); return; }
-  if (a === 'fac_inf') { V.view = 'informes'; scrollMemo.informes = 0; render(); if (!F.lista && !F.cargando) return facCargarLista(); return; }
+  if (a === 'fac_inf') { V.view = 'informes'; scrollMemo.informes = 0; render(); return estCargar(infEstado().tab); }
+  if (a === 'fac_infTab') { const I = infEstado(); I.tab = d.k; I.mes = null; scrollMemo.informes = 0; render(); return estCargar(I.tab); }
+  if (a === 'fac_infEmbudo') { const I = infEstado(); I.embudo = d.k || ''; I.mes = null; return render(); }
+  if (a === 'fac_infMedidaV') { infEstado().medidaV = d.k === 'numero' ? 'numero' : 'importe'; return render(); }
+  if (a === 'fac_infMedidaC') { const I = infEstado(); I.medidaC = d.k; I.mes = null; return render(); }
+  if (a === 'fac_infSync') { const E = estEstado(); if (E.sync) return; E.sync = true; render();
+    try { let r = null; for (let i = 0; i < 6; i++) { r = await visitasDB.sincronizarOportunidades(); if (!(r && r.quedan)) break; }
+      E.ventas = await visitasDB.listarOportunidades(); toast(r && r.guardadas ? r.guardadas + (r.guardadas === 1 ? ' oportunidad actualizada.' : ' oportunidades actualizadas.') : 'Ya estaba todo al día.'); }
+    catch (e) { avisar('No se pudo traer de Teamleader: ' + msgError(e)); }
+    E.sync = false; return render(); }
   if (a === 'fac_infAnio') { const I = infEstado(); I.anio = Number(d.y); I.mes = null; return render(); }
   if (a === 'fac_infEntidad') { const I = infEstado(); I.entidad = d.k || ''; I.mes = null; return render(); }
   if (a === 'fac_infMedida') { infEstado().medida = d.k === 'total' ? 'total' : 'base'; return render(); }

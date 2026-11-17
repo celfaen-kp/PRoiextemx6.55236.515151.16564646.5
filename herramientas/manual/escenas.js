@@ -308,7 +308,19 @@
       [anio - 1, anio].forEach((y) => { for (let mm = 1; mm <= (y === anio ? mesHoy : 12); mm++) { const n = 3 + Math.floor(azar() * 5);
         for (let k = 0; k < n; k++) { const b = Math.round((600 + azar() * (y === anio ? 11000 : 8000)) * 100) / 100; const pagada = y < anio || mm < mesHoy - 1 || azar() > 0.5; const f = y + '-' + String(mm).padStart(2, '0') + '-' + String(2 + k * 3).padStart(2, '0');
           lista.push({ id: 'i' + y + mm + k, tipo: 'factura', numero: y + ' / ' + (lista.length + 1), estado: pagada ? 'pagada' : 'pendiente', pagada, fecha: f, vence: f, cliente_nombre: nombres[Math.floor(azar() * nombres.length)], entidad: 'Sysefen Group 2024 SL', entidad_tl_id: 'e1', base: b, iva: Math.round(b * 21) / 100, total: Math.round(b * 121) / 100, pendiente: pagada ? 0 : Math.round(b * 121) / 100 }); } } });
-      V.fac.lista = lista; V.inf = { anio, entidad: '', medida: 'base', mes: Math.max(0, mesHoy - 2) }; V.view = 'informes'; },
+      V.fac.lista = lista; V.inf = { tab: 'ingresos', anio, entidad: '', embudo: '', medida: 'base', medidaV: 'importe', medidaC: 'clientes', mes: Math.max(0, mesHoy - 2) };
+      // Y las oportunidades de Teamleader, también inventadas: ganadas, perdidas y abiertas.
+      const embudos = ['FOTOVOLTAICA', 'AEROTERMIA', 'OTROS'], fases = [['Nuevo', 0], ['Contactado', 1], ['CLIENTE VISITADO', 2], ['PRESUPUESTO ENVIADO', 4]], motivos = ['PRECIO', 'PRECIO', 'COMPETENCIA', null]; const ventas = [];
+      [anio - 1, anio].forEach((y) => { for (let mm = 1; mm <= (y === anio ? mesHoy : 12); mm++) { const n = 2 + Math.floor(azar() * (y === anio ? 7 : 5));
+        for (let k = 0; k < n; k++) { const ganada = azar() > 0.3; ventas.push({ tl_id: 'o' + y + mm + k, titulo: ['Fotovoltaica', 'Aerotermia', 'Aire acondicionado', 'Cargador'][Math.floor(azar() * 4)], estado: ganada ? 'won' : 'lost', importe: Math.round(1500 + azar() * 16000), embudo: embudos[Math.floor(azar() * 3)], fase: 'ACEPTADO', fase_orden: 5,
+          entidad_id: 'e1', entidad: 'Sysefen Group 2024 SL', responsable: 'Sysefen', cliente_nombre: nombres[Math.floor(azar() * nombres.length)], motivo_perdida: ganada ? null : motivos[Math.floor(azar() * 4)], cerrado_at: y + '-' + String(mm).padStart(2, '0') + '-' + String(3 + k * 3).padStart(2, '0') + 'T10:00:00Z', sincronizado_at: new Date().toISOString() }); } } });
+      for (let k = 0; k < 34; k++) { const f = fases[Math.floor(azar() * fases.length)]; ventas.push({ tl_id: 'ab' + k, titulo: 'Pendiente', estado: f[1] ? 'open' : 'new', importe: Math.round(azar() * 14000), embudo: embudos[Math.floor(azar() * 3)], fase: f[0], fase_orden: f[1], entidad_id: 'e1', entidad: 'Sysefen Group 2024 SL', responsable: 'Sysefen', cliente_nombre: nombres[Math.floor(azar() * nombres.length)], cerrado_at: null, sincronizado_at: new Date().toISOString() }); }
+      V.est = { ventas, presus: PRESUS.map((p) => Object.assign({ total_coste: Math.round((p.total_venta || 0) * 0.62) }, p)), cargando: {}, error: {}, sync: false };
+      V.view = 'informes'; },
+    'pres-estadisticas': () => { ESCENAS['pres-informes'](); V.inf.tab = 'ventas'; },
+    'pres-estadisticas-2': () => { ESCENAS['pres-estadisticas'](); window.__scrollTxt = 'Por embudo'; },
+    'pres-estadisticas-presupuestos': () => { ESCENAS['pres-informes'](); V.inf.tab = 'presupuestos'; V.inf.mes = null; },
+    'pres-estadisticas-clientes': () => { ESCENAS['pres-informes'](); V.inf.tab = 'clientes'; V.inf.mes = null; },
     'pres-informes-2': () => { ESCENAS['pres-informes'](); window.__scrollTxt = 'Octubre'; },
     'pres-informes-ancho': () => { ESCENAS['pres-informes'](); },   // la misma, a lo ancho (ordenador)
     'pres-factura': () => { base('u5'); V.view = 'facturas'; const f = V.fac.lista.find((x) => x.id === 'fa5'); V.sheet = { tipo: 'facVer', id: f.id, f, busy: false, confirmar: '', v: { fecha: hoy, importe: '', concepto: '' }, abonadas: {} }; },
