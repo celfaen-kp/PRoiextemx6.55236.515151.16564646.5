@@ -452,7 +452,7 @@ footer{margin-top:60px;padding-top:20px;border-top:1px solid var(--l1);color:var
     <h4>Cómo se lee y cómo se mueve</h4>
     <ul>
       <li>La tarjeta lleva la <b>fecha de ingreso</b>, el nombre, el <b>importe</b> (si tiene varios presupuestos aceptados, la suma, con el número entre paréntesis), la <b>próxima acción</b> y lo último que se habló.</li>
-      <li>La barrita de siete tramos es <b>el camino del cliente</b>: contacto, cita, visita, presupuesto, enviado, respuesta y obra. Verde, hecho; ámbar, lo que toca ahora; rojo, donde se paró (rechazado o aplazado).</li>
+      <li>La barrita de tramos es <b>el camino del cliente</b>: contacto, cita, visita, presupuesto, enviado, respuesta y obra. Verde, hecho; ámbar, lo que toca ahora; rojo, donde se paró (rechazado o aplazado). Quien ve las facturas (presupuestos y Administración) tiene un octavo tramo al final, la <b>factura</b>: «Facturar» mientras no la hay y <b>Facturado</b>, en verde, en cuanto el cliente tiene una factura emitida (un borrador no cuenta).</li>
       <li>Las columnas <b>se deducen solas</b> de lo que ha pasado: al poner una cita pasa a Citados, al guardar el presupuesto a Presupuesto, al aceptarlo a Aceptados, y cuando todas sus obras están acabadas, a Finalizados.</li>
       <li>Para colocarlo a mano, arrastra la tarjeta a otra columna o toca <b>⋯ → Mover a</b>. La app pide lo que esa fase necesita: el porqué, hasta cuándo se aplaza… <b>No responden</b>, <b>Rechazados</b> sin presupuesto, <b>Finalizados</b> y <b>Otros</b> se ponen así.</li>
       <li><b>↑↓ Fecha</b> ordena la columna por fecha de ingreso; también se puede subir o bajar un cliente a mano.</li>
@@ -483,8 +483,9 @@ footer{margin-top:60px;padding-top:20px;border-top:1px solid var(--l1);color:var
   <div class="txt">
     <h4>La ficha del cliente</h4>
     <ul>
-      <li>Arriba, el nombre, <b>el camino</b> con sus siete pasos y los botones: <b>Llamar</b>, <b>Cómo llegar</b>, <span class="btn verde">+ Nueva cita</span>, <span class="btn gris">Editar</span> y el de la visita, que cambia según el momento: <b>Hacer visita</b> (empieza la toma de datos sin pasar por una cita), <b>Seguir la visita</b> o <b>Cerrar la visita</b> si está a medias, y <b>Ver visita</b> cuando ya está hecha.</li>
+      <li>Arriba, el nombre, <b>el camino</b> con sus pasos y los botones: <b>Llamar</b>, <b>Cómo llegar</b>, <span class="btn verde">+ Nueva cita</span>, <span class="btn gris">Editar</span> y el de la visita, que cambia según el momento: <b>Hacer visita</b> (empieza la toma de datos sin pasar por una cita), <b>Seguir la visita</b> o <b>Cerrar la visita</b> si está a medias, y <b>Ver visita</b> cuando ya está hecha.</li>
       <li>Si el cliente tiene obra, un botón verde <b>Ver obra OB-137 · En curso · 35 %</b> y, debajo, la tarjeta de sus obras con el avance.</li>
+      <li><b>Facturas de este cliente</b> (presupuestos y Administración): cada una con su número, fecha, importe y estado. Al tocarla se abre.</li>
       <li><i>¿Presupuesto hecho en Teamleader? Tráelo aquí con sus líneas</i>: trae todas las ofertas que tenga en el CRM.</li>
       <li><b>Documentos del cliente</b>: la factura de la luz, el DNI, planos… Foto o PDF. Los ven presupuestos, jefes y Administración.</li>
       <li><b>Qué pidió por la web</b>, si entró por el formulario; si lleva alguien de fuera, la tarjeta <b>Colaborador</b> para asignárselo.</li>
@@ -493,9 +494,22 @@ footer{margin-top:60px;padding-top:20px;border-top:1px solid var(--l1);color:var
     <p>Abajo, <i>Borrar cliente</i>: solo si no tiene visitas ni presupuestos.</p>
   </div>
 </div>
+<div class="pantalla">
+  <img src="img/pres-cliente-juntar.png" alt="Juntar dos fichas del mismo cliente">
+  <div class="txt">
+    <h4>Si un cliente está dos veces</h4>
+    <p>Pasa cuando alguien lo da de alta otra vez en Teamleader (para facturarle, por ejemplo) y entra en la app como cliente nuevo: una ficha tiene la cita, el presupuesto y la obra, y la otra la factura. Lo pueden arreglar presupuestos y Administración.</p>
+    <ul>
+      <li>Si hay otra ficha con el mismo nombre, teléfono o correo, la ficha lo avisa arriba: <b>Puede estar dos veces</b>, con <b>Juntar las fichas</b> y <b>Ver la otra</b>. Si no lo detecta sola, abajo del todo está <b>¿Está dos veces? Juntar con otra ficha</b>, con un buscador.</li>
+      <li>Se enseñan las dos, con lo que lleva cada una, y se toca <b>la que se queda</b>. La app propone la que tiene la factura; si ninguna la tiene, la que está en Teamleader.</li>
+      <li>Al pulsar <b>Juntar</b>, todo lo de la otra (citas, visitas, presupuestos, obras, facturas, notas y documentos) pasa a la que se queda, y los datos que le falten (teléfono, correo, NIF, dirección, nota) se rellenan con los de la otra. Lo que ya tenía no se cambia. Queda apuntado en su seguimiento.</li>
+      <li>La otra ficha se quita y no se deshace desde la app. En Teamleader no se toca nada: si allí también está dos veces, sigue estándolo, pero la app recuerda que son el mismo y no lo vuelve a traer como cliente nuevo.</li>
+    </ul>
+  </div>
+</div>
 <div class="dos">
   <figure><img src="img/pres-cliente-sincita.png" alt="Cliente recién llegado de la web"><figcaption><b>Recién llegado.</b> Solo el primer tramo del camino en ámbar: toca llamarle. <b>No cogió</b>, <b>Contactado</b> o <b>No hace falta cita</b>.</figcaption></figure>
-  <figure><img src="img/pres-cliente-obra.png" alt="Cliente con obra en marcha"><figcaption><b>Con obra en marcha.</b> El camino entero en verde, el botón <b>Ver obra</b> y la tarjeta de la obra con su avance.</figcaption></figure>
+  <figure><img src="img/pres-cliente-obra.png" alt="Cliente con obra en marcha"><figcaption><b>Con obra en marcha.</b> El camino en verde hasta la factura, el botón <b>Ver obra</b>, la tarjeta de la obra con su avance y la de sus facturas.</figcaption></figure>
 </div>
 <div class="pantalla">
   <img src="img/pres-cliente-seguimiento.png" alt="Seguimiento del cliente: llamada, próxima acción y bitácora">
@@ -901,7 +915,7 @@ footer{margin-top:60px;padding-top:20px;border-top:1px solid var(--l1);color:var
   <tr><td>Un cliente no está en la hoja de clientes</td><td>En su ficha, <b>Apuntarlo en la hoja</b>. Los que se crean desde la app van solos.</td></tr>
 </table>
 
-<footer>Manual de la app Sysefen · al día con la versión 32.4 (17-11-2026) · las pantallas son de ejemplo, con datos inventados · se regenera con <code>herramientas/manual/capturar.py</code></footer>
+<footer>Manual de la app Sysefen · al día con la versión 32.5 (17-11-2026) · las pantallas son de ejemplo, con datos inventados · se regenera con <code>herramientas/manual/capturar.py</code></footer>
 </main>
 </div>
 </body>

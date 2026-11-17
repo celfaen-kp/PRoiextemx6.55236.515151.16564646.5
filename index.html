@@ -103,6 +103,9 @@ a:hover{color:var(--tinta)}
 .camino .p.saltado i{background:rgba(61,143,74,.35)}
 .camino .p.parado i{background:var(--rojo)}
 .camino .p b{display:block;font:500 9px/1.2 var(--mono);letter-spacing:0;text-transform:uppercase;color:var(--t3);margin-top:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* Con el octavo paso (la factura): letra algo menor en el móvil y el último, más ancho, para que quepa «Facturado». */
+.camino.ocho .p b{font-size:clamp(7px,2.05vw,9px)}
+.camino.ocho .p:last-child{flex:1.3}
 .camino .p.ahora b{color:var(--ambar-o);font-weight:600}
 .camino .p.hecho b{color:var(--t2)}
 .camino.oscuro .p i{background:rgba(255,255,255,.14)}
@@ -512,7 +515,7 @@ import * as idiomas from './presu-idiomas.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '32.4'; // versión visible de la app (única fuente)
+const APP_VERSION = '32.5'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -12706,8 +12709,16 @@ function importeCliente(c) {
  * por cubierta, en claro). El primero sin hacer es «ahora». Si está aplazado o
  * rechazado, el camino se para ahí. Así, en la lista, de un vistazo se ve en
  * qué punto está cada uno sin entrar en la ficha.
+ * Y un octavo, la factura, para quien ve las facturas (Enzo, 17-11-2026:
+ * «debería aparecer al final, luego de obra, que diga facturado»): hecho en
+ * cuanto el cliente tiene una factura emitida; un borrador no cuenta.
  * ------------------------------------------- */
 const CAMINO_PASOS = [['contacto', 'Contacto'], ['cita', 'Cita'], ['visita', 'Visita'], ['presupuesto', 'Presup.'], ['enviado', 'Enviado'], ['respuesta', 'Resp.'], ['obra', 'Obra']];
+// Con ocho no cabe «Contacto» entero en el móvil: se abrevia, como «Presup.» y «Resp.».
+const caminoPasos = () => (puedeFacturar() ? CAMINO_PASOS.map((x) => (x[0] === 'contacto' ? ['contacto', 'Contac.'] : x)).concat([['factura', 'Facturar']]) : CAMINO_PASOS);
+// Las facturas y abonos de un cliente (vienen pegadas a él en la agenda), la más nueva arriba.
+const facturasDeCliente = (c) => ((c && c.facturas) || []).slice().sort((a, b) => String(b.fecha || '9').localeCompare(String(a.fecha || '9')) || String(b.numero || '').localeCompare(String(a.numero || '')));
+const clienteFacturado = (c) => facturasDeCliente(c).some((f) => f.tipo === 'factura' && f.estado !== 'borrador');
 function caminoCliente(c) {
   const pm = presuQueManda(c);
   const sg = pm ? seguimientoPresu(pm) : null;
@@ -12719,19 +12730,21 @@ function caminoCliente(c) {
     enviado: !!(pm && (pm.enviado_cliente_at || (pm.respuesta_cliente && pm.respuesta_cliente !== 'pendiente'))),
     respuesta: !!(sg && ['aceptado', 'rechazado'].includes(sg.k)),
     obra: !!((pm && pm.obra_id) || (typeof obrasDeCliente === 'function' && obrasDeCliente(c).length)),
+    factura: clienteFacturado(c),
   };
+  const PASOS = caminoPasos();
   const parado = sg && sg.k === 'rechazado' ? 'respuesta' : null;
   const aplazado = !!(c.aplazado_hasta && c.aplazado_hasta >= hoyISO()) && !(sg && sg.k === 'aceptado');
   // Lo último que pasó de verdad: todo lo anterior queda cubierto.
   let ultimo = -1;
-  CAMINO_PASOS.forEach(([k], i) => { if (hechos[k]) ultimo = i; });
-  const pasos = CAMINO_PASOS.map(([k, titulo], i) => {
+  PASOS.forEach(([k], i) => { if (hechos[k]) ultimo = i; });
+  const pasos = PASOS.map(([k, titulo], i) => {
     let estado = 'pendiente';
     if (hechos[k]) estado = 'hecho';
     else if (i < ultimo) estado = 'saltado';
     else if (i === ultimo + 1) estado = 'ahora';
     if (parado === k) estado = 'parado';
-    return { k, titulo, estado };
+    return { k, titulo: k === 'factura' && estado === 'hecho' ? 'Facturado' : titulo, estado };
   });
   if (aplazado) { const a = pasos.find((x) => x.estado === 'ahora'); if (a) { a.estado = 'parado'; a.titulo = 'Aplazado'; } }
   if (parado) pasos.forEach((x) => { if (x.estado === 'ahora') x.estado = 'pendiente'; });
@@ -12740,7 +12753,8 @@ function caminoCliente(c) {
 // compacto: solo las barras (tarjetas estrechas, como las del tablero); el
 // nombre del paso queda en el title.
 function caminoHTML(c, oscuro, compacto) {
-  return `<div class="camino ${oscuro ? 'oscuro' : ''}">${caminoCliente(c).map((x) => `<div class="p ${x.estado}" title="${esc(x.titulo)}"><i></i>${compacto ? '' : `<b>${esc(x.titulo)}</b>`}</div>`).join('')}</div>`;
+  const pasos = caminoCliente(c);
+  return `<div class="camino ${oscuro ? 'oscuro' : ''} ${pasos.length > 7 ? 'ocho' : ''}">${pasos.map((x) => `<div class="p ${x.estado}" title="${esc(x.titulo)}"><i></i>${compacto ? '' : `<b>${esc(x.titulo)}</b>`}</div>`).join('')}</div>`;
 }
 // Lo que hay que saber de un cliente sin entrar: la próxima acción y lo último que se habló.
 function seguimientoResumenHTML(c, oscuro) {
@@ -12908,6 +12922,11 @@ A.ag = (a, d, e) => {
     case 'ag_confirmarBorrarCita': return agConfirmarBorrarCita();
     case 'ag_borrarCliente': if (e) e.stopPropagation(); return agBorrarCliente(d.id);
     case 'ag_confirmarBorrarCliente': return agConfirmarBorrarCliente();
+    case 'ag_juntarAbrir': if (e) e.stopPropagation(); return agJuntarAbrir(d.id, d.otro || null);
+    case 'ag_juntarElegir': return agJuntarElegir(d.id);
+    case 'ag_juntarQueda': if (V.sheet && V.sheet.tipo === 'juntarCliente' && !V.sheet.busy) { V.sheet.queda = d.id; render(); } return;
+    case 'ag_juntarAtras': if (V.sheet && V.sheet.tipo === 'juntarCliente' && !V.sheet.busy) { V.sheet.otro = null; V.sheet.queda = null; render(); } return;
+    case 'ag_juntarConfirmar': return agJuntarConfirmar();
     case 'ag_empezar': if (e) e.stopPropagation(); return agEmpezarVisita(d.id);
   }
 };
@@ -13423,6 +13442,154 @@ async function agConfirmarBorrarCliente() {
       ? 'Algo suyo sigue enganchado y la base no deja borrarlo. Cuéntamelo y lo miro.'
       : 'No se pudo borrar: ' + agErrorTxt(e));
   }
+}
+
+/* ---------- juntar dos fichas del mismo cliente (sql/etapa111, 17-11-2026) ----------
+ * Enzo: «el cliente está duplicado: en uno creé la obra y todo, y cuando
+ * facturaron hicieron otro. Quiero transferir presupuesto, obra y todo de uno
+ * al que ya tiene la factura». Se elige la otra ficha, se dice cuál se queda y
+ * la base pasa todo a esa (citas, visitas, presupuestos, obras, facturas, notas
+ * y documentos), le rellena lo que le falte y quita la otra. Solo quien ve las
+ * facturas (presupuestos y Administración). En Teamleader no se toca nada.
+ * --------------------------------------------------------------------------------- */
+const telClave = (t) => String(t || '').replace(/\D/g, '').slice(-9);
+const nombreClave = (t) => sinTildes(t).replace(/[^a-z0-9]+/g, ' ').trim();
+// Las otras fichas que parecen el mismo cliente: mismo teléfono (las nueve
+// últimas cifras, con o sin +34), mismo correo o mismo nombre.
+function posiblesDuplicados(c) {
+  const tel = telClave(c.telefono), mail = String(c.email || '').trim().toLowerCase(), nom = nombreClave(c.nombre);
+  return ((V.agenda && V.agenda.clientes) || []).filter((x) => x.id !== c.id && (
+    (tel.length === 9 && telClave(x.telefono) === tel)
+    || (!!mail && String(x.email || '').trim().toLowerCase() === mail)
+    || (!!nom && nombreClave(x.nombre) === nom)));
+}
+// Lo que cuelga de una ficha, en una línea. Las obras, solo las enlazadas a
+// esa ficha (por nombre saldrían las mismas en las dos duplicadas).
+function clienteLlevaTxt(c) {
+  const n = (k, uno, varios) => (k ? k + ' ' + (k === 1 ? uno : varios) : '');
+  return [n((c.citas || []).length, 'cita', 'citas'), n((c.visitas || []).length, 'visita', 'visitas'),
+    n(presupuestosDeCliente(c).length, 'presupuesto', 'presupuestos'),
+    n(S.obras.filter((o) => o.clienteId === c.id).length, 'obra', 'obras'),
+    n(facturasDeCliente(c).length, 'factura', 'facturas')].filter(Boolean).join(' · ') || 'Sin nada colgado';
+}
+// Cuál se queda si nadie dice otra cosa: la que tiene la factura; si no, la
+// que está en Teamleader; si no, la que más cosas lleva; si no, la abierta.
+function juntarQuedaPorDefecto(a, b) {
+  const fa = facturasDeCliente(a).length, fb = facturasDeCliente(b).length;
+  if (!!fa !== !!fb) return fa ? a.id : b.id;
+  if (!!a.tl_id !== !!b.tl_id) return a.tl_id ? a.id : b.id;
+  const peso = (c) => (c.citas || []).length + (c.visitas || []).length + presupuestosDeCliente(c).length + S.obras.filter((o) => o.clienteId === c.id).length;
+  return peso(b) > peso(a) ? b.id : a.id;
+}
+function agJuntarAbrir(id, otro) {
+  const c = agCliente(id); if (!c || !puedeFacturar()) return;
+  V.sheet = { tipo: 'juntarCliente', id, otro: null, queda: null, buscar: '', busy: false };
+  if (otro && agCliente(otro)) return agJuntarElegir(otro);
+  render();
+}
+function agJuntarElegir(otroId) {
+  const s = V.sheet; if (!s || s.tipo !== 'juntarCliente' || s.busy) return;
+  const a = agCliente(s.id), b = agCliente(otroId); if (!a || !b || a.id === b.id) return;
+  s.otro = b.id; s.queda = juntarQuedaPorDefecto(a, b);
+  render();
+}
+async function agJuntarConfirmar() {
+  const s = V.sheet; if (!s || s.tipo !== 'juntarCliente' || !s.otro || !s.queda || s.busy) return;
+  if (!navigator.onLine) { avisar('Sin conexión: no se ha juntado nada.'); return; }
+  const queda = s.queda, quita = queda === s.id ? s.otro : s.id;
+  s.busy = true; render();
+  try {
+    await visitasDB.fusionarClientes(quita, queda);
+    V.sheet = null;
+    V.clienteVerId = queda; V.agenda.ultimoCliente = queda;
+    // Los pasos de «volver» que apuntaban a la ficha quitada van a la que queda.
+    (V.volverPila || []).forEach((o) => { if (o.view === 'clienteVer' && o.id === quita) o.id = queda; });
+    toast('Fichas juntadas: ahora es un solo cliente.');
+    await A.cargarAgenda();
+    try { await sincronizarObras(); } catch (_) { /* las obras se pondrán al día en la siguiente pasada */ }
+    cargarVisitasCliente(queda); A.cargarDocsCliente(queda);
+    render();
+  } catch (e) {
+    s.busy = false; render();
+    avisar('No se pudieron juntar: ' + agErrorTxt(e));
+  }
+}
+function juntarFilaHTML(x) {
+  return `<button class="fila-obra" data-a="ag_juntarElegir" data-id="${x.id}">${esc(x.nombre)}<small>${esc([agTipoNombre(x), x.poblacion, x.telefono, x.email].filter(Boolean).join(' · '))}</small><small>${esc(clienteLlevaTxt(x))}</small></button>`;
+}
+function juntarListaHTML(s) {
+  const c = agCliente(s.id); if (!c) return '';
+  const q = String(s.buscar || '').trim();
+  if (!q) {
+    const dup = posiblesDuplicados(c);
+    return dup.length ? `<div class="lbl" style="margin:10px 0 2px">Parecen el mismo</div>${dup.map(juntarFilaHTML).join('')}`
+      : '<div class="sub" style="padding:12px 2px">No hay otra ficha con el mismo nombre, teléfono o correo. Escribe arriba para buscarla.</div>';
+  }
+  const lista = V.agenda.clientes.filter((x) => x.id !== c.id && clienteCasa(x, q)).slice(0, 30);
+  return lista.length ? lista.map(juntarFilaHTML).join('') : '<div class="sub" style="padding:12px 2px">Ningún cliente con eso.</div>';
+}
+function juntarSheetHTML(s) {
+  const a = agCliente(s.id), b = s.otro ? agCliente(s.otro) : null;
+  if (!a) return '';
+  if (!b) {
+    return `<div class="sheet"><div style="max-height:85vh;display:flex;flex-direction:column">
+      <div style="font:600 23px/1.15 var(--cond)">Juntar con otra ficha</div>
+      <div class="sub" style="margin-top:6px">Si <b>${esc(a.nombre)}</b> está dos veces, elige la otra ficha. Todo queda en una sola y la otra se quita.</div>
+      <input class="inp" data-f="juntarBuscar" value="${esc(s.buscar || '')}" placeholder="Nombre, teléfono, correo o población" autocomplete="off" style="margin:12px 0 0">
+      <div class="lista-obras" id="juntar-lista" style="overflow:auto;flex:1;min-height:0">${juntarListaHTML(s)}</div>
+      <button class="btn btn-gris" data-a="cerrarSheet" style="border-radius:99px;margin-top:12px">Cancelar</button>
+    </div></div>`;
+  }
+  const tl = (c) => (c.tl_id ? (c.tl_tipo === 'company' ? 'En Teamleader, como empresa' : 'En Teamleader, como contacto') : 'Sin subir a Teamleader');
+  const tarjeta = (c) => { const on = s.queda === c.id; return `<div class="card" data-a="ag_juntarQueda" data-id="${c.id}" style="cursor:pointer;margin-top:10px;padding:12px 14px;box-shadow:0 0 0 ${on ? '2px var(--verde)' : '1px var(--l1)'}">
+      <div class="row g8" style="align-items:baseline"><span class="lbl" style="color:${on ? 'var(--verde-o)' : 'var(--t3)'}">${on ? 'Se queda' : 'Se quita'}</span><span class="grow"></span><span class="tiny">${c.created_at ? 'Alta ' + esc(fechaCorta(c.created_at)) : ''}</span></div>
+      <div style="font:600 16px/1.25 var(--sans);margin-top:5px">${esc(c.nombre)}</div>
+      <div class="sub" style="font-size:12.5px;margin-top:3px">${esc([agTipoNombre(c), c.poblacion, c.telefono, c.email].filter(Boolean).join(' · '))}</div>
+      <div class="tiny" style="margin-top:6px">${esc(clienteLlevaTxt(c))}</div>
+      <div class="tiny" style="margin-top:3px">${esc(tl(c))}</div>
+    </div>`; };
+  return `<div class="sheet"><div style="max-height:88vh;overflow:auto">
+    <div style="font:600 23px/1.15 var(--cond)">¿Cuál se queda?</div>
+    <div class="sub" style="margin-top:6px">Toca la ficha que se queda. Todo lo de la otra (citas, visitas, presupuestos, obras, facturas, notas y documentos) pasa a ella, y los datos que le falten se rellenan con los de la otra.</div>
+    ${tarjeta(a)}${tarjeta(b)}
+    <div style="margin-top:12px;padding:10px 12px;border-radius:12px;background:#fde6e3;color:#8f2a20;font:400 13px/1.4 var(--sans)">La otra ficha se quita y no se deshace desde la app.${a.tl_id && b.tl_id ? ' En Teamleader siguen siendo dos: allí no se toca nada, pero la app recuerda que son el mismo.' : ' En Teamleader no se toca nada.'}</div>
+    <div class="row g8" style="margin-top:16px">
+      <button class="btn btn-gris" data-a="ag_juntarAtras" style="border-radius:99px" ${s.busy ? 'disabled' : ''}>Elegir otra</button>
+      <button class="btn" data-a="ag_juntarConfirmar" style="font-size:14px" ${s.busy ? 'disabled' : ''}>${s.busy ? 'Juntando…' : 'Juntar'}</button>
+    </div>
+    <button class="btn btn-gris" data-a="cerrarSheet" style="border-radius:99px;margin-top:8px" ${s.busy ? 'disabled' : ''}>Cancelar</button>
+  </div></div>`;
+}
+// En la ficha: si hay otra que parece el mismo cliente, se dice arriba.
+function duplicadoAvisoHTML(c) {
+  if (!puedeFacturar()) return '';
+  const dup = posiblesDuplicados(c); if (!dup.length) return '';
+  const x = dup[0];
+  return `<div class="card" style="padding:12px 15px;margin-bottom:18px;box-shadow:0 0 0 1.5px var(--ambar),var(--sh)">
+    <div class="lbl" style="color:var(--ambar-o)">Puede estar dos veces</div>
+    <div style="font:400 13.5px/1.45 var(--sans);margin-top:6px">Hay ${dup.length === 1 ? 'otra ficha' : dup.length + ' fichas más'} con el mismo nombre, teléfono o correo: <b>${esc(x.nombre)}</b>${[agTipoNombre(x), x.telefono].filter(Boolean).length ? ' (' + esc([agTipoNombre(x), x.telefono].filter(Boolean).join(' · ')) + ')' : ''}${dup.length > 1 ? ' y ' + (dup.length - 1) + ' más' : ''}.</div>
+    <div class="row g8" style="margin-top:10px">
+      <button class="pill" data-a="ag_juntarAbrir" data-id="${c.id}" ${dup.length === 1 ? `data-otro="${x.id}"` : ''} style="padding:8px 12px;background:var(--tinta);color:#fff">Juntar las fichas</button>
+      <button class="pill" data-a="ag_abrirCliente" data-id="${x.id}" style="padding:8px 12px;background:var(--l1);color:var(--tinta)">Ver la otra</button>
+    </div>
+  </div>`;
+}
+// Las facturas del cliente en su ficha (antes solo salían en Facturas y en el presupuesto).
+function facturasClienteHTML(c) {
+  if (!puedeFacturar()) return '';
+  const fs = facturasDeCliente(c); if (!fs.length) return '';
+  const ab = facAbonadas(fs);
+  return `<div class="card" style="padding:12px 15px;margin-bottom:18px">
+    <div class="row" style="justify-content:space-between;align-items:baseline"><div class="lbl">${fs.length === 1 ? 'Factura de este cliente' : 'Facturas de este cliente'}</div><span class="tiny">${fs.length}</span></div>
+    ${fs.map((f, i) => `<div data-a="fac_ver" data-id="${f.id}" style="padding:10px 0;${i ? 'border-top:1px solid var(--l1);' : ''}cursor:pointer">
+      <div class="row g8" style="align-items:baseline">
+        <span style="font:600 15px/1.2 var(--sans)">${esc(f.numero || (f.tipo === 'abono' ? 'Abono' : 'Borrador'))}</span>
+        <span class="tiny grow">${esc(facFecha(f.fecha))}</span>
+        <span class="num" style="font-size:15px">${eur(f.total)}</span>
+      </div>
+      <div class="row g8" style="margin-top:6px;align-items:center">${facPildora(facEstado(f, ab))}<span class="grow"></span><span class="tiny" style="color:var(--verde-o)">Abrir ›</span></div>
+    </div>`).join('')}
+  </div>`;
 }
 
 function agEmpezarVisita(citaId) {
@@ -14175,6 +14342,7 @@ function vClienteVer() {
     ${(esAdmin() || rol() === 'presupuestos') && c.tl_id ? `<div class="tiny" data-a="tlTraerCliente" data-id="${c.id}" style="margin-top:10px;color:rgba(255,255,255,.7);cursor:pointer;text-decoration:underline">${V.tlSyncBusy ? 'Trayendo de Teamleader…' : '¿Presupuesto hecho en Teamleader? Tráelo aquí con sus líneas'}</div>` : ''}` : ''}
   </div>
   <div class="scroll pad sin-marca pb-nav">
+    ${duplicadoAvisoHTML(c)}
     ${(() => { const obs = obrasDeCliente(c); return obs.length ? `<div class="card" style="padding:12px 15px;margin-bottom:18px;box-shadow:0 0 0 1.5px var(--verde),var(--sh)">
       <div class="row" style="justify-content:space-between;align-items:baseline"><div class="lbl" style="color:var(--verde-o)">${obs.length === 1 ? 'Obra de este cliente' : 'Obras de este cliente'}</div><span class="tiny">${obs.length}</span></div>
       ${obs.map((o, i) => { const av = avanceObra(o.id); return `<div data-a="verObra" data-id="${o.id}" style="padding:10px 0;${i ? 'border-top:1px solid var(--l1);' : ''}cursor:pointer">
@@ -14188,6 +14356,7 @@ function vClienteVer() {
         <div class="tiny" style="margin-top:8px;color:var(--verde-o)">Abrir la obra ›</div>
       </div>`; }).join('')}
     </div>` : ''; })()}
+    ${facturasClienteHTML(c)}
     ${c.email || c.nif || c.direccion || c.nota ? `<div class="card" style="padding:6px 15px;margin-bottom:18px">
       ${c.telefono ? `<div class="fila"><span class="k">Teléfono</span><span class="v"><a href="tel:${esc(String(c.telefono).replace(/[^\d+]/g, ''))}">${esc(c.telefono)}</a></span></div>` : ''}
       ${c.email ? `<div class="fila"><span class="k">Email</span><span class="v">${esc(c.email)}</span></div>` : ''}
@@ -14222,7 +14391,8 @@ function vClienteVer() {
         ${c.origen ? `<div class="tiny" style="margin-top:5px">${esc((AG_ORIGENES.find((o) => o[0] === c.origen) || [null, c.origen])[1])}</div>` : ''}
       </div></div>
     </div>
-    ${puedeCitar() && !esColaborador() ? `<button class="btn btn-gris" data-a="ag_borrarCliente" data-id="${c.id}" style="margin-top:22px;border-radius:99px;color:var(--rojo)">Borrar cliente</button>` : ''}
+    ${puedeFacturar() ? `<button class="btn btn-gris" data-a="ag_juntarAbrir" data-id="${c.id}" style="margin-top:22px;border-radius:99px">¿Está dos veces? Juntar con otra ficha</button>` : ''}
+    ${puedeCitar() && !esColaborador() ? `<button class="btn btn-gris" data-a="ag_borrarCliente" data-id="${c.id}" style="margin-top:${puedeFacturar() ? 10 : 22}px;border-radius:99px;color:var(--rojo)">Borrar cliente</button>` : ''}
   </div>`;
 }
 
@@ -14550,6 +14720,7 @@ function sheet() {
       </div>
     </div></div>`;
   }
+  if (s.tipo === 'juntarCliente') return juntarSheetHTML(s);
   if (s.tipo === 'visitaCancelar') {
     return `<div class="sheet"><div>
       <div style="font:600 23px/1.15 var(--cond)">Cancelar la visita</div>
@@ -15995,6 +16166,7 @@ document.addEventListener('input', (e) => {
   if (f === 'presuCatTexto') { if (V.sheet) { V.sheet.texto = t.value; const b = document.querySelector('[data-a="presuCatDe"][data-cat="otro"]'); if (b) b.textContent = 'Guardar como «' + (t.value.trim() || 'Otro') + '»'; } return; }
   if (f === 'presuObsTxt') { if (V.sheet) V.sheet.texto = t.value; return; }
   if (f === 'presuObs') { V.presu.observaciones = t.value; V.presu.obsDe = presuObsContexto(); return; }
+  if (f === 'juntarBuscar') { if (V.sheet && V.sheet.tipo === 'juntarCliente') { V.sheet.buscar = t.value; const box = document.getElementById('juntar-lista'); if (box) box.innerHTML = juntarListaHTML(V.sheet); } return; }
   if (f === 'moverBuscar') { if (V.sheet) { V.sheet.buscar = t.value; const box = document.getElementById('mover-obras'); if (box) box.innerHTML = moverParteListaHTML(V.sheet); } return; }
   if (f === 'sinCitaOtro') { if (V.sheet) V.sheet.otro = t.value; return; }
   if (f === 'presuExtImporte') { if (V.sheet) V.sheet.importe = t.value; return; }

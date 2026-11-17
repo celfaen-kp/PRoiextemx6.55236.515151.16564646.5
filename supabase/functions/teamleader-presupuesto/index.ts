@@ -465,6 +465,13 @@ async function sincronizar(sb: any, opciones: { cliente_id?: string } = {}) {
   const dealCliente: Record<string, { cliente_id: string; titulo: string }> = {};
   const clientePorTl: Record<string, string> = {};
   (clientesTl || []).forEach((c: { id: string; tl_id: string }) => { clientePorTl[String(c.tl_id)] = c.id; });
+  // Las fichas duplicadas que se juntaron con otra (sql/etapa111): las
+  // oportunidades que en Teamleader siguen a nombre de la quitada son del
+  // cliente que se quedó.
+  try {
+    const { data: fus } = await sb.from('clientes_fusionados').select('tl_id, cliente_id').not('tl_id', 'is', null);
+    (fus || []).forEach((f: { tl_id: string; cliente_id: string }) => { if (!clientePorTl[String(f.tl_id)]) clientePorTl[String(f.tl_id)] = f.cliente_id; });
+  } catch (_) { /* sin la etapa 111 no hay tabla: se sigue */ }
   // «Traer de Teamleader» desde la ficha de un cliente: todas sus oportunidades, sin límite de fecha.
   if (opciones.cliente_id) {
     const c = (clientesTl || []).find((x: { id: string }) => x.id === opciones.cliente_id);

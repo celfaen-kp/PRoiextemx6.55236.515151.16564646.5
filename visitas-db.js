@@ -371,13 +371,25 @@ export async function listarCitas(diasAtras = 120) {
 }
 
 /** Clientes con lo justo de sus citas y visitas para saber en qué punto están. */
+const COLS_CLIENTE_AGENDA = '*, citas(id, inicio, estado), visitas(id, codigo, estado, sync_estado, fecha_visita, presupuestos(id, categoria, estado, respuesta_cliente, tl_quotation_id, total_venta, created_at, enviado_cliente_at, revisado_at, obra_id)), presupuestos(id, categoria, estado, respuesta_cliente, tl_quotation_id, total_venta, created_at, enviado_cliente_at, revisado_at, obra_id)';
+// Las facturas de cada cliente, con lo justo para saber si está facturado
+// (17-11-2026). Solo las ve quien ve facturas; a los demás les llega vacío.
+const COLS_FACTURA_CLIENTE = 'facturas(id, tipo, numero, estado, fecha, vence, base, total, pagada, presupuesto_id, tl_id, tl_factura_abonada_id)';
 export async function listarClientesAgenda() {
-  return unwrap(
-    await supabase
-      .from('clientes_cache')
-      .select('*, citas(id, inicio, estado), visitas(id, codigo, estado, sync_estado, fecha_visita, presupuestos(id, categoria, estado, respuesta_cliente, tl_quotation_id, total_venta, created_at, enviado_cliente_at, revisado_at, obra_id)), presupuestos(id, categoria, estado, respuesta_cliente, tl_quotation_id, total_venta, created_at, enviado_cliente_at, revisado_at, obra_id)')
-      .order('nombre')
-  ) || [];
+  const pedir = (cols) => supabase.from('clientes_cache').select(cols).order('nombre');
+  let r = await pedir(COLS_CLIENTE_AGENDA + ', ' + COLS_FACTURA_CLIENTE);
+  // Si las facturas no se dejan pegar al cliente, la agenda no se queda sin
+  // clientes por eso: se piden sin ellas.
+  if (r.error) r = await pedir(COLS_CLIENTE_AGENDA);
+  return unwrap(r) || [];
+}
+
+/**
+ * Junta dos fichas del mismo cliente (sql/etapa111): todo lo de `quitaId`
+ * pasa a `quedaId`, se rellenan los datos que le falten y la otra se quita.
+ */
+export async function fusionarClientes(quitaId, quedaId) {
+  return unwrap(await supabase.rpc('fusionar_clientes', { p_origen: quitaId, p_destino: quedaId }));
 }
 
 /** Las visitas de un cliente, pedidas aparte: no dependen del «embed» de la agenda. */

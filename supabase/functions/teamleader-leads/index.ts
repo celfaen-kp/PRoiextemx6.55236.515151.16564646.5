@@ -271,6 +271,12 @@ Deno.serve(async (req) => {
     if (ids.length) {
       const { data: hay } = await sb.from('clientes_cache').select('tl_id').in('tl_id', ids);
       (hay || []).forEach((f) => yaEstan.add(String(f.tl_id)));
+      // Y los que eran una ficha duplicada que se juntó con otra (sql/etapa111):
+      // no vuelven a entrar como cliente nuevo.
+      try {
+        const { data: fus } = await sb.from('clientes_fusionados').select('tl_id').in('tl_id', ids);
+        (fus || []).forEach((f) => yaEstan.add(String(f.tl_id)));
+      } catch (_) { /* sin la etapa 111 no hay tabla: se sigue */ }
     }
 
     const ahora = new Date().toISOString();

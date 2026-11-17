@@ -170,6 +170,13 @@ async function contexto(sb: any, token: string, conClientes = true): Promise<Ctx
     ]);
     // deno-lint-ignore no-explicit-any
     (cl || []).forEach((c: any) => { clientes[String(c.tl_id)] = c.id; });
+    // Las fichas duplicadas que se juntaron con otra (sql/etapa111): lo que en
+    // Teamleader sigue a nombre de la quitada es del cliente que se quedó.
+    try {
+      const { data: fus } = await sb.from('clientes_fusionados').select('tl_id, cliente_id').not('tl_id', 'is', null);
+      // deno-lint-ignore no-explicit-any
+      (fus || []).forEach((f: any) => { if (!clientes[String(f.tl_id)]) clientes[String(f.tl_id)] = f.cliente_id; });
+    } catch (_) { /* sin la etapa 111 no hay tabla: se sigue */ }
     // deno-lint-ignore no-explicit-any
     (pr || []).forEach((p: any) => { ofertas[String(p.tl_quotation_id)] = p; });
   }

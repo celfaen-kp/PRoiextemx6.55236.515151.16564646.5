@@ -226,7 +226,7 @@
     V.sheet = null; V.err = false; V.obraId = null; V.tabHoras = 'empleado'; V.firmaPendiente = null;
     V.mat = { items: MAT.items.map((x) => Object.assign({}, x)), notas: MAT.notas.slice(), cargado: true, cargando: false, error: null, tab: 'pend', filtro: 'todo', avisado: true };
     V.matNuevo = { texto: '', tipo: 'comprar', obraId: null, urgente: false, voz: false }; V.notaNueva = { texto: '' };
-    V.agenda = Object.assign(V.agenda || {}, { cargado: true, cargando: false, error: null, citas: CITAS.map((c) => Object.assign({}, c)), clientes: CLIENTES.map((c) => Object.assign({}, c)), filtro: 'todas', filtroCli: 'todos', dia: null, verMes: false, buscar: '' });
+    V.agenda = Object.assign(V.agenda || {}, { cargado: true, cargando: false, error: null, citas: CITAS.map((c) => Object.assign({}, c)), clientes: CLIENTES.map((c) => Object.assign({}, c, { facturas: FACTURAS.filter((f) => f.cliente_nombre === c.nombre) })), filtro: 'todas', filtroCli: 'todos', dia: null, verMes: false, buscar: '' });
     V.visitas = VISITAS.map((v) => Object.assign({}, v)); V.visitasCargadas = true;
     V.presuLista = { cargado: true, cargando: false, error: null, filas: PRESUS.map((p) => Object.assign({}, p)) };
     V.bitacora = BITACORA; V.agenda.vista = 'tablero'; V.agenda.tbOrden = {}; V.agenda.ultimoCliente = null; V.agenda.visitasCliente = {};
@@ -291,6 +291,9 @@
     'pres-cliente': () => { base('u5'); V.view = 'clienteVer'; V.clienteVerId = 'c5'; },
     'pres-cliente-seguimiento': () => { ESCENAS['pres-cliente'](); window.__scrollTxt = 'Llamada'; },
     'pres-cliente-obra': () => { base('u5'); V.view = 'clienteVer'; V.clienteVerId = 'c6'; },
+    // La misma familia, dada de alta otra vez desde el CRM: la hoja de juntar las dos fichas.
+    'pres-cliente-juntar': () => { base('u5'); V.agenda.clientes.push({ id: 'c6b', nombre: 'Familia Roca', tipo: 'particular', telefono: '+34 600 123 456', poblacion: 'Esporles', origen: 'crm', created_at: iso(3, 9), visitas: [], citas: [], presupuestos: [], facturas: [] });
+      V.view = 'clienteVer'; V.clienteVerId = 'c6'; A.ag('ag_juntarAbrir', { id: 'c6', otro: 'c6b' }); },
     'pres-visitas': () => { base('u5'); V.view = 'visitas'; },
     'pres-presupuestos': () => { base('u5'); V.view = 'presupuestos'; },
     'pres-presu-ver': () => { base('u5'); V.view = 'presupuestoVer'; V.presuVer = { id: 'q2', cargando: false, datos: PRESU_VER, error: null }; V.presuEdit = null; },

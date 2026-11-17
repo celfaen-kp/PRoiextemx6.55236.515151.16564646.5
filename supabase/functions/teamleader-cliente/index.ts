@@ -206,6 +206,12 @@ Deno.serve(async (req) => {
       if (ids.length) {
         const { data: hay } = await sb.from('clientes_cache').select('id, tl_id').in('tl_id', ids);
         (hay || []).forEach((f) => enApp.set(String(f.tl_id), String(f.id)));
+        // Los que eran una ficha duplicada que se juntó con otra (sql/etapa111)
+        // también están en la app: son el cliente que se quedó.
+        try {
+          const { data: fus } = await sb.from('clientes_fusionados').select('tl_id, cliente_id').in('tl_id', ids);
+          (fus || []).forEach((f) => { if (!enApp.has(String(f.tl_id))) enApp.set(String(f.tl_id), String(f.cliente_id)); });
+        } catch (_) { /* sin la etapa 111 no hay tabla: se sigue */ }
       }
       return json({
         ok: true,
@@ -222,6 +228,16 @@ Deno.serve(async (req) => {
 
     const { data: ya } = await sb.from('clientes_cache').select('*').eq('tl_id', tlId).maybeSingle();
     if (ya) return json({ ok: true, ya_estaba: true, cliente: ya });
+    // ¿Era una ficha duplicada que se juntó con otra (sql/etapa111)? Entonces
+    // ya está: es el cliente que se quedó.
+    try {
+      const { data: fus } = await sb.from('clientes_fusionados').select('cliente_id').eq('tl_id', tlId).limit(1);
+      const quedo = fus && fus[0] ? fus[0].cliente_id : null;
+      if (quedo) {
+        const { data: cli } = await sb.from('clientes_cache').select('*').eq('id', quedo).maybeSingle();
+        if (cli) return json({ ok: true, ya_estaba: true, cliente: cli });
+      }
+    } catch (_) { /* sin la etapa 111 no hay tabla: se sigue */ }
 
     let token: string;
     try { token = await tokenValido(sb); }
