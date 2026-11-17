@@ -302,6 +302,15 @@
       V.sheet = { tipo: 'presuEnviar', id: 'q2', ids: ['q2'], otros: [], v: { para: 'familia.gil@correo.es', cc: '', asunto: '', mensaje: 'Hola Marta: te mando el presupuesto del aire del salón y el dormitorio, como hablamos. Cualquier duda, me llamas.', idioma: 'es' }, confirmar: false, busy: false, paso: '', trad: null }; },
     'pres-presu-aceptado': () => { base('u5'); V.view = 'presupuestoVer'; V.presuVer = { id: 'q2', cargando: false, datos: PRESU_ACEPTADO, error: null, facturas: [FACTURAS[0]] }; window.__scrollTxt = '✓ Aceptado y firmado'; },
     'pres-facturas': () => { base('u5'); V.view = 'facturas'; },
+    // Informes: dos años de facturas inventadas (siempre las mismas), para que la gráfica tenga qué enseñar.
+    'pres-informes': () => { base('u5'); const anio = Number(hoy.slice(0, 4)), mesHoy = Number(hoy.slice(5, 7)); let sem = 7; const azar = () => (sem = (sem * 1103515245 + 12345) % 2147483648) / 2147483648;
+      const nombres = ['Talleres Pons', 'Familia Roca', 'Catalina Mir', 'Joan Riera', 'Marina Coll', 'Hotel Es Port', 'Familia Gil', 'Pep Vidal', 'Finca Son Bru']; const lista = [];
+      [anio - 1, anio].forEach((y) => { for (let mm = 1; mm <= (y === anio ? mesHoy : 12); mm++) { const n = 3 + Math.floor(azar() * 5);
+        for (let k = 0; k < n; k++) { const b = Math.round((600 + azar() * (y === anio ? 11000 : 8000)) * 100) / 100; const pagada = y < anio || mm < mesHoy - 1 || azar() > 0.5; const f = y + '-' + String(mm).padStart(2, '0') + '-' + String(2 + k * 3).padStart(2, '0');
+          lista.push({ id: 'i' + y + mm + k, tipo: 'factura', numero: y + ' / ' + (lista.length + 1), estado: pagada ? 'pagada' : 'pendiente', pagada, fecha: f, vence: f, cliente_nombre: nombres[Math.floor(azar() * nombres.length)], entidad: 'Sysefen Group 2024 SL', entidad_tl_id: 'e1', base: b, iva: Math.round(b * 21) / 100, total: Math.round(b * 121) / 100, pendiente: pagada ? 0 : Math.round(b * 121) / 100 }); } } });
+      V.fac.lista = lista; V.inf = { anio, entidad: '', medida: 'base', mes: Math.max(0, mesHoy - 2) }; V.view = 'informes'; },
+    'pres-informes-2': () => { ESCENAS['pres-informes'](); window.__scrollTxt = 'Octubre'; },
+    'pres-informes-ancho': () => { ESCENAS['pres-informes'](); },   // la misma, a lo ancho (ordenador)
     'pres-factura': () => { base('u5'); V.view = 'facturas'; const f = V.fac.lista.find((x) => x.id === 'fa5'); V.sheet = { tipo: 'facVer', id: f.id, f, busy: false, confirmar: '', v: { fecha: hoy, importe: '', concepto: '' }, abonadas: {} }; },
     'pres-facturar': () => { base('u5'); V.view = 'presupuestoVer'; V.presuVer = { id: 'q2', cargando: false, datos: PRESU_ACEPTADO, error: null, facturas: [] };
       V.sheet = { tipo: 'facNueva', presupuestoId: 'q2', cargando: false, op: FAC_OPCIONES, err: null, busy: false,

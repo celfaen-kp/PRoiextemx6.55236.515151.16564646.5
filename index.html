@@ -515,7 +515,7 @@ import * as idiomas from './presu-idiomas.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '32.5'; // versión visible de la app (única fuente)
+const APP_VERSION = '32.6'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -4495,7 +4495,7 @@ function render() {
   // Legalizaciones apagadas: quien llegue a esas vistas (un enlace viejo) vuelve a su sitio.
   if (!LEGALIZACIONES && ['legalizaciones', 'legalizacion'].includes(V.view)) V.view = esPresupuestos() ? 'agenda' : 'ajustes';
   // Ramón entra directo a sus visitas: ninguna pantalla de fichar, obras ni partes.
-  if (V.user && esPresupuestos() && !VISITA_VISTAS.includes(V.view) && !(!esColaborador() && ['legalizaciones', 'legalizacion', 'obras', 'obra', 'alta', 'costesPersonal', 'precios', 'facturas', 'planificacion'].includes(V.view))) {
+  if (V.user && esPresupuestos() && !VISITA_VISTAS.includes(V.view) && !(!esColaborador() && ['legalizaciones', 'legalizacion', 'obras', 'obra', 'alta', 'costesPersonal', 'precios', 'facturas', 'informes', 'planificacion'].includes(V.view))) {
     V.view = 'agenda';
     if (!V.agenda.cargado) A.cargarAgenda();
   }
@@ -4526,6 +4526,7 @@ function render() {
   else if (v === 'costesPersonal' && veCostes()) html = vCostesPersonal();
   else if (v === 'precios' && puedePrecios()) html = vPrecios();
   else if (v === 'facturas' && puedeFacturar()) html = vFacturas();
+  else if (v === 'informes' && puedeFacturar()) html = vInformes();
   else if (v === 'fasesPlantillas' && esAdmin()) html = vFasesPlantillas();
   else if (v === 'planificacion' && planifica()) html = vPlanificacion();
   else if (v === 'legalizacion' && verLegalizaciones()) html = vLegalizacion();
@@ -4545,6 +4546,7 @@ function render() {
   else if (v === 'citaNueva' && puedeCitar()) html = vCitaNueva();
   else if (v === 'citaVer' && verAgenda()) html = vCitaVer();
   if (V.user && ['hoy', 'obras', 'obra', 'partes', 'horas', 'imputar', 'empleados', 'ajustes', 'presupuestos', 'presupuestoVer', 'visitas', 'visita', 'agenda', 'clientes', 'clienteVer', 'revisarImp', 'errores', 'legalizaciones', 'legalizacion', 'costesPersonal', 'precios', 'facturas', 'planificacion', 'fasesPlantillas'].includes(v)) html += nav(v);
+  else if (V.user && v === 'informes') html += nav('facturas');
   if (!navigator.onLine && V.user) html = '<div class="offline">Sin conexión — todo se guarda en el móvil</div>' + html;
   // Red de seguridad: si un sheet revienta al pintarse (p. ej. depende de
   // datos que cambiaron justo antes, como el usuario tras salir), que se
@@ -9143,6 +9145,7 @@ function vFacturas() {
       <div class="h1">Facturas</div>
       <div class="row g8">
         <button class="pill" data-a="fac_sync" style="padding:8px 12px;background:var(--l1);color:var(--tinta)" ${F.sync && F.sync.busy ? 'disabled' : ''} title="Traer de Teamleader las facturas nuevas o cambiadas">${F.sync && F.sync.busy ? '…' : '↻'}</button>
+        <button class="pill" data-a="fac_inf" style="padding:8px 12px;background:var(--l1);color:var(--tinta)" title="Lo facturado por meses y por años, con gráficas">Informes</button>
         <button class="pill" data-a="fac_gestoria" style="padding:8px 12px;background:var(--l1);color:var(--tinta)" title="Listado en Excel y los PDF de un mes o un trimestre, para la gestoría">Gestoría</button>
         <button class="pill" data-a="fac_nueva" style="background:#76923c;color:#fff">+ Factura</button>
       </div>
@@ -9158,7 +9161,182 @@ async function facCargarLista() {
   F.cargando = true;
   try { F.lista = await visitasDB.listarFacturas(); F.error = null; } catch (e) { F.error = msgError(e); }
   F.cargando = false;
-  if (V.view === 'facturas') render();
+  if (V.view === 'facturas' || V.view === 'informes') render();
+}
+
+/* ---------- Informes: lo facturado por meses (V32.6, 17-11-2026) ----------
+ * Enzo: «en Teamleader tengo una sección de informes donde se pueden ver las
+ * gráficas y tablas de los ingresos por meses». Sale del espejo de facturas
+ * (tabla facturas), sin pedir nada más a Teamleader.
+ * Qué cuenta: las facturas emitidas (un borrador no), por su fecha de factura;
+ * los abonos restan. Es lo FACTURADO, no lo cobrado: lo que falta por cobrar
+ * va aparte. Por defecto sin IVA.
+ * ------------------------------------------------------------------------- */
+const INF_MESES = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+const INF_MESES_LARGO = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+// Año elegido y año anterior: pareja comprobada para daltonismo sobre blanco.
+const INF_COLOR = { este: '#206028', antes: '#4f7fc4' };
+function infEstado() { if (!V.inf) V.inf = { anio: null, entidad: '', medida: 'base', mes: null }; return V.inf; }
+const infEntidadDe = (f) => f.entidad_tl_id || f.entidad || '';
+/** Las que cuentan: con fecha y emitidas; de una empresa o de todas. */
+function infFilas(lista, entidad) {
+  return (lista || []).filter((f) => f.fecha && f.estado !== 'borrador' && (!entidad || infEntidadDe(f) === entidad));
+}
+/** Lo que suma una fila en la medida pedida (base, iva o total): el abono resta. */
+function infValor(f, medida) {
+  const v = Number(f[medida || 'base']) || 0;
+  return f.tipo === 'abono' ? -Math.abs(v) : v;
+}
+/** Los doce meses de un año. `hasta` (AAAA-MM-DD) corta el año para comparar el mismo tramo. */
+function infPorMes(filas, anio, medida, hasta) {
+  const m = INF_MESES.map(() => ({ valor: 0, facturas: 0, abonos: 0 }));
+  filas.forEach((f) => {
+    const fe = String(f.fecha);
+    if (fe.slice(0, 4) !== String(anio) || (hasta && fe.slice(0, 10) > hasta)) return;
+    const x = m[Number(fe.slice(5, 7)) - 1]; if (!x) return;
+    if (f.tipo === 'abono') x.abonos++; else x.facturas++;
+    x.valor = fac2(x.valor + infValor(f, medida));
+  });
+  return m;
+}
+const infSuma = (meses) => fac2(meses.reduce((t, x) => t + x.valor, 0));
+const infAnios = (filas) => [...new Set(filas.map((f) => Number(String(f.fecha).slice(0, 4))))].filter(Boolean).sort((a, b) => b - a);
+/** Diferencia en tanto por ciento, o null si no hay con qué comparar. */
+const infDif = (a, b) => (b ? Math.round(((a - b) / Math.abs(b)) * 1000) / 10 : null);
+const infDifTxt = (d) => (d == null ? '—' : (d > 0 ? '+' : '') + String(d).replace('.', ',') + ' %');
+/** Importe corto para ejes y rótulos: 77.391 €, 1,51 M €. */
+const eur0 = (n) => Math.round(Number(n) || 0).toLocaleString('es-ES') + ' €';
+const infCorto = (n) => { const a = Math.abs(n); return a >= 1e6 ? (n / 1e6).toLocaleString('es-ES', { maximumFractionDigits: 2 }) + ' M' : a >= 10000 ? (n / 1000).toLocaleString('es-ES', { maximumFractionDigits: 1 }) + ' k' : Math.round(n).toLocaleString('es-ES'); };
+/** Tope del eje: cuatro saltos iguales de un paso redondo, los justos para cubrir el máximo. */
+function infTope(max) {
+  if (!(max > 0)) return 1000;
+  const crudo = max / 4, p = Math.pow(10, Math.floor(Math.log10(crudo)));
+  const paso = [1, 1.5, 2, 2.5, 3, 4, 5, 7.5, 10].map((k) => k * p).find((t) => t >= crudo - 1e-9) || 10 * p;
+  return paso * 4;
+}
+/** Todo lo que pinta la pantalla, calculado de una vez (y lo que comprueban las pruebas). */
+function infDatos(lista, anio, entidad, medida, hoy) {
+  const filas = infFilas(lista, entidad);
+  const anios = infAnios(filas);
+  const hoyISO_ = hoy || hoyISO();
+  const A = anio && anios.includes(Number(anio)) ? Number(anio) : (anios[0] || Number(hoyISO_.slice(0, 4)));
+  const enCurso = String(A) === hoyISO_.slice(0, 4);
+  const este = infPorMes(filas, A, medida), antes = infPorMes(filas, A - 1, medida);
+  // Para comparar un año en curso, del anterior solo cuenta hasta el mismo día.
+  const antesTramo = enCurso ? infPorMes(filas, A - 1, medida, (A - 1) + hoyISO_.slice(4)) : antes;
+  const total = infSuma(este), totalAntes = infSuma(antes), totalAntesTramo = infSuma(antesTramo);
+  const mesesContados = enCurso ? Number(hoyISO_.slice(5, 7)) : 12;
+  let mejor = -1; este.forEach((x, i) => { if (x.valor > 0 && (mejor < 0 || x.valor > este[mejor].valor)) mejor = i; });
+  // Por cobrar: facturas emitidas sin pagar, de cualquier año. Siempre con IVA: es lo que se cobra.
+  const sinCobrar = filas.filter((f) => f.tipo === 'factura' && !(f.estado === 'pagada' || f.pagada));
+  const pend = (f) => (f.pendiente != null ? Number(f.pendiente) : Number(f.total)) || 0;
+  const porCobrar = fac2(sinCobrar.reduce((t, f) => t + pend(f), 0));
+  const vencidas = sinCobrar.filter((f) => f.vence && f.vence < hoyISO_);
+  // Los clientes del año, de más a menos.
+  const cli = {};
+  filas.forEach((f) => { if (String(f.fecha).slice(0, 4) !== String(A)) return; const k = f.cliente_nombre || 'Sin nombre'; cli[k] = fac2((cli[k] || 0) + infValor(f, medida)); });
+  const clientes = Object.keys(cli).map((k) => ({ nombre: k, valor: cli[k] })).filter((x) => x.valor > 0).sort((a, b) => b.valor - a.valor);
+  const porAnio = anios.slice().sort((a, b) => a - b).map((y) => ({ anio: y, valor: infSuma(infPorMes(filas, y, medida)) }));
+  return { anio: A, anios, enCurso, este, antes, total, totalAntes, totalAntesTramo, dif: infDif(total, totalAntesTramo), mesesContados,
+    media: fac2(total / (mesesContados || 1)), mejor, porCobrar, nSinCobrar: sinCobrar.length,
+    vencido: fac2(vencidas.reduce((t, f) => t + pend(f), 0)), nVencidas: vencidas.length, clientes, porAnio,
+    nFacturas: este.reduce((t, x) => t + x.facturas, 0), nAbonos: este.reduce((t, x) => t + x.abonos, 0) };
+}
+/** Columnas agrupadas: el año elegido y el anterior, mes a mes. Se toca un mes para leerlo. */
+function infGraficaHTML(D, mesSel) {
+  // En el móvil, un lienzo más pequeño: así la letra del eje no encoge con la gráfica.
+  const movil = (typeof innerWidth === 'number' ? innerWidth : 400) < 640;
+  const W = movil ? 380 : 720, H = movil ? 250 : 300, izq = movil ? 40 : 50, der = movil ? 2 : 8, arr = 12, aba = 28, letra = movil ? 11 : 12;
+  const ancho = W - izq - der, alto = H - arr - aba, paso = ancho / 12;
+  const tope = infTope(Math.max(1, ...D.este.map((x) => x.valor), ...D.antes.map((x) => x.valor)));
+  const y = (v) => arr + alto - (Math.max(0, v) / tope) * alto;
+  const bw = movil ? 9 : 14, hueco = 2;
+  // Columna con la punta redondeada y la base recta.
+  const col = (x, v, color) => { const h = arr + alto - y(v); if (h < 0.5) return ''; const r = Math.min(4, h, bw / 2); const yy = y(v);
+    return `<path d="M${x},${arr + alto}V${yy + r}Q${x},${yy} ${x + r},${yy}H${x + bw - r}Q${x + bw},${yy} ${x + bw},${yy + r}V${arr + alto}Z" fill="${color}"/>`; };
+  const marcas = [0, 0.25, 0.5, 0.75, 1].map((k) => k * tope);
+  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Facturado por meses en ${D.anio}, comparado con ${D.anio - 1}" style="display:block;width:100%;height:auto;font-family:var(--mono)">
+    ${marcas.map((v) => `<line x1="${izq}" x2="${W - der}" y1="${y(v)}" y2="${y(v)}" stroke="rgba(20,23,15,.08)" stroke-width="1"/><text x="${izq - 7}" y="${y(v) + 4}" text-anchor="end" font-size="${letra}" fill="rgba(20,23,15,.5)">${infCorto(v)}</text>`).join('')}
+    ${D.este.map((x, i) => { const cx = izq + paso * i + paso / 2; const sel = mesSel === i;
+      return `<g data-a="fac_infMes" data-m="${i}" style="cursor:pointer"><title>${INF_MESES_LARGO[i]} · ${D.anio}: ${eur0(x.valor)} · ${D.anio - 1}: ${eur0(D.antes[i].valor)}</title>
+        <rect x="${izq + paso * i}" y="${arr}" width="${paso}" height="${alto + aba}" fill="${sel ? 'rgba(20,23,15,.05)' : 'transparent'}"/>
+        ${col(cx - bw - hueco / 2, D.antes[i].valor, INF_COLOR.antes)}${col(cx + hueco / 2, x.valor, INF_COLOR.este)}
+        <text x="${cx}" y="${H - 9}" text-anchor="middle" font-size="${letra}" font-weight="${sel ? 700 : 400}" fill="${sel ? '#14170f' : 'rgba(20,23,15,.56)'}">${INF_MESES[i]}</text></g>`; }).join('')}
+    <line x1="${izq}" x2="${W - der}" y1="${arr + alto}" y2="${arr + alto}" stroke="rgba(20,23,15,.3)" stroke-width="1"/>
+  </svg>`;
+}
+const infLeyenda = (D) => `<div class="row" style="gap:16px;flex-wrap:wrap"><span class="row g8" style="align-items:center"><i style="width:12px;height:12px;border-radius:3px;background:${INF_COLOR.este}"></i><span class="tiny" style="color:var(--tinta)">${D.anio}</span></span><span class="row g8" style="align-items:center"><i style="width:12px;height:12px;border-radius:3px;background:${INF_COLOR.antes}"></i><span class="tiny" style="color:var(--tinta)">${D.anio - 1}</span></span></div>`;
+/** Barras tumbadas con el importe en la punta (por años, por cliente). */
+function infBarrasHTML(filas, accion) {
+  const max = Math.max(1, ...filas.map((x) => x.valor));
+  return filas.map((x) => `<div ${accion ? `data-a="${accion}" data-y="${esc(String(x.clave))}" style="cursor:pointer;` : 'style="'}padding:7px 0">
+    <div class="row" style="justify-content:space-between;align-items:baseline;gap:10px"><span class="ell" style="font:${x.on ? 600 : 500} 13.5px/1.2 var(--sans);min-width:0">${esc(x.nombre)}</span><span class="num" style="font-size:14px;white-space:nowrap">${eur0(x.valor)}</span></div>
+    <div style="height:8px;margin-top:5px;border-radius:0 4px 4px 0;background:${INF_COLOR.este};opacity:${x.on === false ? 0.45 : 1};width:${Math.max(0.5, (Math.max(0, x.valor) / max) * 100).toFixed(1)}%"></div>
+  </div>`).join('');
+}
+function vInformes() {
+  const F = facEstadoBase(), I = infEstado();
+  const cab = (dentro) => `<div class="hdr">
+    <div class="volver" data-a="fac_abrir">‹ Facturas</div>
+    <div class="h1" style="margin-top:6px">Informes</div>
+    ${dentro}
+  </div>`;
+  if (!F.lista) return cab(`<div class="sub" style="margin-top:8px">${F.error ? 'No se pudieron leer las facturas: ' + esc(F.error) : 'Cargando las facturas…'}</div>`) + '<div class="scroll pad pb-nav"></div>';
+  // Las empresas que han facturado, la que más primero.
+  const emp = {}; (F.lista || []).forEach((f) => { const k = infEntidadDe(f); if (!k) return; (emp[k] = emp[k] || { k, nombre: f.entidad || k, n: 0 }).n++; });
+  const empresas = Object.values(emp).sort((a, b) => b.n - a.n);
+  if (I.entidad && !emp[I.entidad]) I.entidad = '';
+  const D = infDatos(F.lista, I.anio, I.entidad, I.medida);
+  I.anio = D.anio;
+  const conIva = I.medida === 'total';
+  const m = I.mes != null && D.este[I.mes] ? I.mes : null;
+  const corto = (t) => (String(t).length > 24 ? String(t).slice(0, 23) + '…' : String(t));
+  const tile = (rotulo, valor, pie, color) => `<div class="card" style="flex:1 1 150px;min-width:0;padding:13px 15px"><div class="lbl">${rotulo}</div><div class="num" style="font-size:24px;line-height:1.1;margin-top:7px;white-space:nowrap">${valor}</div><div class="tiny" style="margin-top:5px${color ? ';color:' + color : ''}">${pie}</div></div>`;
+  const hayAntes = D.anios.includes(D.anio - 1);
+  const lectura = m == null
+    ? `<span class="tiny">Toca un mes para ver sus números.</span>`
+    : `<span style="font:600 14px/1.3 var(--sans)">${INF_MESES_LARGO[m]}</span> <span class="tiny">· ${D.anio}: <b style="color:var(--tinta)">${eur(D.este[m].valor)}</b> (${D.este[m].facturas} ${D.este[m].facturas === 1 ? 'factura' : 'facturas'}${D.este[m].abonos ? ', ' + D.este[m].abonos + (D.este[m].abonos === 1 ? ' abono' : ' abonos') : ''}) · ${D.anio - 1}: <b style="color:var(--tinta)">${eur(D.antes[m].valor)}</b> · ${infDifTxt(infDif(D.este[m].valor, D.antes[m].valor))}</span>`;
+  let acum = 0, acumAntes = 0;
+  return cab(`<div class="sub" style="margin-top:8px">Lo facturado, por la fecha de la factura. Los abonos restan y los borradores no cuentan. No es lo cobrado: eso va en «Por cobrar».</div>
+    <div class="row g8" style="margin-top:10px;overflow-x:auto;padding-bottom:2px">${D.anios.map((y) => `<span class="chip${y === D.anio ? ' on' : ''}" data-a="fac_infAnio" data-y="${y}" style="flex:none">${y}</span>`).join('')}</div>
+    <div class="row g8" style="margin-top:8px;overflow-x:auto;padding-bottom:2px">
+      ${empresas.length > 1 ? `<span class="chip${!I.entidad ? ' on' : ''}" data-a="fac_infEntidad" data-k="" style="flex:none">Todas las empresas</span>${empresas.map((e) => `<span class="chip${I.entidad === e.k ? ' on' : ''}" data-a="fac_infEntidad" data-k="${esc(e.k)}" style="flex:none" title="${esc(e.nombre)}">${esc(corto(e.nombre))}</span>`).join('')}` : ''}
+      <span class="chip${!conIva ? ' on' : ''}" data-a="fac_infMedida" data-k="base" style="flex:none">Sin IVA</span><span class="chip${conIva ? ' on' : ''}" data-a="fac_infMedida" data-k="total" style="flex:none">Con IVA</span>
+    </div>`) + `
+  <div class="scroll pad sin-marca pb-nav"><div style="max-width:860px;margin:0 auto">
+    <div class="row" style="gap:10px;flex-wrap:wrap;align-items:stretch">
+      ${tile('Facturado en ' + D.anio, eur0(D.total), (conIva ? 'Con IVA' : 'Sin IVA') + ' · ' + D.nFacturas + (D.nFacturas === 1 ? ' factura' : ' facturas') + (D.nAbonos ? ' y ' + D.nAbonos + (D.nAbonos === 1 ? ' abono' : ' abonos') : ''))}
+      ${tile(D.enCurso ? 'Frente a ' + (D.anio - 1) + ', mismas fechas' : 'Frente a ' + (D.anio - 1), hayAntes ? infDifTxt(D.dif) : '—', hayAntes ? (D.enCurso ? 'A estas fechas llevaba ' : 'Fue ') + eur0(D.totalAntesTramo) : 'No hay facturas de ' + (D.anio - 1))}
+      ${tile('Media por mes', eur0(D.media), D.mejor >= 0 ? 'El mejor, ' + INF_MESES_LARGO[D.mejor].toLowerCase() + ': ' + eur0(D.este[D.mejor].valor) : 'Sin facturas este año')}
+      ${tile('Por cobrar ahora', eur0(D.porCobrar), D.nSinCobrar ? D.nSinCobrar + (D.nSinCobrar === 1 ? ' factura' : ' facturas') + ', con IVA' + (D.nVencidas ? ' · ' + eur0(D.vencido) + ' ya vencido' : '') : 'Todo cobrado', D.nVencidas ? '#b8372b' : '')}
+    </div>
+    <div class="card" style="margin-top:12px;padding:14px 12px 12px">
+      <div class="row" style="justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap;padding:0 4px 8px"><div class="lbl">Facturado por meses · ${conIva ? 'con IVA' : 'sin IVA'}</div>${infLeyenda(D)}</div>
+      ${infGraficaHTML(D, m)}
+      <div style="padding:8px 4px 0;min-height:36px">${lectura}</div>
+    </div>
+    <div class="card" style="margin-top:12px;padding:6px 0 4px;overflow-x:auto">
+      <table style="width:100%;border-collapse:collapse;font:400 13px/1.2 var(--sans)">
+        <thead><tr style="text-align:right;color:var(--t2)"><th style="text-align:left;padding:9px 6px 9px 15px;font:500 11px var(--mono);text-transform:uppercase">Mes</th><th style="padding:9px 6px;font:500 11px var(--mono)">${D.anio}</th><th style="padding:9px 6px;font:500 11px var(--mono)">${D.anio - 1}</th><th style="padding:9px 6px;font:500 11px var(--mono)">DIF.</th><th style="padding:9px 15px 9px 6px;font:500 11px var(--mono)">ACUM. ${D.anio}</th></tr></thead>
+        <tbody>${D.este.map((x, i) => { acum = fac2(acum + x.valor); acumAntes = fac2(acumAntes + D.antes[i].valor);
+          const futuro = D.enCurso && i + 1 > D.mesesContados;
+          return `<tr data-a="fac_infMes" data-m="${i}" style="text-align:right;border-top:1px solid var(--l1);cursor:pointer;${m === i ? 'background:rgba(20,23,15,.04);' : ''}${futuro && !x.valor ? 'color:var(--t3);' : ''}"><td style="text-align:left;padding:9px 6px 9px 15px;font-weight:500">${INF_MESES_LARGO[i]}</td><td class="num" style="padding:9px 6px;white-space:nowrap">${futuro && !x.valor ? '—' : eur0(x.valor)}</td><td class="num" style="padding:9px 6px;white-space:nowrap;color:var(--t2)">${eur0(D.antes[i].valor)}</td><td style="padding:9px 6px;white-space:nowrap;color:var(--t2)">${futuro && !x.valor ? '—' : infDifTxt(infDif(x.valor, D.antes[i].valor))}</td><td class="num" style="padding:9px 15px 9px 6px;white-space:nowrap">${futuro && !x.valor ? '—' : eur0(acum)}</td></tr>`; }).join('')}
+          <tr style="text-align:right;border-top:2px solid var(--l2);font-weight:600"><td style="text-align:left;padding:10px 6px 10px 15px">Total</td><td class="num" style="padding:10px 6px;white-space:nowrap">${eur0(D.total)}</td><td class="num" style="padding:10px 6px;white-space:nowrap;color:var(--t2)">${eur0(D.totalAntes)}</td><td style="padding:10px 6px;white-space:nowrap;color:var(--t2)">${D.enCurso ? '' : infDifTxt(infDif(D.total, D.totalAntes))}</td><td class="num" style="padding:10px 15px 10px 6px;white-space:nowrap">${eur0(D.total)}</td></tr>
+        </tbody>
+      </table>
+      ${D.enCurso && hayAntes ? `<div class="tiny" style="padding:8px 15px 6px">El año no ha terminado: la columna de ${D.anio - 1} es el año entero. La comparación justa, a las mismas fechas, es la de arriba (${infDifTxt(D.dif)}).</div>` : ''}
+    </div>
+    <div class="row" style="gap:12px;flex-wrap:wrap;margin-top:12px;align-items:flex-start">
+      <div class="card" style="flex:1 1 300px;min-width:0;padding:13px 15px">
+        <div class="lbl" style="margin-bottom:4px">Por años · ${conIva ? 'con IVA' : 'sin IVA'}</div>
+        ${infBarrasHTML(D.porAnio.map((x) => ({ clave: x.anio, nombre: String(x.anio) + (String(x.anio) === hoyISO().slice(0, 4) ? ' (en curso)' : ''), valor: x.valor, on: x.anio === D.anio })), 'fac_infAnio')}
+      </div>
+      <div class="card" style="flex:1 1 300px;min-width:0;padding:13px 15px">
+        <div class="lbl" style="margin-bottom:4px">A quién se facturó más en ${D.anio}</div>
+        ${D.clientes.length ? infBarrasHTML(D.clientes.slice(0, 8).map((x) => ({ nombre: x.nombre, valor: x.valor }))) + (D.clientes.length > 8 ? `<div class="tiny" style="margin-top:6px">Y ${D.clientes.length - 8} clientes más, que suman ${eur0(D.clientes.slice(8).reduce((t, x) => t + x.valor, 0))}.</div>` : '') : '<div class="sub" style="margin-top:6px">Sin facturas este año.</div>'}
+      </div>
+    </div>
+  </div></div>`;
 }
 /** Lo ya facturado de un presupuesto: facturas con número menos sus abonos (sin IVA). */
 function facFacturado(facturas) {
@@ -9553,6 +9731,11 @@ A.fac = async (a, d) => {
   const F = facEstadoBase();
   if (a === 'fac_abrir') { V.view = 'facturas'; render(); return facCargarLista(); }
   if (a === 'fac_filtro') { F.filtro = d.k; render(); return; }
+  if (a === 'fac_inf') { V.view = 'informes'; scrollMemo.informes = 0; render(); if (!F.lista && !F.cargando) return facCargarLista(); return; }
+  if (a === 'fac_infAnio') { const I = infEstado(); I.anio = Number(d.y); I.mes = null; return render(); }
+  if (a === 'fac_infEntidad') { const I = infEstado(); I.entidad = d.k || ''; I.mes = null; return render(); }
+  if (a === 'fac_infMedida') { infEstado().medida = d.k === 'total' ? 'total' : 'base'; return render(); }
+  if (a === 'fac_infMes') { const I = infEstado(); const i = Number(d.m); I.mes = I.mes === i ? null : i; return render(); }
   if (a === 'fac_sync') {
     if (F.sync && F.sync.busy) return;
     F.sync = { busy: true, txt: 'Trayendo de Teamleader…' }; render();
