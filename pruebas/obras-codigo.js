@@ -45,3 +45,33 @@ var sin = cabeceraObraHTML({ numero: null, categorias: [], nombre: 'Selva', clie
 comprueba('sin número: el nombre hace de título', sin.indexOf('Selva') !== -1 && sin.indexOf('OB-') === -1);
 
 resultado();
+
+// La lista de obras: al terminarse, la obra sale de «En curso» (Enzo,
+// 17-11-2026). Terminada es finalizada (sola, al 100 %) o cerrada (a mano).
+igual('finalizada es terminada', obraTerminada({ estado: 'finalizada' }), true);
+igual('cerrada es terminada', obraTerminada({ estado: 'cerrada' }), true);
+igual('en curso no', obraTerminada({ estado: 'en_curso' }), false);
+igual('planificada no', obraTerminada({ estado: 'planificada' }), false);
+var obrasAntes = S.obras, tabAntes = V.obrasTab, buscarAntes = V.obrasBuscar;
+S.obras = [
+  { id: 'a', numero: 1, titulo: 'Uno', cliente: 'Ana', estado: 'en_curso', categorias: [] },
+  { id: 'b', numero: 2, titulo: 'Dos', cliente: 'Berta', estado: 'planificada', categorias: [] },
+  { id: 'c', numero: 3, titulo: 'Tres', cliente: 'Carla', estado: 'finalizada', categorias: [] },
+  { id: 'd', numero: 4, titulo: 'Cuatro', cliente: 'Dora', estado: 'cerrada', categorias: [] },
+];
+V.obrasBuscar = '';
+V.obrasTab = 'curso';
+var enCursoHTML = obrasListaHTML();
+comprueba('en curso: la que está en curso y la planificada', enCursoHTML.indexOf('OB-001') !== -1 && enCursoHTML.indexOf('OB-002') !== -1);
+comprueba('en curso: ni la finalizada ni la cerrada', enCursoHTML.indexOf('OB-003') === -1 && enCursoHTML.indexOf('OB-004') === -1);
+V.obrasTab = 'terminadas';
+var termHTML = obrasListaHTML();
+comprueba('terminadas: la finalizada y la cerrada', termHTML.indexOf('OB-003') !== -1 && termHTML.indexOf('OB-004') !== -1);
+comprueba('terminadas: ninguna de las abiertas', termHTML.indexOf('OB-001') === -1 && termHTML.indexOf('OB-002') === -1);
+var cab = vObras();
+comprueba('las pestañas cuentan dos y dos', cab.indexOf('En curso · 2') !== -1 && cab.indexOf('Terminadas · 2') !== -1);
+V.obrasTab = 'curso'; V.obrasBuscar = 'Carla';
+comprueba('buscar una terminada desde «En curso» manda a su pestaña', obrasListaHTML().indexOf('Mira en «Terminadas»') !== -1);
+V.obrasTab = 'terminadas'; V.obrasBuscar = 'Ana';
+comprueba('y al revés', obrasListaHTML().indexOf('Mira en «En curso»') !== -1);
+S.obras = obrasAntes; V.obrasTab = tabAntes; V.obrasBuscar = buscarAntes;

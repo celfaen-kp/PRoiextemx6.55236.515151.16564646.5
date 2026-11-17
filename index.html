@@ -512,7 +512,7 @@ import * as idiomas from './presu-idiomas.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '32.3'; // versión visible de la app (única fuente)
+const APP_VERSION = '32.4'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -883,6 +883,12 @@ const catObraNombre = (k, o) => (k === 'OT' && o && o.categoriaOtra ? o.categori
 const estadoObraDeDB = (v) => (v in OBRA_ESTADOS ? v : v === 'Cerrada' ? 'cerrada' : 'en_curso');
 const estadoObraTxt = (o) => OBRA_ESTADOS[o.estado] || 'En curso';
 const obraCerrada = (o) => o.estado === 'cerrada';
+// Terminada: finalizada (todo al 100 %, se pone sola) o cerrada (a mano). En la
+// lista de obras las dos salen de «En curso» (Enzo, 17-11-2026: «siguen estando
+// todas, las en curso junto a las cerradas… debería al terminarse despejarse»).
+// Para elegir obra en un parte o planificar, la finalizada sigue disponible:
+// ahí solo se esconde la cerrada.
+const obraTerminada = (o) => o.estado === 'finalizada' || o.estado === 'cerrada';
 // OB-007, OB-137, OB-1000. Igual que codigo_obra() en la base. Vacío si la obra
 // aún no tiene número (etapa58 sin ejecutar).
 const codigoObra = (o) => (o && o.numero != null ? 'OB-' + String(o.numero).padStart(3, '0') : '');
@@ -4813,11 +4819,11 @@ function vHoyAdmin(u) {
 
 /* --- obras --- */
 function vObras() {
-  // Todo el equipo ve todas las obras, por orden alfabético. Dos pestañas:
-  // las que están en marcha y las cerradas, para que estas no estorben.
-  const cerradas = V.obrasTab === 'cerradas';
-  const todas = [...S.obras].sort(porTitulo);
-  const enCurso = todas.filter((o) => !obraCerrada(o)), cerr = todas.filter(obraCerrada);
+  // Todo el equipo ve todas las obras. Dos pestañas: las que están en marcha
+  // (planificadas y en curso) y las terminadas (finalizadas y cerradas), para
+  // que estas no estorben.
+  const cerradas = V.obrasTab === 'terminadas';
+  const enCurso = S.obras.filter((o) => !obraTerminada(o)), cerr = S.obras.filter(obraTerminada);
   return `<div class="hdr">
     ${marcaSysefen(false)}
     <div class="row" style="justify-content:space-between">
@@ -4827,7 +4833,7 @@ function vObras() {
     <input class="inp" id="obras-buscar" data-f="obrasBuscar" value="${esc(V.obrasBuscar || '')}" placeholder="Número (137), cliente, obra o dirección" autocomplete="off" style="margin-top:14px">
     <div class="wrap" style="margin-top:12px">
       <span class="chip ${!cerradas ? 'on' : ''}" data-a="obrasTab" data-t="curso" style="cursor:pointer">En curso · ${enCurso.length}</span>
-      <span class="chip ${cerradas ? 'on' : ''}" data-a="obrasTab" data-t="cerradas" style="cursor:pointer">Cerradas${cerr.length ? ' · ' + cerr.length : ''}</span>
+      <span class="chip ${cerradas ? 'on' : ''}" data-a="obrasTab" data-t="terminadas" style="cursor:pointer">Terminadas${cerr.length ? ' · ' + cerr.length : ''}</span>
       <span class="grow"></span>
       ${planifica() ? '<span class="chip" data-a="abrirPlanificacion" style="cursor:pointer;background:var(--verde);color:#fff;border-color:var(--verde)">Planificar semana</span>' : ''}
       <span class="chip" data-a="obrasOrden" style="cursor:pointer">${V.obrasOrden === 'cliente' ? 'A-Z cliente' : 'Más nuevas'} ⇅</span>
@@ -4863,17 +4869,17 @@ function cabeceraObraHTML(o) {
 // La lista de obras de la pestaña elegida, filtrada por lo que se ha escrito.
 // Va aparte para repintar solo esto al teclear, sin perder el foco de la caja.
 function obrasListaHTML() {
-  const cerradas = V.obrasTab === 'cerradas';
+  const cerradas = V.obrasTab === 'terminadas';
   const q = String(V.obrasBuscar || '').trim().toLowerCase();
   const num = numeroBuscado(q);
   const casa = (o) => (num != null ? o.numero === num : true) && (num != null || !q || [o.titulo, o.cliente, o.dir, o.poblacion, codigoObra(o)].some((v) => String(v || '').toLowerCase().includes(q)));
   // Por número, la más nueva arriba; o por cliente si se ha pedido (A-Z).
   const orden = V.obrasOrden === 'cliente' ? porCliente : porNumeroDesc;
-  let lista = [...S.obras].sort(orden).filter((o) => obraCerrada(o) === cerradas);
+  let lista = [...S.obras].sort(orden).filter((o) => obraTerminada(o) === cerradas);
   if (q) lista = lista.filter(casa);
-  if (!lista.length && q) return `<div class="card"><div class="sub">Ninguna obra ${cerradas ? 'cerrada' : 'en curso'} con «${esc(q)}».${cerradas ? '' : (S.obras.some((o) => obraCerrada(o) && casa(o)) ? ' Mira en «Cerradas».' : '')}</div></div>`;
+  if (!lista.length && q) return `<div class="card"><div class="sub">Ninguna obra ${cerradas ? 'terminada' : 'en curso'} con «${esc(q)}».${S.obras.some((o) => obraTerminada(o) !== cerradas && casa(o)) ? (cerradas ? ' Mira en «En curso».' : ' Mira en «Terminadas».') : ''}</div></div>`;
   return `
-    ${!lista.length && cerradas ? '<div class="card"><div class="h2">Ninguna obra cerrada</div><div class="sub" style="margin-top:6px">Cuando una obra se da por terminada, desde su ficha se marca como cerrada y pasa aquí.</div></div>' : ''}
+    ${!lista.length && cerradas ? '<div class="card"><div class="h2">Ninguna obra terminada</div><div class="sub" style="margin-top:6px">Aquí pasan las obras al terminarse: solas, cuando todas sus fases llegan al 100 %, o al marcarlas como cerradas desde su ficha.</div></div>' : ''}
     ${lista.length ? lista.map((o) => `<div class="card" data-a="verObra" data-id="${o.id}" style="margin-bottom:11px;cursor:pointer">
       ${cabeceraObraHTML(o)}
       <div class="row" style="align-items:flex-end;gap:18px;margin-top:13px;padding-top:12px;border-top:1px solid var(--l1)">
