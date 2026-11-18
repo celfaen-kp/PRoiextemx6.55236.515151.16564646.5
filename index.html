@@ -562,7 +562,7 @@ import * as idiomas from './presu-idiomas.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '32.8'; // versión visible de la app (única fuente)
+const APP_VERSION = '32.9'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -12768,7 +12768,11 @@ Object.assign(V, {
 
 const AG_VISTAS = ['agenda', 'clientes', 'clienteNuevo', 'clienteVer', 'citaNueva', 'citaVer'];
 const AG_TIPOS = [['particular', 'Particular'], ['empresa', 'Empresa'], ['comunidad', 'Comunidad']];
-const AG_ORIGENES = [['recomendacion', 'Recomendación'], ['web', 'Web'], ['crm', 'Teamleader'], ['llamada', 'Llamada'], ['cliente_existente', 'Cliente de siempre'], ['constructora', 'Constructora'], ['vaillant', 'Vaillant']];
+const AG_ORIGENES = [['recomendacion', 'Recomendación'], ['web', 'Web'], ['crm', 'Teamleader'], ['llamada', 'Llamada'], ['cliente_existente', 'Cliente de siempre'], ['constructora', 'Constructora'], ['vaillant', 'Vaillant'], ['saunier', 'Saunier Duval'], ['meta', 'Meta']];
+// Cómo se llama el origen de un cliente. Los que meten los agentes por la función
+// crear-lead (sql/etapa114) llevan meta, vaillant o saunier; los del formulario, web.
+const origenNombre = (c) => (AG_ORIGENES.find((o) => o[0] === (c && c.origen)) || [null, (c && c.origen) || ''])[1];
+const origenEsWeb = (c) => !c || !c.origen || c.origen === 'web' || c.origen === 'crm';
 const AG_DURACIONES = [30, 45, 60, 90, 120];
 const AG_ESTADOS = { pendiente: 'Pendiente', visitada: 'Visitada', no_estaba: 'No estaba', anulada: 'Anulada' };
 const puedeCitar = () => esPresupuestos();
@@ -13120,7 +13124,7 @@ function tableroHTML() {
   return `<div class="tb-wrap"><div class="tb-cols">${cols.map((col) => `<div class="tb-col" data-col="${col.k}" style="--col:${col.color}">
     <div class="tb-cab"><span class="tb-tit">${esc(col.titulo)} <span class="tb-n">${col.clientes.length}</span></span><span class="row" style="gap:6px;align-items:baseline"><span class="tiny">${(() => { const t = col.clientes.reduce((s, x) => { const i = importeCliente(x.c); return s + (i ? i.total : 0); }, 0); return t ? eur(t) : ''; })()}</span><span class="tb-ord ${(ag.tbOrden || {})[col.k] ? 'on' : ''}" data-a="tbOrden" data-col="${col.k}" title="Ordenar la columna por fecha de ingreso (pulsa otra vez para invertir o volver al orden a mano)">${TB_ORDEN_TXT[(ag.tbOrden || {})[col.k]] || '⇅ Fecha'}</span></span></div>
     ${col.clientes.map(({ c, e }) => { const un = ultimaNota(c); const vencida = c.proxima_accion_at && c.proxima_accion_at < hoy; return `<div class="tb-card ${c.id === V.agenda.ultimoCliente ? 'ultimo' : ''}" data-a="ag_abrirCliente" data-id="${c.id}" ${c.id === V.agenda.ultimoCliente ? 'data-ultimo="1"' : ''} draggable="true" data-cli="${c.id}" style="border-left-color:${e.color}">
-      ${fechaIngreso(c) ? `<div class="ing" title="Fecha de ingreso${c.lead_at ? ' (formulario de la web)' : ' (alta en la app)'}">Ingreso ${esc(fechaCorta(fechaIngreso(c) + 'T12:00'))}</div>` : ''}
+      ${fechaIngreso(c) ? `<div class="ing" title="Fecha de ingreso${c.lead_at ? (origenEsWeb(c) ? ' (formulario de la web)' : ' (entró por ' + esc(origenNombre(c)) + ')') : ' (alta en la app)'}">Ingreso ${esc(fechaCorta(fechaIngreso(c) + 'T12:00'))}</div>` : ''}
       <div class="row" style="justify-content:space-between;align-items:baseline;gap:8px"><div class="n">${esc(c.nombre)}</div>${importe(c) ? `<span class="num" style="font-size:13px;white-space:nowrap">${importe(c)}</span>` : ''}<span class="tb-mas" data-a="tbMoverAbrir" data-id="${c.id}" title="Mover a otra fase">⋯</span></div>
       <div class="s">${esc([agTipoNombre(c), c.poblacion].filter(Boolean).join(' · '))}${c.contacto_estado ? ' · ' + esc(agContactadoTxt(c)) : ''}</div>
       <div style="margin-top:7px">${caminoHTML(c, false, true)}</div>
@@ -14404,16 +14408,16 @@ function webListaHTML() {
   const boton = `<button class="pill" data-a="leadsBuscar" style="padding:8px 14px;font-size:12px" ${V.leadsBusy ? 'disabled' : ''}>${V.leadsBusy ? 'Mirando…' : 'Mirar ahora'}</button>`;
   if (!web.length) {
     return `<div class="row" style="justify-content:space-between;align-items:center;margin-bottom:16px">
-      <span class="lbl">De la web · ninguno pendiente</span>${boton}</div>`;
+      <span class="lbl">Entradas nuevas · ninguna pendiente</span>${boton}</div>`;
   }
   const cuando = (iso) => {
     const dias = Math.floor((Date.now() - new Date(iso).getTime()) / 86400000);
     return dias <= 0 ? 'hoy' : dias === 1 ? 'ayer' : 'hace ' + dias + ' días';
   };
   return `<div class="row" style="justify-content:space-between;align-items:center;margin-bottom:10px">
-    <span class="lbl">De la web · ${web.length} sin cita</span>${boton}</div>
+    <span class="lbl">Entradas nuevas · ${web.length} sin cita</span>${boton}</div>
   ${web.sort((a, b) => String(b.lead_at).localeCompare(String(a.lead_at))).map((c) => `<div class="card" data-a="ag_abrirCliente" data-id="${c.id}" style="margin-bottom:11px;cursor:pointer;box-shadow:0 0 0 1.5px var(--ambar),var(--sh)">
-    <div class="row g8"><span class="badge" style="background:${c.origen === 'crm' ? 'rgba(var(--tinta-rgb),.1)' : 'var(--ambar)'};color:${c.origen === 'crm' ? 'var(--tinta)' : '#14170f'}">${c.origen === 'crm' ? 'Teamleader' : 'Web'}</span>
+    <div class="row g8"><span class="badge" style="background:${c.origen === 'crm' ? 'rgba(var(--tinta-rgb),.1)' : 'var(--ambar)'};color:${c.origen === 'crm' ? 'var(--tinta)' : '#14170f'}">${esc(origenNombre(c) || 'Web')}</span>
       <span class="tiny">Llegó ${cuando(c.lead_at)}</span></div>
     <div class="h2" style="margin-top:9px">${esc(c.nombre)}</div>
     <div class="sub" style="margin-top:4px">${esc([agTipoNombre(c), c.telefono, c.poblacion].filter(Boolean).join(' · ') || 'Sin más datos')}</div>
@@ -14843,7 +14847,7 @@ function vClienteVer() {
     ${puedeCitar() ? seguimientoClienteHTML(c) : ''}
     ${colaboradorAsignacionHTML(c)}
     ${c.motivo_web ? `<div class="card" style="padding:12px 15px;margin-bottom:18px;box-shadow:0 0 0 1.5px var(--ambar),var(--sh)">
-      <div class="lbl" style="color:var(--ambar-o)">Qué pidió por la web</div>
+      <div class="lbl" style="color:var(--ambar-o)">${origenEsWeb(c) ? 'Qué pidió por la web' : 'Qué pidió · ' + esc(origenNombre(c))}</div>
       <div style="font:500 14px/1.45 var(--sans);margin-top:6px;white-space:pre-wrap">${esc(c.motivo_web)}</div>
     </div>` : ''}
     ${docsClienteHTML(c)}

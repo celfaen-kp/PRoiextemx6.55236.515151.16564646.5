@@ -61,3 +61,12 @@ for f in ('cadena.js', 'formulas.js', 'motor.js', 'fv.js', 'hibrido.js', 'aero.j
         (FUERA / f).write_text(t)
 
 print('preparado en', FUERA)
+
+# La parte de `crear-lead` que revisa lo que mandan los agentes (JavaScript
+# plano entre dos marcas), para probarla sin Deno ni red.
+ruta = BASE / 'supabase' / 'functions' / 'crear-lead' / 'index.ts'
+if ruta.exists():
+    m = re.search(r"// --- PURO: inicio.*?\n(.*?)// --- PURO: fin", ruta.read_text(), re.S)
+    # Dentro de una función: sus nombres (esCorreo, texto…) no chocan con los de la app.
+    (FUERA / 'crear-lead.js').write_text('var LEAD = (function () {\n' + (m.group(1) if m else '')
+        + '\nreturn { FUENTES: FUENTES, preparar: preparar, motivoDe: motivoDe };\n})();\n')
