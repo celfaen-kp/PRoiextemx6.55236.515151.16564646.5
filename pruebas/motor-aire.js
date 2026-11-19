@@ -6,6 +6,7 @@
 load(RUTA_TMP + '/formulas.js');
 load(RUTA_TMP + '/motor.js');
 load(RUTA_TMP + '/cadena.js');
+load(RUTA_TMP + '/aire.js');
 
 var ai = JSON.parse(read(RUTA_TARIFAS + '/aire-reglas.json'));
 
@@ -23,7 +24,8 @@ var config = {
     { codigo: 'metros_cuadro', formula: 'max(0, distancia_cuadro_m) * unidades_exteriores', orden: 7 },
     // etapa 48: por cada estancia
     { codigo: 'marca_aire', formula: "si(marca_preferida = 'vaillant', 'vaillant', 'midea')", orden: 9 },
-    { codigo: 'kw_estancia', por_cada: 'estancias', formula: "redondea(m2 * lookup('w_m2', 'defecto') / 1000, 2)", orden: 10 },
+    // etapa 120: la potencia elegida a mano manda sobre los m²
+    { codigo: 'kw_estancia', por_cada: 'estancias', formula: "si(potencia_kw > 0, potencia_kw, redondea(m2 * lookup('w_m2', 'defecto') / 1000, 2))", orden: 10 },
     { codigo: 'tamano', por_cada: 'estancias', formula: 'si(kw_estancia <= 0, 0, si(kw_estancia <= 2.05, 7, si(kw_estancia <= 2.6, 9, si(kw_estancia <= 3.5, 12, si(kw_estancia <= 5.3, 18, si(kw_estancia <= 7.1, 24, 99))))))', orden: 11 },
     { codigo: 'kw_nominal', por_cada: 'estancias', formula: "lookup('kw_tamano', tamano)", orden: 12 },
     { codigo: 'kw_total', formula: "redondea(suma(estancias, 'kw_nominal'), 2)", orden: 13 },
@@ -178,5 +180,63 @@ igual('tamaño 0 en las dos', r.variables.tamano.join(','), '0,0');
 comprueba('sin interiores ni exterior', maquinas(r).length === 0);
 comprueba('y avisa de que faltan los m²', aviso(r, 'no tiene m²'));
 comprueba('pero el kit de instalación sí', !!linea(r, 'C104'));
+
+
+// ---------------------------------------------------------------------------
+// Etapa 120 (Enzo, 19-11-2026): la potencia a mano y varios sistemas juntos.
+var aire = function (d) { return calcularAire(d, config, calcular, resumenDe); };
+var total = function (r) { return cadenaPrecios(r.lineas, 0).total; };
+var cant = function (r, t) { var l = linea(r, t); return l ? l.cantidad : 0; };
+
+titulo('la potencia elegida a mano manda sobre los m²');
+r = aire({ tipo_sistema: 'split_1x1', estancias: [{ nombre: 'Salón', potencia: '35', metros: 4 }] });
+igual('un 35 es la máquina de 3,5 kW', r.variables.kw_estancia[0], 3.5);
+igual('tamaño 12', r.variables.tamano[0], 12);
+igual('su interior y su exterior', nombres(r).join(' | '), 'EZ-12RD6-I — Salón | EZ-12RD6-O — Salón');
+comprueba('sin avisos de máquina ni de que falten los m²', !r.incidencias.some(function (i) { return i.codigo === 'regla_aviso' || (i.codigo === 'campo_faltante' && /m2|potencia/.test(i.campo || i.mensaje)); }));
+igual('25 → tamaño 9, 50 → 18, 70 → 24', aire({ tipo_sistema: 'split_1x1', estancias: [{ potencia: '25' }, { potencia: '50' }, { potencia: '70' }] }).variables.tamano.join(','), '9,18,24');
+igual('con m² de más y potencia puesta, vale la potencia', aire({ tipo_sistema: 'split_1x1', estancias: [{ m2: 60, potencia: '25' }] }).variables.tamano[0], 9);
+igual('una potencia que no existe no cuenta: se va a los m²', aire({ tipo_sistema: 'split_1x1', estancias: [{ m2: 30, potencia: '40' }] }).variables.tamano[0], 12);
+igual('sin potencia, por m² como siempre', aire({ tipo_sistema: 'split_1x1', estancias: [{ nombre: 'Salón', m2: 30, metros: 4 }, { nombre: 'Dormitorio', m2: 12, metros: 6 }], distancia_cuadro_m: 8 }).lineas.length,
+  calcular('aire_acondicionado', { tipo_sistema: 'split_1x1', estancias: [{ nombre: 'Salón', m2: 30, metros: 4, potencia_kw: 0 }, { nombre: 'Dormitorio', m2: 12, metros: 6, potencia_kw: 0 }], distancia_cuadro_m: 8 }, config).lineas.length);
+comprueba('sin m² ni potencia sigue avisando', aviso(aire({ tipo_sistema: 'multisplit', estancias: [{ nombre: 'Salón' }] }), 'no tiene m²'));
+
+titulo('un 2x1 con dos de 25 y un 1x1 de 35, en el mismo presupuesto');
+var mixto = { tipo_sistema: 'multisplit', distancia_cuadro_m: 8, equipos_a_retirar_n: 2,
+  estancias: [{ nombre: 'Dormitorio 1', potencia: '25', metros: 6, exterior: 1 }, { nombre: 'Dormitorio 2', potencia: '25', metros: 9, exterior: 1 },
+              { nombre: 'Salón', potencia: '35', metros: 4, exterior: 2 }] };
+r = aire(mixto);
+igual('dos sistemas: un multi de dos y un 1x1', r.variables.sistemas.map(function (s) { return s.exterior + ':' + s.tipo_sistema + ':' + s.interiores; }).join(' '), '1:multisplit:2 2:split_1x1:1');
+igual('tres interiores', maquinas(r).filter(function (l) { return /RD6-I/.test(l.descripcion); }).length, 3);
+comprueba('la exterior del 2x1 (9+9 → M2O-14N8)', !!linea(r, 'M2O-14N8'));
+comprueba('y la exterior pareja del 1x1 de 35', !!linea(r, 'EZ-12RD6-O'));
+igual('dos exteriores en total', maquinas(r).filter(function (l) { return /^M\dO|RD6-O/.test(l.descripcion); }).length, 2);
+igual('mano de obra de las tres', cant(r, 'C104'), 3);
+igual('dos soportes de exterior', cant(r, 'C102'), 2);
+igual('tubería: 6 + 9 + 4 = 19 m', cant(r, 'C103'), 19);
+igual('cable de interior a exterior: 19 m', cant(r, 'E101'), 19);
+igual('cable al cuadro: 8 m por cada exterior = 16 m', cant(r, 'E102'), 16);
+igual('una sola línea por partida, no una por sistema', r.lineas.filter(function (l) { return l.descripcion.indexOf('C104') > -1; }).length, 1);
+igual('el gas de cada sistema con su carga de fábrica: multi 1,5 m × 12 g; el 1x1 no pasa de 5 m', r.variables.kg_gas_extra, 0.018);
+igual('las variables suman los tres equipos', r.variables.unidades_interiores + '/' + r.variables.unidades_exteriores + '/' + r.variables.metros_totales, '3/2/19');
+// Lo mismo que hacer los dos presupuestos por separado y sumarlos.
+var solo2x1 = aire({ tipo_sistema: 'multisplit', distancia_cuadro_m: 8, equipos_a_retirar_n: 2, estancias: mixto.estancias.slice(0, 2).map(function (e) { return Object.assign({}, e, { exterior: 0 }); }) });
+var solo1x1 = aire({ tipo_sistema: 'split_1x1', distancia_cuadro_m: 8, estancias: [Object.assign({}, mixto.estancias[2], { exterior: 0 })] });
+igual('cuesta lo mismo que los dos presupuestos por separado', total(r).toFixed(2), (total(solo2x1) + total(solo1x1)).toFixed(2));
+igual('y el coste también', r.resumen.coste.toFixed(2), (solo2x1.resumen.coste + solo1x1.resumen.coste).toFixed(2));
+igual('las líneas van numeradas seguidas', r.lineas.map(function (l) { return l.orden; }).join(','), r.lineas.map(function (_, i) { return i + 1; }).join(','));
+igual('cada sección va seguida, sin trocearse por sistema', r.lineas.map(function (l) { return l.seccion; }).filter(function (s, i, a) { return i === 0 || a[i - 1] !== s; }).length, r.lineas.map(function (l) { return l.seccion; }).filter(function (s, i, a) { return a.indexOf(s) === i; }).length);
+
+titulo('los grupos deciden el tipo, no el botón de arriba');
+r = aire({ tipo_sistema: 'split_1x1', estancias: [{ potencia: '25', exterior: 1 }, { potencia: '25', exterior: 1 }] });
+comprueba('dos en la misma exterior son un multi aunque arriba ponga 1x1', !!linea(r, 'M2O-14N8') && !linea(r, 'RD6-O'));
+r = aire({ tipo_sistema: 'multisplit', estancias: [{ potencia: '35', exterior: 1 }, { potencia: '35', exterior: 2 }] });
+igual('una en cada exterior son dos 1x1 aunque arriba ponga multi', maquinas(r).filter(function (l) { return /RD6-O/.test(l.descripcion); }).reduce(function (s, l) { return s + l.cantidad; }, 0), 2);
+r = aire({ tipo_sistema: 'conductos', estancias: [{ potencia: '50', exterior: 1 }, { potencia: '25', exterior: 2 }] });
+comprueba('conductos: cada grupo con su exterior multi', !!linea(r, 'M2O-18N8') && !!linea(r, 'M2O-14N8'));
+igual('sin número en ninguna, un solo sistema como siempre', sistemasDeAire({ tipo_sistema: 'multisplit', estancias: [{ m2: 20 }, { m2: 12 }] }), null);
+igual('las que no dicen exterior van juntas al final, con el tipo de la ficha', sistemasDeAire({ tipo_sistema: 'multisplit', estancias: [{ m2: 20 }, { m2: 12, exterior: 3 }, { m2: 15 }] }).map(function (s) { return s.exterior + ':' + s.tipo_sistema + ':' + s.estancias.length; }).join(' '), '3:split_1x1:1 0:multisplit:2');
+r = aire({ tipo_sistema: 'multisplit', equipos_a_retirar_n: 2, exteriores_a_retirar_n: 1, estancias: [{ potencia: '25', exterior: 1 }, { potencia: '35', exterior: 2 }] });
+igual('lo de retirar solo cuenta una vez', r.variables.n_retirar === undefined ? 'sin variable' : r.variables.n_retirar, config.variables.some(function (v) { return v.codigo === 'n_retirar'; }) ? 2 : 'sin variable');
 
 resultado();

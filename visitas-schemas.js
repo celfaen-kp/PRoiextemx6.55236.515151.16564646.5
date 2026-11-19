@@ -507,6 +507,9 @@ const AIRE = {
           subcampos: [
             { key: 'nombre', etiqueta: 'Estancia', tipo: 'texto' },
             { key: 'm2', etiqueta: 'm²', tipo: 'numero' },
+            // sql/etapa120: si ya se sabe qué máquina lleva, se elige y manda sobre los m².
+            { key: 'potencia', etiqueta: 'Potencia, si ya se sabe (si no, la elige el motor por los m²)', tipo: 'opcion',
+              opciones: ['25', '35', '50', '70'] },
             { key: 'altura_m', etiqueta: 'Altura', tipo: 'numero' },
             { key: 'orientacion', etiqueta: 'Orientación', tipo: 'opcion',
               opciones: ['norte', 'sur', 'este', 'oeste'] },
@@ -514,6 +517,9 @@ const AIRE = {
             // sql/etapa48: con los m² el motor elige la máquina de cada
             // estancia, y con los metros hasta la exterior saca tubo y gas.
             { key: 'metros', etiqueta: 'Metros de línea hasta la exterior', tipo: 'numero' },
+            // sql/etapa120: las que llevan el mismo número comparten exterior (un 2x1, un 3x1);
+            // una sola en la suya es un 1x1. Sin número en ninguna, vale el «Tipo» de arriba.
+            { key: 'exterior', etiqueta: 'Exterior nº (mismo número = misma exterior; vacío = según el tipo)', tipo: 'entero' },
           ] },
         { key: 'preinstalacion_existente', etiqueta: 'Preinstalación', tipo: 'opcion', motor: true,
           opciones: ['no', 'si_aprovechable', 'si_a_sustituir'] },

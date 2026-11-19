@@ -131,7 +131,7 @@ for sistemas, tramos, nombre in [(['multisplit'], tramos_mural, 'murales'), (['c
 regla(None, {}, tipo='aviso', por_cada='estancias', var='tamano', mn=99, prio=90,
       notas='Una estancia pide más de 7 kW: no hay máquina doméstica para ella, va a mano.')
 regla(None, {'tipo_sistema': MURAL + ['conductos', 'cassette']}, tipo='aviso', por_cada='estancias', var='tamano', mn=0, mx=0, prio=90,
-      notas='Una estancia no tiene m²: sin los m² no se puede elegir su máquina. Ponlos en la ficha (Estancias → m²) y vuelve a calcular.')
+      notas='Una estancia no tiene m² ni potencia elegida: sin una de las dos cosas no se puede elegir su máquina. Ponla en la ficha (Estancias) y vuelve a calcular.')
 regla(None, {'marca_aire': 'vaillant'}, tipo='aviso', prio=95,
       notas='Vaillant: la tarifa de aire acondicionado (climaVAIR) todavía no está cargada. La interior y la exterior van a mano desde el catálogo o a precio cerrado; el resto del presupuesto sí sale.')
 regla(None, {'tipo_sistema': 'suelo_techo'}, tipo='aviso', prio=90,

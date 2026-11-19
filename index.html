@@ -562,7 +562,7 @@ import * as idiomas from './presu-idiomas.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '33.1'; // versión visible de la app (única fuente)
+const APP_VERSION = '33.2'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -10640,6 +10640,9 @@ function datosDelSuelto(f) {
       nombre: 'Equipo ' + (i + 1),
       m2: num((filas[i] || {}).m2),
       metros: conMetros ? num((filas[i] || {}).metros) : 0,
+      // Etapa 120: la potencia elegida a mano (manda sobre los m²) y a qué exterior va.
+      potencia: AIRE_POTENCIAS.includes(String((filas[i] || {}).potencia || '')) ? String(filas[i].potencia) : '',
+      exterior: Math.max(0, Math.min(30, Math.floor(num((filas[i] || {}).exterior)))),
     })),
     distancias_lineas: !conMetros && metrosTotal ? [{ estancia: 'total', metros: metrosTotal }] : [],
   };
@@ -11561,9 +11564,12 @@ function vPresuNuevo() {
 function estanciasSuelto(f) {
   const n = Math.max(1, Math.min(30, Number(f.equipos) || 1));
   const filas = Array.isArray(f.estancias) ? f.estancias.slice(0, n) : [];
-  while (filas.length < n) filas.push({ m2: '', metros: '' });
+  while (filas.length < n) filas.push({ m2: '', metros: '', potencia: '', exterior: '' });
   return filas;
 }
+// Las potencias que se pueden elegir a mano, como se dicen en el oficio (Enzo, 19-11-2026:
+// «a veces sabemos qué aire llevaría, si un 25, un 35…»). Sus kW están en el motor (aire.js).
+const AIRE_POTENCIAS = ['25', '35', '50', '70'];
 
 /** Aire: tipo de sistema y, por cada equipo interior, sus m² y sus metros de línea. */
 function camposAireHTML(f) {
@@ -11577,11 +11583,16 @@ function camposAireHTML(f) {
 
       <div class="lbl" style="margin:16px 0 8px">Equipos interiores</div>
       <input class="inp" data-f="presuCampo" data-k="equipos" value="${esc(String(f.equipos))}" inputmode="numeric" style="width:90px">
-      <div class="tiny" style="margin-top:8px">Por cada equipo: los m² de la estancia (para elegir la máquina) y los metros de línea hasta la unidad exterior (para el tubo de más y el gas).</div>
-      ${filas.map((x, i) => `<div class="row g8" style="margin-top:10px;align-items:center">
-        <div class="tiny mono" style="width:22px;opacity:.5">${i + 1}</div>
-        <div class="grow"><input class="inp" data-f="presuEstancia" data-i="${i}" data-s="m2" value="${esc(String(x.m2 ?? ''))}" inputmode="decimal" placeholder="m²"></div>
-        <div class="grow"><input class="inp" data-f="presuEstancia" data-i="${i}" data-s="metros" value="${esc(String(x.metros ?? ''))}" inputmode="decimal" placeholder="m de línea"></div>
+      <div class="tiny" style="margin-top:8px">Por cada equipo: su <b>potencia</b> si ya la sabes (25, 35, 50 o 70) o, si no, los <b>m²</b> de la estancia y la máquina la elige el motor; los <b>metros de línea</b> hasta su exterior; y el <b>número de la exterior</b> a la que va.</div>
+      <div class="tiny" style="margin-top:6px">Los que llevan el mismo número comparten exterior (dos, un 2x1; tres, un 3x1) y uno solo en la suya es un 1x1: así caben en un mismo presupuesto, por ejemplo, un 2x1 y un 1x1. Si no pones exterior en ninguno, vale el tipo de sistema de arriba para todos.</div>
+      ${filas.map((x, i) => `<div style="margin-top:10px;padding:10px 12px;border-radius:12px;background:rgba(var(--tinta-rgb),.04)">
+        <div class="tiny" style="opacity:.6;margin-bottom:6px">Equipo ${i + 1} · potencia</div>
+        <div class="wrap">${AIRE_POTENCIAS.map((p) => `<div class="chip ${String(x.potencia || '') === p ? 'sel' : ''}" data-a="presuEstanciaPot" data-i="${i}" data-v="${p}">${p}</div>`).join('')}</div>
+        <div class="row g8" style="margin-top:10px;align-items:flex-end">
+          <div class="grow"><div class="tiny" style="opacity:.6;margin-bottom:4px">${x.potencia ? 'm² (no hace falta)' : 'o sus m²'}</div><input class="inp" data-f="presuEstancia" data-i="${i}" data-s="m2" value="${esc(String(x.m2 ?? ''))}" inputmode="decimal" placeholder="m²"></div>
+          <div class="grow"><div class="tiny" style="opacity:.6;margin-bottom:4px">m de línea</div><input class="inp" data-f="presuEstancia" data-i="${i}" data-s="metros" value="${esc(String(x.metros ?? ''))}" inputmode="decimal" placeholder="m"></div>
+          <div class="grow"><div class="tiny" style="opacity:.6;margin-bottom:4px">Exterior</div><input class="inp" data-f="presuEstancia" data-i="${i}" data-s="exterior" value="${esc(String(x.exterior ?? ''))}" inputmode="numeric" placeholder="nº"></div>
+        </div>
       </div>`).join('')}
       <div class="tiny" style="margin-top:8px">Van 3 m de línea incluidos por equipo; lo que pase de ahí se cobra aparte, y el gas de más a partir de la carga de fábrica.</div>
 
@@ -16314,6 +16325,12 @@ document.addEventListener('click', (e) => {
   if (a === 'presuEditAnadirConjunto') return A.presuEditAnadirConjunto(d.id);
   if (a === 'presuGuardarCambios') return A.presuGuardarCambios();
   if (a === 'presuSueltoChip') { A.presuSueltoChip(d.k, d.v); return; }
+  if (a === 'presuEstanciaPot') {
+    if (!V.suelto) return;
+    const filas = estanciasSuelto(V.suelto), fila = filas[Number(d.i)]; if (!fila) return;
+    fila.potencia = String(fila.potencia || '') === d.v ? '' : d.v;
+    V.suelto.estancias = filas; render(); return;
+  }
   if (a === 'presuSueltoCliente') return A.presuSueltoCliente(d.id);
   if (a === 'verObra') return A.verObra(d.id);
   if (a === 'nuevaObra') return A.nuevaObra();

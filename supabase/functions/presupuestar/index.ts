@@ -45,6 +45,7 @@ import { presupuestarFV } from './hibrido.js';
 import { conInversoresDelCatalogo, calcularFV } from './fv.js';
 import { leerRutaFV, ponerRutaFV, listaModeloFV, valorDesdeCosteUd, productoPara, conceptoPara } from './precios.js';
 import { opcionesAero, sustituirEquiposAero, esInercia, esAcumuladorAcs } from './aero.js';
+import { calcularAire } from './aire.js';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -656,7 +657,10 @@ Deno.serve(async (req) => {
   // deno-lint-ignore no-explicit-any
   const res: any = libre
     ? { lineas: [], incidencias: [], variables: {}, resumen: null, recargo_sobre_coste: null }
-    : modeloFV ? presupuestarFV(datos, modeloFV, cfg) : calcular(categoria, datos, cfg);
+    : modeloFV ? presupuestarFV(datos, modeloFV, cfg)
+    // Aire (19-11-2026): potencia elegida a mano y varios sistemas (un 2x1 y un 1x1) en un presupuesto.
+    : categoria === 'aire_acondicionado' ? calcularAire(datos, cfg, calcular, resumenDe)
+    : calcular(categoria, datos, cfg);
   // Aerotermia: depósito de inercia y acumulador de ACS elegidos a mano (6-11-2026).
   // deno-lint-ignore no-explicit-any
   let opcionesAerotermia: any = null;

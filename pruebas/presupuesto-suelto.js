@@ -122,7 +122,8 @@ setTimeout(function () {
   igual('sin metros por equipo, va el total antiguo', d.distancias_lineas[0].metros, 12.5);
   igual('el tipo de sistema', d.tipo_sistema, 'multisplit');
   igual('sin metros, lista vacía', datosDelSuelto({ equipos: 1, metros: '' }).distancias_lineas.length, 0);
-  comprueba('la pantalla pide m² y metros por equipo', vPresuNuevo().split('data-f="presuEstancia"').length - 1 === 6);
+  comprueba('la pantalla pide m², metros y exterior por equipo', vPresuNuevo().split('data-f="presuEstancia"').length - 1 === 9);
+  comprueba('y deja elegir la potencia de cada uno (25, 35, 50, 70)', vPresuNuevo().split('data-a="presuEstanciaPot"').length - 1 === 12);
   V.suelto.estancias = [{ m2: '25', metros: '4' }, { m2: '12,5', metros: '8' }, { m2: '', metros: '' }];
   d = datosDelSuelto(V.suelto);
   igual('los m² de cada estancia', d.estancias[0].m2, 25);
@@ -137,6 +138,17 @@ setTimeout(function () {
   igual('recuperando la tubería', d.preinstalacion_existente, 'si_aprovechable');
   A.presuSueltoChip('recuperar', '');
   igual('sin recuperar', datosDelSuelto(V.suelto).preinstalacion_existente, 'no');
+  // Etapa 120 (Enzo, 19-11-2026): la potencia a mano y a qué exterior va cada equipo.
+  V.suelto.estancias = [{ m2: '', metros: '6', potencia: '25', exterior: '1' }, { m2: '', metros: '9', potencia: '25', exterior: '1' }, { m2: '20', metros: '4', potencia: '35', exterior: '2' }];
+  d = datosDelSuelto(V.suelto);
+  igual('la potencia elegida de cada equipo', d.estancias.map(function (e) { return e.potencia; }).join(','), '25,25,35');
+  igual('y su exterior', d.estancias.map(function (e) { return e.exterior; }).join(','), '1,1,2');
+  comprueba('la elegida sale marcada', vPresuNuevo().split('class="chip sel" data-a="presuEstanciaPot"').length - 1 === 3);
+  V.suelto.estancias = [{ m2: '20', metros: '4', potencia: '40', exterior: 'x' }, { m2: '', metros: '' }, { m2: '', metros: '' }];
+  d = datosDelSuelto(V.suelto);
+  igual('una potencia que no existe no se manda', d.estancias[0].potencia, '');
+  igual('y un exterior que no es número, tampoco', d.estancias[0].exterior, 0);
+  igual('sin tocar nada, ni potencia ni exterior', d.estancias[1].potencia + '/' + d.estancias[1].exterior, '/0');
   V.suelto.retirar = ''; V.suelto.estancias = null;
   igual('el título, para reconocerlo', tituloDelSuelto(), 'Aire acondicionado · Ana Ferrer');
 
