@@ -375,8 +375,14 @@ export function calcularFV(entrada, modelo, opciones) {
   // que va al margen objetivo y se suma después.
   const coste_doc = docResumida ? horas_doc * eur_h : 0;
   const venta_doc = docResumida ? venta_doc_P : 0;
-  const coste_aparte = (moVendida ? coste_mo : 0) + coste_doc;
-  const venta_aparte = (moVendida ? venta_mo : 0) + venta_doc;
+  // El certificado energético, igual (19-11-2026): si el modelo trae su precio de venta
+  // (el del catálogo), su hora, su desplazamiento y su tasa salen del margen y se cobra ese precio.
+  const venta_cee_P = num(P.venta_certificado);
+  const ceeVendido = cee && venta_cee_P > 0;
+  const coste_cee = ceeVendido ? rnd((1 + num(e.cee_desplaz_h)) * eur_h + num(PR.tasa_certificado.coste), 2) : 0;
+  const venta_cee = ceeVendido ? venta_cee_P : 0;
+  const coste_aparte = (moVendida ? coste_mo : 0) + coste_doc + coste_cee;
+  const venta_aparte = (moVendida ? venta_mo : 0) + venta_doc + venta_cee;
   const precio_obj = bloqueo ? 0 : redondeaArriba((coste_total - coste_aparte) / (1 - P.margen_obj)) + venta_aparte;
   const horas_elev = Math.max(num(e.horas_elev), plana * P.horas_elev_plana);   // en cubierta plana, siempre elevador
   const elev = horas_elev * P.pvp_elev;
@@ -406,6 +412,7 @@ export function calcularFV(entrada, modelo, opciones) {
     pvp_final: rnd(pvp_final, 2), iva_eur, pvp_iva: rnd(pvp_iva, 2), margen_real, avisos,
     mo_tabla: moVendida ? { eur_w: porJornada ? null : num(tramoMO.eur_w), venta_jornada: porJornada ? venta_jornada : null, jornadas, venta_mo, coste_mo: rnd(coste_mo, 2), jornada_bateria: jornadaBateria ? venta_jornada_bat : 0, jornadas_extra, venta_jornadas_extra } : null,
     doc_tabla: docResumida ? { partida: PARTIDA_DOC, horas: horas_doc, venta_h: rnd(venta_doc / horas_doc, 2), venta: venta_doc, coste: rnd(coste_doc, 2) } : null,
+    cee_tabla: ceeVendido ? { partidas: ['Certificado energético', 'Tasa del certificado'], venta_fija: venta_cee, venta: venta_cee, coste: coste_cee } : null,
     pvp_elev: P.pvp_elev,
     cable_cc: cableCC,
   };
@@ -613,7 +620,12 @@ export function entradaDesdeDatos(d, modelo) {
     // La subvención no va en los presupuestos (Enzo, 6-11-2026): la app nunca la
     // pide. La entrada la admite solo para cuadrar los 23 casos del Excel de Ramón.
     subv: 'No',
-    cee: d.certificado_energetico === true || d.certificado_energetico === 'true' || d.certificado_energetico === 1 ? 'Sí' : 'No',
+    // El certificado energético va SIEMPRE (Enzo, 19-11-2026: «en trámites siempre debe ir el
+    // certificado energético, que ya está en el catálogo el precio»): en cuanto el modelo trae
+    // su precio de venta (parametros.venta_certificado, que la función saca del catálogo,
+    // FV-13-010). Sin ese precio sigue siendo lo que diga la ficha, como antes.
+    cee: ((modelo && modelo.parametros && modelo.parametros.venta_certificado && Number(modelo.parametros.venta_certificado.valor) > 0)
+      || d.certificado_energetico === true || d.certificado_energetico === 'true' || d.certificado_energetico === 1) ? 'Sí' : 'No',
     cee_desplaz_h: n('cee_desplaz_h'),
     horas_elev: n('horas_elevador'),
     dto: 0,   // el descuento al pie lo aplica la cadena de precios de la app, línea a línea
@@ -654,7 +666,7 @@ export function lineasPresupuesto(r, modelo, extra) {
         cuadro_ac: r.cuadro_ac ? r.cuadro_ac.descripcion : null, jornadas: r.jornadas,
         cable_cc: r.cable_cc ? { seccion: r.cable_cc.seccion, calculo: r.cable_cc.calculo, tabla: r.cable_cc.tabla } : null },
       desglose,
-      precio: { coste_total: r.coste_total, precio_objetivo: r.precio_objetivo, margen_objetivo: (modelo.parametros.margen_obj || {}).valor, mo_tabla: r.mo_tabla || null, doc_tabla: r.doc_tabla || null,
+      precio: { coste_total: r.coste_total, precio_objetivo: r.precio_objetivo, margen_objetivo: (modelo.parametros.margen_obj || {}).valor, mo_tabla: r.mo_tabla || null, doc_tabla: r.doc_tabla || null, cee_tabla: r.cee_tabla || null,
         redondeo: (modelo.parametros.redondeo || {}).valor || 10, pct_peq: (modelo.parametros.pct_peq || {}).valor,
         horas_elev: r.horas_elev, elevador: r.elevador, pvp_antes: r.pvp_antes, margen_real_sin_dto: Math.round(r.margen_real * 10000) / 10000 },
       pedido: pedidoMaterial(r, modelo),

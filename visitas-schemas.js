@@ -374,9 +374,10 @@ const SOLAR = {
           ayuda: 'Sin eso no se puede legalizar' },
         { key: 'subvencion', etiqueta: 'Pide subvención', tipo: 'bool', motor: true,
           ayuda: 'Tramitación (1 h de Xavi)' },
-        { key: 'certificado_energetico', etiqueta: 'Certificado energético', tipo: 'bool', motor: true,
-          ayuda: '1 h de Xavi + desplazamiento + tasa de 97 €' },
-        { key: 'cee_desplaz_h', etiqueta: 'Desplazamiento del certificado', tipo: 'numero', unidad: 'h', motor: true },
+        // El certificado energético va siempre en los trámites, a su precio del catálogo
+        // (Enzo, 19-11-2026): ya no se pregunta. Queda el desplazamiento, que es coste.
+        { key: 'cee_desplaz_h', etiqueta: 'Desplazamiento del certificado energético', tipo: 'numero', unidad: 'h', motor: true,
+          ayuda: 'El certificado va siempre, a su precio del catálogo. De coste: 1 h de Xavi + este desplazamiento + la tasa' },
         { key: 'bonificacion_ibi', etiqueta: 'Pide bonificación IBI / ICIO', tipo: 'bool', motor: true },
       ],
     },

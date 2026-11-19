@@ -562,7 +562,7 @@ import * as idiomas from './presu-idiomas.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '33.2'; // versión visible de la app (única fuente)
+const APP_VERSION = '33.3'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -8191,9 +8191,9 @@ function desgloseFV2HTML(oi) {
     ${dim.cable_cc && dim.cable_cc.calculo ? `<div class="tiny" style="margin-top:6px;color:var(--t2)"><b>Cable CC ${esc(String(dim.cable_cc.seccion))} mm²</b> por caída de tensión: ${esc(String(dim.cable_cc.calculo.L))} m por string · ${esc(String(dim.cable_cc.calculo.por_string))} paneles = ${esc(String(dim.cable_cc.calculo.v_string))} V · ${esc(String(dim.cable_cc.calculo.imp))} A · máx. ${esc(String(dim.cable_cc.calculo.cdt_max_pct))} % · sección de cálculo ${esc(String(dim.cable_cc.calculo.s_calc))} mm²</div>
       <div class="tiny" style="color:var(--t3);padding-left:8px">${(dim.cable_cc.tabla || []).map((t) => `${t.seccion === dim.cable_cc.seccion ? '<b>' : ''}${t.seccion} mm²: ${String(t.caida_pct).replace('.', ',')} %${t.cumple ? ' ✓' : ' ✗'} · ${eur(t.coste_m)}/m${t.precio_estimado ? ' (est.)' : ''}${t.seccion === dim.cable_cc.seccion ? '</b>' : ''}`).join(' · ')}</div>` : ''}
     <div class="tiny" style="margin-top:8px;color:var(--t3)">Los importes de cada bloque son <b>coste</b>, no precio de venta.</div>
-    ${bloques.map((b) => `<div style="margin-top:8px"><div class="tiny" style="font-weight:600;color:var(--tinta)">${esc(b.nombre)} · ${eur(b.total)}${b.nombre === 'MANO DE OBRA' && p.mo_tabla && p.mo_tabla.venta_mo != null ? ' de coste · se vende a ' + eur(p.mo_tabla.venta_mo) : ''}${b.nombre === 'TRÁMITES' && p.doc_tabla && p.doc_tabla.venta > 0 ? ' de coste · la documentación y legalización se vende a ' + eur(p.doc_tabla.venta) + ' (' + String(p.doc_tabla.horas).replace('.', ',') + ' h × ' + eur(p.doc_tabla.venta_h) + ')' : ''}</div>
+    ${bloques.map((b) => `<div style="margin-top:8px"><div class="tiny" style="font-weight:600;color:var(--tinta)">${esc(b.nombre)} · ${eur(b.total)}${b.nombre === 'MANO DE OBRA' && p.mo_tabla && p.mo_tabla.venta_mo != null ? ' de coste · se vende a ' + eur(p.mo_tabla.venta_mo) : ''}${b.nombre === 'TRÁMITES' && p.doc_tabla && p.doc_tabla.venta > 0 ? ' de coste · la documentación y legalización se vende a ' + eur(p.doc_tabla.venta) + ' (' + String(p.doc_tabla.horas).replace('.', ',') + ' h × ' + eur(p.doc_tabla.venta_h) + ')' : ''}${b.nombre === 'TRÁMITES' && p.cee_tabla && p.cee_tabla.venta > 0 ? ' · el certificado energético se vende a ' + eur(p.cee_tabla.venta) + ' (precio del catálogo)' : ''}</div>
       ${b.items.map((x) => `<div class="tiny" style="color:var(--t3);padding-left:8px">${esc(x.nombre)} · ${esc(String(x.cantidad))} ${esc(x.unidad || 'ud')} × ${eur(x.coste_ud)} = ${eur(x.coste)}${x.aviso ? ` <span style="color:var(--ambar-o)">⚠ ${esc(x.aviso)}</span>` : ''}</div>`).join('')}</div>`).join('')}
-    <div class="tiny" style="margin-top:8px;color:var(--tinta)">Coste total ${eur(p.coste_total)} · precio objetivo ${eur(p.precio_objetivo)} (${p.mo_tabla ? (p.mo_tabla.venta_jornada ? 'mano de obra: ' + String(p.mo_tabla.jornadas != null ? p.mo_tabla.jornadas : dim.jornadas).replace('.', ',') + ' jornadas × ' + eur(p.mo_tabla.venta_jornada) + ' = ' : 'mano de obra a ' + String(p.mo_tabla.eur_w).replace('.', ',') + ' €/W = ') + eur(p.mo_tabla.venta_mo) + ' con coste ' + eur(p.mo_tabla.coste_mo) + '; ' : ''}${p.doc_tabla && p.doc_tabla.venta > 0 ? 'documentación y legalización: ' + eur(p.doc_tabla.venta) + ' con coste ' + eur(p.doc_tabla.coste) + '; ' : ''}${p.mo_tabla || (p.doc_tabla && p.doc_tabla.venta > 0) ? 'el resto al ' + pct(p.margen_objetivo) + ' sobre venta' : 'margen ' + pct(p.margen_objetivo) + ' sobre venta'}, redondeado a 10 €)${p.horas_elev ? ' · elevador ' + esc(String(p.horas_elev)) + ' h = ' + eur(p.elevador) : ''} · margen real sin descuento ${pct(p.margen_real_sin_dto)}</div>
+    <div class="tiny" style="margin-top:8px;color:var(--tinta)">Coste total ${eur(p.coste_total)} · precio objetivo ${eur(p.precio_objetivo)} (${p.mo_tabla ? (p.mo_tabla.venta_jornada ? 'mano de obra: ' + String(p.mo_tabla.jornadas != null ? p.mo_tabla.jornadas : dim.jornadas).replace('.', ',') + ' jornadas × ' + eur(p.mo_tabla.venta_jornada) + ' = ' : 'mano de obra a ' + String(p.mo_tabla.eur_w).replace('.', ',') + ' €/W = ') + eur(p.mo_tabla.venta_mo) + ' con coste ' + eur(p.mo_tabla.coste_mo) + '; ' : ''}${p.doc_tabla && p.doc_tabla.venta > 0 ? 'documentación y legalización: ' + eur(p.doc_tabla.venta) + ' con coste ' + eur(p.doc_tabla.coste) + '; ' : ''}${p.cee_tabla && p.cee_tabla.venta > 0 ? 'certificado energético: ' + eur(p.cee_tabla.venta) + ' con coste ' + eur(p.cee_tabla.coste) + '; ' : ''}${p.mo_tabla || (p.doc_tabla && p.doc_tabla.venta > 0) || (p.cee_tabla && p.cee_tabla.venta > 0) ? 'el resto al ' + pct(p.margen_objetivo) + ' sobre venta' : 'margen ' + pct(p.margen_objetivo) + ' sobre venta'}, redondeado a 10 €)${p.horas_elev ? ' · elevador ' + esc(String(p.horas_elev)) + ' h = ' + eur(p.elevador) : ''} · margen real sin descuento ${pct(p.margen_real_sin_dto)}</div>
     ${Array.isArray(oi.avisos) && oi.avisos.length ? `<div style="margin-top:6px">${oi.avisos.map((a) => `<div class="tiny" style="color:var(--ambar-o)">· ${esc(a)}</div>`).join('')}</div>` : ''}
     ${oi.pedido ? `<div class="tiny" style="margin-top:8px;font-weight:600;color:var(--tinta)">Pedido de material si acepta</div>
       ${Object.keys(oi.pedido).map((q) => `<div class="tiny" style="color:var(--t3);padding-left:8px">${esc(q)} · ${oi.pedido[q].lineas.length} líneas · ${eur(oi.pedido[q].total)}</div>`).join('')}` : ''}
@@ -10318,6 +10318,18 @@ function fv2Repreciar(oi, items) {
     docTabla = Object.assign({}, docTabla, { horas, venta, coste: coste_doc });
     costeAparte += coste_doc; ventaAparte += venta;
   }
+  // Certificado energético vendido a su precio del catálogo (19-11-2026): fuera
+  // del margen mientras su partida siga en el desglose; si se quita, no se cobra
+  // (y la tasa, si se dejó, vuelve al margen).
+  let ceeTabla = P.cee_tabla || null;
+  if (ceeTabla && ceeTabla.venta_fija != null) {
+    const nombres = Array.isArray(ceeTabla.partidas) ? ceeTabla.partidas : ['Certificado energético', 'Tasa del certificado'];
+    const hay = its.some((x) => x.bloque === 'TRÁMITES' && x.nombre === nombres[0] && x.cantidad > 0);
+    const coste_cee = hay ? rnd2(its.filter((x) => x.bloque === 'TRÁMITES' && nombres.includes(x.nombre)).reduce((s, x) => s + x.coste, 0)) : 0;
+    const venta_cee = hay ? Number(ceeTabla.venta_fija) || 0 : 0;
+    ceeTabla = Object.assign({}, ceeTabla, { venta: venta_cee, coste: coste_cee });
+    costeAparte += coste_cee; ventaAparte += venta_cee;
+  }
   let precio = rnd2(arriba((coste_total - costeAparte) / (1 - margen)) + ventaAparte);
   // Lo que ve el cliente: si todas las partidas traen su texto (líneas nuevas), se
   // rehace entero; si no (líneas antiguas), se conserva y se añaden las partidas nuevas.
@@ -10336,7 +10348,7 @@ function fv2Repreciar(oi, items) {
   }
   const orden = FV2_ORDEN_CLIENTE.concat(Object.keys(bloques).filter((b) => !FV2_ORDEN_CLIENTE.includes(b)));
   const detalle_tecnico = orden.filter((b) => bloques[b] && bloques[b].length).map((b) => b + ': ' + bloques[b].join('; ')).join(' · ');
-  return { desglose: its, coste_total, precio_objetivo: precio, margen_real_sin_dto: precio ? Math.round((precio - coste_total) / precio * 10000) / 10000 : 0, bloques, detalle_tecnico, completo, mo_tabla: moTabla, doc_tabla: docTabla };
+  return { desglose: its, coste_total, precio_objetivo: precio, margen_real_sin_dto: precio ? Math.round((precio - coste_total) / precio * 10000) / 10000 : 0, bloques, detalle_tecnico, completo, mo_tabla: moTabla, doc_tabla: docTabla, cee_tabla: ceeTabla };
 }
 /** El retoque FV de una línea devuelta por el motor (por su clave, o por la
  *  descripción nueva si el retoque la cambió). */
@@ -10403,7 +10415,7 @@ A.fv2DesgloseVolver = () => { const s = V.sheet; if (!s || s.tipo !== 'fv2Desglo
 A.fv2DesgloseAplicar = () => {
   const s = V.sheet; if (!s || s.tipo !== 'fv2Desglose') return;
   const r = fv2Repreciar(s.oi, s.items);
-  const fv2 = { desglose: r.desglose, precio: Object.assign({ coste_total: r.coste_total, precio_objetivo: r.precio_objetivo, margen_real_sin_dto: r.margen_real_sin_dto }, r.mo_tabla ? { mo_tabla: r.mo_tabla } : {}, r.doc_tabla ? { doc_tabla: r.doc_tabla } : {}), bloques: r.bloques };
+  const fv2 = { desglose: r.desglose, precio: Object.assign({ coste_total: r.coste_total, precio_objetivo: r.precio_objetivo, margen_real_sin_dto: r.margen_real_sin_dto }, r.mo_tabla ? { mo_tabla: r.mo_tabla } : {}, r.doc_tabla ? { doc_tabla: r.doc_tabla } : {}, r.cee_tabla ? { cee_tabla: r.cee_tabla } : {}), bloques: r.bloques };
   if (s.modo === 'ajuste') {
     const h = s.volver; h.v.fv2 = fv2; h.v.precio_tarifa = r.precio_objetivo; h.v.precio_coste = r.coste_total; h.v.detalle_tecnico = r.detalle_tecnico;
     V.sheet = h;
@@ -10578,7 +10590,7 @@ function datosDelSuelto(f) {
       factura_rango: f.factura_rango || '',
       orientacion_panel: f.orientacion === 'horizontal' ? 'horizontal' : 'vertical',
       km_obra: num(f.km),
-      certificado_energetico: !!f.cee,
+      certificado_energetico: true,   // va siempre (19-11-2026)
       cee_desplaz_h: num(f.cee_h),
       horas_elevador: num(f.horas_elev),
       baterias: conBateria ? 'si' : (f.bateria_futuro ? 'dejar_preparado' : 'no'),
@@ -11594,7 +11606,7 @@ function camposAireHTML(f) {
           <div class="grow"><div class="tiny" style="opacity:.6;margin-bottom:4px">Exterior</div><input class="inp" data-f="presuEstancia" data-i="${i}" data-s="exterior" value="${esc(String(x.exterior ?? ''))}" inputmode="numeric" placeholder="nº"></div>
         </div>
       </div>`).join('')}
-      <div class="tiny" style="margin-top:8px">Van 3 m de línea incluidos por equipo; lo que pase de ahí se cobra aparte, y el gas de más a partir de la carga de fábrica.</div>
+      <div class="tiny" style="margin-top:8px">Van 3 m de línea incluidos por equipo; lo que pase de ahí se cobra aparte, y el gas de más a partir de la carga de fábrica (15 € de base más los kilos).</div>
 
       <div class="lbl" style="margin:16px 0 8px">De la exterior al cuadro eléctrico</div>
       <input class="inp" data-f="presuCampo" data-k="cuadro" value="${esc(String(f.cuadro ?? ''))}" inputmode="decimal" placeholder="m de cable 3G 2,5" style="width:180px">
@@ -11731,11 +11743,11 @@ function camposSolarHTML(f) {
       <div class="wrap">${chip('wifi', 'buena', 'Buena')}${chip('wifi', 'mala', 'Mala · repetidor')}</div>
       <div class="lbl" style="margin:14px 0 8px">Excedentes y trámites</div>
       <div class="wrap">${chip('excedentes', 'con_excedentes', 'Con excedentes')}${chip('excedentes', 'sin_excedentes', 'Sin excedentes')}</div>
-      <div class="wrap" style="margin-top:8px">${chip('cee', '1', 'Certificado energético', f.cee ? '1' : '')}${chip('cargador', '1', 'Cargador de coche', f.cargador ? '1' : '')}</div>
-      ${f.cee ? `<div class="row g8" style="margin-top:10px;align-items:center">
-        <div class="grow"><div class="lbl">Desplazamiento del certificado</div>
+      <div class="wrap" style="margin-top:8px">${chip('cargador', '1', 'Cargador de coche', f.cargador ? '1' : '')}</div>
+      ${true ? `<div class="row g8" style="margin-top:10px;align-items:center">
+        <div class="grow"><div class="lbl">Desplazamiento del certificado energético</div>
           <input class="inp" data-f="presuCampo" data-k="cee_h" value="${esc(String(f.cee_h ?? ''))}" inputmode="decimal" placeholder="horas" style="margin-top:8px"></div>
-        <div class="tiny grow" style="padding-top:22px">1 h de Xavi + desplazamiento + tasa de 97 €.</div>
+        <div class="tiny grow" style="padding-top:22px">El certificado energético va siempre en los trámites, a su precio del catálogo. De coste: 1 h de Xavi + este desplazamiento + la tasa.</div>
       </div>` : ''}`;
 }
 

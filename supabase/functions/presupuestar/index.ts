@@ -47,6 +47,9 @@ import { leerRutaFV, ponerRutaFV, listaModeloFV, valorDesdeCosteUd, productoPara
 import { opcionesAero, sustituirEquiposAero, esInercia, esAcumuladorAcs } from './aero.js';
 import { calcularAire } from './aire.js';
 
+// El certificado energético de los presupuestos fotovoltaicos, en el catálogo.
+const REF_CERTIFICADO_FV = 'FV-13-010';
+
 const CORS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -613,6 +616,7 @@ Deno.serve(async (req) => {
   // modelo (todavía no se ha pegado el SQL), todo sigue como antes.
   // deno-lint-ignore no-explicit-any
   let modeloFV: any = null;
+  let avisoCertificado: string | null = null;
   if (categoria === 'solar' && !libre) {
     const { data: mod } = await sb.from('motor_modelos').select('id, version, datos')
       .eq('categoria', 'solar').is('vigente_hasta', null)
@@ -625,6 +629,16 @@ Deno.serve(async (req) => {
       const { data: invs } = await sb.from('productos').select('referencia, nombre, familia, precio_tarifa, descuento_proveedor')
         .eq('familia', 'inversor').eq('activo', true);
       if (invs && invs.length) modeloFV = Object.assign({}, modeloFV, { datos: conInversoresDelCatalogo(modeloFV.datos, invs) });
+      // El certificado energético va siempre en los trámites y se cobra a su precio
+      // del catálogo (Enzo, 19-11-2026). Se le pasa al modelo como venta_certificado;
+      // si el producto no está o no tiene precio, se avisa y queda como antes.
+      const { data: cee } = await sb.from('productos').select('referencia, nombre, familia, precio_tarifa, descuento_proveedor, atributos, recargo, aplica_cdc')
+        .eq('referencia', REF_CERTIFICADO_FV).eq('activo', true).limit(1).maybeSingle();
+      const ventaCee = cee ? Number(preciosProducto(cee.precio_tarifa, cee, cfg.lookup).venta) || 0 : 0;
+      if (ventaCee > 0) {
+        modeloFV = Object.assign({}, modeloFV, { datos: Object.assign({}, modeloFV.datos, { parametros: Object.assign({}, modeloFV.datos.parametros,
+          { venta_certificado: { valor: ventaCee, ud: '€', origen: 'Catálogo, ' + REF_CERTIFICADO_FV } }) }) });
+      } else avisoCertificado = 'El certificado energético (' + REF_CERTIFICADO_FV + ') no está en el catálogo o no tiene precio: no se ha incluido en los trámites.';
     }
   }
   // Batería compatible con el inversor (Enzo, 26-10-2026): Deye solo con WECO o
@@ -678,6 +692,7 @@ Deno.serve(async (req) => {
     }
   }
   if (avisoBateria) res.incidencias.unshift({ nivel: 'aviso', codigo: 'bateria_incompatible', mensaje: avisoBateria, campo: 'bateria_marca' });
+  if (avisoCertificado && modeloFV && !libre) res.incidencias.push({ nivel: 'aviso', codigo: 'certificado_sin_precio', mensaje: avisoCertificado, campo: null });
   const motorVersion = libre ? 'libre' : modeloFV ? res.motor_version : MOTOR_VERSION;
 
   const dtoGlobal = b.dto_global_pct != null
@@ -763,7 +778,11 @@ Deno.serve(async (req) => {
             // Documentación y legalización a precio fijo (10-11-2026): si se cambian sus horas o se quita, la venta las sigue.
             (() => { const ant = precioAnt.doc_tabla as Record<string, unknown> | null, nue = precioNuevo.doc_tabla as Record<string, unknown> | null;
               if (!ant || typeof ant !== 'object' || !nue || typeof nue !== 'object') return {};
-              return { doc_tabla: Object.assign({}, ant, { horas: numOk(nue.horas) ?? ant.horas, venta: numOk(nue.venta) ?? ant.venta, coste: numOk(nue.coste) ?? ant.coste }) }; })()),
+              return { doc_tabla: Object.assign({}, ant, { horas: numOk(nue.horas) ?? ant.horas, venta: numOk(nue.venta) ?? ant.venta, coste: numOk(nue.coste) ?? ant.coste }) }; })(),
+            // Certificado energético a su precio de catálogo (19-11-2026): si se quita su partida, deja de cobrarse.
+            (() => { const ant = precioAnt.cee_tabla as Record<string, unknown> | null, nue = precioNuevo.cee_tabla as Record<string, unknown> | null;
+              if (!ant || typeof ant !== 'object' || !nue || typeof nue !== 'object') return {};
+              return { cee_tabla: Object.assign({}, ant, { venta: numOk(nue.venta) ?? ant.venta, coste: numOk(nue.coste) ?? ant.coste }) }; })()),
           bloques: a.fv2.bloques && typeof a.fv2.bloques === 'object' ? a.fv2.bloques : oi.bloques });
       }
     });

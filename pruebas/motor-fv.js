@@ -281,4 +281,28 @@ comprueba('el precio sube unos 90 € (al 50 %, con el redondeo a 10)', con45.pr
 igual('con Fronius no hay diferencial tipo F y nada cambia', calcularFV(e10, modelo45).precio_objetivo, d10.precio_objetivo);
 igual('se pide a Amazon', pedidoMaterial(con45, modelo45).Amazon.lineas.map(function (l) { return l.articulo + ' × ' + l.cantidad + ' a ' + l.coste_ud; }).join('|'), 'Diferencial tipo F (Enphase) × 1 a 45');
 
+
+titulo('el certificado energético va siempre, a su precio del catálogo (Enzo, 19-11-2026)');
+// La función le pasa al modelo el precio del catálogo (FV-13-010) como venta_certificado.
+var modeloCee = JSON.parse(JSON.stringify(modeloDoc)); modeloCee.parametros.venta_certificado = { valor: 300 };
+var fichaSin = { suministro: 'monofasico', tipo_cubierta: 'teja_arabe', paneles_manual: 10, inversor_marca: 'fronius' };
+igual('con el precio del catálogo, va aunque la ficha no lo pida', entradaDesdeDatos(fichaSin, modeloCee).entrada.cee, 'Sí');
+igual('y aunque diga que no', entradaDesdeDatos(Object.assign({ certificado_energetico: false }, fichaSin), modeloCee).entrada.cee, 'Sí');
+igual('sin precio en el modelo, lo que diga la ficha (como antes)', entradaDesdeDatos(fichaSin, modeloDoc).entrada.cee + '/' + entradaDesdeDatos(Object.assign({ certificado_energetico: true }, fichaSin), modeloDoc).entrada.cee, 'No/Sí');
+var eCee = Object.assign({}, e10, { cee: 'Sí', cee_desplaz_h: 0 });
+var c10 = calcularFV(eCee, modeloCee), sin10 = calcularFV(e10, modeloCee), mar10 = calcularFV(eCee, modeloDoc);
+igual('sus dos partidas de coste: 1 h de Xavi y la tasa', tram(c10).filter(function (x) { return /ertificado/.test(x.partida); }).map(function (x) { return x.partida + ' ' + x.coste; }).join(' | '), 'Certificado energético 40 | Tasa del certificado 97');
+igual('se vende a 300 € con 137 € de coste', c10.cee_tabla.venta + '/' + c10.cee_tabla.coste, '300/137');
+igual('el precio sube justo 300 € sobre el mismo presupuesto sin certificado', c10.precio_objetivo - sin10.precio_objetivo, 300);
+igual('y el coste, 137 €', Math.round((c10.coste_total - sin10.coste_total) * 100) / 100, 137);
+comprueba('antes iba al margen: 137 € de coste eran unos 270-280 € de precio', mar10.precio_objetivo - d10.precio_objetivo >= 270 && mar10.precio_objetivo - d10.precio_objetivo <= 280 && mar10.cee_tabla === null);
+igual('con desplazamiento sube el coste, no el precio', calcularFV(Object.assign({}, eCee, { cee_desplaz_h: 1 }), modeloCee).cee_tabla.coste + '/' + (calcularFV(Object.assign({}, eCee, { cee_desplaz_h: 1 }), modeloCee).precio_objetivo - sin10.precio_objetivo), '177/300');
+comprueba('al cliente le sale en trámites', lineasCliente(c10)['TRÁMITES Y GESTIONES'].some(function (t) { return /Certificado de eficiencia energética/.test(t); }));
+var oiCee = lineasPresupuesto(c10, modeloCee, {})[0].origen_inputs;
+igual('la línea guarda a cuánto se vende', oiCee.precio.cee_tabla.venta, 300);
+igual('app: repreciar sin tocar da el mismo precio', fv2Repreciar(oiCee, oiCee.desglose).precio_objetivo, c10.precio_objetivo);
+igual('app: quitadas sus dos partidas, 300 € menos', fv2Repreciar(oiCee, oiCee.desglose.filter(function (x) { return !/ertificado/.test(x.nombre); })).precio_objetivo, c10.precio_objetivo - 300);
+igual('app: quitado el certificado y dejada la tasa, la tasa va al margen', fv2Repreciar(oiCee, oiCee.desglose.filter(function (x) { return x.nombre !== 'Certificado energético'; })).cee_tabla.venta, 0);
+comprueba('app: la ficha dice a cuánto se vende', /el certificado energético se vende a 300,00/.test(desgloseFV2HTML(oiCee)) && /certificado energético: 300,00/.test(desgloseFV2HTML(oiCee)));
+
 resultado();

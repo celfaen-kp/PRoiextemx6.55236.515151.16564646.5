@@ -79,6 +79,10 @@ export function sistemasDeAire(datos) {
 }
 
 const redA = (v, d) => { const f = Math.pow(10, d); return Math.round(v * f + 1e-9) / f; };
+// Lo que se cobra una sola vez por presupuesto aunque lo pidan varios sistemas:
+// la base de la carga de gas (sql/etapa121; los kilos sí se suman).
+const UNA_VEZ_AIRE = ['Carga adicional de refrigerante: base'];
+const esUnaVez = (l) => UNA_VEZ_AIRE.some((t) => String(l.descripcion || '').indexOf(t) === 0);
 const claveLineaAire = (l) => [l.producto_ref || '', l.descripcion || '', l.unidad || '', l.seccion || '',
   l.precio_tarifa, l.precio_coste == null ? '' : l.precio_coste, l.dto_linea_pct || 0, l.iva == null ? '' : l.iva, l.origen || ''].join('|');
 // Lo que se suma al juntar sistemas; el resto de variables se quedan con las del primero.
@@ -111,7 +115,7 @@ export function calcularAire(datos, cfg, calcular, resumenDe) {
   partes.forEach((r) => (r.lineas || []).forEach((l) => {
     const k = claveLineaAire(l);
     if (secciones.indexOf(l.seccion || '') < 0) secciones.push(l.seccion || '');
-    if (porClave[k]) { porClave[k].cantidad = redA(numA(porClave[k].cantidad) + numA(l.cantidad), 3); return; }
+    if (porClave[k]) { if (!esUnaVez(l)) porClave[k].cantidad = redA(numA(porClave[k].cantidad) + numA(l.cantidad), 3); return; }
     porClave[k] = Object.assign({}, l); lineas.push(porClave[k]);
   }));
   const puesto = lineas.map((l, i) => ({ l, i }));

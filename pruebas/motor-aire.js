@@ -59,6 +59,8 @@ var config = {
       { concepto_libre: 'C104: Mano de obra', precio_fijo: 450, formula_cantidad: 'unidades_interiores', orden: 5 },
     ] },
     'p-gas': { codigo: 'GAS_EXTRA', nombre: 'Carga adicional de refrigerante', items: [
+      // etapa 121: una base de 15 € cuando hay algo que cargar, más los kilos
+      { concepto_libre: 'Carga adicional de refrigerante: base', precio_fijo: 15, formula_cantidad: 'si(kg_gas_extra > 0, 1, 0)', unidad: 'ud', orden: 0 },
       { concepto_libre: 'Carga adicional de refrigerante R32', precio_fijo: 49, formula_cantidad: 'kg_gas_extra', unidad: 'kg', orden: 1 }] },
   },
   reglas: [
@@ -96,13 +98,14 @@ igual('en metros', linea(r, 'C103').unidad, 'm');
 comprueba('sin línea de conexión por equipo: va en la mano de obra', !linea(r, 'C100'));
 igual('gas por estancia: 4 m no pasa de 5, 6 m sí → 1 m × 12 g', r.variables.gas_g_estancia.join(','), '0,12');
 igual('12 g = 0,012 kg', r.variables.kg_gas_extra, 0.012);
-igual('la línea de gas va en kg', linea(r, 'refrigerante').unidad, 'kg');
+igual('la línea de gas va en kg', linea(r, 'refrigerante R32').unidad, 'kg');
+igual('y delante, la base de la carga: una vez, 15 €', linea(r, 'refrigerante: base').cantidad + ' × ' + linea(r, 'refrigerante: base').precio_tarifa, '1 × 15');
 igual('dos exteriores → dos soportes', linea(r, 'C102').cantidad, 2);
 igual('cable 5G 1,5 por los metros de línea: 10 m', linea(r, 'E101').cantidad, 10);
 igual('cable 3G 2,5 al cuadro: 8 m por cada exterior (1x1) = 16 m', linea(r, 'E102').cantidad, 16);
 igual('en metros', linea(r, 'E102').unidad, 'm');
 comprueba('sin avisos de máquina', !r.incidencias.some(function (i) { return i.codigo === 'regla_aviso'; }));
-var esperado = P('EZ-12RD6-I') + P('EZ-12RD6-O') + P('EZ-09RD6-I') + P('EZ-09RD6-O') + 2 * 45 + 10 * 52 + 2 * 450 + 0.012 * 49 + 10 * 3.81 + 16 * 4.03;
+var esperado = P('EZ-12RD6-I') + P('EZ-12RD6-O') + P('EZ-09RD6-I') + P('EZ-09RD6-O') + 2 * 45 + 10 * 52 + 2 * 450 + 15 + 0.012 * 49 + 10 * 3.81 + 16 * 4.03;
 igual('el total cuadra', cadenaPrecios(r.lineas, 0).total.toFixed(2), esperado.toFixed(2));
 
 titulo('multisplit 3×1: tres interiores y una exterior');
@@ -238,5 +241,17 @@ igual('sin número en ninguna, un solo sistema como siempre', sistemasDeAire({ t
 igual('las que no dicen exterior van juntas al final, con el tipo de la ficha', sistemasDeAire({ tipo_sistema: 'multisplit', estancias: [{ m2: 20 }, { m2: 12, exterior: 3 }, { m2: 15 }] }).map(function (s) { return s.exterior + ':' + s.tipo_sistema + ':' + s.estancias.length; }).join(' '), '3:split_1x1:1 0:multisplit:2');
 r = aire({ tipo_sistema: 'multisplit', equipos_a_retirar_n: 2, exteriores_a_retirar_n: 1, estancias: [{ potencia: '25', exterior: 1 }, { potencia: '35', exterior: 2 }] });
 igual('lo de retirar solo cuenta una vez', r.variables.n_retirar === undefined ? 'sin variable' : r.variables.n_retirar, config.variables.some(function (v) { return v.codigo === 'n_retirar'; }) ? 2 : 'sin variable');
+
+
+titulo('la base de la carga de gas: 15 € cuando hay algo que cargar (Enzo, 19-11-2026)');
+r = aire({ tipo_sistema: 'split_1x1', estancias: [{ potencia: '35', metros: 4 }] });
+comprueba('sin gas de más (4 m no pasa de 5), ni base ni kilos', !linea(r, 'refrigerante'));
+r = aire({ tipo_sistema: 'split_1x1', estancias: [{ potencia: '35', metros: 9 }] });
+igual('con gas de más: la base y los kilos (4 m × 12 g)', r.lineas.filter(function (l) { return /refrigerante/.test(l.descripcion); }).map(function (l) { return l.descripcion + ' ' + l.cantidad + ' ' + l.unidad; }).join(' | '),
+  'Carga adicional de refrigerante: base 1 ud | Carga adicional de refrigerante R32 0.048 kg');
+igual('15 € + 0,048 kg × 49 €', (15 + 0.048 * 49).toFixed(2), r.lineas.filter(function (l) { return /refrigerante/.test(l.descripcion); }).reduce(function (s, l) { return s + l.cantidad * l.precio_tarifa; }, 0).toFixed(2));
+r = aire({ tipo_sistema: 'multisplit', estancias: [{ potencia: '25', metros: 12, exterior: 1 }, { potencia: '25', metros: 10, exterior: 1 }, { potencia: '35', metros: 9, exterior: 2 }] });
+igual('dos sistemas con gas: una sola base', cant(r, 'refrigerante: base'), 1);
+igual('y los kilos de los dos sumados (4,5 + 2,5 m del multi y 4 m del 1x1, a 12 g)', cant(r, 'refrigerante R32'), 0.132);
 
 resultado();
