@@ -562,7 +562,7 @@ import * as idiomas from './presu-idiomas.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '32.9'; // versión visible de la app (única fuente)
+const APP_VERSION = '33.0'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -12832,7 +12832,9 @@ A.agContactado = async (id, estado) => {
  * y a mano con «+ Nota». Así cualquiera ve qué se le dijo al cliente y quién.
  * ------------------------------------------------------------------------------------------- */
 Object.assign(V, { bitacora: {} });
-const BIT_TIPOS = { llamada: 'Llamada', whatsapp: 'WhatsApp', email: 'Email', nota: 'Nota', cita: 'Cita', visita: 'Visita', presupuesto: 'Presupuesto', aplazado: 'Aplazado', accion: 'Acción', sistema: 'App' };
+const BIT_TIPOS = { llamada: 'Llamada', whatsapp: 'WhatsApp', email: 'Email', nota: 'Nota', cita: 'Cita', visita: 'Visita', presupuesto: 'Presupuesto', aplazado: 'Aplazado', accion: 'Acción', sistema: 'App', agente: 'Agente' };
+// «agente»: lo apunta un agente de la oficina virtual por la función apuntar-seguimiento (sql/etapa115).
+const BIT_HABLADO = ['llamada', 'whatsapp', 'email', 'nota', 'agente'];
 const faltaEtapa71 = (e) => /cliente_bitacora|proxima_accion|aplazado_hasta|schema cache|PGRST205/i.test(typeof e === 'string' ? e : msgError(e));
 async function cargarBitacoraTodos() {
   if (!navigator.onLine) return;
@@ -12869,7 +12871,7 @@ const esNotaWeb = (c, b) => {
 };
 const ultimaNota = (c) => {
   const bs = (V.bitacora[c.id] || []).filter((b) => !esNotaWeb(c, b));
-  return bs.find((b) => ['llamada', 'whatsapp', 'email', 'nota'].includes(b.tipo)) || bs[0] || null;
+  return bs.find((b) => BIT_HABLADO.includes(b.tipo)) || bs[0] || null;
 };
 // Próxima acción: «llamar el jueves», con fecha y quién.
 /* ---------- mover una tarjeta del tablero a otra fase ----------
@@ -13069,9 +13071,9 @@ function seguimientoClienteHTML(c) {
     <div class="lbl" style="margin:14px 0 6px">Bitácora</div>
     ${!bit ? '<div class="sub">Cargando…</div>' : !bit.length ? '<div class="sub">Todavía no hay nada apuntado.</div>'
       : bit.slice(0, V.bitTodo === c.id ? 200 : 8).map((b) => `<div class="row g8" style="align-items:flex-start;padding:7px 0;border-top:1px solid var(--l1)">
-        <span class="badge" style="background:${['llamada', 'whatsapp', 'email', 'nota'].includes(b.tipo) ? 'var(--verde-cl)' : 'rgba(var(--tinta-rgb),.06)'};color:${['llamada', 'whatsapp', 'email', 'nota'].includes(b.tipo) ? 'var(--verde-o)' : 'var(--t2)'};margin-top:2px">${esc(BIT_TIPOS[b.tipo] || b.tipo)}</span>
+        <span class="badge" style="background:${BIT_HABLADO.includes(b.tipo) ? 'var(--verde-cl)' : 'rgba(var(--tinta-rgb),.06)'};color:${BIT_HABLADO.includes(b.tipo) ? 'var(--verde-o)' : 'var(--t2)'};margin-top:2px">${esc(BIT_TIPOS[b.tipo] || b.tipo)}</span>
         <div class="grow"><div style="font:400 13.5px/1.4 var(--sans);white-space:pre-wrap">${esc(b.texto)}</div><div class="tiny" style="margin-top:2px">${esc(fechaCorta(b.at))} ${esc(hhmm(b.at))}${b.por ? ' · ' + esc(agNombreEmp(b.por)) : ''}</div></div>
-        ${['llamada', 'whatsapp', 'email', 'nota'].includes(b.tipo) ? `<span data-a="segNotaBorrar" data-id="${b.id}" data-c="${c.id}" style="cursor:pointer;color:var(--t3);font-size:16px;line-height:1">×</span>` : ''}
+        ${BIT_HABLADO.includes(b.tipo) ? `<span data-a="segNotaBorrar" data-id="${b.id}" data-c="${c.id}" style="cursor:pointer;color:var(--t3);font-size:16px;line-height:1">×</span>` : ''}
       </div>`).join('') + (bit.length > 8 && V.bitTodo !== c.id ? `<div class="tiny" data-a="segBitTodo" data-id="${c.id}" style="margin-top:8px;cursor:pointer;text-decoration:underline">Ver las ${bit.length} anotaciones</div>` : '')}
   </div>`;
 }

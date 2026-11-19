@@ -86,4 +86,10 @@ igual('sin nada que contar, nada', seguimientoResumenHTML({ id: 'k9', citas: [],
 V.bitacora['k10'] = [{ tipo: 'nota', texto: 'Sysefen: Lead Meta Ads – Formulario FV_BATERIA: ¿Eres propietario? Sí…', at: '2026-10-07T12:00:00Z' }, { tipo: 'llamada', texto: 'Llamar el jueves', at: '2026-10-07T10:00:00Z' }];
 igual('el formulario de la web no cuenta como última nota', ultimaNota({ id: 'k10', motivo_web: 'Sysefen: Lead Meta Ads – Formulario FV_BATERIA: ¿Eres propietario? Sí…' }).texto, 'Llamar el jueves');
 
+
+titulo('lo que apunta un agente (apuntar-seguimiento, sql/etapa115)');
+V.bitacora.k11 = [{ tipo: 'sistema', texto: 'Obra creada', at: '2026-11-19T10:00:00Z' }, { tipo: 'agente', texto: 'Se le recordó el presupuesto', at: '2026-11-18T10:00:00Z' }];
+igual('cuenta como lo último hablado, por delante de lo que apunta la app sola', ultimaNota({ id: 'k11' }).texto, 'Se le recordó el presupuesto');
+igual('en la ficha se llama Agente', BIT_TIPOS.agente, 'Agente');
+
 resultado();
