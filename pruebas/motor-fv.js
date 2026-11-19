@@ -266,4 +266,19 @@ igual('app: con 6 h se vende a 480 € (+80)', fv2Repreciar(oiDoc, oiDoc.desglos
 igual('app: quitada la partida, no se cobra (−400)', fv2Repreciar(oiDoc, oiDoc.desglose.filter(function (x) { return x.nombre !== nomDoc; })).precio_objetivo, d10.precio_objetivo - 400);
 comprueba('app: la ficha dice a cuánto se vende', /la documentación y legalización se vende a 400,00/.test(desgloseFV2HTML(oiDoc)));
 
+
+titulo('el diferencial tipo F: 45 € de coste, al margen de todo lo demás (Enzo, 19-11-2026)');
+var eEnp = Object.assign({}, e10, { sis: 'Enphase' });
+var pend = calcularFV(eEnp, modeloDoc);
+var difDe = function (r) { return r.partidas.filter(function (x) { return x.partida === 'Diferencial tipo F (Enphase)'; })[0]; };
+comprueba('sin precio en el modelo, avisa', pend.avisos.indexOf('Falta precio del diferencial tipo F') > -1 && difDe(pend).coste === 0);
+var modelo45 = JSON.parse(JSON.stringify(modeloDoc)); modelo45.precios.diferencial_tipo_f = { coste: 45, proveedor: 'Amazon' };
+var con45 = calcularFV(eEnp, modelo45);
+igual('con precio, la partida cuesta 45 €', difDe(con45).cantidad + ' × ' + difDe(con45).coste_ud + ' = ' + difDe(con45).coste, '1 × 45 = 45');
+comprueba('y ya no avisa', con45.avisos.indexOf('Falta precio del diferencial tipo F') === -1);
+igual('el coste sube 45 € más su 3 % de pequeño material', Math.round((con45.coste_total - pend.coste_total) * 100) / 100, 46.35);
+comprueba('el precio sube unos 90 € (al 50 %, con el redondeo a 10)', con45.precio_objetivo - pend.precio_objetivo >= 90 && con45.precio_objetivo - pend.precio_objetivo <= 100);
+igual('con Fronius no hay diferencial tipo F y nada cambia', calcularFV(e10, modelo45).precio_objetivo, d10.precio_objetivo);
+igual('se pide a Amazon', pedidoMaterial(con45, modelo45).Amazon.lineas.map(function (l) { return l.articulo + ' × ' + l.cantidad + ' a ' + l.coste_ud; }).join('|'), 'Diferencial tipo F (Enphase) × 1 a 45');
+
 resultado();
