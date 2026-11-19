@@ -16,6 +16,7 @@
 //   que = "obras-estado"             estado, limite
 //   que = "partes"                   desde, hasta, limite
 //   que = "costes-obra"              obra_id
+//   que = "fases-plantillas"         (sin parámetros; sql/etapa117)
 //
 // SECRETO (Supabase → Edge Functions → Secrets):
 //   AGENTES_LEER_CLAVE   la clave de lectura de los agentes. Solo abre esta
@@ -32,7 +33,7 @@
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
 
-const QUE = ['leads-pendientes', 'visitas-sin-presupuesto', 'presupuestos', 'obras-estado', 'partes', 'costes-obra'];
+const QUE = ['leads-pendientes', 'visitas-sin-presupuesto', 'presupuestos', 'obras-estado', 'partes', 'costes-obra', 'fases-plantillas'];
 const ESTADOS: Record<string, string[]> = {
   presupuestos: ['generado', 'revisar', 'aprobado', 'enviado'],
   'obras-estado': ['planificada', 'en_curso', 'finalizada', 'cerrada'],
@@ -112,12 +113,15 @@ Deno.serve(async (req) => {
   const sb = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, {
     auth: { persistSession: false },
   });
-  const { data, error } = await sb.rpc('agentes_leer', { p_que: que, p });
+  // Las plantillas de fases no son de ningún cliente ni llevan filtros: van por su propia función.
+  const { data, error } = que === 'fases-plantillas'
+    ? await sb.rpc('agentes_fases_plantillas')
+    : await sb.rpc('agentes_leer', { p_que: que, p });
   if (error) {
     // P0001 es un «raise exception» nuestro (obra que no existe, rango demasiado largo): culpa del dato.
     if (error.code === 'P0001') return json({ ok: false, error: error.message }, 400);
-    const falta = /agentes_leer|schema cache|PGRST202/i.test(error.message);
-    return json({ ok: false, error: falta ? 'Falta preparar la base: sql/etapa115_agentes_leer.sql.' : 'No se pudo leer: ' + error.message }, 500);
+    const falta = /agentes_leer|agentes_fases_plantillas|schema cache|PGRST202/i.test(error.message);
+    return json({ ok: false, error: falta ? 'Falta preparar la base: sql/etapa115_agentes_leer.sql y sql/etapa117_agentes_fases_plantillas.sql.' : 'No se pudo leer: ' + error.message }, 500);
   }
   return json(data);
 });
