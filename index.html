@@ -562,7 +562,7 @@ import * as idiomas from './presu-idiomas.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '33.0'; // versión visible de la app (única fuente)
+const APP_VERSION = '33.1'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -8673,14 +8673,26 @@ A.presuGuardar = async () => {
         for (const l of (d && d.lineas) || []) { const a = ajusteFv2De(p, l), oi = l.origen_inputs; if (!a || !oi || !oi.fv2 || oi.desglose_editado) continue; await visitasDB.guardarLineaPresupuesto(l.id, { origen_inputs: oiConFv2(oi, a.fv2) }); }
       } catch (err) { registrarError('fv2 desglose guardado', err); }
     }
-    toast('Presupuesto guardado. Subiéndolo a Teamleader…');
+    toast(presuSueltoSinCliente() ? 'Presupuesto guardado. Sin cliente no se puede subir a Teamleader.' : 'Presupuesto guardado. Subiéndolo a Teamleader…');
     V.presuLista.cargado = false; A.cargarPresupuestos();
     anotar(suelto ? V.suelto.clienteId : (vv.visita && vv.visita.cliente_id), 'presupuesto', 'Presupuesto de ' + (suelto ? tipoDelSuelto(V.suelto) : nombreCat(p.cat)) + sufijoOpcion() + ' creado' + (r && r.total_venta != null ? ' · ' + eur(r.total_venta) : ''));
   } catch (e) { avisar('No se pudo guardar: ' + msgError(e)); p.guardando = false; render(); return; }
   p.guardando = false; render();
-  // Guardado = a Teamleader, sin más botones.
-  if (p.guardado) A.presuGuardadoATL();
+  // Guardado = a Teamleader, sin más botones. Menos si es un presupuesto suelto
+  // sin cliente elegido (Enzo, 19-11-2026: «creo un presupuesto, le agrego el
+  // cliente y dice que no se guardó en Teamleader»): la oportunidad del CRM
+  // cuelga del cliente, así que sin él la subida fallaba siempre, con un aviso
+  // que hablaba de subir el cliente. Ahora se dice qué falta y, al asignárselo
+  // en la ficha del presupuesto, se sube solo.
+  if (p.guardado) {
+    if (presuSueltoSinCliente()) { p.errTL = PRESU_SIN_CLIENTE_TL; render(); }
+    else A.presuGuardadoATL();
+  }
 };
+const PRESU_SIN_CLIENTE_TL = 'Este presupuesto no tiene cliente y Teamleader lo necesita. Ábrelo en Presupuestos, asígnale el cliente y se sube solo.';
+const presuSueltoSinCliente = () => enSuelto() && !(V.suelto && V.suelto.clienteId);
+/** ¿Le falta la oferta en Teamleader? Para subirlo solo en cuanto se le asigna cliente. */
+const presuFaltaEnTL = (d) => !!d && !d.tl_quotation_id;
 
 /* --- añadir la máquina, del catálogo o a mano --- */
 let presuBuscarT, presuKwhT;
@@ -10947,8 +10959,11 @@ A.presuCliDe = async (id) => {
     await visitasDB.seguimientoPresupuesto(d.id, cambios);
     anotar(c.id, 'presupuesto', 'Presupuesto asignado: ' + (cambios.titulo || t) + (d.total_venta != null ? ' · ' + eur(d.total_venta) : ''));
     V.sheet = null; V.presuLista.cargado = false;
-    toast('Presupuesto asignado a ' + c.nombre + '.');
+    const subir = presuFaltaEnTL(d) && navigator.onLine;
+    toast('Presupuesto asignado a ' + c.nombre + '.' + (subir ? ' Subiéndolo a Teamleader…' : ''));
     await abrirPresuSinOrigen(d.id);
+    // Si no estaba en Teamleader (se guardó sin cliente y por eso no subió), ahora sí puede.
+    if (subir && V.presuVer && V.presuVer.datos && V.presuVer.datos.id === d.id) A.presuATeamleader();
   } catch (e) { s.busy = false; avisar('No se pudo asignar: ' + msgError(e)); render(); }
 };
 A.presuAbrir = (id) => { recordarOrigen(); return abrirPresuSinOrigen(id); };

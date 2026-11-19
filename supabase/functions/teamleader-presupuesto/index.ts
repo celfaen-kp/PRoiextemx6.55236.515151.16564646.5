@@ -1113,6 +1113,11 @@ Deno.serve(async (req) => {
           cli = data;
         }
       }
+      // Sin cliente asignado no hay de quién colgar la oportunidad (19-11-2026):
+      // antes salía el aviso de «súbelo primero», que mandaba a buscar un cliente que no existía.
+      if (!cli && !p.cliente_id && !dealBorrada) {
+        throw new Error('Este presupuesto no tiene cliente: asígnale uno desde su ficha y vuelve a subirlo.');
+      }
       if (!cli?.tl_id) {
         throw new Error(dealBorrada
           ? 'La oportunidad de esta visita ya no existe en Teamleader y el cliente tampoco está allí: súbelo primero desde su ficha.'

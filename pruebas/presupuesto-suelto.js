@@ -368,6 +368,19 @@ setTimeout(function () {
     comprueba('ya no sale el botón de empezar', hv.indexOf('Empezar de cero') < 0);
     A.presuSueltoChip('libre', '');
     comprueba('al volver al motor se olvida lo calculado', !V.presu.datos && vPresuNuevo().indexOf('Equipos interiores') > -1);
-    resultado();
+    titulo('sin cliente no se sube a Teamleader; al asignarlo, sí (Enzo, 19-11-2026)');
+  (function () {
+    var antes = V.suelto, vista = V.view;
+    V.view = 'presuNuevo';
+    V.suelto = { cat: 'solar', cliente: 'juanjose', clienteId: null };
+    comprueba('suelto con el nombre escrito pero sin elegir cliente: no se intenta', presuSueltoSinCliente());
+    V.suelto = { cat: 'solar', cliente: 'Jose Maria', clienteId: 'c1' };
+    comprueba('con cliente elegido, se sube al guardar', !presuSueltoSinCliente());
+    V.suelto = antes; V.view = vista;
+    comprueba('el aviso dice qué falta y qué hacer', /no tiene cliente/.test(PRESU_SIN_CLIENTE_TL) && /asígnale el cliente/.test(PRESU_SIN_CLIENTE_TL));
+    comprueba('un presupuesto sin oferta en Teamleader se sube al asignarle cliente', presuFaltaEnTL({ id: 'p1', tl_quotation_id: null }));
+    comprueba('uno que ya está en Teamleader, no', !presuFaltaEnTL({ id: 'p2', tl_quotation_id: 'q-1' }));
+  })();
+  resultado();
   }).catch(function (e) { print('ERROR: ' + e + '\n' + (e.stack || '')); });
 }, 2300);
