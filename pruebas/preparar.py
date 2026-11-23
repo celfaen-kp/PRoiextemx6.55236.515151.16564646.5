@@ -70,3 +70,13 @@ if ruta.exists():
     # Dentro de una función: sus nombres (esCorreo, texto…) no chocan con los de la app.
     (FUERA / 'crear-lead.js').write_text('var LEAD = (function () {\n' + (m.group(1) if m else '')
         + '\nreturn { FUENTES: FUENTES, preparar: preparar, motivoDe: motivoDe };\n})();\n')
+
+# El número del presupuesto (teamleader-presupuesto): del nombre de la oferta en
+# Teamleader o de la referencia de su oportunidad. Se le quitan los tipos.
+ruta = BASE / 'supabase' / 'functions' / 'teamleader-presupuesto' / 'index.ts'
+if ruta.exists():
+    m = re.search(r"// --- PURO: inicio \(número de la oferta\).*?\n(.*?)// --- PURO: fin", ruta.read_text(), re.S)
+    t = re.sub(r": (any|number|string)\b", "", m.group(1) if m else '')
+    (FUERA / 'numero-presupuesto.js').write_text('var NUMERO = (function () {\n' + t
+        + '\nreturn { numeroDeNombre: numeroDeNombre, numerosDeOportunidad: numerosDeOportunidad };\n})();\n')
+

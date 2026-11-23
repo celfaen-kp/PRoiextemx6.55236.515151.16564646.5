@@ -45,7 +45,7 @@ export const unidadIdioma = (u, idioma) => {
 /* ---------- los textos del PDF ---------- */
 export const PDF = {
   es: {
-    presupuesto: 'PRESUPUESTO', cliente: 'Cliente', visita: 'Visita',
+    presupuesto: 'PRESUPUESTO', num: 'Nº', cliente: 'Cliente', visita: 'Visita',
     total_sin_iva: 'Total sin IVA', iva: 'IVA', total_con_iva: 'Total con IVA',
     incluye_dto: 'Incluye descuento de −{n} %',
     pie: 'Presupuesto válido {n} días naturales. No incluye obra civil ni permisos que no se nombren arriba. Condiciones generales y de pago en las páginas siguientes.',
@@ -80,7 +80,7 @@ export const PDF = {
     ],
   },
   en: {
-    presupuesto: 'QUOTATION', cliente: 'Customer', visita: 'Site visit',
+    presupuesto: 'QUOTATION', num: 'No.', cliente: 'Customer', visita: 'Site visit',
     total_sin_iva: 'Total excl. VAT', iva: 'VAT', total_con_iva: 'Total incl. VAT',
     incluye_dto: 'Includes a discount of −{n} %',
     pie: 'This quotation is valid for {n} calendar days. It does not include civil works or permits not listed above. General terms and payment conditions on the following pages.',
@@ -115,7 +115,7 @@ export const PDF = {
     ],
   },
   ca: {
-    presupuesto: 'PRESSUPOST', cliente: 'Client', visita: 'Visita',
+    presupuesto: 'PRESSUPOST', num: 'Núm.', cliente: 'Client', visita: 'Visita',
     total_sin_iva: 'Total sense IVA', iva: 'IVA', total_con_iva: 'Total amb IVA',
     incluye_dto: 'Inclou un descompte del −{n} %',
     pie: 'Pressupost vàlid {n} dies naturals. No inclou obra civil ni permisos que no s’esmentin més amunt. Condicions generals i de pagament a les pàgines següents.',
@@ -150,7 +150,7 @@ export const PDF = {
     ],
   },
   de: {
-    presupuesto: 'ANGEBOT', cliente: 'Kunde', visita: 'Besichtigung',
+    presupuesto: 'ANGEBOT', num: 'Nr.', cliente: 'Kunde', visita: 'Besichtigung',
     total_sin_iva: 'Summe ohne MwSt.', iva: 'MwSt.', total_con_iva: 'Summe inkl. MwSt.',
     incluye_dto: 'Enthält einen Rabatt von −{n} %',
     pie: 'Dieses Angebot ist {n} Kalendertage gültig. Bauarbeiten und Genehmigungen, die oben nicht aufgeführt sind, sind nicht enthalten. Allgemeine Bedingungen und Zahlungsbedingungen auf den folgenden Seiten.',

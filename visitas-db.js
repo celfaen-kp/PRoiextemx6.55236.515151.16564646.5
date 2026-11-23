@@ -684,6 +684,11 @@ export async function aceptarEnTeamleader(presupuestoId) {
   return invocar('teamleader-presupuesto', { accion: 'aceptar', presupuesto_id: presupuestoId });
 }
 
+/** El número del presupuesto (el de su oferta en Teamleader); si no lo tenía apuntado, lo pregunta y lo guarda. */
+export async function numeroPresupuesto(presupuestoId) {
+  return invocar('teamleader-presupuesto', { accion: 'numero', presupuesto_id: presupuestoId });
+}
+
 /** Vuelca en la oferta de Teamleader las líneas tal como están en la app (tras editarlas aquí). */
 export async function actualizarPresupuestoEnTeamleader(presupuestoId) {
   return invocar('teamleader-presupuesto', { presupuesto_id: presupuestoId, actualizar: true });

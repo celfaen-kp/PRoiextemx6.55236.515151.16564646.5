@@ -562,7 +562,7 @@ import * as idiomas from './presu-idiomas.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '33.5'; // versión visible de la app (única fuente)
+const APP_VERSION = '33.6'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -12262,7 +12262,7 @@ function imprimirPresupuestoHTML(d, idioma, tr) {
     <div style="display:flex;justify-content:space-between;align-items:flex-start">
       <div><img src="logo-trans.png?v=3" alt="" style="height:17mm">
       ${S.cif ? `<div style="font:400 10px var(--mono);color:#666;margin-top:2px">${esc(S.empresa)} · ${esc(S.cif)}</div>` : ''}</div>
-      <div style="text-align:right"><div style="font:600 11px var(--mono);letter-spacing:.1em">${esc(T.presupuesto)}</div>
+      <div style="text-align:right"><div style="font:600 11px var(--mono);letter-spacing:.1em">${esc(T.presupuesto)}${numPresu(d) ? ' · ' + esc(T.num || 'Nº') + ' ' + esc(numPresu(d)) : ''}</div>
       <div style="font:700 16px var(--cond);margin-top:2px">${esc(d.categoria === 'otro' ? String(d.categoria_texto || '').trim() : (idiomas.categoriaIdioma(d.categoria, idioma) || nombreCatDe(d) || d.categoria))}</div>
       <div style="font:400 10px var(--mono);color:#666;margin-top:2px">${d.created_at ? fechaCorta(d.created_at) : ''}</div></div>
     </div>
@@ -12322,11 +12322,36 @@ function imprimirPresupuestoHTML(d, idioma, tr) {
 /** El nombre del PDF de un presupuesto: presupuesto-aerotermia-ana-ferrer.pdf */
 // El archivo se llama como el presupuesto (Enzo, 28-10-2026): «Presupuesto Juanlu · Enphase · 5,1 kWp.pdf».
 const PDF_PREFIJO = { es: 'Presupuesto', en: 'Quotation', ca: 'Pressupost', de: 'Angebot' };
+/** El número del presupuesto: el de su oferta en Teamleader (895, 864-1). '' si aún no lo tiene. */
+const numPresu = (d) => String((d && d.tl_numero) || '').trim();
+/**
+ * Deja el presupuesto con su número antes de sacarle el PDF para el cliente
+ * (Enzo, 23-11-2026: «no se manda el número; lo necesito en todos»). El número
+ * lo da Teamleader: si el presupuesto aún no está allí, se sube; si está y no
+ * lo tiene apuntado, se pregunta. Devuelve '' si lo tiene y, si no, por qué.
+ */
+async function presuAsegurarNumero(d) {
+  if (numPresu(d)) return '';
+  let motivo = '';
+  if (presuFaltaEnTL(d)) {
+    if (!d.cliente_id && !d.visita_id) return PRESU_SIN_CLIENTE_TL;
+    try { const r = await visitasDB.presupuestoATeamleader(d.id, false, null); if (r && r.tl_quotation_id) d.tl_quotation_id = r.tl_quotation_id; if (r && r.numero) d.tl_numero = r.numero; }
+    catch (e) { motivo = msgError(e); }
+  }
+  if (!numPresu(d) && !presuFaltaEnTL(d)) {
+    try { const r = await visitasDB.numeroPresupuesto(d.id); if (r && r.numero) d.tl_numero = r.numero; }
+    catch (e) { motivo = motivo || msgError(e); }
+  }
+  return numPresu(d) ? '' : (motivo || 'Teamleader no ha dado su número.');
+}
 const nombrePdfPresu = (d, idioma) => {
   idioma = idiomas.idiomaValido(idioma);
   let t = String(d.titulo || [(d.cliente && d.cliente.nombre) || '', nombreCatDe(d) || ''].filter(Boolean).join(' · ') || 'Sysefen')
     .replace(/\s*[·\-–—(]?\s*Hecho en Teamleader\s*[)]?\s*/gi, ' ').replace(/[\\/:*?"<>|\u0000-\u001f]+/g, '-').replace(/\s+/g, ' ').trim().slice(0, 120).replace(/[ .\-·]+$/, '');
-  if (idioma !== 'es') t = PDF_PREFIJO[idioma] + ' · ' + t.replace(/^presupuesto\s*[·\-–—]?\s*/i, '');
+  // Con su número delante, si lo tiene (Enzo, 23-11-2026): «Presupuesto 895 · …».
+  const num = numPresu(d).replace(/[\\/:*?"<>|]+/g, '-');
+  if (num) t = PDF_PREFIJO[idioma] + ' ' + num + ' · ' + t.replace(/^presupuesto\s*[·\-–—]?\s*/i, '');
+  else if (idioma !== 'es') t = PDF_PREFIJO[idioma] + ' · ' + t.replace(/^presupuesto\s*[·\-–—]?\s*/i, '');
   else if (!/^presupuesto\b/i.test(t)) t = 'Presupuesto ' + t;
   return t + '.pdf';
 };
@@ -12338,6 +12363,14 @@ const nombrePdfPresu = (d, idioma) => {
  */
 async function subirPresuATL(id) {
   const d = await visitasDB.verPresupuesto(id);
+  // Primero la oferta sola: Teamleader le da su número, y el PDF que se deja
+  // en la oportunidad ya lo lleva (23-11-2026). Si eso falla, falla la subida.
+  let primera = null;
+  if (presuFaltaEnTL(d) && !numPresu(d)) {
+    primera = await visitasDB.presupuestoATeamleader(id, false, null);
+    if (primera && primera.tl_quotation_id) d.tl_quotation_id = primera.tl_quotation_id;
+    if (primera && primera.numero) d.tl_numero = primera.numero;
+  }
   let pdf = null;
   try {
     imprimirPresupuestoHTML(d);
@@ -12355,6 +12388,11 @@ async function subirPresuATL(id) {
     });
     pdf = { base64, nombre: nombrePdfPresu(d) };
   } catch (_) { /* sin PDF: va la oferta sola */ }
+  if (primera) {
+    if (!pdf) return primera;
+    try { const r = await visitasDB.presupuestoATeamleader(id, false, pdf); return Object.assign({}, primera, { pdf_subido: !!(r && r.pdf_subido), aviso: (r && r.aviso) || primera.aviso || null }); }
+    catch (_) { return primera; }   // la oferta está; el PDF se puede volver a subir
+  }
   return visitasDB.presupuestoATeamleader(id, false, pdf);
 }
 
@@ -12542,6 +12580,13 @@ A.presuEnviarConfirmado = async () => {
     const pdfs = [], titulos = {};
     for (const id of s.ids) {
       const d = await visitasDB.verPresupuesto(id);
+      // Sin su número no se manda (Enzo, 23-11-2026): se le pone aquí si falta.
+      if (!numPresu(d)) {
+        s.paso = 'Poniéndole el número…'; render();
+        const falta = await presuAsegurarNumero(d);
+        if (falta) throw new Error('«' + (d.titulo || 'el presupuesto') + '» no tiene número y no se manda sin él. ' + falta);
+        s.paso = idioma === 'es' ? 'Preparando los PDF…' : 'Traduciendo y preparando los PDF…'; render();
+      }
       const tr = await traduccionesPresu(d, idioma);
       if (idioma !== 'es' && d.titulo) titulos[id] = tr(d.titulo);
       imprimirPresupuestoHTML(d, idioma, tr);
@@ -12600,7 +12645,7 @@ let presuTlNumT;
 A.presuTlNumero = async (v) => {
   const d = V.presuVer && V.presuVer.datos; if (!d) return;
   const num = String(v || '').trim() || null; if (num === (d.tl_numero || null)) return;
-  try { Object.assign(d, await visitasDB.seguimientoPresupuesto(d.id, { tl_numero: num })); toast(num ? 'Nº de Teamleader apuntado.' : 'Nº de Teamleader quitado.'); }
+  try { Object.assign(d, await visitasDB.seguimientoPresupuesto(d.id, { tl_numero: num })); toast(num ? 'Número del presupuesto apuntado.' : 'Número del presupuesto quitado.'); }
   catch (e) { avisar(/tl_numero|schema cache/i.test(msgError(e)) ? 'Falta ejecutar sql/etapa88 en Supabase.' : 'No se pudo guardar: ' + msgError(e)); }
 };
 function seguimientoHTML(d) {
@@ -12619,7 +12664,7 @@ function seguimientoHTML(d) {
   const busy = V.presuSegBusy;
   return `<div class="card" style="margin-top:12px;padding:12px 15px">
     <div class="row g8" style="align-items:center"><span class="dot" style="width:10px;height:10px;background:${sg.color}"></span><span style="font:600 15px var(--sans)">${esc(sg.txt)}</span></div>
-    <div class="row g8" style="align-items:center;margin-top:10px"><span class="lbl" style="font-size:11px;flex:none">Nº Teamleader</span><input class="inp" data-f="presuTlNumero" value="${esc(d.tl_numero || '')}" placeholder="2026/634" style="width:120px;padding:7px 9px"><span class="tiny">La API no lo da: se apunta a mano y sale en la lista.</span></div>
+    <div class="row g8" style="align-items:center;margin-top:10px"><span class="lbl" style="font-size:11px;flex:none">Nº presupuesto</span><input class="inp" data-f="presuTlNumero" value="${esc(d.tl_numero || '')}" placeholder="—" style="width:120px;padding:7px 9px"><span class="tiny">El de Teamleader: se pone solo al subirlo. Va en el PDF y en el correo al cliente.</span></div>
     <div style="margin-top:10px">${pasos.map(([t, sub, ok]) => `<div class="row g10" style="align-items:center;padding:7px 0;border-bottom:1px solid var(--l1)">
       <span class="dot" style="width:9px;height:9px;background:${ok ? 'var(--verde)' : 'rgba(var(--tinta-rgb),.15)'}"></span>
       <span class="grow" style="font:500 14px var(--sans);${ok ? '' : 'color:var(--t2)'}">${t}</span><span class="tiny">${esc(sub)}</span></div>`).join('')}</div>

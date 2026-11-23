@@ -443,7 +443,8 @@ Deno.serve(async (req) => {
   const titulosTrad: Record<string, string> = (b.titulos && typeof b.titulos === 'object') ? b.titulos : {};
   // deno-lint-ignore no-explicit-any
   const tituloEnIdioma = (p: any) => (idioma !== 'es' && limpio(titulosTrad[p.id]).slice(0, 200)) || tituloCliente(p);
-  const asunto = limpio(b.asunto).slice(0, 150) || ((ps.length === 1 ? T.asunto1 : T.asuntoN) + (cli?.nombre ? ' · ' + cli.nombre : ''));
+  // Con su número cuando va uno solo (Enzo, 23-11-2026): «Su presupuesto de Sysefen nº 895 · Cliente».
+  const asunto = limpio(b.asunto).slice(0, 150) || ((ps.length === 1 ? T.asunto1 + (limpio(ps[0].tl_numero) ? ' ' + T.num + ' ' + limpio(ps[0].tl_numero) : '') : T.asuntoN) + (cli?.nombre ? ' · ' + cli.nombre : ''));
   // deno-lint-ignore no-explicit-any
   const pdfs: any[] = Array.isArray(b.pdfs) ? b.pdfs : [];
   const ahora = new Date().toISOString();

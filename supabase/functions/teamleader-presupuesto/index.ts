@@ -280,6 +280,132 @@ function mismaClave(a: string, b: string) {
   return dif === 0;
 }
 const esUuid = (v: unknown) => /^[0-9a-f-]{36}$/i.test(String(v || ''));
+
+// =============================================================================
+// El número del presupuesto (23-11-2026, Enzo: «en los presupuestos que envío no
+// se manda el número; lo necesito en todos»). Hasta hoy se apuntaba a mano
+// (etapa88) y nadie lo hacía: ningún presupuesto lo tenía.
+//
+// Teamleader no da un campo «número», pero sí lo lleva: la oferta se llama
+// «Presupuesto 895» («Angebot 846», «Quotation 844» en otros idiomas), donde 895
+// es la referencia de la oportunidad, y otra oferta de la misma oportunidad
+// «Presupuesto 864-1». Se toma del nombre. Si alguien le cambió el nombre a
+// mano («Batería Sonnen sB10», «Presupuesto 795-FV Deye»), se le da la
+// referencia de su oportunidad, o referencia-1, -2… si ese número ya lo lleva
+// otra oferta de la misma oportunidad: dos presupuestos no comparten número.
+// Se guarda en presupuestos.tl_numero al subirla, al actualizarla y, para las
+// que se hacen en el CRM o ya estaban, en cada pasada del cron. Un número ya
+// puesto no se pisa.
+// =============================================================================
+// --- PURO: inicio (número de la oferta) ---
+// JavaScript plano, sin más tipos que «any»: pruebas/numero-presupuesto.js lo carga tal cual.
+// deno-lint-ignore no-explicit-any
+function numeroDeNombre(nombre: any) {
+  const m = /^\s*(?:presupuesto|pressupost|angebot|quotation|quote|offer|offerte|devis)\s+(\d{1,7}(?:-\d{1,3})?)\s*$/i.exec(String(nombre == null ? '' : nombre));
+  return m ? m[1] : '';
+}
+/** El número de cada oferta de una oportunidad: {id: número}. ofertas: [{id, name, created_at}]. */
+// deno-lint-ignore no-explicit-any
+function numerosDeOportunidad(refOportunidad: any, ofertas: any) {
+  const ref = String(refOportunidad == null ? '' : refOportunidad).trim();
+  // deno-lint-ignore no-explicit-any
+  const lista = (ofertas || []).slice().sort((a: any, b: any) => String(a.created_at || '').localeCompare(String(b.created_at || '')) || String(a.id).localeCompare(String(b.id)));
+  // deno-lint-ignore no-explicit-any
+  const salida: any = {}, cogidos: any = {};
+  // deno-lint-ignore no-explicit-any
+  lista.forEach((o: any) => { const n = numeroDeNombre(o.name); if (n && !cogidos[n]) { salida[o.id] = n; cogidos[n] = true; } });
+  if (!/^\d{1,7}$/.test(ref)) return salida;
+  // deno-lint-ignore no-explicit-any
+  lista.forEach((o: any) => {
+    if (salida[o.id]) return;
+    let k = 0, n = ref;
+    while (cogidos[n]) { k++; n = ref + '-' + k; }
+    salida[o.id] = n; cogidos[n] = true;
+  });
+  return salida;
+}
+// --- PURO: fin (número de la oferta) ---
+
+/** Los números de las ofertas de una oportunidad, preguntando a Teamleader. */
+async function numerosDeDeal(token: string, dealId: string): Promise<Record<string, string>> {
+  const deal = (await crm(token, 'deals.info', { id: dealId }))?.data;
+  // deno-lint-ignore no-explicit-any
+  const ids = ((deal?.quotations || []) as any[]).map((x) => limpio(x?.id)).filter(Boolean);
+  if (!ids.length) return {};
+  // deno-lint-ignore no-explicit-any
+  const ofertas: any[] = [];
+  for (let i = 0; i < ids.length; i += 50) {
+    const r = await crm(token, 'quotations.list', { filter: { ids: ids.slice(i, i + 50) }, page: { size: 50 } });
+    // deno-lint-ignore no-explicit-any
+    ((r?.data || []) as any[]).forEach((o) => ofertas.push(o));
+  }
+  return numerosDeOportunidad(deal?.reference, ofertas);
+}
+
+/** El número de una oferta, preguntando a Teamleader lo que haga falta. '' si no se puede saber. */
+async function numeroEnTeamleader(token: string, quotationId: string, pistas?: { nombre?: unknown; dealId?: string }): Promise<string> {
+  let nombre = pistas?.nombre, dealId = limpio(pistas?.dealId);
+  if (nombre === undefined || !dealId) {
+    const q = await crm(token, 'quotations.info', { id: quotationId });
+    nombre = q?.data?.name; dealId = limpio(q?.data?.deal?.id);
+  }
+  const deNombre = numeroDeNombre(nombre);
+  if (deNombre) return deNombre;
+  if (!dealId) return '';
+  return (await numerosDeDeal(token, dealId))[quotationId] || '';
+}
+
+/** Apunta el número en el presupuesto si aún no lo tiene. Devuelve el que queda. */
+// deno-lint-ignore no-explicit-any
+async function apuntarNumero(sb: any, token: string, presupuestoId: string, quotationId: string, pistas?: { nombre?: unknown; dealId?: string }): Promise<string> {
+  const { data: p } = await sb.from('presupuestos').select('tl_numero').eq('id', presupuestoId).maybeSingle();
+  if (limpio(p?.tl_numero)) return limpio(p.tl_numero);
+  const numero = await numeroEnTeamleader(token, quotationId, pistas);
+  if (numero) await sb.from('presupuestos').update({ tl_numero: numero }).eq('id', presupuestoId).is('tl_numero', null);
+  return numero;
+}
+
+/** Los presupuestos que están en Teamleader y no tienen número: se lo pone.
+ *  Los más nuevos primero. Por pasada, hasta 80 presupuestos y 20 oportunidades
+ *  de las que hay que preguntar aparte (las de nombre cambiado), para no agotar
+ *  el cupo de llamadas del CRM; lo que quede, en la siguiente. */
+// deno-lint-ignore no-explicit-any
+async function rellenarNumeros(sb: any, opciones?: { todos?: boolean }) {
+  const { data: filas } = await sb.from('presupuestos').select('id, tl_quotation_id').not('tl_quotation_id', 'is', null).is('tl_numero', null)
+    .order('created_at', { ascending: false }).limit(opciones?.todos ? 600 : 80);
+  // deno-lint-ignore no-explicit-any
+  const lista = ((filas || []) as any[]).filter((f) => limpio(f.tl_quotation_id));
+  if (!lista.length) return { numeros: 0, sin_numero: 0 };
+  const token = await tokenValido(sb);
+  // deno-lint-ignore no-explicit-any
+  const ofertas: Record<string, any> = {};
+  const ids = lista.map((f) => String(f.tl_quotation_id));
+  for (let i = 0; i < ids.length; i += 50) {
+    const r = await crm(token, 'quotations.list', { filter: { ids: ids.slice(i, i + 50) }, page: { size: 50 } });
+    // deno-lint-ignore no-explicit-any
+    ((r?.data || []) as any[]).forEach((o) => { ofertas[o.id] = o; });
+  }
+  const porDeal: Record<string, Record<string, string> | null> = {};
+  const maxDeals = opciones?.todos ? 150 : 20;
+  let puestos = 0, sin = 0, pendientes = 0;
+  for (const f of lista) {
+    const o = ofertas[String(f.tl_quotation_id)];
+    if (!o) { sin++; continue; }   // la oferta ya no está en Teamleader
+    let numero = numeroDeNombre(o.name);
+    if (!numero) {
+      const did = limpio(o.deal?.id);
+      if (did && !(did in porDeal)) {
+        if (Object.keys(porDeal).length >= maxDeals) { pendientes++; continue; }
+        try { porDeal[did] = await numerosDeDeal(token, did); } catch (_) { porDeal[did] = null; }
+      }
+      numero = (did && porDeal[did] && porDeal[did]![o.id]) || '';
+    }
+    if (!numero) { sin++; continue; }
+    const { error } = await sb.from('presupuestos').update({ tl_numero: numero }).eq('id', f.id).is('tl_numero', null);
+    if (error) sin++; else puestos++;
+  }
+  return { numeros: puestos, sin_numero: sin, pendientes };
+}
 const CATEGORIAS_TITULO: Record<string, string> = { solar: 'Fotovoltaica', aerotermia: 'Aerotermia', aire_acondicionado: 'Aire acondicionado', electricidad: 'Electricidad', otro: 'Otros' };
 /**
  * Las líneas de una oferta de Teamleader, tal cual, como líneas del presupuesto
@@ -813,7 +939,9 @@ async function actualizarOfertaEnTl(sb: any, id: string) {
     let tlUpdated: string | null = null;
     try { const info2 = await crm(token, 'quotations.info', { id: yaOferta }); tlUpdated = info2?.data?.updated_at ? new Date(info2.data.updated_at).toISOString() : null; } catch (_) { /* da igual */ }
     await sb.from('presupuestos').update({ sync_estado: 'sincronizado', sync_error: null, sync_at: new Date().toISOString(), tl_updated_at: tlUpdated }).eq('id', id);
-    return { ok: true, actualizado: true, tl_quotation_id: yaOferta, lineas: lineas.length, total: p.total_venta };
+    let numero = '';
+    try { numero = await apuntarNumero(sb, token, id, yaOferta, { nombre: info?.data?.name, dealId: dealIdQ }); } catch (_) { /* el cron lo vuelve a intentar */ }
+    return { ok: true, actualizado: true, tl_quotation_id: yaOferta, numero: numero || null, lineas: lineas.length, total: p.total_venta };
   } catch (e) {
     await sb.from('presupuestos').update({ sync_estado: 'error', sync_error: 'Actualizar: ' + (e as Error).message, sync_at: new Date().toISOString() }).eq('id', id);
     throw e;
@@ -855,12 +983,20 @@ Deno.serve(async (req) => {
       catch (e) { return json({ error: (e as Error).message, sin_permiso: e instanceof SinPermiso }, e instanceof SinPermiso ? 409 : 502); }
     }
     if (bc && bc.accion === 'reintentar_actualizaciones') return json(Object.assign({ ok: true, cron: true }, await reintentarActualizaciones(sbCron)));
+    // El número de los presupuestos que no lo tienen: todos de una vez (23-11-2026).
+    if (bc && bc.accion === 'numeros') {
+      try { return json(Object.assign({ ok: true, cron: true }, await rellenarNumeros(sbCron, { todos: true }))); }
+      catch (e) { return json({ error: (e as Error).message, sin_permiso: e instanceof SinPermiso }, e instanceof SinPermiso ? 409 : 502); }
+    }
     try {
       const r = await sincronizar(sbCron);
       // Las ediciones de la app que no llegaron a Teamleader se reintentan en cada pasada (2-11-2026).
       let reintentos = null;
       try { reintentos = await reintentarActualizaciones(sbCron); } catch (e) { reintentos = { error: (e as Error).message }; }
-      return json(Object.assign({ ok: true, cron: true, reintentos }, r));
+      // Y el número de los que aún no lo tienen (los hechos en el CRM, o subidos antes del 23-11-2026).
+      let numeros = null;
+      try { numeros = await rellenarNumeros(sbCron); } catch (e) { numeros = { error: (e as Error).message }; }
+      return json(Object.assign({ ok: true, cron: true, reintentos, numeros }, r));
     }
     catch (e) { return json({ error: (e as Error).message, sin_permiso: e instanceof SinPermiso }, e instanceof SinPermiso ? 409 : 502); }
   }
@@ -885,6 +1021,22 @@ Deno.serve(async (req) => {
   // deno-lint-ignore no-explicit-any
   let b: any;
   try { b = await req.json(); } catch { return json({ error: 'Petición mal formada.' }, 400); }
+
+  // --- desde la app: el número de un presupuesto, antes de mandarlo al cliente ------
+  // Si no lo tiene y está en Teamleader, se pregunta allí y se guarda (23-11-2026).
+  if (b.accion === 'numero') {
+    const pid = esUuid(b.presupuesto_id) ? String(b.presupuesto_id) : '';
+    if (!pid) return json({ error: 'Falta el presupuesto.' }, 400);
+    const { data: p } = await sb.from('presupuestos').select('id, cliente_id, visita_id, tl_quotation_id, tl_numero').eq('id', pid).maybeSingle();
+    if (!p) return json({ error: 'Ese presupuesto no existe.' }, 404);
+    if (!(await clienteDeColaborador(sb, yo, p.cliente_id, p.visita_id))) return json({ error: SOLO_SUS_CLIENTES }, 403);
+    if (limpio(p.tl_numero)) return json({ ok: true, numero: limpio(p.tl_numero) });
+    if (!limpio(p.tl_quotation_id)) return json({ ok: true, numero: null, en_teamleader: false });
+    try {
+      const token = await tokenValido(sb);
+      return json({ ok: true, numero: (await apuntarNumero(sb, token, pid, limpio(p.tl_quotation_id))) || null, en_teamleader: true });
+    } catch (e) { return json({ error: (e as Error).message, sin_permiso: e instanceof SinPermiso }, e instanceof SinPermiso ? 409 : 502); }
+  }
 
   // --- desde la app: el cliente aceptó → aceptar la oferta en Teamleader ------------
   if (b.accion === 'aceptar') {
@@ -1239,9 +1391,13 @@ Deno.serve(async (req) => {
 
   if (!bien) return json({ error: fallos.join(' · ') || 'No se pudo subir nada.' }, 502);
 
+  // Su número, para el PDF y el correo que recibe el cliente (23-11-2026).
+  let numero = '';
+  if (quotationId) { try { numero = await apuntarNumero(sb, token, id, quotationId); } catch (_) { /* el cron lo vuelve a intentar */ } }
+
   // Dónde ha quedado, para que se pueda abrir desde la app y comprobarlo.
   return json({
-    ok: true, tl_quotation_id: quotationId || null, pdf_subido: pdfSubido,
+    ok: true, tl_quotation_id: quotationId || null, numero: numero || null, pdf_subido: pdfSubido,
     deal_id: dealId, deal_creado: dealCreado,
     deal_url: limpio(deal?.data?.web_url) || null,
     deal_titulo: limpio(deal?.data?.title) || null,
