@@ -58,7 +58,7 @@ const num = (v) => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
 export const ENTRADA_POR_DEFECTO = {
   cli: '', muni: '', origen: 'Meta',
   factura_rango: 'Entre 100 € y 200 €', factura_exacta: null, consumo_real: null, paneles_forzado: null,
-  sis: 'Fronius',            // Fronius | Deye | Enphase
+  sis: 'Fronius',            // Fronius | Deye | Huawei | Enphase
   inv_modelo: null,          // un inversor concreto del modelo, elegido a mano (si no, el más pequeño que cubra)
   sumi: 'Monofásico',        // Monofásico | Trifásico
   cubierta: 'Teja',          // Teja | Plana (lastres Sun Ballast) | Chapa (= A MEDIDA)
@@ -95,6 +95,8 @@ export function calcularFV(entrada, modelo, opciones) {
   const mono = e.sumi === 'Monofásico' ? 1 : 0;
   const fv = e.sis === 'Enphase' ? 0 : 1;
   const enp = 1 - fv;
+  const huawei = e.sis === 'Huawei' ? 1 : 0;
+  const medidorHuawei = PR.huawei_medidor ? num(mono ? PR.huawei_medidor.mono : PR.huawei_medidor.tri) : 0;
   const mt = (clave) => (mono ? PR[clave].mono : PR[clave].tri);
   const baywa = (c) => rnd(c * (1 + P.portes_baywa), 2);
   const rebacas = (c) => rnd(c * (1 - P.dto_rebacas) * (1 + P.portes_rebacas), 2);
@@ -117,9 +119,13 @@ export function calcularFV(entrada, modelo, opciones) {
     // batería, en el normal. Los Deye son todos híbridos. Los del catálogo
     // traen `plus`; los del modelo de Ramón son todos sin Plus.
     const lista = (modelo.inversores || []).filter((i) => i.sistema === e.sis && i.suministro === e.sumi && i.usar
-      && (e.sis !== 'Fronius' || !!i.plus === !!op.hibrido));
+      && (e.sis !== 'Fronius' || !!i.plus === !!op.hibrido)
+      // Huawei (23-11-2026): casi todos admiten batería LUNA2000; con batería, solo esos.
+      && (e.sis !== 'Huawei' || !op.hibrido || !!i.plus));
     lista.forEach((i) => { if (i.kw > kw_mayor) kw_mayor = i.kw; });
-    lista.filter((i) => i.kw >= kw_nec).forEach((i) => { if (!inv || i.kw < inv.kw) inv = i; });
+    // A igual potencia, en Huawei el más barato (hay dos trifásicos de 12 kW: MAP0 y MB0).
+    const mejor = (i, a) => !a || i.kw < a.kw || (e.sis === 'Huawei' && i.kw === a.kw && i.coste_base < a.coste_base);
+    lista.filter((i) => i.kw >= kw_nec).forEach((i) => { if (mejor(i, inv)) inv = i; });
     // Elegido a mano desde el presupuesto (Enzo, 21-10-2026): manda sobre el automático.
     // Con batería y un Fronius elegido sin Plus, vale su versión Plus si está
     // (catálogo); si no está, no se fuerza nada y el inversor sale por el motor
@@ -135,7 +141,7 @@ export function calcularFV(entrada, modelo, opciones) {
     // potencia no va en monofásico.
     if (!inv && !e.inv_modelo && e.sumi === 'Trifásico' && kw_mayor > 0) {
       n_inv = roundup(kw_nec / kw_mayor);
-      lista.filter((i) => i.kw * n_inv >= kw_nec).forEach((i) => { if (!inv || i.kw < inv.kw) inv = i; });
+      lista.filter((i) => i.kw * n_inv >= kw_nec).forEach((i) => { if (mejor(i, inv)) inv = i; });
     }
     // Monofásico que se queda corto (Enzo, 11-11-2026: «con más de 22 paneles me
     // da que no hay Fronius de esa capacidad»). Los Fronius mayores sí están
@@ -241,6 +247,11 @@ export function calcularFV(entrada, modelo, opciones) {
     ['MEDICIÓN Y MONITORIZACIÓN', 'Medidor Fronius Smart Meter', 'ud', (e.sis === 'Fronius' ? 1 : 0) * invAqui, baywa(mt('fronius_smart_meter')),
       'Medidor Fronius Smart Meter ' + (mono ? 'TS 100A-1' : 'TS 65A-3') + ' para gestión de la energía', ''],
     ['MEDICIÓN Y MONITORIZACIÓN', 'Medidor para Deye (antivertido)', 'ud', e.sis === 'Deye' ? 1 : 0, rebacas(mt('deye_medidor')), 'Medidor de energía para el control de la inyección', ''],
+    // Huawei (23-11-2026): su Smart Power Sensor, de BayWa. El precio va en el modelo
+    // (precios.huawei_medidor); si falta, la partida sale a 0 y avisa.
+    ['MEDICIÓN Y MONITORIZACIÓN', PARTIDA_MEDIDOR_HUAWEI, 'ud', huawei, baywa(medidorHuawei),
+      'Medidor Huawei Smart Power Sensor ' + (mono ? 'monofásico' : 'trifásico') + ' para el control de la inyección y la monitorización del consumo',
+      huawei && !(medidorHuawei > 0) ? 'Falta precio del medidor Huawei (Smart Power Sensor)' : ''],
     ['MEDICIÓN Y MONITORIZACIÓN', 'Cable de datos UTP Cat5e + 2 RJ45', 'm', fv * da, PR.utp_cat5e_m.coste, '', ''],
     ['MEDICIÓN Y MONITORIZACIÓN', 'Conectores RJ45', 'ud', fv * 2, PR.rj45.coste, '', ''],
     ['MEDICIÓN Y MONITORIZACIÓN', 'Enphase IQ Gateway Metered (Envoy)', 'ud', enp, baywa(PR.enphase_envoy.coste), 'Pasarela Enphase IQ Gateway (Envoy) con monitorización y app', ''],
@@ -319,6 +330,7 @@ export function calcularFV(entrada, modelo, opciones) {
     'Microinversor Enphase IQ8P': rPr('enphase_iq8p', 'coste', fB), 'Enphase Q Cable 2,5 mm 1,7 m': rPr('enphase_qcable', mt_k, fB),
     'Enphase tapón final': rPr('enphase_tapon', mt_k, fB), 'Enphase conectores de campo (2 machos + 2 hembras)': rPr('enphase_conector', mt_k, fB),
     'Medidor Fronius Smart Meter': rPr('fronius_smart_meter', mt_k, fB), 'Medidor para Deye (antivertido)': rPr('deye_medidor', mt_k, fR),
+    [PARTIDA_MEDIDOR_HUAWEI]: PR.huawei_medidor ? rPr('huawei_medidor', mt_k, fB) : null,
     'Cable de datos UTP Cat5e + 2 RJ45': rPr('utp_cat5e_m'), 'Conectores RJ45': rPr('rj45'),
     'Enphase IQ Gateway Metered (Envoy)': rPr('enphase_envoy', 'coste', fB), 'Enphase CT': rPr('enphase_ct', 'coste', fB), 'Enphase Q-Relay': rPr('enphase_qrelay', mt_k, fB),
     'Perfil G1 4,8 m': rPr('perfil_g1_4m8'), 'Unión de perfiles UG1': rPr('union_ug1'), 'Presor final': rPr('presor_final'), 'Presor intermedio': rPr('presor_intermedio'),
@@ -427,11 +439,12 @@ export function calcularFV(entrada, modelo, opciones) {
  * potencia y si es híbrido (Plus en Fronius; todos los Deye). Así salen en el
  * desplegable del presupuesto y el automático los puede elegir.
  * --------------------------------------------------------------------------- */
+const PARTIDA_MEDIDOR_HUAWEI = 'Medidor Huawei Smart Power Sensor';
 const normInv = (s) => String(s || '').toLowerCase().replace(/^fronius\s+/, '').replace(/\s*kw\b/g, '').replace(/\s+/g, ' ').trim();
 export function inversorDeCatalogo(p) {
   const nombre = String((p && p.nombre) || '').trim();
   const n = nombre.toLowerCase();
-  let sistema = null, suministro = null, kw = 0, plus = false;
+  let sistema = null, suministro = null, kw = 0, plus = false, usar = true;
   if (/\b(primo|symo|verto)\b/.test(n)) {
     sistema = 'Fronius';
     suministro = /\bprimo\b/.test(n) ? 'Monofásico' : 'Trifásico';
@@ -444,13 +457,24 @@ export function inversorDeCatalogo(p) {
     kw = m ? Number(m[1]) : 0;
     suministro = /lp3|hp3/.test(n) ? 'Trifásico' : /lp1/.test(n) ? 'Monofásico' : null;
     plus = true;
+  } else if (/\bsun2000-\d+(?:\.\d+)?k(?:tl)?-(lb0|lc0|map0|m1|mb0|mc0)\b/.test(n)) {
+    // Huawei (23-11-2026). Fases y batería de las fichas de Huawei: LB0 y LC0
+    // monofásicos; MAP0, M1, MB0 y MC0 trifásicos; todos con LUNA2000 menos los
+    // MC0 (sin comprobar). Si el producto trae atributos (sql/etapa122), mandan.
+    const m = n.match(/sun2000-(\d+(?:\.\d+)?)k(?:tl)?-(lb0|lc0|map0|m1|mb0|mc0)\b/);
+    const atr = p && p.atributos && typeof p.atributos === 'object' ? p.atributos : {};
+    sistema = 'Huawei';
+    kw = num(atr.kw) > 0 ? num(atr.kw) : Number(m[1]);
+    suministro = (atr.fases ? Number(atr.fases) === 1 : /^(lb0|lc0)$/.test(m[2])) ? 'Monofásico' : 'Trifásico';
+    plus = atr.hibrido != null ? atr.hibrido === true : m[2] !== 'mc0';
+    usar = atr.fin_existencias !== true;   // los que se acaban, solo a mano
   }
   if (!sistema || !suministro || !(kw > 0)) return null;
   let dto = num(p.descuento_proveedor); if (dto > 1) dto = dto / 100;
   const coste_base = rnd(num(p.precio_tarifa) * (1 - dto), 2);
   if (!(coste_base > 0)) return null;
   const modelo = nombre.replace(/\s*-\s*\(SPD[^)]*\)\s*$/i, '').replace(/kw$/i, '').replace(/^FRONIUS\b/, 'Fronius').trim();
-  return { modelo, sistema, suministro, kw, plus, usar: true, proveedor: 'BayWa', coste_base, referencia: p.referencia || null, origen: 'catalogo', dto_catalogo: dto };
+  return { modelo, sistema, suministro, kw, plus, usar, proveedor: 'BayWa', coste_base, referencia: p.referencia || null, origen: 'catalogo', dto_catalogo: dto };
 }
 export function conInversoresDelCatalogo(modelo, productos) {
   const base = ((modelo && modelo.inversores) || []).slice();
@@ -506,7 +530,7 @@ export const PROVEEDOR_FV = {
   'Microinversor Enphase IQ8P': 'BayWa', 'Enphase Q Cable 2,5 mm 1,7 m': 'BayWa', 'Enphase tapón final': 'BayWa',
   'Enphase conectores de campo (2 machos + 2 hembras)': 'BayWa', 'Medidor Fronius Smart Meter': 'BayWa',
   'Enphase IQ Gateway Metered (Envoy)': 'BayWa', 'Enphase CT': 'BayWa', 'Enphase Q-Relay': 'BayWa',
-  'Medidor para Deye (antivertido)': 'BayWa',
+  'Medidor para Deye (antivertido)': 'BayWa', 'Medidor Huawei Smart Power Sensor': 'BayWa',
   'Cable de datos UTP Cat5e + 2 RJ45': 'Massanella', 'Conectores RJ45': 'Massanella',
   'Perfil G1 4,8 m': 'Electromat', 'Unión de perfiles UG1': 'Electromat', 'Presor final': 'Electromat',
   'Presor intermedio': 'Electromat', 'Pincho VR para teja 250 mm': 'Electromat',
@@ -581,7 +605,7 @@ export function entradaDesdeDatos(d, modelo) {
   const n = (k) => num(d[k]);
   const wp = (modelo.parametros && modelo.parametros.wp && modelo.parametros.wp.valor) || 510;
   const marca = String(d.inversor_marca || 'fronius').toLowerCase();
-  const sis = marca === 'enphase' ? 'Enphase' : marca === 'deye' ? 'Deye' : 'Fronius';
+  const sis = marca === 'enphase' ? 'Enphase' : marca === 'deye' ? 'Deye' : marca === 'huawei' ? 'Huawei' : 'Fronius';
   const cub = String(d.tipo_cubierta || 'teja_arabe');
   const cubierta = cub === 'teja_arabe' || cub === 'pizarra' ? 'Teja'
     : (cub === 'plana_transitable' || cub === 'plana_no_transitable' || cub === 'suelo') ? 'Plana'

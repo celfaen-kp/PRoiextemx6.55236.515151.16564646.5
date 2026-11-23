@@ -346,10 +346,10 @@ const SOLAR = {
         { key: 'baterias_kwh', etiqueta: 'Capacidad', tipo: 'numero', unidad: 'kWh', motor: true },
         // sql/etapa47: con esto el motor elige inversor, batería y backup.
         { key: 'inversor_marca', etiqueta: 'Inversor', tipo: 'opcion', motor: true,
-          opciones: ['fronius', 'deye', 'enphase'], ayuda: 'Enphase son microinversores, uno por panel. Deye: híbrido, de Rebacas' },
+          opciones: ['fronius', 'deye', 'huawei', 'enphase'], ayuda: 'Enphase son microinversores, uno por panel. Deye: híbrido, de Rebacas. Huawei: híbrido, de BayWa' },
         { key: 'bateria_marca', etiqueta: 'Marca de la batería', tipo: 'opcion', motor: true,
-          opciones: ['byd', 'fronius', 'enphase', 'tesla'],
-          ayuda: 'Fronius: BYD, Fronius o Tesla · Enphase: Enphase o Tesla' },
+          opciones: ['byd', 'fronius', 'enphase', 'tesla', 'huawei'],
+          ayuda: 'Fronius: BYD, Fronius o Tesla · Enphase: Enphase o Tesla · Huawei: su LUNA2000 (el modelo se elige al presupuestar)' },
         { key: 'backup', etiqueta: 'Con backup', tipo: 'bool', motor: true,
           ayuda: 'Solo si lleva batería: la casa sigue con luz si se va la red' },
         // Ramón (13-10-2026): si quiere backup, automático o manual. Automático
@@ -595,7 +595,7 @@ export const ETIQUETAS = {
   bueno: 'Bueno', regular: 'Regular', malo: 'Malo', a_sustituir: 'A sustituir',
   facil: 'Fácil', medio: 'Medio', dificil: 'Difícil',
   monofasico: 'Monofásico', trifasico: 'Trifásico',
-  fronius: 'Fronius', enphase: 'Enphase', byd: 'BYD', tesla: 'Tesla', midea: 'Midea',
+  fronius: 'Fronius', enphase: 'Enphase', byd: 'BYD', tesla: 'Tesla', midea: 'Midea', huawei: 'Huawei',
   escalera: 'Escalera', andamio: 'Andamio', plataforma: 'Plataforma', grua: 'Camión grúa',
   automatico: 'Automático (full backup)', manual: 'Manual (conmutador)',
   fachada: 'Fachada', balcon: 'Balcón', terraza: 'Terraza', cubierta: 'Cubierta', patio: 'Patio',

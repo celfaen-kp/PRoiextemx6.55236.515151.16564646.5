@@ -99,7 +99,7 @@ var ls = lineasPresupuesto(r0, modelo, { modelo_version: 'v2' });
 igual('una línea llave en mano', ls.length, 1);
 igual('a 7.690 de venta', ls[0].precio_tarifa, 7690);
 igual('y 3.840,93 de coste', ls[0].precio_coste, 3840.93);
-comprueba('con el desglose de las 59 partidas por dentro', ls[0].origen_inputs.desglose.length === 59);
+comprueba('con el desglose de las 60 partidas por dentro (59 + el medidor de Huawei, 23-11-2026)', ls[0].origen_inputs.desglose.length === 60);
 comprueba('el detalle para el cliente lleva los bloques, sin precios', /MÓDULOS FOTOVOLTAICOS: 10 módulos/.test(ls[0].detalle_tecnico) && !/€/.test(ls[0].detalle_tecnico));
 comprueba('la descripción dice paneles, kWp y suministro', ls[0].descripcion === 'Instalación fotovoltaica llave en mano (10 paneles, 5,10 kWp, monofásico)');
 var ped = ls[0].origen_inputs.pedido;
@@ -304,5 +304,54 @@ igual('app: repreciar sin tocar da el mismo precio', fv2Repreciar(oiCee, oiCee.d
 igual('app: quitadas sus dos partidas, 300 € menos', fv2Repreciar(oiCee, oiCee.desglose.filter(function (x) { return !/ertificado/.test(x.nombre); })).precio_objetivo, c10.precio_objetivo - 300);
 igual('app: quitado el certificado y dejada la tasa, la tasa va al margen', fv2Repreciar(oiCee, oiCee.desglose.filter(function (x) { return x.nombre !== 'Certificado energético'; })).cee_tabla.venta, 0);
 comprueba('app: la ficha dice a cuánto se vende', /el certificado energético se vende a 300,00/.test(desgloseFV2HTML(oiCee)) && /certificado energético: 300,00/.test(desgloseFV2HTML(oiCee)));
+
+
+titulo('Huawei: otra marca de inversores y baterías (Enzo, 23-11-2026)');
+// Como llegan del catálogo (sql/etapa122): nombre, coste y atributos. Los precios de aquí son de prueba.
+var hw = function (nombre, coste, atr) { return { referencia: 'FV-' + nombre.toUpperCase().replace(/[^A-Z0-9.]+/g, '-'), nombre: nombre, familia: 'inversor', precio_tarifa: coste, descuento_proveedor: 0, atributos: atr || null }; };
+var CAT_HW = [
+  hw('Huawei SUN2000-3K-LB0', 400, { kw: 3, fases: 1, hibrido: true }), hw('Huawei SUN2000-5K-LB0', 500, { kw: 5, fases: 1, hibrido: true }),
+  hw('Huawei SUN2000-6K-LB0', 600, { kw: 6, fases: 1, hibrido: true }), hw('Huawei SUN2000-10K-LC0', 1000, { kw: 10, fases: 1, hibrido: true }),
+  hw('Huawei SUN2000-5K-MAP0', 700, { kw: 5, fases: 3, hibrido: true }), hw('Huawei SUN2000-10K-MAP0', 900, { kw: 10, fases: 3, hibrido: true }),
+  hw('Huawei SUN2000-10KTL-M1 (High Current Version)', 800, { kw: 10, fases: 3, hibrido: true, fin_existencias: true }),
+  hw('Huawei SUN2000-25K-MB0', 2000, { kw: 25, fases: 3, hibrido: true }), hw('Huawei SUN2000-30K-MC0', 1800, { kw: 30, fases: 3, hibrido: false }),
+];
+igual('un LB0 es monofásico e híbrido', (function (i) { return i.sistema + '/' + i.suministro + '/' + i.kw + '/' + i.plus + '/' + i.usar + '/' + i.proveedor; })(inversorDeCatalogo(CAT_HW[1])), 'Huawei/Monofásico/5/true/true/BayWa');
+igual('un MAP0, trifásico', inversorDeCatalogo(CAT_HW[5]).suministro + '/' + inversorDeCatalogo(CAT_HW[5]).kw, 'Trifásico/10');
+igual('sin atributos se lee del nombre: LC0 monofásico, MB0 trifásico, MC0 sin batería', [hw('HUAWEI SUN2000-8K-LC0', 900), hw('HUAWEI SUN2000-12K-MB0', 1500), hw('HUAWEI SUN2000-40K-MC0', 1900), hw('HUAWEI SUN2000-3.68K-LB0', 450)].map(function (p) { var i = inversorDeCatalogo(p); return i.kw + ':' + i.suministro.charAt(0) + ':' + i.plus; }).join(' '), '8:M:true 12:T:true 40:T:false 3.68:M:true');
+igual('los de fin de existencias no los elige el automático', inversorDeCatalogo(CAT_HW[6]).usar, false);
+igual('uno de planta (215KTL-H0) no se reconoce como inversor del presupuestador', inversorDeCatalogo(hw('HUAWEI SUN2000-215KTL-H0', 5000)), null);
+igual('un Deye no se confunde con Huawei', inversorDeCatalogo(hw('Deye SUN-5K-SG04LP1-EU', 800)).sistema, 'Deye');
+var modeloHW = conInversoresDelCatalogo(JSON.parse(JSON.stringify(modeloDoc)), CAT_HW);
+modeloHW.precios.huawei_medidor = { mono: 60, tri: 100, proveedor: 'BayWa' };
+var eHW = Object.assign({}, e10, { sis: 'Huawei' });
+var h10 = calcularFV(eHW, modeloHW);
+igual('10 paneles (5,1 kWp) en monofásico: el LB0 que cubre la potencia', h10.mod_inv + ' · ' + h10.kw_inv + ' kW', 'Huawei SUN2000-5K-LB0 · 5 kW');
+igual('su coste, con los portes de BayWa', h10.coste_inv, Math.round(500 * (1 + modeloHW.parametros.portes_baywa.valor) * 100) / 100);
+var parHW = function (r, n) { return r.partidas.filter(function (x) { return x.partida === n; })[0]; };
+igual('lleva su medidor, el monofásico, con portes', parHW(h10, 'Medidor Huawei Smart Power Sensor').cantidad + ' × ' + parHW(h10, 'Medidor Huawei Smart Power Sensor').coste_ud, '1 × ' + Math.round(60 * (1 + modeloHW.parametros.portes_baywa.valor) * 100) / 100);
+igual('y no los de Fronius ni Deye', parHW(h10, 'Medidor Fronius Smart Meter').cantidad + '/' + parHW(h10, 'Medidor para Deye (antivertido)').cantidad, '0/0');
+comprueba('sin avisos de precio', !h10.avisos.some(function (a) { return /Falta precio/.test(a); }));
+comprueba('al cliente le sale el inversor y el medidor', lineasCliente(h10)['INVERSOR'].join(' ').indexOf('Huawei SUN2000-5K-LB0') > -1 && /Smart Power Sensor monofásico/.test(lineasCliente(h10)['MEDICIÓN Y MONITORIZACIÓN'].join(' ')));
+igual('el pedido de material: inversor y medidor a BayWa', pedidoMaterial(h10, modeloHW).BayWa.lineas.map(function (l) { return l.articulo; }).filter(function (a) { return /Huawei/.test(a); }).join(' | '), 'Huawei SUN2000-5K-LB0 | Medidor Huawei Smart Power Sensor');
+var hTri = calcularFV(Object.assign({}, eHW, { sumi: 'Trifásico', paneles_forzado: 20 }), modeloHW);
+igual('20 paneles en trifásico: el MAP0 de 10 kW, no el M1 que se acaba', hTri.mod_inv, 'Huawei SUN2000-10K-MAP0');
+igual('con el medidor trifásico', parHW(hTri, 'Medidor Huawei Smart Power Sensor').coste_ud, Math.round(100 * (1 + modeloHW.parametros.portes_baywa.valor) * 100) / 100);
+igual('el M1 se puede elegir a mano', calcularFV(Object.assign({}, eHW, { sumi: 'Trifásico', paneles_forzado: 20, inv_modelo: 'Huawei SUN2000-10KTL-M1 (High Current Version)' }), modeloHW).mod_inv, 'Huawei SUN2000-10KTL-M1 (High Current Version)');
+var hGr = calcularFV(Object.assign({}, eHW, { sumi: 'Trifásico', paneles_forzado: 66 }), modeloHW);
+igual('66 paneles (33,66 kWp): sin batería vale el MC0 de 30 kW', hGr.mod_inv, 'Huawei SUN2000-30K-MC0');
+var hGrBat = calcularFV(Object.assign({}, eHW, { sumi: 'Trifásico', paneles_forzado: 66 }), modeloHW, { hibrido: true });
+igual('con batería no: dos MB0 de 25 kW, que sí la admiten', hGrBat.txt_inv, '2 × Huawei SUN2000-25K-MB0');
+var modelo12 = conInversoresDelCatalogo(JSON.parse(JSON.stringify(modeloDoc)), [hw('Huawei SUN2000-12K-MB0', 1500, { kw: 12, fases: 3, hibrido: true }), hw('Huawei SUN2000-12K-MAP0', 1000, { kw: 12, fases: 3, hibrido: true })]);
+igual('a igual potencia (dos de 12 kW), el más barato', calcularFV(Object.assign({}, eHW, { sumi: 'Trifásico', paneles_forzado: 24 }), modelo12).mod_inv, 'Huawei SUN2000-12K-MAP0');
+var hMono = calcularFV(Object.assign({}, eHW, { paneles_forzado: 30 }), modeloHW, { pasarATrifasico: true });
+comprueba('30 paneles en monofásico (el mayor es de 10 kW): pasa a trifásico y avisa', hMono.entrada.sumi === 'Trifásico' && !!hMono.sumi_cambiado && /TRIFÁSICO/.test(hMono.avisos[0]));
+var sinMed = conInversoresDelCatalogo(JSON.parse(JSON.stringify(modeloDoc)), CAT_HW);
+comprueba('sin el precio del medidor en el modelo, la partida va a 0 y avisa', calcularFV(eHW, sinMed).avisos.indexOf('Falta precio del medidor Huawei (Smart Power Sensor)') > -1);
+igual('Fronius no cambia por tener Huawei en el catálogo', calcularFV(e10, modeloHW).precio_objetivo, d10.precio_objetivo);
+igual('de la ficha: inversor_marca huawei', entradaDesdeDatos({ suministro: 'trifasico', tipo_cubierta: 'teja_arabe', paneles_manual: 12, inversor_marca: 'huawei' }, modeloHW).entrada.sis, 'Huawei');
+var oiHW = lineasPresupuesto(hTri, modeloHW, {})[0].origen_inputs;
+igual('el desplegable ofrece los Huawei trifásicos, y marca el que se acaba', oiHW.opciones.inversores.map(function (i) { return i.kw + (i.usar ? '' : '*'); }).join(','), '5,10,10*,25,30');
+igual('app: repreciar sin tocar da el mismo precio', fv2Repreciar(oiHW, oiHW.desglose).precio_objetivo, hTri.precio_objetivo);
 
 resultado();

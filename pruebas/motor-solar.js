@@ -488,4 +488,19 @@ comprueba('ya no sale el «A MEDIDA»', !r23.incidencias.some(function (i) { ret
 comprueba('la línea de la instalación está confirmada y con importe', r23.lineas[0].confirmada !== false && r23.lineas[0].precio_tarifa > 0);
 var r22s = presupuestarFV(con({ paneles_manual: 22, suministro: 'monofasico' }), modCat, config);
 igual('22 paneles: sigue en monofásico', r22s.fv2.entrada.sumi, 'Monofásico');
+
+// Huawei (23-11-2026)
+titulo('la batería LUNA2000-S1: módulos y una base por cada tres');
+var luna7 = { referencia: 'FV-HUAWEI-LUNA2000-7-S1-MODULO-DE-BATERIA', atributos: { marca: 'huawei', capacidad_kwh: 6.9, modulos_por_base: 3, base_ref: 'FV-HUAWEI-LUNA2000-S1-BASE-Y-MODULO-DE-CONTROL' } };
+var luna5 = { referencia: 'x', atributos: { marca: 'huawei', capacidad_kwh: 5, modulos_por_base: 3, base_ref: 'B' } };
+var modBase = function (p, k) { var r = bateriaDeCatalogo(p, k); return r.modulos + '+' + r.bases; };
+igual('7 kWh: un módulo de 6,9 y su base', modBase(luna7, 6.9), '1+1');
+igual('10 kWh con módulos de 6,9: dos módulos, una base', modBase(luna7, 10), '2+1');
+igual('20,7 kWh: tres módulos, una base', modBase(luna7, 20.7), '3+1');
+igual('25 kWh: cuatro módulos, ya dos bases', modBase(luna7, 25), '4+2');
+igual('10 kWh con módulos de 5: dos y una base', modBase(luna5, 10), '2+1');
+igual('la base que hay que añadir', bateriaDeCatalogo(luna7, 10).base_ref, 'FV-HUAWEI-LUNA2000-S1-BASE-Y-MODULO-DE-CONTROL');
+igual('una WECO o una Deye no llevan base', modBase({ atributos: { marca: 'weco', capacidad_kwh: 5.12 } }, 10), '2+0');
+igual('sin kWh, un módulo', modBase(luna7, 0), '1+1');
+
 resultado();

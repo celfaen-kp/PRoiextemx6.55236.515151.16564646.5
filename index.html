@@ -562,7 +562,7 @@ import * as idiomas from './presu-idiomas.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '33.3'; // versión visible de la app (única fuente)
+const APP_VERSION = '33.4'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -8309,7 +8309,7 @@ const enLibre = () => enSuelto() && !!V.suelto.libre;
  * inversor (Fronius, Deye, Enphase) sin tocar la ficha: cada una se guarda como
  * un presupuesto aparte (y una oferta aparte en Teamleader), con la marca en el
  * título. Solo en fotovoltaica, que es donde hay tres marcas. */
-const MARCAS_FV = [['fronius', 'Fronius'], ['deye', 'Deye'], ['enphase', 'Enphase']];
+const MARCAS_FV = [['fronius', 'Fronius'], ['deye', 'Deye'], ['huawei', 'Huawei'], ['enphase', 'Enphase']];
 const nombreMarcaFV = (m) => (MARCAS_FV.find((x) => x[0] === m) || [m, m])[1];
 /** Los datos de la ficha de la visita en curso para esa categoría (o null). */
 function fichaVisitaActual(categoria) {
@@ -8352,7 +8352,7 @@ const sufijoOpcion = () => {
   const op = V.presu.opcion; if (!op) return '';
   const partes = [];
   if (op.inversor_marca) partes.push(nombreMarcaFV(op.inversor_marca));
-  if (op.baterias === 'si') partes.push('batería ' + (BATERIAS_DE[op.inversor_marca || marcaBaseFV()] || []).concat(BATERIAS_DE.fronius, BATERIAS_DE.enphase, BATERIAS_DE.deye).filter(([k]) => k === op.bateria_marca).map(([, l]) => l)[0] + ' ' + op.baterias_kwh + ' kWh');
+  if (op.baterias === 'si') partes.push('batería ' + (BATERIAS_DE[op.inversor_marca || marcaBaseFV()] || []).concat(BATERIAS_DE.fronius, BATERIAS_DE.enphase, BATERIAS_DE.deye, BATERIAS_DE.huawei).filter(([k]) => k === op.bateria_marca).map(([, l]) => l)[0] + ' ' + op.baterias_kwh + ' kWh');
   else if (op.baterias === 'no') partes.push('sin batería');
   return partes.length ? ' · opción ' + partes.join(' + ') : '';
 };
@@ -8538,14 +8538,14 @@ function opcionesMarcaHTML() {
       const bats = ((p.datos && p.datos.opciones_fv && p.datos.opciones_fv.baterias) || []).filter((b) => marcasOk.includes(b.marca));
       if (!bats.length) return '';
       const ref = (p.opcion || {}).bateria_ref || '';
-      const auto = ['weco', 'deye'].includes(bat.marca) ? 'Elige el modelo' : 'La que elige el motor (' + esc(nombreMarcaFV(bat.marca) === bat.marca ? bat.marca.toUpperCase() : bat.marca) + ' según los kWh)';
+      const auto = BATERIAS_DE_CATALOGO.includes(bat.marca) ? 'Elige el modelo' : 'La que elige el motor (' + esc(nombreMarcaFV(bat.marca) === bat.marca ? bat.marca.toUpperCase() : bat.marca) + ' según los kWh)';
       return `<div class="row g8" style="align-items:center;flex-wrap:wrap;margin-top:8px">
       <span class="lbl" style="font-size:11px">Modelo</span>
       <select class="inp" data-f="presuOpcionBateriaRef" style="width:auto;max-width:100%;padding:7px 9px;font-size:13px">
         <option value="" ${ref ? '' : 'selected'}>${auto}</option>
         ${bats.map((b) => `<option value="${esc(b.ref)}" ${ref === b.ref ? 'selected' : ''}>${esc(b.nombre)}${b.kwh ? ' · ' + esc(String(b.kwh)) + ' kWh' : ''} · ${eur(b.venta)}</option>`).join('')}
       </select>
-      ${ref && ['weco', 'deye'].includes(bat.marca) ? '<span class="tiny">Entra como línea del catálogo, tantas como hagan falta para los kWh.</span>' : ''}
+      ${ref && BATERIAS_DE_CATALOGO.includes(bat.marca) ? '<span class="tiny">' + (bat.marca === 'huawei' ? 'Entran los módulos que hagan falta para los kWh y una base de control por cada tres.' : 'Entra como línea del catálogo, tantas como hagan falta para los kWh.') + '</span>' : ''}
     </div>`; })()}`; })()}
     <div class="tiny" style="margin-top:6px">Para dar al cliente dos o tres opciones: guarda esta, cambia de marca o de batería y guarda la siguiente. Cada una es un presupuesto aparte (el título lleva marca, kWp y batería) y una oferta aparte en Teamleader.${p.opcion ? ' Esta opción no cambia la ficha de la visita.' : ''}</div>
   </div>`;
@@ -10559,7 +10559,10 @@ const BATERIAS_DE = {
   fronius: [['byd', 'BYD'], ['fronius', 'Fronius Reserva'], ['tesla', 'Tesla']],
   enphase: [['enphase', 'Enphase'], ['tesla', 'Tesla']],
   deye: [['weco', 'WECO'], ['deye', 'Deye']],   // híbrido de Rebacas: sus baterías, del catálogo (etapa72)
+  huawei: [['huawei', 'Huawei LUNA2000']],      // de BayWa: módulos LUNA2000-S1 del catálogo (etapa122)
 };
+// Las baterías que no pone el motor por kWh: se elige el modelo del catálogo.
+const BATERIAS_DE_CATALOGO = ['weco', 'deye', 'huawei'];
 
 /**
  * Lo que se le manda al motor desde la pantalla suelta, con los mismos nombres
@@ -10581,7 +10584,7 @@ function datosDelSuelto(f) {
       // Sin paneles a mano, el motor los saca de los kWp pedidos (y si tampoco, del consumo).
       kwp_objetivo: num(f.kwp),
       wp_manual: num(f.wp),
-      inversor_marca: f.inversor === 'enphase' ? 'enphase' : f.inversor === 'deye' ? 'deye' : 'fronius',
+      inversor_marca: ['enphase', 'deye', 'huawei'].includes(f.inversor) ? f.inversor : 'fronius',
       suministro: f.fases === 'trifasico' ? 'trifasico' : 'monofasico',
       // Presupuestador FV v2: consumo o factura para dimensionar, orientación
       // del panel, km a la obra, certificado energético y horas de elevador.
@@ -11675,10 +11678,11 @@ function camposSolarHTML(f) {
       <div class="wrap">${tramos.map(([k, t]) => chip('factura_rango', k, t, f.factura_rango || '100_200')).join('')}</div>` : ''}
 
       <div class="lbl" style="margin:16px 0 8px">Inversor</div>
-      <div class="wrap">${chip('inversor', 'fronius', 'Fronius')}${chip('inversor', 'deye', 'Deye (híbrido)')}${chip('inversor', 'enphase', 'Enphase (micros)')}</div>
+      <div class="wrap">${chip('inversor', 'fronius', 'Fronius')}${chip('inversor', 'deye', 'Deye (híbrido)')}${chip('inversor', 'huawei', 'Huawei (híbrido)')}${chip('inversor', 'enphase', 'Enphase (micros)')}</div>
       <div class="tiny" style="margin-top:8px">${f.inversor === 'enphase'
         ? 'Un microinversor IQ8P por panel, con su Q Cable, tapones, conectores, IQ Gateway, toroidales y Q-Relay.'
         : f.inversor === 'deye' ? 'El híbrido Deye que toca por potencia (Rebacas), con su medidor antivertido.'
+        : f.inversor === 'huawei' ? 'El SUN2000 que toca por potencia (BayWa), con su medidor Smart Power Sensor. Admite batería LUNA2000 sin cambiar de inversor.'
         : 'El GEN24 SC que toca por potencia, con su Smart Meter. Con batería, o preparado para ella, el Plus (híbrido): pasar un SC a Plus después cuesta unos 500 € más.'}</div>
 
       <div class="lbl" style="margin:16px 0 8px">Suministro</div>
@@ -11690,7 +11694,7 @@ function camposSolarHTML(f) {
       <div class="tiny" style="margin-top:6px">Sin batería hoy pero la querrá: va el GEN24 Plus en vez del SC.</div>` : ''}
       ${marcas.length ? `<div class="lbl" style="margin:16px 0 8px">Si lleva batería: de qué marca</div>
       <div class="wrap">${marcas.map(([m, t]) => chip('bateria_marca', m, t, f.bateria_marca || marcas[0][0])).join('')}</div>
-      <div class="tiny" style="margin-top:8px">${f.inversor === 'enphase' ? 'Enphase va con baterías Enphase o Tesla.' : 'Fronius va con baterías BYD, Fronius Reserva o Tesla.'}</div>`
+      <div class="tiny" style="margin-top:8px">${f.inversor === 'enphase' ? 'Enphase va con baterías Enphase o Tesla.' : f.inversor === 'huawei' ? 'Huawei va con su batería LUNA2000-S1 (módulos de 5 o 6,9 kWh). El modelo se elige al calcular, en «Batería».' : f.inversor === 'deye' ? 'Deye va con baterías WECO o Deye. El modelo se elige al calcular, en «Batería».' : 'Fronius va con baterías BYD, Fronius Reserva o Tesla.'}</div>`
       : `<div class="tiny" style="margin-top:8px;color:var(--ambar-o)">Las baterías de Deye no están en la tarifa: si lleva, se añade a mano.</div>`}
       <div class="lbl" style="margin:16px 0 8px">Si lleva batería: ¿con backup?</div>
       <div class="wrap">${chip('backup', '', 'Sin backup', f.backup ? '1' : '')}${chip('backup', '1', 'Con backup', f.backup ? '1' : '')}</div>
@@ -11699,6 +11703,8 @@ function camposSolarHTML(f) {
       <div class="wrap">${chip('backup_modo', 'automatico', 'Automático (full backup)')}${chip('backup_modo', 'manual', 'Manual (conmutador)')}</div>
       <div class="tiny" style="margin-top:8px">${(f.bateria_marca || (marcas[0] || [''])[0]) === 'tesla' ? 'Con Tesla es siempre automático: Backup Gateway 2.'
         : f.inversor === 'enphase' ? 'Con Enphase es siempre automático: IQ System Controller.'
+        : f.inversor === 'huawei' ? 'Con Huawei el backup es el SmartGuard: no entra solo, añádelo del catálogo al calcular.'
+        : f.inversor === 'deye' ? 'Con Deye el backup no entra solo: añádelo del catálogo si hace falta.'
         : f.backup_modo === 'manual' ? 'Con Fronius: PV Point, se conmuta a mano y alimenta las cargas críticas.' : 'Con Fronius: Backup Switch, la casa entera conmuta sola.'}</div>` : ''}
 
       <div class="h2" style="margin-top:26px">Montaje</div>

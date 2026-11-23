@@ -1,0 +1,13 @@
+-- =============================================================================
+-- Sysefen · etapas 118 y 119 · material de fotovoltaica aislada (19-11-2026)
+--
+-- Catorce productos Victron, el MultiPlus-II 48/15000 y el BMU IP55 de BYD,
+-- dados de alta en la tarifa «Fotovoltaica 2026» para presupuestos de aislada.
+-- Ya ejecutadas. Sus SQL llevaban los precios de coste del proveedor y el repo
+-- es público, así que desde el 23-11-2026 no están aquí: quedan en
+-- subir-a-supabase/ (fuera de Git) y los precios, en la base.
+--
+-- Lo que hay que saber: van con recargo 1,30 y familia «equipo», «controlador»
+-- o «accesorio» (nunca «inversor» ni «bateria», que el presupuestador
+-- fotovoltaico usa para elegir solo), con atributos.aislada = true.
+-- =============================================================================

@@ -88,11 +88,24 @@ export function inversorAMano(lineas, datos, cfg, inversorFuera, incidencias) {
 }
 const numHib = (v) => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
 
+/** Una batería del catálogo para los kWh pedidos: cuántos módulos y, si lleva base
+ *  (Huawei LUNA2000-S1: una «Base y módulo de control» por cada tres módulos,
+ *  atributos base_ref y modulos_por_base, sql/etapa122), cuántas bases. */
+export function bateriaDeCatalogo(prod, kwh) {
+  const atr = prod && prod.atributos && typeof prod.atributos === 'object' ? prod.atributos : {};
+  const cap = numHib(atr.capacidad_kwh), k = numHib(kwh);
+  const modulos = cap > 0 && k > 0 ? Math.max(1, Math.ceil(k / cap - 0.001)) : 1;
+  const base_ref = typeof atr.base_ref === 'string' && atr.base_ref ? atr.base_ref : null;
+  const por = numHib(atr.modulos_por_base);
+  return { modulos, base_ref, bases: base_ref ? (por > 0 ? Math.ceil(modulos / por) : 1) : 0 };
+}
+
 export function presupuestarFV(datos, mod, cfg) {
   const modelo = mod.datos;
   const m = entradaDesdeDatos(datos, modelo);
   const conBateria = String(datos.baterias || '') === 'si' || Number(datos.baterias_kwh) > 0;
   const fronius = m.entrada.sis === 'Fronius';
+  const huawei = m.entrada.sis === 'Huawei';
   const estructuraNueva = m.entrada.cubierta === 'Teja' || m.entrada.cubierta === 'Plana';
   // Con batería, o «dejar preparado» para ella, Fronius va en Plus (híbrido),
   // que el modelo v2 no trae: lo elige el motor por capítulos (Ramón, 13-10-2026).
@@ -107,7 +120,9 @@ export function presupuestarFV(datos, mod, cfg) {
     const r2 = calcularFV(m.entrada, modelo, { chapaAMedida: false, inversorFuera: false, hibrido: true, jornadaBateria: conBateria, pasarATrifasico: true });
     if (r2.kw_inv !== null) { r = r2; inversorFuera = false; }
   }
-  if (!r) r = calcularFV(m.entrada, modelo, { chapaAMedida: false, inversorFuera, jornadaBateria: conBateria, pasarATrifasico: true });
+  // Huawei (23-11-2026): el inversor lo elige siempre el v2, del catálogo. Con
+  // batería, o preparado para ella, solo entre los que admiten LUNA2000.
+  if (!r) r = calcularFV(m.entrada, modelo, { chapaAMedida: false, inversorFuera, hibrido: huawei && (conBateria || preparado), jornadaBateria: conBateria, pasarATrifasico: true });
   // Si el v2 ha pasado el presupuesto a trifásico (monofásico que se queda corto,
   // 11-11-2026), el resto del motor (reglas por capítulos, cargador) va también en trifásico.
   if (r.sumi_cambiado) datos = Object.assign({}, datos, { suministro: 'trifasico' });
@@ -117,6 +132,7 @@ export function presupuestarFV(datos, mod, cfg) {
   if (inversorFuera && conBateria) avisosEntrada.push('Con batería, el inversor Fronius Plus (o ninguno con Tesla), el Smart Meter y la batería salen del motor por capítulos con su margen; el modelo v2 aún no lleva baterías.');
   if (inversorFuera && !conBateria) avisosEntrada.push('Preparado para baterías: el inversor Fronius Plus (híbrido) y el Smart Meter salen del motor por capítulos con su margen.');
   if (conBateria && m.entrada.sis === 'Deye' && !datos.bateria_ref) avisosEntrada.push('Batería con Deye: el presupuestador no la pone sola. Añádela desde «Añadir del catálogo» (WECO 5K0 LT, 5K3 EVO, 16K0 o Deye SE-F5 PRO, SE-F 16-C, con sus accesorios) y comprueba la compatibilidad en la ficha técnica.');
+  if (conBateria && huawei && !datos.bateria_ref) avisosEntrada.push('Batería con Huawei: el presupuestador no la pone sola. Elige el modelo en «Batería» (LUNA2000 S1, módulos de 5 o 6,9 kWh): entran los módulos que hagan falta para los kWh y una base de control por cada tres.');
   if (conBateria && m.entrada.sis === 'Enphase') avisosEntrada.push('Batería con Enphase: la batería sale del motor por capítulos con su margen; el modelo v2 aún no lleva baterías.');
   const lineas = lineasPresupuesto(r, modelo, { modelo_version: mod.version, avisos: avisosEntrada });
   const incidencias = [];
@@ -127,7 +143,7 @@ export function presupuestarFV(datos, mod, cfg) {
     const sec = String(rg.seccion || ''), ref = String(rg.producto_ref || '');
     if (rg.tipo === 'aviso') return true;
     if (ref === 'FV-10-003') return false;   // el elevador ya va en el v2 (65 €/h): nada de duplicarlo
-    if (FV_COMPLEMENTO.test(sec) && !(sec.startsWith('04 · ') && m.entrada.sis === 'Deye')) return true;
+    if (FV_COMPLEMENTO.test(sec) && !(sec.startsWith('04 · ') && (m.entrada.sis === 'Deye' || huawei))) return true;
     if (FV_SUELTAS.has(ref)) return true;
     if (!estructuraNueva && sec.startsWith('02 · ')) return true;
     if (inversorFuera && sec.startsWith('03 · ') && ref.startsWith('FV-FRONIUS-')) return true;

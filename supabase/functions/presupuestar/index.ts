@@ -41,7 +41,7 @@ import { calcular, resumenDe, lineaManual, preciosProducto, MOTOR_VERSION } from
 import { cadenaPrecios, totalCoste } from './cadena.js';
 // El cálculo híbrido de fotovoltaica (v2 de Ramón + capítulos) vive en
 // hibrido.js, compartido con las pruebas y los informes.
-import { presupuestarFV } from './hibrido.js';
+import { presupuestarFV, bateriaDeCatalogo } from './hibrido.js';
 import { conInversoresDelCatalogo, calcularFV } from './fv.js';
 import { leerRutaFV, ponerRutaFV, listaModeloFV, valorDesdeCosteUd, productoPara, conceptoPara } from './precios.js';
 import { opcionesAero, sustituirEquiposAero, esInercia, esAcumuladorAcs } from './aero.js';
@@ -187,7 +187,7 @@ async function accionPrecios(sb: any, yo: any, b: any): Promise<Response> {
     // El nombre de cada coste de material: el de la partida que lo usa.
     const nombres: Record<string, string> = {};
     try {
-      for (const sis of ['Fronius', 'Deye', 'Enphase']) for (const sumi of ['Monofásico', 'Trifásico']) for (const cubierta of ['Teja', 'Plana']) {
+      for (const sis of ['Fronius', 'Deye', 'Huawei', 'Enphase']) for (const sumi of ['Monofásico', 'Trifásico']) for (const cubierta of ['Teja', 'Plana']) {
         // deno-lint-ignore no-explicit-any
         (calcularFV({ sis, sumi, cubierta, paneles_forzado: 12, cee: 'Sí' }, mod.datos) as any).partidas.forEach((x: any) => {
           if (x.ref && Array.isArray(x.ref.ruta) && x.ref.ruta[0] === 'precios' && x.ref.ruta.length === 3) { const k = x.ref.ruta.join('/'); if (!nombres[k]) nombres[k] = x.partida; }
@@ -626,7 +626,7 @@ Deno.serve(async (req) => {
     // así salen todos en el desplegable y el automático elige también entre
     // ellos (Verto 20 Plus para 40 paneles con batería, Deye grandes…).
     if (modeloFV) {
-      const { data: invs } = await sb.from('productos').select('referencia, nombre, familia, precio_tarifa, descuento_proveedor')
+      const { data: invs } = await sb.from('productos').select('referencia, nombre, familia, precio_tarifa, descuento_proveedor, atributos')
         .eq('familia', 'inversor').eq('activo', true);
       if (invs && invs.length) modeloFV = Object.assign({}, modeloFV, { datos: conInversoresDelCatalogo(modeloFV.datos, invs) });
       // El certificado energético va siempre en los trámites y se cobra a su precio
@@ -646,7 +646,7 @@ Deno.serve(async (req) => {
   // Si la ficha o la opción traen otra, se cambia a la primera compatible y se avisa.
   let avisoBateria: string | null = null;
   if (modeloFV && datos) {
-    const COMPAT: Record<string, string[]> = { deye: ['weco', 'deye'], enphase: ['enphase', 'tesla'], fronius: ['byd', 'fronius', 'tesla'] };
+    const COMPAT: Record<string, string[]> = { deye: ['weco', 'deye'], enphase: ['enphase', 'tesla'], fronius: ['byd', 'fronius', 'tesla'], huawei: ['huawei'] };
     const marcaInv = String(datos.inversor_marca || 'fronius').toLowerCase();
     const conBat = String(datos.baterias || '') === 'si' || Number(datos.baterias_kwh) > 0;
     const ok = COMPAT[marcaInv] || COMPAT.fronius;
@@ -707,9 +707,16 @@ Deno.serve(async (req) => {
   // WECO y Deye no tienen regla: entran como línea del catálogo con su recargo,
   // tantas como hagan falta para los kWh pedidos. Las demás marcas las pone el
   // motor por capítulos con marca y kWh.
+  // Huawei (23-11-2026), igual que WECO y Deye; además, su LUNA2000-S1 lleva una
+  // base de control por cada tres módulos, que entra sola detrás.
   const bateriaRef = datos && typeof datos.bateria_ref === 'string' ? datos.bateria_ref : '';
-  const bateriaAuto = !!bateriaRef && String(datos.baterias || '') === 'si' && ['weco', 'deye'].includes(String(datos.bateria_marca || '').toLowerCase());
-  if (bateriaAuto) extrasBrutos.push({ producto_ref: bateriaRef, cantidad: 1, _auto: 'bateria' });
+  const bateriaAuto = !!bateriaRef && String(datos.baterias || '') === 'si' && ['weco', 'deye', 'huawei'].includes(String(datos.bateria_marca || '').toLowerCase());
+  if (bateriaAuto) {
+    extrasBrutos.push({ producto_ref: bateriaRef, cantidad: 1, _auto: 'bateria' });
+    const { data: pb } = await sb.from('productos').select('referencia, atributos').eq('referencia', bateriaRef).eq('activo', true).limit(1).maybeSingle();
+    const bb = bateriaDeCatalogo(pb, datos.baterias_kwh);
+    if (bb.base_ref && bb.bases > 0) extrasBrutos.push({ producto_ref: bb.base_ref, cantidad: bb.bases, _auto: 'bateria_base' });
+  }
   // deno-lint-ignore no-explicit-any
   const productosExtra: Record<string, any> = {};
   const refsExtra = [...new Set(extrasBrutos.map((l) => String(l.producto_ref || '')).filter(Boolean))];
@@ -727,8 +734,9 @@ Deno.serve(async (req) => {
       l.descripcion = prod.nombre; l.unidad = prod.unidad || 'ud'; l.seccion = 'Almacenamiento';
       l.cantidad = cap > 0 && kwh > 0 ? Math.max(1, Math.ceil(kwh / cap - 0.001)) : 1;
     }
+    if (l._auto === 'bateria_base' && prod) { l.descripcion = prod.nombre; l.unidad = prod.unidad || 'ud'; l.seccion = 'Almacenamiento'; }
     const linea = lineaManual(l, prod, cfg.lookup);
-    if (l._auto === 'bateria') linea.origen_inputs = { auto: 'bateria', ref: String(l.producto_ref || '') };
+    if (l._auto === 'bateria' || l._auto === 'bateria_base') linea.origen_inputs = { auto: l._auto, ref: String(l.producto_ref || '') };
     return linea;
   });
   res.lineas = res.lineas.concat(extra);
@@ -851,7 +859,7 @@ Deno.serve(async (req) => {
   let titulo = String(b.titulo || '').trim().slice(0, 200) || null;
   if (modeloFV && res.fv2) {
     const r = res.fv2;
-    const MARCAS_BAT: Record<string, string> = { byd: 'BYD', fronius: 'Fronius Reserva', tesla: 'Tesla Powerwall', enphase: 'Enphase IQ Battery', weco: 'WECO', deye: 'Deye' };
+    const MARCAS_BAT: Record<string, string> = { byd: 'BYD', fronius: 'Fronius Reserva', tesla: 'Tesla Powerwall', enphase: 'Enphase IQ Battery', weco: 'WECO', deye: 'Deye', huawei: 'Huawei LUNA2000' };
     const conBat = String(datos.baterias || '') === 'si' || Number(datos.baterias_kwh) > 0;
     // Con Tesla y Fronius no hay inversor aparte: el Powerwall 3 lo lleva dentro.
     const teslaSinInversor = conBat && String(datos.bateria_marca || '').toLowerCase() === 'tesla' && String(r.entrada.sis) === 'Fronius';
