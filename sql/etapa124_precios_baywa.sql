@@ -1,0 +1,35 @@
+-- =============================================================================
+-- Etapa 124 · precios de BayWa revisados con la tienda (Enzo, 23-11-2026)
+--
+-- Enzo: «los artículos de Tesla están mal el precio de coste, lo que hace
+-- elevado todo; ¿podrías revisar todos los precios en BayWa?». Con su sesión
+-- en solarshop.baywa-re.es se bajó la lista de la tienda (1.191 artículos) y se
+-- cruzó con la tarifa «Fotovoltaica 2026» y con el modelo fotovoltaico.
+--
+-- ESTE ARCHIVO NO LLEVA PRECIOS: el repositorio es público. El SQL que se
+-- ejecutó está en subir-a-supabase/etapa124_precios_baywa_completo.sql (fuera
+-- de git) y la lista de la tienda, en el Drive («SYSEFEN DATA/07-Tarifas para
+-- app/baywa-tienda-2026-11-23.csv»).
+--
+-- QUÉ HIZO (ya ejecutado):
+--   1) 14 productos cuyo coste no coincidía con ningún precio de la tienda
+--      pasan al precio por unidad del día: Tesla Powerwall 3 y Backup Gateway 2;
+--      BYD Premium HVS 2.56, Premium LVL 15.4 y Battery Box HVE 4.2; Enphase
+--      IQ 8P y ocho accesorios (conectores, tapones, CT y Q Seal).
+--   2) El microinversor Enphase IQ8P del modelo fotovoltaico
+--      (precios.enphase_iq8p.coste), al mismo precio.
+--   3) atributos.ref_baywa (y mpn) en los 123 productos Fronius, Enphase, BYD y
+--      Tesla que casan por nombre con la tienda, como ya lo tenían los Huawei.
+--   Cada cambio de precio queda en precios_cambios: se deshace desde
+--   Ajustes → Precios.
+--
+-- QUÉ NO SE TOCÓ:
+--   · 48 productos (36 Fronius, 5 BYD, 5 Enphase, 2 Tesla) están al precio
+--     «Desde» de la tienda (el de volumen), de media un 2 % por debajo del
+--     precio por unidad. Los 81 Huawei están al precio por unidad. Falta decidir
+--     un criterio único.
+--   · Deye (30), WECO (14) y los medidores Eastron de Deye (2): no están en la
+--     tienda de BayWa. Victron (15) y el BMU IP55 de BYD vienen de otra oferta.
+--   · «Catálogo propio»: productos creados a mano o traídos de Teamleader.
+-- =============================================================================
+select 1;
