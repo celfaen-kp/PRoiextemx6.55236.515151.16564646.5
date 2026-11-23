@@ -8,7 +8,7 @@
 // poniendo el motor por capítulos (etapa 72, motor.js) con sus precios y su
 // margen: baterías y backup (04), obra civil (09), medios (10), opcionales
 // (14), estructura de chapa o pérgola (02), adecuación del cuadro, pica,
-// repetidor, Cat6, tejadillo, proyecto técnico y bonificación IBI. Con batería
+// repetidor, Cat6, tejadillo y proyecto técnico. Con batería
 // (o «dejar preparado») y Fronius, el inversor Plus y el Smart Meter los pone
 // también el antiguo; con Tesla, ninguno.
 // Decisión de Enzo (13-10-2026): «mantenemos lo nuevo y lo que no haya usamos
@@ -22,7 +22,7 @@ import { calcular, preciosProducto, MOTOR_VERSION } from './motor.js';
 import { calcularFV, entradaDesdeDatos, lineasPresupuesto } from './fv.js';
 
 const FV_COMPLEMENTO = /^(04|09|10|14) · /;
-const FV_SUELTAS = new Set(['FV-07-010', 'FV-07-011', 'FV-05-005', 'FV-05-006', 'FV-03-008', 'FV-13-002', 'FV-13-007']);
+const FV_SUELTAS = new Set(['FV-07-010', 'FV-07-011', 'FV-05-005', 'FV-05-006', 'FV-03-008', 'FV-13-002']);
 
 /**
  * datos: la ficha (visita o suelto). mod: la fila de motor_modelos {id, version,

@@ -378,7 +378,6 @@ const SOLAR = {
         // (Enzo, 19-11-2026): ya no se pregunta. Queda el desplazamiento, que es coste.
         { key: 'cee_desplaz_h', etiqueta: 'Desplazamiento del certificado energético', tipo: 'numero', unidad: 'h', motor: true,
           ayuda: 'El certificado va siempre, a su precio del catálogo. De coste: 1 h de Xavi + este desplazamiento + la tasa' },
-        { key: 'bonificacion_ibi', etiqueta: 'Pide bonificación IBI / ICIO', tipo: 'bool', motor: true },
       ],
     },
   ],

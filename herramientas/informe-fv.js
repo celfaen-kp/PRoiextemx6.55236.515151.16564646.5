@@ -24,7 +24,7 @@ var BASE = {
   estado_cuadro: 'bien', toma_tierra: 'existe', excedentes: 'con_excedentes', subvencion: true, cargador_ve: false,
   certificado_energetico: false, cee_desplaz_h: 0, horas_elevador: 0, baterias: 'no', baterias_kwh: 0, bateria_marca: '', backup: false,
   backup_modo: 'automatico', backup_tipo: 'total',
-  zona_protegida: false, cargas_previstas: [], tejas_reposicion: 0, perforaciones: 0, excedentes_gestion: 'no', bonificacion_ibi: false,
+  zona_protegida: false, cargas_previstas: [], tejas_reposicion: 0, perforaciones: 0, excedentes_gestion: 'no',
   inversor_exterior: false, instalacion_existente: false, via_publica: false, fibrocemento: false, wp_manual: 510,
 };
 var CASOS = [

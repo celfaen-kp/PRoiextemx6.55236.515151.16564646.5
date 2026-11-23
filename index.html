@@ -562,7 +562,7 @@ import * as idiomas from './presu-idiomas.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '33.4'; // versión visible de la app (única fuente)
+const APP_VERSION = '33.5'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -10622,7 +10622,7 @@ function datosDelSuelto(f) {
       // Lo que el formulario rápido no pregunta va a cero explícito: así el
       // motor no avisa de que «la visita no trae» cada uno.
       zona_protegida: false, cargas_previstas: [], tejas_reposicion: 0, perforaciones: 0,
-      excedentes_gestion: 'no', bonificacion_ibi: false, inversor_exterior: false, instalacion_existente: false, via_publica: false, fibrocemento: false,
+      excedentes_gestion: 'no', inversor_exterior: false, instalacion_existente: false, via_publica: false, fibrocemento: false,
     };
   }
   if (f.cat === 'aerotermia') {

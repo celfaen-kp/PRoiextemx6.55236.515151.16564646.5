@@ -643,7 +643,7 @@ regla('FV-13-003', {}, HAY, '13', sub=8, notas='Siempre.')
 fuera('FV-13-004', {}, HAY, '13', sub=8, notas='Permiso de obra / comunicación previa.')
 # FV-13-006 (tramitación de subvención) ya no entra: la subvención no va en los presupuestos (Enzo, 6-11-2026).
 regla('FV-13-010', {'subvencion': True}, '1', '13', sub=6, notas='Lo pide la ayuda.')
-regla('FV-13-007', {'bonificacion_ibi': True}, '1', '13', sub=7, notas='Si pide bonificación.')
+# FV-13-007 (solicitud de bonificación IBI / ICIO) ya no entra: fuera del motor (Enzo, 23-11-2026; sql/etapa125).
 fuera('FV-13-008', {'excedentes': 'con_excedentes'}, HAY, '13', sub=7, notas='Con excedentes: compensación con la distribuidora.')
 aviso({}, 'Las tasas e ICIO municipales las paga el cliente aparte (FV-13-005): escribirlo en exclusiones.', var='n_paneles', mn=1, mx=None, prio=100)
 
@@ -768,7 +768,7 @@ on conflict (tarifa_id, referencia) do update
 -- Retiradas del catálogo (siguen en la tabla para los presupuestos que las usaron).
 update public.productos p set activo = false
   from public.tarifas t where p.tarifa_id = t.id and t.nombre = 'Fotovoltaica partidas 2026'
-   and p.referencia in ('FV-06-004');
+   and p.referencia in ('FV-06-004', 'FV-13-007');
 
 -- 4 · Los coeficientes ----------------------------------------------------------------
 -- Los que ya existan NO se pisan (se habrán ajustado a mano); solo entran los nuevos.

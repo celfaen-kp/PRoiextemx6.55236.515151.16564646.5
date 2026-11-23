@@ -304,10 +304,10 @@ comprueba('desmontaje y 3 perforaciones', cant(r, 'FV-09-005') === 1 && cant(r, 
 igual('prensaestopas 3 + 2', desgDe(r, 'PEQ_MAT', 'FV-06-012'), 5);
 
 titulo('trámites: 20 paneles, subvención, sin excedentes');
-r = calcular('solar', con({ paneles_manual: 20, subvencion: true, bonificacion_ibi: true, excedentes: 'sin_excedentes' }), config);
+r = calcular('solar', con({ paneles_manual: 20, subvencion: true, bonificacion_ibi: true, excedentes: 'sin_excedentes' }), config);   // la ficha antigua aún puede traer la casilla
 comprueba('10,2 kWp: proyecto y no memoria', cant(r, 'FV-13-002') === 1 && !linea(r, 'FV-13-001'));
 igual('proyecto a precio declarado', linea(r, 'FV-13-002').precio_tarifa, 1800);
-comprueba('certificado energético e IBI, y nada de subvención (6-11-2026)', !linea(r, 'FV-13-006') && cant(r, 'FV-13-010') === 1 && cant(r, 'FV-13-007') === 1);
+comprueba('certificado energético, y nada de subvención (6-11-2026) ni de bonificación IBI / ICIO (23-11-2026)', !linea(r, 'FV-13-006') && cant(r, 'FV-13-010') === 1 && !linea(r, 'FV-13-007'));
 r = calcular('solar', con({ paneles_manual: 20, inversor_kw: 8 }), config);
 comprueba('20 paneles (10,2 kWp) con inversor de 8 kW: sin proyecto técnico', !linea(r, 'FV-13-002') && r.variables.proyecto === 0);
 r = calcular('solar', con({ paneles_manual: 12, inversor_kw: 10 }), config);
