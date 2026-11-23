@@ -25,7 +25,7 @@ CARPETA = os.environ.get('SYSEFEN_TARIFAS') or os.path.expanduser(
     '~/Library/CloudStorage/GoogleDrive-celfaen@gmail.com/Mi unidad/SYSEFEN DATA/07-Tarifas para app')
 M_PROD = '-- <<PRODUCTOS: los pone herramientas/sql-tarifa-huawei.py>>'
 M_MED = '-- <<MEDIDOR: lo pone herramientas/sql-tarifa-huawei.py>>'
-RECARGO = 1.3   # el de por defecto de fotovoltaica (tablas_lookup.recargo_sobre_coste)
+RECARGO = 1.538462   # 35 % de margen sobre la venta, 1/(1-0,35) (Enzo, 23-11-2026; sql/etapa123)
 TARIFA = 'Fotovoltaica 2026'
 
 SERIES = {   # serie → (suministro, admite batería LUNA2000)

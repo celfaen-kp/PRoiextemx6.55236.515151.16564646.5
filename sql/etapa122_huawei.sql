@@ -34,8 +34,9 @@
 --   garantía y las 7 referencias genéricas de proyecto (LUNA C&I y Utility,
 --   Smart Transformer Station, Ultra Fast), cuyo precio no vale para presupuestar.
 --
--- VENTA: recargo 1,30, el que fotovoltaica aplica por defecto. No se ha decidido
---   un margen para Huawei: se cambia en Ajustes → Precios. En el presupuesto
+-- VENTA: entraron con recargo 1,30, el que fotovoltaica aplica por defecto; el
+--   mismo día Enzo pidió el 35 % de margen (recargo 1,538462, sql/etapa123) y
+--   así entra lo nuevo. Se cambia en Ajustes → Precios. En el presupuesto
 --   llave en mano el inversor y el medidor van, como todo, al margen del modelo.
 --
 -- EL MEDIDOR, en el modelo fotovoltaico (precios.huawei_medidor): Smart Power
