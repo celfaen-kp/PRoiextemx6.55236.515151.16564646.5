@@ -325,6 +325,16 @@
     'pres-presu-enviar': () => { ESCENAS['pres-presu-enviar-btn'](); window.__scrollA = 0;
       V.sheet = { tipo: 'presuEnviar', id: 'q2', ids: ['q2'], otros: [], v: { para: 'familia.gil@correo.es', cc: '', asunto: '', mensaje: 'Hola Marta: te mando el presupuesto del aire del salón y el dormitorio, como hablamos. Cualquier duda, me llamas.', idioma: 'es' }, confirmar: false, busy: false, paso: '', trad: null }; },
     'pres-presu-aceptado': () => { base('u5'); V.view = 'presupuestoVer'; V.presuVer = { id: 'q2', cargando: false, datos: PRESU_ACEPTADO, error: null, facturas: [FACTURAS[0]] }; window.__scrollTxt = '✓ Aceptado y firmado'; },
+    // El cliente contesta desde su página (V34.0): pide cambios o rechaza, con su comentario.
+    'pres-agenda-comentarios': () => { base('u5'); V.view = 'agenda';
+      const pc = (cid, x) => { const c = V.agenda.clientes.find((k) => k.id === cid); if (c && c.presupuestos && c.presupuestos[0]) Object.assign(c.presupuestos[0], x); };
+      pc('c5', { tl_numero: '2026/641', comentario_cliente: 'Me encaja, pero prefiero el depósito de 250 litros en vez del de 200. ¿El precio incluye retirar la caldera vieja?', comentario_cliente_tipo: 'modificacion', comentario_cliente_at: iso(0, 9) });
+      pc('c11', { tl_numero: '2026/629', comentario_cliente: 'Al final lo hemos hecho con otra empresa. Gracias de todos modos.', comentario_cliente_tipo: 'rechazo', comentario_cliente_at: iso(1, 18) }); },
+    'pres-presu-cambios': () => { base('u5'); V.view = 'presupuestoVer'; V.presuEdit = null;
+      V.presuVer = { id: 'q2', cargando: false, error: null, facturas: [], datos: Object.assign({}, PRESU_REVISADO, { estado: 'enviado', enviado_cliente_at: iso(3, 10), enviado_cliente_por: 'e5', enviado_correo_at: iso(3, 10), enviado_correo_a: 'familia.gil@correo.es',
+        comentario_cliente: 'Nos gusta, pero queremos añadir un split más en el despacho y quitar el del dormitorio pequeño.', comentario_cliente_tipo: 'modificacion', comentario_cliente_at: iso(0, 9) }) };
+      window.__scrollTxt = 'El cliente pide cambios'; },
+    'pres-presu-guardar-nuevo': () => { ESCENAS['pres-presu-cambios'](); A.presuEditar(); window.__scrollTxt = 'Descuento al pie'; },
     'pres-facturas': () => { base('u5'); V.view = 'facturas'; },
     // Informes: dos años de facturas inventadas (siempre las mismas), para que la gráfica tenga qué enseñar.
     'pres-informes': () => { base('u5'); const anio = Number(hoy.slice(0, 4)), mesHoy = Number(hoy.slice(5, 7)); let sem = 7; const azar = () => (sem = (sem * 1103515245 + 12345) % 2147483648) / 2147483648;

@@ -441,6 +441,7 @@ footer{margin-top:60px;padding-top:20px;border-top:1px solid var(--l1);color:var
     <ul>
       <li>La <b>tira de la semana</b>: puntos en los días con cita. Toca un día para ver solo sus citas; <i>Ver el mes entero</i> abre el calendario.</li>
       <li><b>La próxima cita</b>, en grande: <b>Llamar</b>, <b>Cómo llegar</b> y <span class="btn verde">Empezar visita</span>, que abre la toma de datos con el cliente ya puesto. Debajo, el resto de citas, día por día. <b>Todas / Mías</b> filtra si sois varios.</li>
+      <li><b>Comentarios de presupuestos</b>, arriba del todo cuando los hay: los clientes que han <b>pedido cambios</b> o han <b>rechazado</b> su presupuesto desde la página donde lo ven, con lo que han escrito. Tocar uno abre el presupuesto. Se van cuando lo das por visto o le reenvías el presupuesto (más abajo, en <a href="#pres-enviar">Enviar, firmar y aceptar</a>).</li>
       <li><b>Pendiente</b>: visitas cerradas sin enviar, presupuestos sin subir a Teamleader, clientes sin cita, las <b>próximas acciones</b> que tocan hoy o están vencidas y los clientes aplazados que vuelven esta semana. Cada línea abre justo eso.</li>
     </ul>
   </div>
@@ -635,10 +636,24 @@ footer{margin-top:60px;padding-top:20px;border-top:1px solid var(--l1);color:var
       <li>Las líneas con cantidad, precio y, en las máquinas, su detalle técnico; el total y, debajo, coste y margen.</li>
       <li><b>Idioma del PDF</b>: español, inglés, catalán o alemán. Las líneas se traducen al preparar el PDF.</li>
       <li><span class="btn gris">PDF</span> lo enseña, <span class="btn gris">Descargar PDF</span> lo baja con su nombre. Lleva siempre las condiciones generales y el bloque de aceptación.</li>
-      <li><span class="btn gris">Modificar</span>: cambia concepto, descripción larga, cantidad, precio, descuento por línea, coste o margen; quita líneas o añade otras del catálogo o a mano. Una línea añadida del catálogo enseña desde el primer momento su coste y su margen, y se pueden corregir ahí mismo sin guardar antes. Si el presupuesto está en Teamleader, la oferta de allí se actualiza.</li>
+      <li><span class="btn gris">Modificar</span>: cambia concepto, descripción larga, cantidad, precio, descuento por línea, coste o margen; quita líneas o añade otras del catálogo o a mano. Una línea añadida del catálogo enseña desde el primer momento su coste y su margen, y se pueden corregir ahí mismo sin guardar antes. Al terminar hay dos botones: <span class="btn verde">Guardar cambios</span> cambia este mismo presupuesto (si está en Teamleader, la oferta de allí se actualiza) y <span class="btn gris">Guardar como presupuesto nuevo</span> deja este como está y lleva los cambios a uno nuevo.</li>
       <li><span class="btn gris">Lista de compra</span> (qué habría que pedir) y <span class="btn gris">Abrir aparte</span>, para tenerlo en otra ventana y comparar dos.</li>
     </ul>
     <div class="nota ok">Los precios salen de la tarifa cargada. Un presupuesto guardado se queda con los precios del día en que se hizo, aunque después cambie la tarifa.</div>
+  </div>
+</div>
+
+<h4>Modificar sin perder el anterior</h4>
+<div class="pantalla">
+  <img src="img/pres-presu-guardar-nuevo.png" alt="Guardar cambios o guardar como presupuesto nuevo">
+  <div class="txt">
+    <p>Cuando el presupuesto <b>ya se le envió al cliente</b> y no quieres perder lo que recibió, usa <span class="btn gris">Guardar como presupuesto nuevo</span>:</p>
+    <ul>
+      <li>El presupuesto que estabas viendo <b>no cambia</b>: ni sus líneas, ni su número, ni el PDF y el enlace que tiene el cliente.</li>
+      <li>Nace otro presupuesto del mismo cliente con las mismas líneas y tus cambios encima, sin revisar ni enviar y <b>sin número</b> hasta que lo subas a Teamleader, donde será una oferta aparte.</li>
+      <li>En la ficha de cada uno queda de cuál sale y cuál salió de él, y en la ficha del cliente, la nota.</li>
+    </ul>
+    <p><span class="btn verde">Guardar cambios</span> sigue como siempre, para cuando quieres corregir ese mismo presupuesto. La app avisa arriba de los botones si ya estaba enviado.</p>
   </div>
 </div>
 
@@ -667,7 +682,7 @@ footer{margin-top:60px;padding-top:20px;border-top:1px solid var(--l1);color:var
   </div>
 </div>
 <h4>Lo que hace el cliente</h4>
-<p>El botón del correo le abre una página de Sysefen con su presupuesto, en su idioma. Puede verlo, descargarlo y, si está conforme, <b>aceptarlo y firmarlo</b> ahí mismo: escribe su nombre y su <b>DNI, NIE o CIF</b> (es obligatorio) y firma con el dedo o el ratón.</p>
+<p>El botón del correo le abre una página de Sysefen con su presupuesto, en su idioma. Puede verlo, descargarlo y, si está conforme, <b>aceptarlo y firmarlo</b> ahí mismo: escribe su nombre y su <b>DNI, NIE o CIF</b> (es obligatorio) y firma con el dedo o el ratón. Debajo tiene dos botones más: <b>Solicitar modificaciones</b>, para escribir qué quiere cambiar, y <b>Rechazar el presupuesto</b>, con el motivo si quiere darlo.</p>
 <div class="pantalla">
   <img src="img/pres-presu-aceptado.png" alt="Presupuesto aceptado y firmado, con su obra y su facturación">
   <div class="txt">
@@ -682,6 +697,18 @@ footer{margin-top:60px;padding-top:20px;border-top:1px solid var(--l1);color:var
     <p>Si te lo acepta de palabra, marca <b>Aceptó</b> en <i>¿Qué dijo el cliente?</i> (sale cuando el presupuesto consta como enviado) y pasa lo mismo, sin firma. <b>Rechazó</b> deja escribir el porqué; <b>Caducó</b>, si lo dejó pasar.</p>
   </div>
 </div>
+<h4>Cuando pide cambios o lo rechaza</h4>
+<div class="dos">
+  <figure><img src="img/pres-agenda-comentarios.png" alt="Comentarios de clientes en la Agenda"><figcaption><b>En la Agenda</b>, arriba: quién, qué presupuesto y lo que ha escrito.</figcaption></figure>
+  <figure><img src="img/pres-presu-cambios.png" alt="Ficha del presupuesto con los cambios que pide el cliente"><figcaption><b>En la ficha del presupuesto</b>: su comentario, <b>Modificar el presupuesto</b> y <b>Ya está visto</b>.</figcaption></figure>
+</div>
+<ul>
+  <li><b>Llega un correo</b> con lo que ha escrito a quien le mandó el presupuesto; si no consta quién fue (salió de Teamleader o «por otro lado»), a presupuestos y Administración. Responder a ese correo escribe al cliente.</li>
+  <li>Queda apuntado en la <b>ficha del cliente</b>, en su historial, con el comentario entero.</li>
+  <li><b>Pide cambios</b>: el presupuesto sigue esperando respuesta y pasa a «El cliente pide cambios», en rojo, también en la lista y en el tablero. Modifícalo y <b>reenvíaselo</b> (el aviso se da por visto solo y el cliente ve la versión nueva en su mismo enlace) o guárdalo como presupuesto nuevo y envíale ese. El cliente puede seguir aceptando el que tiene mientras tanto.</li>
+  <li><b>Lo rechaza</b>: queda como <b>Rechazado</b>, con su motivo en «Por qué», igual que si lo marcaras tú. En su página ya no puede firmarlo.</li>
+  <li><span class="btn gris">Ya está visto</span> quita el aviso de la Agenda; el comentario se queda en la ficha del presupuesto.</li>
+</ul>
 <div class="nota">Un presupuesto enviado vale <b>15 días</b>. Dos días laborables antes de que venza os llega un aviso a presupuestos y Administración. Al cliente no se le avisa solo: en la ficha están <b>Avisar al cliente de que vence</b> (un correo con la fecha y el enlace para aceptar) y <b>Prorrogar 15 días</b>.</div>
 <p><b>Borrar presupuesto</b>, al final de la ficha, lo borra con sus líneas y, si estaba en Teamleader, borra también la oferta de allí. No se puede recuperar. Al borrarlo se vuelve a donde se estaba: a la ficha del cliente si se abrió desde ella, o a la lista de presupuestos.</p>
 
@@ -967,7 +994,7 @@ footer{margin-top:60px;padding-top:20px;border-top:1px solid var(--l1);color:var
   <tr><td>Un cliente no está en la hoja de clientes</td><td>En su ficha, <b>Apuntarlo en la hoja</b>. Los que se crean desde la app van solos.</td></tr>
 </table>
 
-<footer>Manual de la app Sysefen · al día con la versión 33.9 (24-11-2026) · las pantallas son de ejemplo, con datos inventados · se regenera con <code>herramientas/manual/capturar.py</code></footer>
+<footer>Manual de la app Sysefen · al día con la versión 34.0 (24-11-2026) · las pantallas son de ejemplo, con datos inventados · se regenera con <code>herramientas/manual/capturar.py</code></footer>
 </main>
 </div>
 </body>

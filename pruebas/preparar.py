@@ -80,3 +80,10 @@ if ruta.exists():
     (FUERA / 'numero-presupuesto.js').write_text('var NUMERO = (function () {\n' + t
         + '\nreturn { numeroDeNombre: numeroDeNombre, numerosDeOportunidad: numerosDeOportunidad };\n})();\n')
 
+
+# La página donde el cliente ve el presupuesto (y su copia para firma.sysefen.es) y la
+# función que la atiende, para comprobar que van a la par (24-11-2026).
+for origen, destino in (('firmar.html', 'firmar.html'), ('sitio-firma/index.html', 'sitio-firma.html'),
+                        ('supabase/functions/presupuesto-cliente/index.ts', 'presupuesto-cliente.ts')):
+    if (BASE / origen).exists():
+        (FUERA / destino).write_text((BASE / origen).read_text())

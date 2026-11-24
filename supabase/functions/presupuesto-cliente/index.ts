@@ -11,6 +11,11 @@
 //       firma, genera el PDF firmado (el enviado + una página de aceptación),
 //       marca el presupuesto aceptado, lo manda por correo a la oficina y al
 //       cliente y lo deja en el Drive.
+//   4 · POST {accion:'responder', t, tipo:'modificacion'|'rechazo', comentario}  desde
+//       esa página (Enzo, 24-11-2026: «ahora solo se puede aceptar»): el cliente pide
+//       cambios o rechaza el presupuesto con un comentario. Se guarda en el presupuesto
+//       (sql/etapa127), se apunta en la ficha del cliente y se avisa por correo a quien
+//       se lo mandó. Pedir cambios no cambia la respuesta: sigue esperando.
 // Se despliega SIN verify_jwt (la página del cliente no tiene sesión).
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
 import { PDFDocument, StandardFonts, rgb } from 'https://esm.sh/pdf-lib@1.17.1';
@@ -53,7 +58,7 @@ const TXT: Record<string, Textos> = {
     asunto1: 'Su presupuesto de Sysefen', asuntoN: 'Sus presupuestos de Sysefen', titulo1: 'Su presupuesto', tituloN: 'Sus presupuestos',
     hola: 'Hola {n},', intro1: 'le enviamos el presupuesto que hemos preparado para usted.', introN: 'le enviamos los {k} presupuestos que hemos preparado para usted, para que elija la opción que mejor le encaje.',
     base: 'Base imponible', iva: 'IVA 21 %', total: 'Total', valido: 'Válido hasta el {f}', ver: 'Ver y aceptar este presupuesto', ver_txt: 'Ver y aceptar', sin_iva: 'sin IVA', con_iva: 'con IVA', num: 'nº',
-    pie: 'Puede ver cada presupuesto en el enlace y descargarlo en PDF (también va adjunto). Si está conforme, acéptelo y fírmelo ahí mismo. Si tiene dudas, prefiere cambiar algo o ha decidido no seguir adelante, díganoslo respondiendo a este correo: así sabremos su respuesta.',
+    pie: 'Puede ver cada presupuesto en el enlace y descargarlo en PDF (también va adjunto). Si está conforme, acéptelo y fírmelo ahí mismo. Si prefiere cambiar algo o ha decidido no seguir adelante, puede decírnoslo en esa misma página, con «Solicitar modificaciones» o «Rechazar el presupuesto», o respondiendo a este correo.',
     saludo: 'Un saludo,', presupuesto: 'Presupuesto',
     orientativo: 'Presupuesto orientativo, válido {n} días. No incluye obra civil ni permisos que no se nombren arriba.',
     acep_titulo: 'ACEPTACIÓN DEL PRESUPUESTO', acep_presu: 'Presupuesto: ', acep_num: 'Número: ', acep_cliente: 'Cliente: ', acep_importes: 'Base imponible: {b} · IVA 21 %: {i} · Total: {t}',
@@ -69,7 +74,7 @@ const TXT: Record<string, Textos> = {
     asunto1: 'Your quotation from Sysefen', asuntoN: 'Your quotations from Sysefen', titulo1: 'Your quotation', tituloN: 'Your quotations',
     hola: 'Dear {n},', intro1: 'please find the quotation we have prepared for you.', introN: 'please find the {k} quotations we have prepared for you, so you can choose the option that suits you best.',
     base: 'Net amount', iva: 'VAT 21 %', total: 'Total', valido: 'Valid until {f}', ver: 'View and accept this quotation', ver_txt: 'View and accept', sin_iva: 'excl. VAT', con_iva: 'incl. VAT', num: 'no.',
-    pie: 'You can view each quotation at the link and download it as a PDF (it is also attached). If you agree, you can accept and sign it right there. If you have any questions, would prefer to change something or have decided not to go ahead, just let us know by replying to this email.',
+    pie: 'You can view each quotation at the link and download it as a PDF (it is also attached). If you agree, you can accept and sign it right there. If you would prefer to change something or have decided not to go ahead, you can tell us on that same page, with “Request changes” or “Decline the quotation”, or by replying to this email.',
     saludo: 'Kind regards,', presupuesto: 'Quotation',
     orientativo: 'Indicative quotation, valid for {n} days. It does not include civil works or permits not listed above.',
     acep_titulo: 'ACCEPTANCE OF THE QUOTATION', acep_presu: 'Quotation: ', acep_num: 'Number: ', acep_cliente: 'Customer: ', acep_importes: 'Net amount: {b} · VAT 21 %: {i} · Total: {t}',
@@ -85,7 +90,7 @@ const TXT: Record<string, Textos> = {
     asunto1: 'El seu pressupost de Sysefen', asuntoN: 'Els seus pressupostos de Sysefen', titulo1: 'El seu pressupost', tituloN: 'Els seus pressupostos',
     hola: 'Hola {n},', intro1: 'li enviem el pressupost que hem preparat per a vostè.', introN: 'li enviem els {k} pressupostos que hem preparat per a vostè, perquè triï l’opció que més li convingui.',
     base: 'Base imposable', iva: 'IVA 21 %', total: 'Total', valido: 'Vàlid fins al {f}', ver: 'Veure i acceptar aquest pressupost', ver_txt: 'Veure i acceptar', sin_iva: 'sense IVA', con_iva: 'amb IVA', num: 'núm.',
-    pie: 'Pot veure cada pressupost a l’enllaç i descarregar-lo en PDF (també va adjunt). Si hi està conforme, accepti’l i signi’l allà mateix. Si té dubtes, prefereix canviar alguna cosa o ha decidit no tirar endavant, digui’ns-ho responent a aquest correu: així sabrem la seva resposta.',
+    pie: 'Pot veure cada pressupost a l’enllaç i descarregar-lo en PDF (també va adjunt). Si hi està conforme, accepti’l i signi’l allà mateix. Si prefereix canviar alguna cosa o ha decidit no tirar endavant, ens ho pot dir en aquella mateixa pàgina, amb «Sol·licitar modificacions» o «Rebutjar el pressupost», o responent a aquest correu.',
     saludo: 'Salutacions cordials,', presupuesto: 'Pressupost',
     orientativo: 'Pressupost orientatiu, vàlid {n} dies. No inclou obra civil ni permisos que no s’esmentin més amunt.',
     acep_titulo: 'ACCEPTACIÓ DEL PRESSUPOST', acep_presu: 'Pressupost: ', acep_num: 'Número: ', acep_cliente: 'Client: ', acep_importes: 'Base imposable: {b} · IVA 21 %: {i} · Total: {t}',
@@ -101,7 +106,7 @@ const TXT: Record<string, Textos> = {
     asunto1: 'Ihr Angebot von Sysefen', asuntoN: 'Ihre Angebote von Sysefen', titulo1: 'Ihr Angebot', tituloN: 'Ihre Angebote',
     hola: 'Guten Tag {n},', intro1: 'anbei erhalten Sie das Angebot, das wir für Sie erstellt haben.', introN: 'anbei erhalten Sie die {k} Angebote, die wir für Sie erstellt haben, damit Sie die passende Option wählen können.',
     base: 'Nettobetrag', iva: 'MwSt. 21 %', total: 'Gesamt', valido: 'Gültig bis {f}', ver: 'Dieses Angebot ansehen und annehmen', ver_txt: 'Ansehen und annehmen', sin_iva: 'ohne MwSt.', con_iva: 'inkl. MwSt.', num: 'Nr.',
-    pie: 'Über den Link können Sie jedes Angebot ansehen und als PDF herunterladen (es ist auch angehängt). Wenn Sie einverstanden sind, können Sie es dort direkt annehmen und unterschreiben. Bei Fragen, Änderungswünschen oder falls Sie sich dagegen entschieden haben, antworten Sie einfach auf diese E-Mail.',
+    pie: 'Über den Link können Sie jedes Angebot ansehen und als PDF herunterladen (es ist auch angehängt). Wenn Sie einverstanden sind, können Sie es dort direkt annehmen und unterschreiben. Wenn Sie etwas ändern möchten oder sich dagegen entschieden haben, können Sie uns das auf derselben Seite mitteilen („Änderungen anfragen“ oder „Angebot ablehnen“) oder einfach auf diese E-Mail antworten.',
     saludo: 'Mit freundlichen Grüßen,', presupuesto: 'Angebot',
     orientativo: 'Unverbindliches Angebot, {n} Tage gültig. Bauarbeiten und Genehmigungen, die oben nicht aufgeführt sind, sind nicht enthalten.',
     acep_titulo: 'ANNAHME DES ANGEBOTS', acep_presu: 'Angebot: ', acep_num: 'Nummer: ', acep_cliente: 'Kunde: ', acep_importes: 'Nettobetrag: {b} · MwSt. 21 %: {i} · Gesamt: {t}',
@@ -149,6 +154,10 @@ async function traducirTextos(idioma: string, textos: unknown[]): Promise<(x: un
     return (x: unknown) => { const t = identidad(x); const k = t.trim(); return (k && mapa[k]) || t; };
   } catch (_) { return identidad; }
 }
+// El cliente pidió cambios y todavía no se le ha vuelto a mandar el presupuesto.
+// deno-lint-ignore no-explicit-any
+const cambiosSinContestar = (p: any) => !!p && p.comentario_cliente_tipo === 'modificacion' && !!p.comentario_cliente_at && (p.respuesta_cliente || 'pendiente') === 'pendiente'
+  && !(p.enviado_correo_at && String(p.enviado_correo_at) > String(p.comentario_cliente_at));
 const b64aBytes = (b64: string) => Uint8Array.from(atob(b64.replace(/^data:[^,]*,/, '')), (c) => c.charCodeAt(0));
 const bytesAb64 = (bytes: Uint8Array) => { let s = ''; for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, Array.from(bytes.subarray(i, i + 0x8000))); return btoa(s); };
 const token = () => crypto.randomUUID().replace(/-/g, '') + Math.random().toString(36).slice(2, 10);
@@ -282,6 +291,10 @@ Deno.serve(async (req) => {
       idioma: idiomaP,
       // La nota para el cliente (etapa 110) va aparte de las condiciones; «otro» enseña su tipo escrito o nada.
       observaciones: limpio(p.observaciones) ? tr(String(p.observaciones).trim()) : null,
+      // Lo que el cliente ya nos dijo desde la página (etapa127): si rechazó, y los cambios que
+      // pidió mientras no se le haya vuelto a mandar el presupuesto.
+      respuesta: p.respuesta_cliente || 'pendiente',
+      cambios_pedidos: cambiosSinContestar(p) ? { texto: p.comentario_cliente || '', at: p.comentario_cliente_at } : null,
       presupuesto: { titulo: tr(tituloCliente(p)), categoria: p.categoria === 'otro' ? (limpio(p.categoria_texto) ? tr(limpio(p.categoria_texto)) : '') : (txt(idiomaP)['cat_' + p.categoria] || CATS[p.categoria] || p.categoria), tl_numero: p.tl_numero, enviado_correo_at: p.enviado_correo_at, firmado_at: p.firmado_at, firma_nombre: p.firma_nombre, validez_dias: p.validez_dias },
       cliente: p.cliente?.nombre || '', lineas: ls, condiciones, vence: vence(p),
       totales: { bruto: Math.round(bruto * 100) / 100, dto_global_pct: dtoG, base, iva, total: Math.round((base + iva) * 100) / 100 }, pdf_url,
@@ -411,6 +424,82 @@ Deno.serve(async (req) => {
     return json({ ok: true, avisos });
   }
 
+  // --- 4 · el cliente pide cambios o rechaza (sin sesión, por el token) --------------
+  if (b.accion === 'responder') {
+    const t = limpio(b.t);
+    if (!/^[a-z0-9]{36,60}$/i.test(t)) return json({ error: 'Enlace no válido.' }, 404);
+    const tipo = b.tipo === 'rechazo' ? 'rechazo' : b.tipo === 'modificacion' ? 'modificacion' : '';
+    if (!tipo) return json({ error: 'Falta decir si pide cambios o lo rechaza.' }, 400);
+    const { data: p } = await sb.from('presupuestos').select('*, cliente:clientes_cache(id, nombre, email, telefono)').eq('token_cliente', t).maybeSingle();
+    if (!p) return json({ error: 'Este enlace ya no está disponible.' }, 404);
+    if (p.firmado_at || p.respuesta_cliente === 'aceptado') return json({ error: 'Este presupuesto ya está aceptado.', codigo: 'ya_aceptado' }, 409);
+    const comentario = String(b.comentario == null ? '' : b.comentario).replace(/\r\n?/g, '\n').replace(/[\u0000-\u0008\u000b-\u001f]/g, '').replace(/\n{3,}/g, '\n\n').trim().slice(0, 2000);
+    if (tipo === 'modificacion' && comentario.length < 5) return json({ error: 'Falta decir qué quiere cambiar.', codigo: 'falta_comentario' }, 400);
+    if (tipo === 'rechazo' && p.respuesta_cliente === 'rechazado') return json({ ok: true, ya: true });
+    // Un doble toque o una recarga no mandan dos avisos.
+    const cuando = new Date();
+    if (p.comentario_cliente_at && cuando.getTime() - new Date(p.comentario_cliente_at).getTime() < 20_000) return json({ ok: true, ya: true });
+    const cambios: Record<string, unknown> = {
+      comentario_cliente: comentario || null, comentario_cliente_tipo: tipo, comentario_cliente_at: cuando.toISOString(),
+      comentario_visto_at: null, comentario_visto_por: null, updated_at: cuando.toISOString(),
+    };
+    if (tipo === 'rechazo') { cambios.respuesta_cliente = 'rechazado'; cambios.respondido_at = cuando.toISOString(); if (comentario) cambios.motivo_rechazo = comentario.slice(0, 500); }
+    const { error: errU } = await sb.from('presupuestos').update(cambios).eq('id', p.id);
+    if (errU) return json({ error: 'No se pudo guardar: ' + errU.message }, 500);
+    const avisos: string[] = [];
+    const cli = p.cliente || {};
+    const numTxt = limpio(p.tl_numero) ? ' nº ' + limpio(p.tl_numero) : '';
+    const cita = comentario ? '«' + comentario + '»' : '(sin comentario)';
+    // La ficha del cliente: queda en su historial con todo lo que escribió.
+    if (p.cliente_id) {
+      try {
+        await sb.from('cliente_bitacora').insert({ cliente_id: p.cliente_id, tipo: 'presupuesto', por: null,
+          texto: (tipo === 'rechazo' ? 'El cliente RECHAZÓ el presupuesto' : 'El cliente PIDE CAMBIOS en el presupuesto') + numTxt + ' desde su página (' + tituloCliente(p) + ' · ' + eur(p.total_venta) + '): ' + cita });
+      } catch (_) { /* sin bitácora */ }
+    }
+    // El aviso: a quien se lo mandó; si no se sabe (salió de Teamleader o «por otro lado»), a
+    // presupuestos y Administración, como el de la firma. Con copia a la oficina si está puesta.
+    if (RESEND) {
+      try {
+        let para: string[] = [];
+        if (p.enviado_cliente_por) {
+          const { data: quien } = await sb.from('empleados').select('email_avisos, activo').eq('id', p.enviado_cliente_por).maybeSingle();
+          if (quien && quien.activo !== false && esEmail(quien.email_avisos)) para = [limpio(quien.email_avisos)];
+        }
+        if (!para.length) {
+          const { data: gente } = await sb.from('empleados').select('email_avisos').in('rol', ['presupuestos', 'admin']).eq('activo', true);
+          para = [...new Set(((gente || []) as { email_avisos?: string }[]).map((g) => limpio(g.email_avisos)).filter(esEmail))];
+        }
+        let oficina = ''; try { const { data: aj } = await sb.from('ajustes').select('valor').eq('clave', 'correo_oficina').maybeSingle(); oficina = limpio(aj?.valor); } catch (_) { /* sin ajuste */ }
+        const cc = esEmail(oficina) && !para.includes(oficina) ? [oficina] : [];
+        if (!para.length && cc.length) para = cc.splice(0, 1);
+        if (para.length) {
+          const enlaceApp = APP_URL + '#presupuesto=' + p.id;
+          const emailCli = esEmail(p.enviado_correo_a) ? limpio(p.enviado_correo_a) : (esEmail(cli.email) ? limpio(cli.email) : '');
+          const hora = cuando.toLocaleString('es-ES', { timeZone: ZONA });
+          const titulo = tipo === 'rechazo' ? 'Presupuesto rechazado por el cliente' : 'El cliente pide cambios en su presupuesto';
+          const frase = tipo === 'rechazo'
+            ? 'ha rechazado desde su página el presupuesto'
+            : 'pide cambios desde su página en el presupuesto';
+          const queHacer = tipo === 'rechazo'
+            ? 'En la app ya figura como rechazado, con este motivo.'
+            : 'El presupuesto sigue esperando respuesta. Modifícalo y reenvíaselo (verá la versión nueva en su mismo enlace) o guarda los cambios como presupuesto nuevo.';
+          await mandar(RESEND, Object.assign({ to: para,
+            subject: (tipo === 'rechazo' ? '✗ Presupuesto rechazado' : '✎ Cambios pedidos en el presupuesto') + numTxt + ': ' + (cli.nombre || 'cliente') + ' · ' + eur(p.total_venta),
+            text: `${cli.nombre || 'El cliente'} ${frase}${numTxt} «${tituloCliente(p)}» (${eur(p.total_venta)} sin IVA) el ${hora}.\n\n${tipo === 'rechazo' ? 'Motivo' : 'Lo que pide'}:\n${comentario || '(no ha escrito nada)'}\n\n${queHacer}\n${[emailCli, limpio(cli.telefono)].filter(Boolean).join(' · ')}\nAbrir el presupuesto: ${enlaceApp}`,
+            html: marco(titulo, `<p><b>${esc(cli.nombre || 'El cliente')}</b> ${frase}${esc(numTxt)} <b>${esc(tituloCliente(p))}</b> (${eur(p.total_venta)} sin IVA) el ${esc(hora)}.</p>
+              <div style="font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:#777;margin-top:14px">${tipo === 'rechazo' ? 'Motivo' : 'Lo que pide'}</div>
+              <div style="background:#f5f4ef;border-radius:12px;padding:14px 16px;white-space:pre-wrap;font-size:15px;line-height:1.5;margin-top:6px">${comentario ? esc(comentario) : '<span style="color:#777">(no ha escrito nada)</span>'}</div>
+              <p style="font-size:14px;color:#555">${esc(queHacer)}</p>
+              ${emailCli || limpio(cli.telefono) ? `<p style="font-size:14px;color:#555">${esc([emailCli, limpio(cli.telefono)].filter(Boolean).join(' · '))}</p>` : ''}
+              <a href="${esc(enlaceApp)}" style="display:inline-block;margin-top:6px;background:#206028;color:#fff;text-decoration:none;font-weight:700;padding:12px 18px;border-radius:12px">Abrir el presupuesto</a>`),
+          }, cc.length ? { cc } : {}, emailCli ? { reply_to: emailCli } : {}));
+        } else avisos.push('correo: nadie tiene correo de avisos.');
+      } catch (e) { avisos.push('correo oficina: ' + (e as Error).message); }
+    } else avisos.push('correo: falta RESEND_API_KEY.');
+    return json({ ok: true, tipo, avisos });
+  }
+
   // --- 1 · enviar al cliente (con la sesión de la app) ----------------------------
   const autorizacion = req.headers.get('Authorization') || '';
   if (!autorizacion) return json({ error: 'Falta la sesión.' }, 401);
@@ -453,6 +542,8 @@ Deno.serve(async (req) => {
   for (const p of ordenados) {
     const t = p.token_cliente || token();
     const cambios: Record<string, unknown> = { token_cliente: t, enviado_correo_at: ahora, enviado_correo_a: para, updated_at: ahora, idioma_cliente: idioma };
+    // Si el cliente había pedido cambios y estaba sin ver, reenviárselo es atenderlo (etapa127).
+    if (p.comentario_cliente_at && !p.comentario_visto_at && p.comentario_cliente_tipo === 'modificacion') { cambios.comentario_visto_at = ahora; cambios.comentario_visto_por = yo.id; }
     if (!p.enviado_cliente_at) { cambios.enviado_cliente_at = ahora; cambios.enviado_cliente_por = yo.id; cambios.estado = 'enviado'; if (!p.revisado_at) { cambios.revisado_at = ahora; cambios.revisado_por = yo.id; } }
     const pdf = pdfs.find((x) => String(x.id) === p.id);
     if (pdf && typeof pdf.base64 === 'string' && pdf.base64.length > 100 && pdf.base64.length < 14_000_000) {

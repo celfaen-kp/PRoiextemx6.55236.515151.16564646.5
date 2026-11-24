@@ -425,6 +425,13 @@ body.con-captcha #captcha{display:block}
 .ag-tarea b{display:block;font:600 15px/1.25 var(--sans)}
 .ag-tarea small{display:block;font:400 12.5px/1.3 var(--sans);color:var(--t2);margin-top:2px}
 .ag-tarea .pill{flex:none;padding:8px 12px;font-size:12px}
+.ag-coment{margin-bottom:10px;cursor:pointer;background:var(--ambar-cl);box-shadow:var(--sh),inset 0 0 0 1.5px var(--ambar)}
+.ag-coment.rech{background:var(--rojo-cl);box-shadow:var(--sh),inset 0 0 0 1.5px var(--rojo)}
+.ag-coment-txt{font:400 14px/1.4 var(--sans);margin-top:9px;white-space:pre-wrap;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden}
+.presu-coment{margin-top:12px;padding:12px 14px;border-radius:12px;background:var(--ambar-cl);border:1.5px solid var(--ambar)}
+.presu-coment.rech{background:var(--rojo-cl);border-color:var(--rojo)}
+.presu-coment.visto{background:var(--l1);border-color:transparent}
+.presu-coment-txt{font:400 14px/1.45 var(--sans);margin-top:8px;white-space:pre-wrap;overflow-wrap:anywhere}
 .ag-accion{display:flex;flex-direction:column;align-items:center;gap:6px;font:500 11px/1 var(--sans);color:rgba(255,255,255,.72);text-decoration:none;cursor:pointer;min-width:64px}
 .ag-accion i{width:44px;height:44px;border-radius:99px;background:rgba(255,255,255,.12);display:flex;align-items:center;justify-content:center;color:#fff}
 .ag-linea{position:relative;padding-left:22px}
@@ -562,7 +569,7 @@ import * as idiomas from './presu-idiomas.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '33.9'; // versión visible de la app (única fuente)
+const APP_VERSION = '34.0'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -12220,13 +12227,36 @@ function presuEditResultadosHTML() {
 }
 A.presuEditDto = (v) => { if (V.presuEdit) V.presuEdit.dto = Math.max(0, Math.min(100, Number(String(v).replace(',', '.')) || 0)); };
 
-A.presuGuardarCambios = async () => {
+/* «Guardar como presupuesto nuevo» (Enzo, 24-11-2026: «me tocó hacerlo en uno ya
+ * enviado y no quería modificarlo para perder el anterior»): se copia el
+ * presupuesto tal cual, lo que se estaba cambiando pasa a las líneas de la copia
+ * y se guarda sobre ella. El original no se toca: ni sus líneas, ni su número,
+ * ni lo que ya se le mandó al cliente. */
+function edicionALaCopia(e, mapa) {
+  e.quitadas = (e.quitadas || []).map((id) => mapa[id]).filter(Boolean);
+  const cambios = {};
+  Object.keys(e.cambios || {}).forEach((id) => { if (mapa[id]) cambios[mapa[id]] = e.cambios[id]; });
+  e.cambios = cambios;
+  return e;
+}
+A.presuGuardarCambios = async (comoNuevo) => {
   const v = V.presuVer, e = V.presuEdit;
   if (!v || !e || e.guardando) return;
   if (!navigator.onLine) { avisar('Sin conexión: los cambios no se han guardado.'); return; }
   const num = (x) => Number(String(x == null ? '' : x).replace(',', '.'));
-  e.guardando = true; render();
+  e.guardando = comoNuevo ? 'nuevo' : true; render();
+  let anterior = null;
   try {
+    // 0 · como presupuesto nuevo: primero la copia, y todo lo demás va sobre ella
+    if (comoNuevo) {
+      const orig = v.datos;
+      const clienteId = orig.cliente_id || (orig.cliente && orig.cliente.id) || null;
+      const nuevo = await visitasDB.duplicarPresupuesto(orig.id, { cliente_id: clienteId, titulo: orig.titulo, copia_de: orig.id });
+      edicionALaCopia(e, nuevo.mapa_lineas || {});
+      anterior = orig;
+      v.datos = await visitasDB.verPresupuesto(nuevo.id);
+      if (clienteId) anotar(clienteId, 'presupuesto', 'Presupuesto nuevo de ' + nombreCatDe(orig) + ' a partir de' + (orig.tl_numero ? 'l nº ' + orig.tl_numero : ' otro') + ', que se conserva como estaba');
+    }
     // 1 · las que se quitan
     for (const id of e.quitadas) await visitasDB.borrarLineaPresupuesto(id);
 
@@ -12282,10 +12312,11 @@ A.presuGuardarCambios = async () => {
       toast('Guardado. Actualizando la oferta en Teamleader…');
       try { await visitasDB.actualizarPresupuestoEnTeamleader(v.datos.id); toast('Presupuesto actualizado, también en Teamleader.'); await A.presuAbrir(v.datos.id); }
       catch (err) { avisar('Guardado en la app, pero no en Teamleader: ' + msgError(err)); }
-    } else toast('Presupuesto actualizado.');
+    } else toast(anterior ? 'Presupuesto nuevo creado. El anterior' + (anterior.tl_numero ? ' (nº ' + anterior.tl_numero + ')' : '') + ' sigue como estaba.' : 'Presupuesto actualizado.');
   } catch (err) {
     e.guardando = false; render();
-    avisar('No se pudieron guardar los cambios: ' + msgError(err));
+    // Si la copia ya estaba hecha, se sigue sobre ella: «Guardar cambios» reintenta sin crear otra.
+    avisar((anterior ? 'El presupuesto nuevo está creado, pero no se pudieron guardar los cambios en él' : 'No se pudieron guardar los cambios') + ': ' + msgError(err));
   }
 };
 
@@ -12406,9 +12437,10 @@ function presuLineasEditHTML(d) {
   <div id="presu-edit-previa">${previaEditHTML(d)}</div>
   <div class="row g8" style="margin-top:16px">
     <button class="btn btn-gris" data-a="presuEditarCancelar" style="border-radius:99px">Cancelar</button>
-    <button class="btn btn-verde" data-a="presuGuardarCambios" style="flex:1" ${e.guardando ? 'disabled' : ''}>${e.guardando ? 'Guardando…' : 'Guardar cambios'}</button>
+    <button class="btn btn-verde" data-a="presuGuardarCambios" style="flex:1" ${e.guardando ? 'disabled' : ''}>${e.guardando === true ? 'Guardando…' : 'Guardar cambios'}</button>
   </div>
-  <div class="tiny" style="margin-top:8px">Al guardar, el servidor vuelve a sumarlo todo.</div>`;
+  <button class="btn btn-gris" data-a="presuGuardarNuevo" style="margin-top:8px;border-radius:99px" ${e.guardando ? 'disabled' : ''}>${e.guardando === 'nuevo' ? 'Creando el presupuesto nuevo…' : 'Guardar como presupuesto nuevo'}</button>
+  <div class="tiny" style="margin-top:8px;line-height:1.45">${d.enviado_cliente_at ? '<b>Este presupuesto ya se le envió al cliente.</b> ' : ''}«Guardar cambios» cambia este mismo presupuesto. «Guardar como presupuesto nuevo» deja este como está y lleva los cambios a uno nuevo, que no tendrá número hasta subirlo a Teamleader. Al guardar, el servidor vuelve a sumarlo todo.</div>`;
 }
 
 
@@ -12958,6 +12990,15 @@ A.presuTlNumero = async (v) => {
   try { Object.assign(d, await visitasDB.seguimientoPresupuesto(d.id, { tl_numero: num })); toast(num ? 'Número del presupuesto apuntado.' : 'Número del presupuesto quitado.'); }
   catch (e) { avisar(/tl_numero|schema cache/i.test(msgError(e)) ? 'Falta ejecutar sql/etapa88 en Supabase.' : 'No se pudo guardar: ' + msgError(e)); }
 };
+// De qué presupuesto salió este («Guardar como presupuesto nuevo») y cuáles salieron de él.
+function copiaDeHTML(d) {
+  const filas = (V.presuLista && V.presuLista.filas) || [];
+  const nombre = (p) => (p && p.tl_numero ? 'nº ' + p.tl_numero : 'sin número todavía');
+  const orig = d.copia_de ? filas.find((p) => p.id === d.copia_de) : null;
+  const hijos = filas.filter((p) => p.copia_de === d.id);
+  if (!d.copia_de && !hijos.length) return '';
+  return `<div class="tiny" style="margin-top:10px;line-height:1.5">${d.copia_de ? `Sale de otro presupuesto${orig ? ' (' + esc(nombre(orig)) + ')' : ''}, que se conserva como estaba. <span data-a="presuAbrir" data-id="${esc(d.copia_de)}" style="cursor:pointer;text-decoration:underline">Ver el anterior</span>` : ''}${d.copia_de && hijos.length ? '<br>' : ''}${hijos.length ? 'De este ' + (hijos.length === 1 ? 'salió otro presupuesto' : 'salieron ' + hijos.length + ' presupuestos') + ': ' + hijos.map((h) => `<span data-a="presuAbrir" data-id="${h.id}" style="cursor:pointer;text-decoration:underline">${esc(nombre(h))}</span>`).join(', ') + '.' : ''}</div>`;
+}
 function seguimientoHTML(d) {
   const sg = seguimientoPresu(d);
   const ob = d.obra_id ? obraById(d.obra_id) : null;
@@ -12969,11 +13010,13 @@ function seguimientoHTML(d) {
     ['Validez', (() => { const v = vencePresu(d); if (!v) return (d.validez_dias || 15) + ' días desde el envío'; const vencido = v < hoyISO() && (d.respuesta_cliente || 'pendiente') === 'pendiente';
       return (vencido ? 'Vencido el ' : 'Hasta el ') + fechaCorta(v + 'T12:00') + (d.prorroga_dias ? ' · prórroga ' + d.prorroga_dias + ' días' : '') + (d.aviso_vencimiento_at ? ' · cliente avisado ' + fechaCorta(d.aviso_vencimiento_at) : ''); })(),
       !!d.enviado_cliente_at && !(vencePresu(d) < hoyISO() && (d.respuesta_cliente || 'pendiente') === 'pendiente')],
-    ['Respuesta del cliente', d.respuesta_cliente && d.respuesta_cliente !== 'pendiente' ? { aceptado: 'Aceptado', rechazado: 'Rechazado', caducado: 'Caducado' }[d.respuesta_cliente] + (d.respondido_at ? ' · ' + fechaCorta(d.respondido_at) : '') : 'esperando', d.respuesta_cliente && d.respuesta_cliente !== 'pendiente'],
+    ['Respuesta del cliente', d.respuesta_cliente && d.respuesta_cliente !== 'pendiente' ? { aceptado: 'Aceptado', rechazado: 'Rechazado', caducado: 'Caducado' }[d.respuesta_cliente] + (d.respondido_at ? ' · ' + fechaCorta(d.respondido_at) : '') : pideCambios(d) ? 'pide cambios · ' + fechaCorta(d.comentario_cliente_at) : 'esperando', d.respuesta_cliente && d.respuesta_cliente !== 'pendiente'],
   ];
   const busy = V.presuSegBusy;
   return `<div class="card" style="margin-top:12px;padding:12px 15px">
     <div class="row g8" style="align-items:center"><span class="dot" style="width:10px;height:10px;background:${sg.color}"></span><span style="font:600 15px var(--sans)">${esc(sg.txt)}</span></div>
+    ${comentarioClienteHTML(d)}
+    ${copiaDeHTML(d)}
     <div class="row g8" style="align-items:center;margin-top:10px"><span class="lbl" style="font-size:11px;flex:none">Nº presupuesto</span><input class="inp" data-f="presuTlNumero" value="${esc(d.tl_numero || '')}" placeholder="—" style="width:120px;padding:7px 9px"><span class="tiny">El de Teamleader: se pone solo al subirlo. Va en el PDF y en el correo al cliente.</span></div>
     <div style="margin-top:10px">${pasos.map(([t, sub, ok]) => `<div class="row g10" style="align-items:center;padding:7px 0;border-bottom:1px solid var(--l1)">
       <span class="dot" style="width:9px;height:9px;background:${ok ? 'var(--verde)' : 'rgba(var(--tinta-rgb),.15)'}"></span>
@@ -13541,12 +13584,88 @@ const presupuestosDeCliente = (c) => {
   [...(c.presupuestos || []), ...(c.visitas || []).flatMap((v) => v.presupuestos || [])].forEach((p) => { if (p && !vistos.has(p.id)) { vistos.add(p.id); out.push(p); } });
   return out.sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
 };
+/* ---------- lo que el cliente escribe en la página del presupuesto (Enzo, 24-11-2026) ----------
+ * «Ahora solo se puede aceptar»: en la página el cliente puede además «Solicitar
+ * modificaciones» o «Rechazar el presupuesto», con un comentario (sql/etapa127,
+ * función presupuesto-cliente). Lo que escribe queda pendiente hasta que alguien
+ * lo da por visto, o se le reenvía el presupuesto: mientras tanto sale arriba en
+ * la pantalla principal y en la ficha del presupuesto. Pedir cambios no cambia la
+ * respuesta: el presupuesto sigue esperando.
+ * ------------------------------------------------------------------------------- */
+const comentarioPendiente = (p) => !!(p && p.comentario_cliente_at && !p.comentario_visto_at);
+const pideCambios = (p) => comentarioPendiente(p) && p.comentario_cliente_tipo === 'modificacion' && (p.respuesta_cliente || 'pendiente') === 'pendiente';
+// Los comentarios sin ver de los clientes que esta persona ve, el más nuevo arriba.
+function comentariosPendientes() {
+  const out = [];
+  ((V.agenda && V.agenda.clientes) || []).forEach((c) => presupuestosDeCliente(c).forEach((p) => { if (comentarioPendiente(p)) out.push({ c, p }); }));
+  return out.sort((a, b) => String(b.p.comentario_cliente_at).localeCompare(String(a.p.comentario_cliente_at)));
+}
+function comentariosClientesHTML() {
+  if (!verMotor()) return '';
+  const lista = comentariosPendientes();
+  if (!lista.length) return '';
+  return `<div class="row" style="justify-content:space-between;align-items:baseline;margin:0 0 10px"><div class="ag-sec">Comentarios de presupuestos</div><span class="ag-sec-n">${lista.length}</span></div>
+    ${lista.map(({ c, p }) => { const rech = p.comentario_cliente_tipo === 'rechazo';
+      return `<div class="card ag-coment ${rech ? 'rech' : ''}" data-a="presuAbrir" data-id="${p.id}">
+      <div class="row g8" style="align-items:center"><span class="dot" style="width:9px;height:9px;flex:none;background:${rech ? 'var(--rojo)' : 'var(--ambar)'}"></span><span class="lbl" style="color:${rech ? 'var(--rojo)' : 'var(--ambar-o)'}">${rech ? 'Ha rechazado el presupuesto' : 'Pide cambios'} · ${esc(fechaCorta(p.comentario_cliente_at))}</span><div class="grow"></div><span class="pill" style="flex:none;padding:8px 12px;font-size:12px">Ver</span></div>
+      <div class="h2" style="font-size:17px;margin-top:8px">${esc(c.nombre || 'Cliente')}</div>
+      <div class="sub" style="margin-top:3px">${esc([p.tl_numero ? 'Presupuesto nº ' + p.tl_numero : 'Presupuesto de ' + String(nombreCatDe(p) || p.categoria || '').toLowerCase(), p.total_venta != null ? eur(p.total_venta) : ''].filter(Boolean).join(' · '))}</div>
+      <div class="ag-coment-txt">${p.comentario_cliente ? '«' + esc(p.comentario_cliente) + '»' : 'No ha escrito ningún comentario.'}</div>
+    </div>`; }).join('')}
+    <div style="height:16px"></div>`;
+}
+// Al llegar un comentario nuevo se avisa una vez en este aparato; después queda arriba en la agenda.
+const KEY_COMENTARIOS = 'sysefen.comentarios.avisados';
+function avisarComentariosNuevos() {
+  if (!verMotor()) return;
+  let ya = {}; try { ya = JSON.parse(localStorage.getItem(KEY_COMENTARIOS) || '{}') || {}; } catch (_) { ya = {}; }
+  const lista = comentariosPendientes(), ahora = {};
+  const nuevos = lista.filter(({ p }) => ya[p.id] !== p.comentario_cliente_at);
+  lista.forEach(({ p }) => { ahora[p.id] = p.comentario_cliente_at; });
+  try { localStorage.setItem(KEY_COMENTARIOS, JSON.stringify(ahora)); } catch (_) { /* sin almacén se avisa cada vez */ }
+  if (!nuevos.length) return;
+  const x = nuevos[0];
+  toast(nuevos.length === 1
+    ? (x.c.nombre || 'Un cliente') + (x.p.comentario_cliente_tipo === 'rechazo' ? ' ha rechazado su presupuesto.' : ' pide cambios en su presupuesto.')
+    : nuevos.length + ' comentarios nuevos de clientes en sus presupuestos.');
+}
+// La copia del presupuesto que va dentro de cada cliente de la agenda, al día sin recargar.
+function agPresuActualizar(id, cambios) {
+  ((V.agenda && V.agenda.clientes) || []).forEach((c) => [...(c.presupuestos || []), ...(c.visitas || []).flatMap((v) => v.presupuestos || [])].forEach((p) => { if (p && p.id === id) Object.assign(p, cambios); }));
+}
+function comentarioClienteHTML(d) {
+  if (!d || !d.comentario_cliente_at) return '';
+  const rech = d.comentario_cliente_tipo === 'rechazo', pend = comentarioPendiente(d), busy = V.presuSegBusy;
+  return `<div class="presu-coment ${rech ? 'rech' : ''} ${pend ? '' : 'visto'}">
+    <div style="font:600 15px var(--sans);color:${rech ? 'var(--rojo)' : 'var(--ambar-o)'}">${rech ? '✗ El cliente lo rechazó desde su página' : '✎ El cliente pide cambios'}</div>
+    <div class="tiny" style="margin-top:3px">${esc(fechaCorta(d.comentario_cliente_at))}${pend ? '' : ' · visto' + (d.comentario_visto_at ? ' el ' + esc(fechaCorta(d.comentario_visto_at)) : '') + (d.comentario_visto_por ? ' por ' + esc(agNombreEmp(d.comentario_visto_por)) : '')}</div>
+    <div class="presu-coment-txt">${d.comentario_cliente ? esc(d.comentario_cliente) : '<span style="color:var(--t2)">No ha escrito ningún comentario.</span>'}</div>
+    ${pend ? `<div class="row g8" style="margin-top:10px;flex-wrap:wrap">
+      ${rech ? '' : `<button class="pill pill-verde" data-a="presuEditar" style="padding:9px 13px">Modificar el presupuesto</button>`}
+      <button class="pill" data-a="presuComentarioVisto" style="padding:9px 13px;background:var(--l1);color:var(--tinta)" ${busy ? 'disabled' : ''}>Ya está visto</button></div>
+      ${rech ? '' : `<div class="tiny" style="margin-top:8px">Al modificarlo eliges: «Guardar cambios» cambia este mismo presupuesto, y «Guardar como presupuesto nuevo» deja este como está. Al reenviárselo al cliente, este aviso se da por visto solo.</div>`}` : ''}
+  </div>`;
+}
+A.presuComentarioVisto = async () => {
+  const d = V.presuVer && V.presuVer.datos; if (!d || V.presuSegBusy || !comentarioPendiente(d)) return;
+  V.presuSegBusy = true; render();
+  try {
+    const cambios = { comentario_visto_at: new Date().toISOString(), comentario_visto_por: miEmpId() || null };
+    Object.assign(d, await visitasDB.seguimientoPresupuesto(d.id, cambios));
+    agPresuActualizar(d.id, cambios);
+    toast('Apuntado: comentario visto.');
+  } catch (e) { avisar(/comentario_visto/i.test(msgError(e)) ? 'Falta ejecutar sql/etapa127 en Supabase.' : 'No se pudo guardar: ' + msgError(e)); }
+  V.presuSegBusy = false; render();
+};
+
 // En qué punto está un presupuesto (sql/etapa64): de crearlo a la respuesta del cliente.
 function seguimientoPresu(p) {
   if (!p) return null;
   if (p.respuesta_cliente === 'aceptado') return { k: 'aceptado', color: 'var(--verde)', txt: 'Aceptado', paso: 6 };
   if (p.respuesta_cliente === 'rechazado') return { k: 'rechazado', color: 'var(--rojo)', txt: 'Rechazado', paso: 6 };
   if (p.respuesta_cliente === 'caducado') return { k: 'rechazado', color: 'var(--t3)', txt: 'Caducado', paso: 6 };
+  // Pidió cambios desde su página y nadie lo ha visto todavía: sigue esperando, pero nos toca a nosotros.
+  if (pideCambios(p)) return { k: 'esperando', color: 'var(--rojo)', txt: 'El cliente pide cambios', paso: 5 };
   // Solo cuenta la fecha que apunta una persona: subirlo a Teamleader no es
   // enviarlo (la oferta se queda allí sin mandar hasta que se revisa).
   if (p.enviado_cliente_at) return { k: 'esperando', color: 'var(--ambar)', txt: 'Enviado al cliente · esperando', paso: 5 };
@@ -13723,6 +13842,7 @@ A.cargarAgenda = async () => {
   if (ag.vista === 'tablero') ag.clientes.forEach((c) => { if (!V.bitacora[c.id]) V.bitacora[c.id] = []; });
   if (puedeCitar()) cargarBitacoraTodos();
   clientesPendientesAHoja();
+  if (!ag.error) avisarComentariosNuevos();
 };
 
 /**
@@ -14698,6 +14818,7 @@ function vAgenda() {
   const dias = [...new Set(resto.map((x) => agDiaDe(x.inicio)))];
   const yo = userById(V.user.id) || {};
   const fechaHoy = new Date().toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' });
+  const nComent = verMotor() ? comentariosPendientes().length : 0;
 
   return `<div class="hdr">
     <div class="row" style="justify-content:space-between;align-items:center;margin-bottom:14px">
@@ -14707,7 +14828,7 @@ function vAgenda() {
     <div class="lbl">${esc(agMayus(fechaHoy))}</div>
     <div class="row" style="justify-content:space-between;align-items:baseline;margin-top:4px">
       <div class="h1">${puedeCitar() ? 'Hola, ' + esc((yo.nombre || '').split(' ')[0] || '') : 'Citas'}</div>
-      <div class="tiny" style="flex:none">${todas.filter((x) => agDiaDe(x.inicio) === hoy).length === 1 ? '1 cita hoy' : todas.filter((x) => agDiaDe(x.inicio) === hoy).length + ' citas hoy'}${tareas.length ? ' · ' + tareas.length + (tareas.length === 1 ? ' pendiente' : ' pendientes') : ''}</div>
+      <div class="tiny" style="flex:none">${todas.filter((x) => agDiaDe(x.inicio) === hoy).length === 1 ? '1 cita hoy' : todas.filter((x) => agDiaDe(x.inicio) === hoy).length + ' citas hoy'}${tareas.length + nComent ? ' · ' + (tareas.length + nComent) + (tareas.length + nComent === 1 ? ' pendiente' : ' pendientes') : ''}</div>
     </div>
     <div class="ag-semana">${semana.join('')}</div>
     <div class="row" style="justify-content:space-between;margin-top:10px">
@@ -14717,6 +14838,7 @@ function vAgenda() {
   </div>
   <div class="scroll pad pb-nav sin-marca">
     ${agAvisoHTML()}
+    ${ag.dia ? '' : comentariosClientesHTML()}
     ${ag.verMes ? agCalendarioHTML(todas) : ''}
     ${ag.dia ? `<div class="row" style="justify-content:space-between;margin:0 0 12px"><div class="sub">Solo el ${esc(agEtiquetaDia(ag.dia).toLowerCase())}</div><span class="tiny" data-a="ag_dia" data-dia="${ag.dia}" style="cursor:pointer;text-decoration:underline">Ver todas</span></div>` : ''}
     ${ag.dia && !citas.length ? `<div class="card" style="margin-bottom:14px"><div class="sub">Ese día no hay citas.${puedeCitar() ? ' Para poner una, abre el cliente y dale a «Poner cita».' : ''}</div></div>` : ''}
@@ -16646,6 +16768,7 @@ document.addEventListener('click', (e) => {
   if (a === 'presuAvisoVencAbrir') return A.presuAvisoVencAbrir();
   if (a === 'presuAvisoVencEnviar') return A.presuAvisoVencEnviar();
   if (a === 'presuRevisado') return A.presuRevisado();
+  if (a === 'presuComentarioVisto') return A.presuComentarioVisto();
   if (a === 'presuRespuesta') return A.presuRespuesta(d.r);
   if (a === 'presuCrearObra') return A.presuCrearObra();
   if (a === 'confirmarBorrarPresu') return A.confirmarBorrarPresu();
@@ -16698,6 +16821,7 @@ document.addEventListener('click', (e) => {
   if (a === 'presuEditAnadir') return A.presuEditAnadir(d.ref);
   if (a === 'presuEditAnadirConjunto') return A.presuEditAnadirConjunto(d.id);
   if (a === 'presuGuardarCambios') return A.presuGuardarCambios();
+  if (a === 'presuGuardarNuevo') return A.presuGuardarCambios(true);
   if (a === 'presuSueltoChip') { A.presuSueltoChip(d.k, d.v); return; }
   if (a === 'presuEstanciaPot') {
     if (!V.suelto) return;

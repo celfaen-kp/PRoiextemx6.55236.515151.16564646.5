@@ -371,7 +371,7 @@ export async function listarCitas(diasAtras = 120) {
 }
 
 /** Clientes con lo justo de sus citas y visitas para saber en qué punto están. */
-const COLS_CLIENTE_AGENDA = '*, citas(id, inicio, estado), visitas(id, codigo, estado, sync_estado, fecha_visita, presupuestos(id, categoria, estado, respuesta_cliente, tl_quotation_id, total_venta, created_at, enviado_cliente_at, revisado_at, obra_id)), presupuestos(id, categoria, estado, respuesta_cliente, tl_quotation_id, total_venta, created_at, enviado_cliente_at, revisado_at, obra_id)';
+const COLS_CLIENTE_AGENDA = '*, citas(id, inicio, estado), visitas(id, codigo, estado, sync_estado, fecha_visita, presupuestos(id, categoria, estado, respuesta_cliente, tl_quotation_id, total_venta, created_at, enviado_cliente_at, revisado_at, obra_id, tl_numero, comentario_cliente, comentario_cliente_tipo, comentario_cliente_at, comentario_visto_at)), presupuestos(id, categoria, estado, respuesta_cliente, tl_quotation_id, total_venta, created_at, enviado_cliente_at, revisado_at, obra_id, tl_numero, comentario_cliente, comentario_cliente_tipo, comentario_cliente_at, comentario_visto_at)';
 // Las facturas de cada cliente, con lo justo para saber si está facturado
 // (17-11-2026). Solo las ve quien ve facturas; a los demás les llega vacío.
 const COLS_FACTURA_CLIENTE = 'facturas(id, tipo, numero, estado, fecha, vence, base, total, pagada, presupuesto_id, tl_id, tl_factura_abonada_id)';
@@ -622,22 +622,44 @@ export async function presupuestosDeVisita(visitaId) {
  * donde vive la aritmética de céntimos, para que no haya dos cuentas distintas.
  * ------------------------------------------------------------------------- */
 
+/** Qué línea de la copia corresponde a cada línea del original: { id original: id de la copia }. */
+export function mapaLineasCopia(origen, hechas) {
+  const mapa = {}, igual = (a, b) => !!a && !!b && (a.orden || 0) === (b.orden || 0) && String(a.descripcion || '') === String(b.descripcion || '') && String(a.producto_ref || '') === String(b.producto_ref || '');
+  const libres = (hechas || []).slice();
+  (origen || []).forEach((l, i) => {
+    let j = igual(l, hechas && hechas[i]) && libres.includes(hechas[i]) ? libres.indexOf(hechas[i]) : libres.findIndex((h) => igual(l, h));
+    if (j < 0) return;
+    mapa[l.id] = libres[j].id; libres.splice(j, 1);
+  });
+  return mapa;
+}
 /**
- * Copia de un presupuesto para OTRO cliente (Enzo, 28-10-2026): nace como un
- * presupuesto nuevo (sin visita, sin oferta en Teamleader, sin revisar ni
- * enviar), con las mismas líneas e incidencias. El original no se toca.
+ * Copia de un presupuesto para OTRO cliente (Enzo, 28-10-2026) o para el mismo,
+ * como presupuesto nuevo a partir de este (24-11-2026, con copia_de): nace sin
+ * visita, sin oferta en Teamleader, sin revisar ni enviar, con las mismas líneas
+ * e incidencias. El original no se toca.
  */
-export async function duplicarPresupuesto(id, { cliente_id, titulo }) {
+export async function duplicarPresupuesto(id, { cliente_id, titulo, copia_de }) {
   const d = await verPresupuesto(id);
   const copia = (o, campos) => { const r = {}; campos.forEach((k) => { if (o[k] !== undefined) r[k] = o[k]; }); return r; };
   const fila = Object.assign(copia(d, ['categoria', 'categoria_texto', 'observaciones', 'conjunto_reglas_id', 'tarifa_id', 'motor_version', 'modelo_id', 'estimativo_min', 'estimativo_max', 'ratio_aplicado',
     'total_bruto', 'total_dto_linea', 'dto_global_pct', 'total_coste', 'total_venta', 'confianza', 'validez_dias']),
     { cliente_id, titulo: titulo || d.titulo || null, visita_id: null, ficha_id: null, estado: 'generado', sync_estado: 'pendiente' });
+  // «Guardar como presupuesto nuevo» (24-11-2026): el nuevo apunta al que le dio origen (sql/etapa127).
+  if (copia_de) fila.copia_de = copia_de;
   const nuevo = unwrap(await supabase.from('presupuestos').insert(fila).select().single());
-  const lineas = (d.lineas || []).slice().sort((a, b) => (a.orden || 0) - (b.orden || 0)).map((l) => Object.assign(
+  const origen = (d.lineas || []).slice().sort((a, b) => (a.orden || 0) - (b.orden || 0));
+  const lineas = origen.map((l) => Object.assign(
     copia(l, ['orden', 'seccion', 'producto_ref', 'descripcion', 'detalle_tecnico', 'especificaciones', 'cantidad', 'unidad', 'precio_tarifa', 'dto_linea_pct', 'precio_coste', 'precio_venta', 'iva', 'origen', 'origen_regla_id', 'origen_inputs', 'confirmada']),
     { presupuesto_id: nuevo.id }));
-  if (lineas.length) unwrap(await supabase.from('presupuesto_lineas').insert(lineas));
+  // Qué línea de la copia corresponde a cada una del original, para llevarle los cambios
+  // que se estaban haciendo. Se casan por posición y, si la base las devolviera en otro
+  // orden, por su contenido.
+  nuevo.mapa_lineas = {};
+  if (lineas.length) {
+    const hechas = unwrap(await supabase.from('presupuesto_lineas').insert(lineas).select('id, orden, descripcion, producto_ref')) || [];
+    nuevo.mapa_lineas = mapaLineasCopia(origen, hechas);
+  }
   const inc = (d.incidencias || []).map((i) => Object.assign(copia(i, ['nivel', 'codigo', 'campo', 'mensaje']), { presupuesto_id: nuevo.id }));
   if (inc.length) { try { unwrap(await supabase.from('presupuesto_incidencias').insert(inc)); } catch (_) { /* sin incidencias se sigue igual */ } }
   return nuevo;
