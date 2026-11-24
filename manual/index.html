@@ -764,11 +764,24 @@ footer{margin-top:60px;padding-top:20px;border-top:1px solid var(--l1);color:var
     <ul>
       <li><b>Fotovoltaica</b>: el modelo con el que se presupuestan las instalaciones (margen, jornadas, documentación, costes de personal, compras y material).</li>
       <li><b>Catálogo</b>: cada producto, con su tarifa, su descuento de proveedor y su recargo; la app enseña la venta y el coste que salen.</li>
+      <li><b>Márgenes</b>: con qué margen sale cada cosa del catálogo, por proveedor, marca o tipo, y cómo cambiarlo de una vez (más abajo).</li>
       <li><b>Precios fijos</b>: los conceptos de precio fijo de las partidas (mano de obra, soportes…).</li>
       <li><b>Cambios</b>: el historial, con quién y cuándo, y <b>Deshacer</b>.</li>
     </ul>
     <p>También desde un presupuesto: al editar una línea, <span class="btn gris">Aplicar</span> cambia solo ese presupuesto y el enlace <b>Guardar en la base de datos</b> cambia además el precio para todos los nuevos, después de enseñarte qué va a cambiar.</p>
     <div class="nota">Lo que cambies vale para los presupuestos nuevos. Los ya guardados no cambian nunca.</div>
+  </div>
+</div>
+<div class="pantalla">
+  <img src="img/pres-margenes.png" alt="Pestaña de márgenes del catálogo">
+  <div class="txt">
+    <h4>Márgenes por proveedor, marca y tipo</h4>
+    <p>La pestaña <b>Márgenes</b> enseña con qué margen sale cada producto del catálogo. El margen es <b>sobre la venta</b>: 35 % quiere decir que de cada 100 € que paga el cliente, 35 € son beneficio.</p>
+    <div class="paso"><b class="n">1</b><div><b>Filtra</b> con los desplegables de <b>Proveedor</b>, <b>Marca</b> y <b>Tipo</b> (inversores, baterías, bombas de calor…) o con el buscador. Debajo sale el margen de lo filtrado y su reparto: toca una fila (un proveedor, una marca, un tipo) para quedarte solo con eso.</div></div>
+    <div class="paso"><b class="n">2</b><div>Escribe el margen nuevo en <b>Poner a estos N un … % de margen</b> y pulsa <b>Ver el cambio</b>. La app te dice a cuántos productos toca, cómo estaban y tres ejemplos de precio antes y después.</div></div>
+    <div class="paso"><b class="n">3</b><div><b>Cambiar</b> lo aplica solo a lo filtrado. Queda en <b>Cambios</b> como un solo apunte, y <b>Deshacer</b> devuelve cada producto a como estaba.</div></div>
+    <p>En Vaillant, Saunier Duval y Midea el producto se vende hoy a la tarifa del fabricante y el margen es el descuento de proveedor. Si les pones otro margen, la venta deja de ser la de tarifa: la app avisa de cuánto queda por debajo o por encima.</p>
+    <div class="nota">Lo que no tiene coste apuntado (se vende al precio escrito) no entra en el cambio. La instalación fotovoltaica llave en mano no va por aquí: lleva el margen de su modelo, en la pestaña Fotovoltaica.</div>
   </div>
 </div>
 
@@ -952,7 +965,7 @@ footer{margin-top:60px;padding-top:20px;border-top:1px solid var(--l1);color:var
   <tr><td>Un cliente no está en la hoja de clientes</td><td>En su ficha, <b>Apuntarlo en la hoja</b>. Los que se crean desde la app van solos.</td></tr>
 </table>
 
-<footer>Manual de la app Sysefen · al día con la versión 33.6 (23-11-2026) · las pantallas son de ejemplo, con datos inventados · se regenera con <code>herramientas/manual/capturar.py</code></footer>
+<footer>Manual de la app Sysefen · al día con la versión 33.7 (24-11-2026) · las pantallas son de ejemplo, con datos inventados · se regenera con <code>herramientas/manual/capturar.py</code></footer>
 </main>
 </div>
 </body>

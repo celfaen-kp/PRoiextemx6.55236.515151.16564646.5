@@ -186,6 +186,90 @@ function recargoDe(p, lookup) {
   return sin ? 1 : (propio != null ? propio : deCat);
 }
 
+/* --- los márgenes del catálogo (Enzo, 24-11-2026) -------------------------------
+ * «Dame la posibilidad de modificar los márgenes por proveedor en nuestro banco
+ * de precios… ver en cuánto beneficio está cada proveedor, filtrar por marca o
+ * por tipo y modificar el beneficio de solo lo que filtre.»
+ *
+ * El margen es SOBRE LA VENTA, como en toda la app: 35 % = de cada 100 € que
+ * paga el cliente, 35 € son beneficio. Se cambia con el recargo propio del
+ * producto (venta = coste × recargo), que vale para todas las tarifas:
+ *   · fotovoltaica y catálogo propio: la tarifa es el coste;
+ *   · Vaillant, Saunier, Midea: la tarifa es el PVP del fabricante y el coste es
+ *     la tarifa menos el descuento de proveedor. Sin recargo propio se venden a
+ *     la tarifa (margen = el descuento); con él, a coste × recargo.
+ * Lo que no tiene coste apuntado (venta fija, sin descuento) no se toca.
+ * ------------------------------------------------------------------------------ */
+/** La categoría con la que se mira una tarifa: las de fotovoltaica van a coste con recargo. */
+export function categoriaDeTarifa(nombre) { return /fotovoltaica/i.test(String(nombre || '')) ? 'solar' : ''; }
+
+/** El recargo que da un margen sobre la venta (35 → 1,538462). null si no vale (de 0,1 a 90 %). */
+export function recargoDeMargen(pct) {
+  if (pct == null || String(pct).trim() === '') return null;
+  const m = Number(String(pct).replace(',', '.'));
+  if (!Number.isFinite(m) || m < 0.1 || m > 90) return null;
+  return redP(1 / (1 - m / 100), 6);
+}
+
+/**
+ * Cómo sale hoy un producto en su categoría (su lookup):
+ *   { margen (% sobre la venta, o null si no se sabe el coste), cambiable,
+ *     motivo ('' | 'sin_precio' | 'venta_fija' | 'sin_coste'), coste, venta,
+ *     pvp (true si hoy se vende a la tarifa del fabricante) }
+ */
+export function margenProducto(p, lookup) {
+  const prod = p || {};
+  const atr = prod.atributos && typeof prod.atributos === 'object' ? prod.atributos : {};
+  const sin = atr.sin_recargo === true || atr.sin_recargo === 'true' || atr.sin_recargo === 1;
+  const propio = prod.recargo != null && prod.recargo !== '' && numP(prod.recargo) > 0 ? numP(prod.recargo) : null;
+  const base = numP(prod.precio_tarifa);
+  let d = numP(prod.descuento_proveedor) / 100; if (!(d >= 0 && d < 1)) d = 0;
+  const pr = preciosProducto(base, prod, lookup);
+  const rec = recargoDe(prod, lookup);
+  const sale = (margen, cambiable, motivo, pvp) => ({ margen: margen == null ? null : redP(margen, 4), cambiable, motivo, coste: pr.coste, venta: pr.venta, pvp });
+  if (!(base > 0)) return sale(null, false, 'sin_precio', false);
+  if (sin) return sale(d > 0 ? d * 100 : null, false, 'venta_fija', true);
+  if (rec !== 1) return sale((1 - 1 / rec) * 100, true, '', false);
+  // Recargo 1: la venta es la tarifa. Con descuento de proveedor hay coste (y margen);
+  // con un recargo propio de 1 exacto, la tarifa es el coste y se vende sin margen.
+  if (d > 0) return sale(d * 100, true, '', propio == null);
+  if (propio != null) return sale(0, true, '', false);
+  return sale(null, false, 'sin_coste', true);
+}
+
+/**
+ * El plan de poner un margen a una lista de productos. `lookupDe(p)` da los
+ * coeficientes de la categoría de cada uno. →
+ *   { recargo, cambiar: [{ id, nombre, antes (su recargo propio de hoy o null), venta_antes, venta }],
+ *     iguales, saltados: [{ id, motivo }], margen_antes: { min, max },
+ *     pvp: { n, min, max } }   los que hoy van a la tarifa del fabricante: cuánto se mueve su venta, en %
+ * o { error }.
+ */
+export function planMargen(productos, lookupDe, pct) {
+  const recargo = recargoDeMargen(pct);
+  if (recargo == null) return { error: 'El margen va de 0,1 a 90 % (sobre la venta).' };
+  const cambiar = [], saltados = [], pvp = { n: 0, min: null, max: null }, margen_antes = { min: null, max: null };
+  let iguales = 0;
+  (productos || []).forEach((p) => {
+    const lk = (lookupDe ? lookupDe(p) : null) || [];
+    const m = margenProducto(p, lk);
+    if (!m.cambiable) { saltados.push({ id: p.id, motivo: m.motivo }); return; }
+    const antes = p.recargo == null || p.recargo === '' ? null : numP(p.recargo);
+    if (antes != null && Math.abs(antes - recargo) < 5e-7) { iguales++; return; }
+    if (margen_antes.min == null || m.margen < margen_antes.min) margen_antes.min = m.margen;
+    if (margen_antes.max == null || m.margen > margen_antes.max) margen_antes.max = m.margen;
+    const q = preciosProducto(p.precio_tarifa, Object.assign({}, p, { recargo }), lk);
+    if (m.pvp && m.venta > 0) {
+      const mov = redP((q.venta / m.venta - 1) * 100, 2);
+      pvp.n++;
+      if (pvp.min == null || mov < pvp.min) pvp.min = mov;
+      if (pvp.max == null || mov > pvp.max) pvp.max = mov;
+    }
+    cambiar.push({ id: p.id, nombre: p.nombre || '', antes, venta_antes: m.venta, venta: q.venta });
+  });
+  return { recargo, cambiar, iguales, saltados, margen_antes, pvp };
+}
+
 /**
  * Qué guardar en un producto para que, en una categoría (su lookup), el motor
  * dé esta venta y este coste por unidad. → { cambios, queda: {venta, coste} }

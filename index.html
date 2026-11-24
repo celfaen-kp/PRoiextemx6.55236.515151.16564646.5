@@ -562,7 +562,7 @@ import * as idiomas from './presu-idiomas.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '33.6'; // versión visible de la app (única fuente)
+const APP_VERSION = '33.7'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -8796,7 +8796,7 @@ A.presuAjusteDeshacer = () => {
 const puedePrecios = () => esAdmin() || rol() === 'presupuestos';
 const prNum = (v) => { const t = String(v == null ? '' : v).trim().replace(',', '.'); if (t === '') return null; const n = Number(t); return Number.isFinite(n) ? n : NaN; };
 const prTxt = (v) => (v == null ? '' : String(v).replace('.', ','));
-const PR_TABS = [['fv', 'Fotovoltaica'], ['catalogo', 'Catálogo'], ['fijos', 'Precios fijos'], ['historial', 'Cambios']];
+const PR_TABS = [['fv', 'Fotovoltaica'], ['catalogo', 'Catálogo'], ['margenes', 'Márgenes'], ['fijos', 'Precios fijos'], ['historial', 'Cambios']];
 function prEstado() {
   if (!V.precios) V.precios = { tab: 'fv', filtro: '', fv: null, fvVersion: '', fvErr: null, fvEd: {}, buscar: '', prods: null, prodErr: null, buscando: false,
     conceptos: null, conErr: null, conEd: {}, coef: null, historial: null, hisErr: null, busy: false };
@@ -8851,6 +8851,9 @@ async function prCargar(tab) {
     try { p.conceptos = await visitasDB.listarConceptosFijos(); p.conErr = null; } catch (e) { p.conErr = msgError(e); }
   } else if (tab === 'historial') {
     try { p.historial = await visitasDB.listarCambiosPrecios(); p.hisErr = null; } catch (e) { p.hisErr = msgError(e); }
+  } else if (tab === 'margenes') {
+    const g = mgEstado();
+    if (!g.filas) { try { g.filas = mgPreparar(await visitasDB.catalogoMargenes()); g.err = null; } catch (e) { g.err = msgError(e); } }
   }
   if (V.view === 'precios') render();
 }
@@ -8860,7 +8863,7 @@ function prAvisarResultado(r, queNada) {
   if (errores.length) avisar((hechos.length ? hechos.length + (hechos.length === 1 ? ' precio guardado, pero ' : ' precios guardados, pero ') : '') + (errores[0].nombre ? '«' + errores[0].nombre + '»: ' : '') + errores[0].error + (errores.length > 1 ? ' (y ' + (errores.length - 1) + ' más)' : ''));
   else if (hechos.length) toast(hechos.length === 1 ? 'Precio guardado en la base de datos: vale para los presupuestos nuevos.' : hechos.length + ' precios guardados en la base de datos: valen para los presupuestos nuevos.');
   else toast(queNada || 'No había nada que cambiar: ya estaba así en la base de datos.');
-  if (hechos.length && V.precios) { V.precios.fv = null; V.precios.conceptos = null; V.precios.prods = null; V.precios.historial = null; }
+  if (hechos.length && V.precios) { V.precios.fv = null; V.precios.conceptos = null; V.precios.prods = null; V.precios.historial = null; if (V.precios.mg) V.precios.mg.filas = null; }
   return hechos.length > 0;
 }
 function prFvCambios() {
@@ -8947,6 +8950,220 @@ async function prBuscarAhora() {
   catch (e) { p.prods = []; p.prodErr = msgError(e); }
   p.buscando = false; pinta();
 }
+/* =============================================================================
+ * MÁRGENES DEL CATÁLOGO (Enzo, 24-11-2026): «dame la posibilidad de modificar
+ * los márgenes por proveedor en nuestro banco de precios… en vez de decirte que
+ * lo cambies del 22 % al 35 % lo quiero hacer yo y ver en cuánto beneficio está
+ * cada proveedor, e incluso filtrar por marca o por inversor, baterías, el tipo
+ * de cada cosa, y modificar el beneficio de solo lo que filtre».
+ *
+ * Pestaña «Márgenes» de Precios: todo el catálogo activo, con tres filtros
+ * (proveedor, marca, tipo) y un buscador; el margen de lo filtrado, repartido
+ * por proveedor, marca o tipo; y «poner a estos el X %», que cambia el recargo
+ * propio de cada producto filtrado (venta = coste × recargo). El margen es sobre
+ * la venta, como en toda la app. Lo hace la función `presupuestar` (acción
+ * precios_margen): primero dice qué pasaría, y al confirmar lo cambia y deja un
+ * solo apunte en Cambios, que se deshace de una vez. Las cuentas de aquí son un
+ * espejo de margenProducto (precios.js del servidor): pruebas/precios.js mira
+ * que den lo mismo.
+ * ========================================================================== */
+const MG_TIPOS = { inversor: 'Inversores', microinversor: 'Microinversores', bateria: 'Baterías', bateria_accesorio: 'Accesorios de batería', inversor_accesorio: 'Accesorios de inversor',
+  contador: 'Medidores y contadores', backup: 'Backup', controlador: 'Controladores', conector: 'Conectores', accesorio: 'Accesorios', accesorio_aire: 'Accesorios de aire', equipo: 'Equipos',
+  material: 'Material', mano_obra: 'Mano de obra', tramite: 'Trámites', servicio: 'Servicios', otros: 'Otros', estructura: 'Estructura', cable: 'Cable', proteccion: 'Protecciones',
+  opcional: 'Opcionales', medios: 'Medios auxiliares', obra_civil: 'Obra civil', transporte: 'Transporte', monitorizacion: 'Monitorización', panel: 'Paneles', consumible: 'Consumibles',
+  bomba_calor: 'Bombas de calor', caldera: 'Calderas', termo: 'Termos', acumulador: 'Acumuladores', deposito_inercia: 'Depósitos de inercia', cascada: 'Cascadas', regulacion: 'Regulación',
+  aire_interior: 'Aire: unidades interiores', aire_interior_cassette: 'Aire: cassettes', aire_interior_conductos: 'Aire: conductos', aire_exterior_1x1: 'Aire: exteriores 1x1', aire_exterior_multi: 'Aire: exteriores multi' };
+const MG_MARCAS = { byd: 'BYD', weco: 'WECO', 'ja solar': 'JA Solar' };
+const MG_DIMS = [['prov', 'Proveedor', 'Todos'], ['marca', 'Marca', 'Todas'], ['tipo', 'Tipo', 'Todos']];
+const MG_TOPE = 60;   // productos que se enseñan de lo filtrado
+const mgNorm = (t) => String(t == null ? '' : t).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+const mgTipoNombre = (f) => { const k = String(f || 'otros'); if (MG_TIPOS[k]) return MG_TIPOS[k]; const t = k.replace(/_/g, ' '); return t.charAt(0).toUpperCase() + t.slice(1); };
+const mgMarcaNombre = (k) => (k === '-' ? 'Sin marca' : MG_MARCAS[k] || String(k).replace(/(^|\s)(\S)/g, (m, a, b) => a + b.toUpperCase()));
+const mgPct = (v) => String(Math.round(Number(v) * 10) / 10).replace('.', ',') + ' %';
+const mgRango = (min, max) => (min == null ? '' : Math.abs(min - max) < 0.05 ? mgPct(min) : 'de ' + mgPct(min) + ' a ' + mgPct(max));
+function mgEstado() {
+  const p = prEstado();
+  if (!p.mg) p.mg = { filas: null, err: null, prov: '', marca: '', tipo: '', q: '', por: 'prov', nuevo: '', busy: false };
+  return p.mg;
+}
+/** Cómo sale hoy un producto del catálogo: su margen sobre la venta (null si no hay
+ *  coste apuntado) y si se le puede cambiar. Espejo de margenProducto (precios.js). */
+function mgDe(x) {
+  const cat = /fotovoltaica/i.test((x.tarifa && x.tarifa.nombre) || '') ? 'solar' : '';
+  const coef = (V.precios && V.precios.coef) || V.coefPrecios || [];
+  const rf = coef.find((c) => c.categoria === cat && c.clave === 'recargo_sobre_coste');
+  const deCat = rf && Number(rf.valor) > 0 ? Number(rf.valor) : 1;
+  const atr = x.atributos && typeof x.atributos === 'object' ? x.atributos : {};
+  const sin = atr.sin_recargo === true || atr.sin_recargo === 'true';
+  const propio = x.recargo != null && x.recargo !== '' && Number(x.recargo) > 0 ? Number(x.recargo) : null;
+  const rec = sin ? 1 : (propio != null ? propio : deCat);
+  const base = Number(x.precio_tarifa) || 0;
+  let d = (Number(x.descuento_proveedor) || 0) / 100; if (!(d >= 0 && d < 1)) d = 0;
+  const q = prPreciosDe(base, x, cat);
+  const sale = (margen, cambiable, motivo) => ({ margen: margen == null ? null : Math.round(margen * 10000) / 10000, cambiable, motivo, coste: q.coste, venta: q.venta });
+  if (!(base > 0)) return sale(null, false, 'sin_precio');
+  if (sin) return sale(d > 0 ? d * 100 : null, false, 'venta_fija');
+  if (rec !== 1) return sale((1 - 1 / rec) * 100, true, '');
+  if (d > 0) return sale(d * 100, true, '');
+  if (propio != null) return sale(0, true, '');
+  return sale(null, false, 'sin_coste');
+}
+/** Lo que llega de la base, listo para filtrar: de cada producto, su proveedor
+ *  (el de su marca en proveedor_marcas o, si no, el de su tarifa), su marca, su
+ *  tipo y su margen. Ordenado por nombre. */
+function mgPreparar(r) {
+  const tarifas = {}; ((r && r.tarifas) || []).forEach((t) => { tarifas[t.id] = t; });
+  const provN = {}; ((r && r.proveedores) || []).forEach((x) => { provN[x.codigo] = x.nombre; });
+  const deMarca = {}; ((r && r.marcas) || []).forEach((m) => { deMarca[mgNorm(m.marca)] = m.proveedor_codigo; });
+  const filas = ((r && r.productos) || []).map((x) => {
+    const t = tarifas[x.tarifa_id] || {}, pt = t.proveedor || {};
+    const marcaTxt = String(x.marca || '').trim();
+    // Sin marca apuntada vale la de la tarifa si es de un fabricante («Vaillant 2026» → Vaillant).
+    const deFabricante = pt.codigo && !['sysefen', 'fotovoltaica'].includes(pt.codigo);
+    const marcaVista = marcaTxt || (deFabricante ? String(t.nombre || '').replace(/\s+\d{4}$/, '') : '');
+    const marca = marcaVista ? marcaVista.toLowerCase() : '-';
+    const prov = (marcaTxt && deMarca[mgNorm(marcaTxt)]) || pt.codigo || '-';
+    const tipo = String(x.familia || 'otros') === 'otro' ? 'otros' : String(x.familia || 'otros');
+    const f = Object.assign({}, x, { atributos: { sin_recargo: x.sin_recargo === true || x.sin_recargo === 'true' }, tarifa: { nombre: t.nombre || '' },
+      _prov: prov, _provN: provN[prov] || pt.nombre || 'Sin proveedor', _marca: marca, _marcaN: mgMarcaNombre(marca), _tipo: tipo, _tipoN: mgTipoNombre(tipo) });
+    f._t = mgNorm(x.nombre + ' ' + x.referencia + ' ' + f._marcaN + ' ' + f._provN + ' ' + f._tipoN);
+    f.m = mgDe(f);
+    return f;
+  });
+  return filas.sort((a, b) => String(a.nombre).localeCompare(String(b.nombre), 'es', { sensitivity: 'base' }));
+}
+const mgHayFiltro = () => { const g = mgEstado(); return !!(g.prov || g.marca || g.tipo || String(g.q || '').trim()); };
+/** Lo filtrado. `sin`: una dimensión que no se aplica (para las opciones de su desplegable). */
+function mgFiltradas(sin) {
+  const g = mgEstado(), palabras = mgNorm(g.q).split(/\s+/).filter(Boolean);
+  return (g.filas || []).filter((x) => (sin === 'prov' || !g.prov || x._prov === g.prov) && (sin === 'marca' || !g.marca || x._marca === g.marca)
+    && (sin === 'tipo' || !g.tipo || x._tipo === g.tipo) && palabras.every((w) => x._t.indexOf(w) >= 0));
+}
+/** De un grupo de productos: cuántos, cuántos con margen, de cuánto a cuánto y el más repetido. */
+function mgResumen(filas) {
+  const r = { n: filas.length, con: 0, cambiables: 0, min: null, max: null, comun: null, nComun: 0 }, veces = {};
+  filas.forEach((x) => {
+    if (x.m.cambiable) r.cambiables++;
+    if (x.m.margen == null) return;
+    r.con++;
+    const v = Math.round(x.m.margen * 10) / 10;
+    if (r.min == null || v < r.min) r.min = v;
+    if (r.max == null || v > r.max) r.max = v;
+    veces[v] = (veces[v] || 0) + 1;
+    if (veces[v] > r.nComun) { r.nComun = veces[v]; r.comun = v; }
+  });
+  return r;
+}
+const mgTexto = (r) => (r.con ? mgRango(r.min, r.max) : 'sin coste');
+const mgMayoria = (r) => (r.con && r.min !== r.max && r.nComun * 2 > r.con ? 'la mayoría, ' + mgPct(r.comun) : '');
+/** Con qué nombre queda apuntado el cambio: lo que se filtró. */
+function mgEtiqueta() {
+  const g = mgEstado(), uno = (dim) => { const x = (g.filas || []).find((y) => y['_' + dim] === g[dim]); return x ? x['_' + dim + 'N'] : ''; };
+  const partes = MG_DIMS.map(([k]) => (g[k] ? uno(k) : '')).filter(Boolean);
+  if (String(g.q || '').trim()) partes.push('«' + String(g.q).trim() + '»');
+  return partes.join(' · ');
+}
+function mgFiltrosHTML() {
+  const g = mgEstado();
+  return MG_DIMS.map(([dim, etiqueta, todos]) => {
+    const cuenta = {}, nombres = {};
+    mgFiltradas(dim).forEach((x) => { const k = x['_' + dim]; cuenta[k] = (cuenta[k] || 0) + 1; nombres[k] = x['_' + dim + 'N']; });
+    const claves = Object.keys(cuenta).sort((a, b) => nombres[a].localeCompare(nombres[b], 'es', { sensitivity: 'base' }));
+    return `<div style="flex:1 1 ${dim === 'prov' ? '100%' : '140px'};min-width:0"><div class="lbl" style="margin-bottom:6px">${etiqueta}</div>
+      <select class="inp" data-f="mg:${dim}" style="padding:10px;font-size:14px"><option value="">${todos}</option>${claves.map((k) => `<option value="${esc(k)}" ${g[dim] === k ? 'selected' : ''}>${esc(nombres[k])} (${cuenta[k]})</option>`).join('')}</select></div>`;
+  }).join('');
+}
+function mgCuerpoHTML() {
+  const g = mgEstado(), filas = mgFiltradas(), r = mgResumen(filas), hay = mgHayFiltro();
+  const sinCoste = r.n - r.cambiables, mayoria = mgMayoria(r);
+  let h = `<div class="card" style="margin-top:14px">
+    <div class="row" style="justify-content:space-between;align-items:flex-end;gap:12px">
+      <div style="min-width:0"><div class="lbl">${hay ? 'Lo filtrado' : 'Todo el catálogo'}</div>
+        <div style="font:600 15px/1.25 var(--sans);margin-top:6px">${r.n} ${r.n === 1 ? 'producto' : 'productos'}</div>
+        ${hay ? '<div class="tiny" data-a="pr_mgLimpiar" style="margin-top:5px;cursor:pointer;text-decoration:underline">Quitar los filtros</div>' : ''}</div>
+      <div style="text-align:right;flex:none"><div class="num" style="font-size:21px">${esc(mgTexto(r))}</div>
+        <div class="tiny">${r.con ? 'de margen sobre la venta' : 'no hay coste apuntado'}${mayoria ? '<br>' + esc(mayoria) : ''}</div></div>
+    </div>
+    ${sinCoste && r.con ? `<div class="tiny" style="margin-top:10px">${sinCoste} sin coste apuntado: ${sinCoste === 1 ? 'se vende' : 'se venden'} al precio escrito y no ${sinCoste === 1 ? 'entra' : 'entran'} en el cambio.</div>` : ''}
+    ${!r.n ? '' : !hay ? '<div class="tiny" style="margin-top:12px">Para cambiar el margen, filtra primero por proveedor, marca o tipo (o busca): el cambio se hace solo a lo que quede filtrado.</div>'
+      : !r.cambiables ? '<div class="tiny" style="margin-top:12px">Nada de lo filtrado tiene coste apuntado: no hay margen que cambiar.</div>'
+      : `<div class="row g8" style="margin-top:14px;padding-top:12px;border-top:1px solid var(--l1);flex-wrap:wrap">
+        <span style="font:600 13px/1.25 var(--sans)">Poner a ${r.cambiables === 1 ? 'este' : 'estos ' + r.cambiables} un</span>
+        <input class="inp" data-f="mg:nuevo" value="${esc(g.nuevo || '')}" placeholder="35" inputmode="decimal" autocomplete="off" style="width:78px;flex:none;padding:9px;text-align:right">
+        <span style="font:600 13px/1.25 var(--sans)">% de margen</span>
+        <button class="pill pill-verde" data-a="pr_mgRevisar" style="padding:12px 16px;margin-left:auto" ${g.busy ? 'disabled' : ''}>${g.busy ? 'Mirando…' : 'Ver el cambio'}</button>
+      </div>`}
+  </div>`;
+  if (!r.n) return h + '<div class="sub" style="margin-top:14px">Nada con esos filtros.</div>';
+  // El reparto: por la dimensión elegida o, si ya está filtrada, por la siguiente libre.
+  const dim = g[g.por] ? (MG_DIMS.map((d) => d[0]).find((d) => !g[d]) || '') : g.por;
+  if (dim) {
+    const grupos = {};
+    filas.forEach((x) => { const k = x['_' + dim]; (grupos[k] = grupos[k] || { k, nombre: x['_' + dim + 'N'], filas: [] }).filas.push(x); });
+    const lista = Object.keys(grupos).map((k) => grupos[k]).sort((a, b) => a.nombre.localeCompare(b.nombre, 'es', { sensitivity: 'base' }));
+    h += `<div class="row g8" style="margin:20px 0 4px;flex-wrap:wrap"><span class="lbl">Ver por</span>${MG_DIMS.map(([k, n]) => `<span class="chip${dim === k ? ' on' : ''}" data-a="pr_mgPor" data-t="${k}" style="padding:8px 12px;font-size:12px">${n}</span>`).join('')}</div>
+      ${lista.map((gr) => { const rr = mgResumen(gr.filas), my = mgMayoria(rr); return `<div class="row" data-a="pr_mgGrupo" data-d="${dim}" data-k="${esc(gr.k)}" style="padding:11px 0;border-bottom:1px solid var(--l1);cursor:pointer;gap:10px">
+        <div class="grow"><div style="font:600 14px/1.25 var(--sans)">${esc(gr.nombre)}</div><div class="tiny" style="margin-top:2px">${rr.n} ${rr.n === 1 ? 'producto' : 'productos'}</div></div>
+        <div style="text-align:right;flex:none"><div class="num" style="font-size:16px">${esc(mgTexto(rr))}</div>${my ? `<div class="tiny">${esc(my)}</div>` : ''}</div>
+        <span style="flex:none;color:var(--t3);font-size:17px">›</span></div>`; }).join('')}`;
+  }
+  if (hay) {
+    h += `<div class="lbl" style="margin:22px 0 2px">Productos${r.n > MG_TOPE ? ' · los primeros ' + MG_TOPE + ' de ' + r.n : ''}</div>
+      ${filas.slice(0, MG_TOPE).map((x) => `<div class="row" data-a="pr_prodAbrir" data-id="${x.id}" style="padding:10px 0;border-bottom:1px solid var(--l1);cursor:pointer;gap:10px">
+        <div class="grow"><div style="font:600 13px/1.25 var(--sans)">${esc(x.nombre)}</div><div class="tiny" style="margin-top:2px">${esc(x.referencia)} · ${esc(x._marcaN)} · ${esc(x._tipoN)}</div></div>
+        <div style="text-align:right;flex:none"><div class="num" style="font-size:15px">${x.m.margen == null ? '—' : mgPct(x.m.margen)}</div><div class="tiny">venta ${eur(x.m.venta)}</div></div></div>`).join('')}`;
+  }
+  return h;
+}
+function mgHTML() {
+  const g = mgEstado();
+  if (g.err) return `<div class="card"><div class="sub">No se pudo cargar el catálogo: ${esc(g.err)}</div></div>`;
+  if (!g.filas) return '<div class="sub" style="margin-top:14px">Cargando el catálogo…</div>';
+  return `<div class="sub" style="font-size:12px">Con qué margen sale cada cosa del catálogo y cómo cambiarlo de una vez: filtra por proveedor, marca o tipo y pon el margen a lo que quede. El margen es sobre la venta: 35 % quiere decir que de cada 100 € que paga el cliente, 35 € son beneficio.</div>
+    <div id="mg-filtros" class="row g8" style="margin-top:12px;flex-wrap:wrap;align-items:flex-end">${mgFiltrosHTML()}</div>
+    <input class="inp" data-f="mg:q" value="${esc(g.q || '')}" placeholder="Buscar en lo filtrado: nombre o referencia" autocomplete="off" style="margin-top:10px">
+    <div id="mg-cuerpo">${mgCuerpoHTML()}</div>
+    <div class="tiny" style="margin-top:20px">La instalación fotovoltaica llave en mano (paneles, inversor, estructura y montaje) no va por aquí: lleva el margen de su modelo, en la pestaña Fotovoltaica. Estos márgenes son los de las baterías y de todo lo que entra en un presupuesto como línea del catálogo, en fotovoltaica, aerotermia y aire.</div>`;
+}
+/** Repinta los desplegables y lo de debajo, sin tocar el buscador (para no perder el foco). */
+function mgRepintar() {
+  const f = document.getElementById('mg-filtros'), c = document.getElementById('mg-cuerpo');
+  if (!f || !c) { render(); return; }
+  f.innerHTML = mgFiltrosHTML(); c.innerHTML = mgCuerpoHTML();
+}
+/** La confirmación del cambio en bloque: lo que el servidor dice que pasaría. */
+function prMargenSheetHTML(s) {
+  const r = s.r || {}, n = r.n_cambiar || 0, mot = r.motivos || {}, pv = r.pvp || {};
+  const coma = (v, dec) => String(Math.round(Number(v) * Math.pow(10, dec)) / Math.pow(10, dec)).replace('.', ',');
+  const antes = r.margen_antes ? mgRango(r.margen_antes.min, r.margen_antes.max) : '';
+  const sinCoste = (mot.sin_coste || 0) + (mot.venta_fija || 0) + (mot.sin_precio || 0);
+  let aviso = '';
+  if (pv.n) {
+    const f = (v) => coma(Math.abs(v), 1) + ' %';
+    const que = pv.max < -0.05 ? (Math.abs(pv.min - pv.max) < 0.1 ? 'un ' + f(pv.max) : 'entre un ' + f(pv.max) + ' y un ' + f(pv.min)) + ' por debajo de esa tarifa'
+      : pv.min > 0.05 ? (Math.abs(pv.min - pv.max) < 0.1 ? 'un ' + f(pv.min) : 'entre un ' + f(pv.min) + ' y un ' + f(pv.max)) + ' por encima de esa tarifa'
+      : Math.abs(pv.min) <= 0.05 && Math.abs(pv.max) <= 0.05 ? 'al mismo precio que esa tarifa'
+      : 'entre un ' + f(pv.min) + ' por debajo y un ' + f(pv.max) + ' por encima de esa tarifa';
+    aviso = `<div style="margin-top:12px;padding:10px 12px;border-radius:12px;background:var(--ambar-cl);color:var(--ambar-t);font:500 13px/1.4 var(--sans)">Ojo: ${pv.n === n ? (n === 1 ? 'este producto se vende' : 'estos productos se venden') : pv.n + ' de estos productos se venden'} hoy al precio de tarifa del fabricante. Con este margen ${pv.n === 1 ? 'saldrá' : 'saldrán'} ${que}.</div>`;
+  }
+  return `<div class="sheet"><div>
+    <div style="font:600 23px/1.15 var(--cond)">Cambiar el margen</div>
+    <div class="sub" style="margin-top:6px">${esc(s.etiqueta || 'Catálogo')}</div>
+    ${n ? `<div style="margin-top:12px;padding:10px 12px;border-radius:12px;background:rgba(var(--tinta-rgb),.04)">
+      <div style="font:600 15px/1.3 var(--sans)">Margen al ${esc(coma(r.margen, 2))} % en ${n} ${n === 1 ? 'producto' : 'productos'}</div>
+      <div class="tiny" style="margin-top:4px;color:var(--tinta)">La venta pasa a ser el coste × ${esc(coma(r.recargo, 4))}: un ${esc(coma((r.recargo - 1) * 100, 1))} % por encima del coste.${antes ? ' Hoy ' + (n === 1 ? 'está' : 'están') + ' ' + (/^de /.test(antes) ? antes : 'al ' + antes) + '.' : ''}</div>
+      ${(r.ejemplos || []).map((x) => `<div class="tiny" style="margin-top:6px;color:var(--tinta);font-size:12px">${esc(String(x.nombre).slice(0, 60))}: ${eur(x.venta_antes)} → <b>${eur(x.venta)}</b></div>`).join('')}
+    </div>` : '<div style="margin-top:12px;padding:10px 12px;border-radius:12px;background:rgba(var(--tinta-rgb),.04);font:600 14px/1.3 var(--sans)">No hay nada que cambiar.</div>'}
+    ${r.n_iguales ? `<div class="tiny" style="margin-top:8px">${r.n_iguales} ya ${r.n_iguales === 1 ? 'está' : 'están'} a ese margen.</div>` : ''}
+    ${sinCoste ? `<div class="tiny" style="margin-top:8px">${sinCoste} no se ${sinCoste === 1 ? 'toca: no tiene' : 'tocan: no tienen'} coste apuntado.</div>` : ''}
+    ${n ? aviso : ''}
+    ${n ? '<div class="tiny" style="margin-top:10px">Vale para los presupuestos nuevos; los ya guardados no cambian. Queda apuntado en Cambios como un solo cambio y ahí se deshace de una vez.</div>' : ''}
+    <div class="row g8" style="margin-top:18px">
+      <button class="btn btn-gris" data-a="cerrarSheet" style="border-radius:99px">${n ? 'Cancelar' : 'Cerrar'}</button>
+      ${n ? `<button class="btn btn-verde" data-a="pr_mgAplicar" ${s.busy ? 'disabled' : ''}>${s.busy ? 'Cambiando…' : 'Cambiar'}</button>` : ''}
+    </div>
+  </div></div>`;
+}
 function prFijosHTML() {
   const p = prEstado();
   if (p.conErr) return `<div class="card"><div class="sub">No se pudo cargar: ${esc(p.conErr)}</div></div>`;
@@ -8981,12 +9198,13 @@ function prHistorialHTML() {
   return p.historial.map((c) => {
     const a = c.antes || {}, d = c.despues || {};
     const campos = Object.keys(d).filter((k) => k !== 'id' && k !== 'ruta');
-    const que = campos.map((k) => (NOMBRE[k] ? NOMBRE[k] + ' ' : NOMBRE[k] === '' ? '' : k + ' ') + val(a[k]) + ' → ' + val(d[k])).join(' · ');
+    const que = c.origen === 'margen' ? (a.margen_min != null ? mgRango(a.margen_min, a.margen_max) + ' → ' : '') + mgPct(d.margen) + ' de margen · venta = coste × ' + val(d.recargo)
+      : campos.map((k) => (NOMBRE[k] ? NOMBRE[k] + ' ' : NOMBRE[k] === '' ? '' : k + ' ') + val(a[k]) + ' → ' + val(d[k])).join(' · ');
     return `<div style="padding:10px 0;border-bottom:1px solid var(--l1);${c.deshecho_en ? 'opacity:.55' : ''}">
       <div style="font:600 13px/1.25 var(--sans)">${esc(c.descripcion || c.clave)}</div>
       <div class="tiny" style="margin-top:3px;color:var(--tinta)">${esc(que)}</div>
       <div class="row g8" style="margin-top:4px;justify-content:space-between;align-items:center">
-        <span class="tiny">${esc(cuando(c.creado_en))} · ${esc(c.nombre || '')} · ${c.origen === 'modelo_fv' ? 'modelo fotovoltaico' : c.origen === 'producto' ? 'catálogo' : 'precio fijo'}${c.desde === 'presupuesto' ? ' · desde un presupuesto' : ''}</span>
+        <span class="tiny">${esc(cuando(c.creado_en))} · ${esc(c.nombre || '')} · ${c.origen === 'modelo_fv' ? 'modelo fotovoltaico' : c.origen === 'producto' ? 'catálogo' : c.origen === 'margen' ? 'márgenes del catálogo' : 'precio fijo'}${c.desde === 'presupuesto' ? ' · desde un presupuesto' : ''}</span>
         ${c.deshecho_en ? `<span class="tiny">deshecho${c.deshecho_por ? ' por ' + esc(c.deshecho_por) : ''}</span>` : `<span class="tiny" data-a="pr_deshacer" data-id="${c.id}" style="color:var(--rojo);cursor:pointer;text-decoration:underline;flex:none">Deshacer</span>`}
       </div></div>`;
   }).join('');
@@ -8997,6 +9215,7 @@ function vPrecios() {
       <input class="inp" data-f="prFiltro" value="${esc(p.filtro || '')}" placeholder="Filtrar: perfil, jornada, Fronius…" autocomplete="off" style="margin-top:10px">
       <div id="pr-lista">${prFvListaHTML()}</div><div id="pr-pie">${p.fv ? prPieHTML(prFvCambios().cambios.length, 'pr_fvGuardar') : ''}</div>`
     : p.tab === 'catalogo' ? prCatalogoHTML()
+    : p.tab === 'margenes' ? mgHTML()
     : p.tab === 'fijos' ? `${prFijosHTML()}<div id="pr-pie">${p.conceptos ? prPieHTML(prConCambios().cambios.length, 'pr_conGuardar') : ''}</div>`
     : prHistorialHTML();
   return `<div class="hdr">
@@ -9083,7 +9302,7 @@ A.pr = async (a, d) => {
     clearTimeout(prBuscarT); return prBuscarAhora();
   }
   if (a === 'pr_prodAbrir') {
-    const x = (p.prods || []).find((y) => y.id === d.id); if (!x) return;
+    const x = (p.tab === 'margenes' ? (mgEstado().filas || []) : (p.prods || [])).find((y) => y.id === d.id); if (!x) return;
     V.sheet = { tipo: 'prProducto', p: x, v: { precio_tarifa: prTxt(x.precio_tarifa), descuento_proveedor: prTxt(x.descuento_proveedor || 0), recargo: prTxt(x.recargo) }, busy: false };
     render(); return;
   }
@@ -9097,6 +9316,7 @@ A.pr = async (a, d) => {
       const r = await visitasDB.guardarPrecios([{ tipo: 'producto', id: s.p.id, nombre: s.p.nombre, campos: { precio_tarifa: t, descuento_proveedor: dto == null ? 0 : dto, recargo: rec } }], 'configuracion');
       const errores = (r && r.errores) || [];
       prAvisarResultado(r);
+      if (!errores.length && p.tab === 'margenes') { V.sheet = null; render(); return prCargar('margenes'); }
       if (!errores.length) { V.sheet = null; if (String(p.buscar || '').trim().length >= 2) { try { p.prods = await visitasDB.buscarProductosPrecios(p.buscar); } catch (_) { /* se queda la lista vieja */ } } }
       else s.busy = false;
     } catch (e) { s.busy = false; avisar('No se pudo guardar: ' + msgError(e)); }
@@ -9105,10 +9325,48 @@ A.pr = async (a, d) => {
   if (a === 'pr_deshacer') {
     if (p.busy) return;
     p.busy = true;
-    try { await visitasDB.deshacerPrecio(d.id); toast('Cambio deshecho: el precio vuelve a ser el de antes.'); p.fv = null; p.conceptos = null; p.prods = null; }
+    try {
+      const r = await visitasDB.deshacerPrecio(d.id);
+      toast(r && r.vueltos != null ? 'Margen deshecho: ' + r.vueltos + (r.vueltos === 1 ? ' producto vuelve' : ' productos vuelven') + ' a como estaban' + (r.sin_tocar ? ' (' + r.sin_tocar + ' no, porque se cambiaron después)' : '') + '.'
+        : 'Cambio deshecho: el precio vuelve a ser el de antes.');
+      p.fv = null; p.conceptos = null; p.prods = null; if (p.mg) p.mg.filas = null;
+    }
     catch (e) { avisar('No se pudo deshacer: ' + msgError(e)); }
     p.busy = false;
     return prCargar('historial');
+  }
+  /* --- los márgenes del catálogo (24-11-2026) --- */
+  if (a === 'pr_mgPor') { const g = mgEstado(); g.por = d.t; if (g[d.t]) g[d.t] = ''; mgRepintar(); return; }
+  if (a === 'pr_mgGrupo') { const g = mgEstado(); if (['prov', 'marca', 'tipo'].includes(d.d)) g[d.d] = d.k; mgRepintar(); return; }
+  if (a === 'pr_mgLimpiar') { const g = mgEstado(); g.prov = ''; g.marca = ''; g.tipo = ''; g.q = ''; render(); return; }
+  if (a === 'pr_mgRevisar') {
+    const g = mgEstado(); if (g.busy) return;
+    if (!mgHayFiltro()) { avisar('Filtra primero por proveedor, marca o tipo: el margen se cambia solo a lo filtrado.'); return; }
+    const pct = prNum(g.nuevo);
+    if (pct == null || Number.isNaN(pct) || pct < 0.1 || pct > 90) { avisar('Pon el margen que quieres, de 0,1 a 90 % (sobre la venta).'); return; }
+    const ids = mgFiltradas().filter((x) => x.m.cambiable).map((x) => x.id);
+    if (!ids.length) { avisar('Nada de lo filtrado tiene coste apuntado: no hay margen que cambiar.'); return; }
+    const etiqueta = mgEtiqueta();
+    g.busy = true; mgRepintar();
+    try { V.sheet = { tipo: 'prMargen', r: await visitasDB.margenCatalogo(ids, pct, etiqueta, true), ids, pct, etiqueta, busy: false }; }
+    catch (e) { avisar('No se pudo preparar el cambio: ' + msgError(e)); }
+    g.busy = false; render(); return;
+  }
+  if (a === 'pr_mgAplicar') {
+    const s = V.sheet; if (!s || s.tipo !== 'prMargen' || s.busy) return;
+    const g = mgEstado();
+    s.busy = true; render();
+    try {
+      const r = await visitasDB.margenCatalogo(s.ids, s.pct, s.etiqueta, false);
+      const n = (r && r.hechos) || 0;
+      V.sheet = null; g.nuevo = '';
+      if (n) toast('Margen al ' + String(s.pct).replace('.', ',') + ' % en ' + n + (n === 1 ? ' producto' : ' productos') + ': vale para los presupuestos nuevos.');
+      else toast('No había nada que cambiar: ya estaban a ese margen.');
+      if (n && r.apuntado === false) avisar('El margen está cambiado, pero no se pudo apuntar en Cambios: no se podrá deshacer desde ahí.');
+    } catch (e) { s.busy = false; avisar('No se pudo cambiar el margen: ' + msgError(e)); }
+    // Pasara lo que pasara, el catálogo se vuelve a leer: puede haber cambiado en parte.
+    g.filas = null; p.historial = null; p.prods = null;
+    render(); return prCargar('margenes');
   }
   /* --- desde el presupuesto: una línea --- */
   if (a === 'pr_lineaAbrir') {
@@ -9173,6 +9431,15 @@ A.prCampo = (f, valor) => {
   const p = prEstado();
   if (f === 'prFiltro') { p.filtro = valor; const el = document.getElementById('pr-lista'); if (el) el.innerHTML = prFvListaHTML(); return; }
   if (f === 'prBuscar') { p.buscar = valor; clearTimeout(prBuscarT); prBuscarT = setTimeout(prBuscarAhora, 500); return; }
+  if (f.startsWith('mg:')) {
+    const g = mgEstado(), k = f.slice(3);
+    if (k === 'nuevo') { g.nuevo = valor; return; }
+    if (!['prov', 'marca', 'tipo', 'q'].includes(k)) return;
+    g[k] = valor;
+    // Un filtro que deja la lista vacía por culpa de otro: se suelta el otro.
+    if (k !== 'q' && !mgFiltradas().length) ['prov', 'marca', 'tipo'].forEach((x) => { if (x !== k) g[x] = ''; });
+    mgRepintar(); return;
+  }
   if (f.startsWith('prfv:')) { p.fvEd[f.slice(5)] = valor; prRefrescarPie(); return; }
   if (f.startsWith('prc:')) { const [, id, k] = f.split(':'); (p.conEd[id] = p.conEd[id] || {})[k] = valor; prRefrescarPie(); return; }
   if (f.startsWith('prp:')) {
@@ -15811,6 +16078,7 @@ function sheet() {
   if (s.tipo === 'fv2Desglose') return fv2DesgloseSheetHTML(s);
   if (s.tipo === 'prProducto') return prProductoSheetHTML(s);
   if (s.tipo === 'prLinea') return prLineaSheetHTML(s);
+  if (s.tipo === 'prMargen') return prMargenSheetHTML(s);
   if (s.tipo === 'facVer') return facVerSheetHTML(s);
   if (s.tipo === 'facNueva') return facNuevaSheetHTML(s);
   if (s.tipo === 'facEditar') return facEditarSheetHTML(s);
@@ -16714,7 +16982,7 @@ document.addEventListener('input', (e) => {
   if (f === 'tbColocarMotivo') { if (V.sheet) V.sheet.motivo = t.value; return; }
   if (f.startsWith('paj:')) return A.presuAjusteCampo(f.slice(4), t.value);
   if (f.startsWith('fac:')) return A.facCampo(f, t.type === 'checkbox' ? (t.checked ? '1' : '') : t.value, t);
-  if (f === 'prFiltro' || f === 'prBuscar' || f.startsWith('prfv:') || f.startsWith('prc:') || f.startsWith('prp:')) return A.prCampo(f, t.value);
+  if (f === 'prFiltro' || f === 'prBuscar' || f.startsWith('prfv:') || f.startsWith('prc:') || f.startsWith('prp:') || f.startsWith('mg:')) return A.prCampo(f, t.value);
   if (f.startsWith('fvd:')) { const [, i, k] = f.split(':'); return A.fv2DesgloseCampo(Number(i), k, t.value); }
   if (f.startsWith('fvdn:')) return A.fv2DesgloseNuevaCampo(f.slice(5), t.value);
   if (f === 'presuCliBuscar') return A.presuCliBuscar(t.value);

@@ -801,6 +801,29 @@ export async function listarConceptosFijos() {
     .is('producto_ref', null).order('orden')) || [];
 }
 /** Los coeficientes con los que el motor pasa de la tarifa a coste y venta, por categoría. */
+/* Los márgenes del catálogo (Enzo, 24-11-2026): todo el catálogo activo con lo
+ * justo para saber con qué margen sale cada producto, y de qué proveedor, marca
+ * y tipo es. De `atributos` solo la marca y si es de venta fija: el resto pesa.
+ * El cambio en bloque lo hace la función `presupuestar` (acción precios_margen). */
+export async function catalogoMargenes() {
+  const COLS = 'id, referencia, nombre, familia, unidad, precio_tarifa, descuento_proveedor, recargo, aplica_cdc, activo, tarifa_id, marca:atributos->>marca, sin_recargo:atributos->>sin_recargo';
+  const productos = [];
+  for (let desde = 0; desde < 40000; desde += 1000) {
+    const trozo = unwrap(await supabase.from('productos').select(COLS).eq('activo', true).order('id').range(desde, desde + 999)) || [];
+    productos.push(...trozo);
+    if (trozo.length < 1000) break;
+  }
+  const [tarifas, marcas] = await Promise.all([
+    supabase.from('tarifas').select('id, nombre, proveedor:proveedores(codigo, nombre)').then(unwrap),
+    supabase.from('proveedor_marcas').select('marca, proveedor_codigo').then(unwrap),
+  ]);
+  const proveedores = unwrap(await supabase.from('proveedores').select('codigo, nombre')) || [];
+  return { productos, tarifas: tarifas || [], marcas: marcas || [], proveedores };
+}
+/** Pone un margen (% sobre la venta) a esos productos. Con `probar`, solo dice qué pasaría. */
+export async function margenCatalogo(ids, margen, etiqueta, probar) {
+  return invocar('presupuestar', { accion: 'precios_margen', ids, margen, etiqueta: etiqueta || '', probar: !!probar });
+}
 export async function coeficientesPrecios() {
   return unwrap(await supabase.from('tablas_lookup').select('categoria, clave, entrada, valor')
     .in('clave', ['recargo_sobre_coste', 'costes_complementarios_pct']).eq('entrada', 'defecto')) || [];

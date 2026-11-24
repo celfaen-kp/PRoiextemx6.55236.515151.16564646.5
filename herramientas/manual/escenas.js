@@ -165,6 +165,30 @@
     presupuesto: { id: 'q2', titulo: 'Aire acondicionado · Gil', numero: '2026/640', total: 3421.8, aceptado: true, en_teamleader: true },
     lineas: PRESU_VER.lineas.map((l, i) => ({ id: 'l' + (i + 1), seccion: l.seccion, descripcion: l.descripcion, cantidad: l.cantidad, precio_venta: l.precio_venta })),
     facturas: [] };
+  // Un catálogo de mentira (marcas y precios inventados) para la pestaña de Márgenes.
+  const CATALOGO_MG = (() => {
+    const productos = []; let n = 0;
+    const pon = (tarifa, marca, familia, nombres, recargo, dto, base) => nombres.forEach((nombre, i) => productos.push({ id: 'mg' + (++n), referencia: (marca || 'SY').toUpperCase().slice(0, 4) + '-' + (100 + n), nombre, familia,
+      precio_tarifa: base + i * 180, descuento_proveedor: dto, recargo, aplica_cdc: false, tarifa_id: tarifa, marca, sin_recargo: null }));
+    pon('t1', 'solen', 'inversor', ['Solen Uno 3.0', 'Solen Uno 5.0', 'Solen Uno 6.0', 'Solen Trio 8.0 Plus', 'Solen Trio 10.0 Plus'], 1.282051, 0, 950);
+    pon('t1', 'solen', 'inversor', ['Solen Trio 15.0'], 1.2, 0, 2300);
+    pon('t1', 'solen', 'contador', ['Solen Meter 63A', 'Solen Meter TS 5kA'], 1.2, 0, 160);
+    pon('t1', 'voltaris', 'inversor', ['Voltaris H-5K', 'Voltaris H-8K', 'Voltaris H-10K'], 1.538462, 0, 780);
+    pon('t1', 'voltaris', 'bateria', ['Voltaris Stack 5 kWh', 'Voltaris Stack 7 kWh'], 1.538462, 0, 1450);
+    pon('t1', 'voltaris', 'accesorio', ['Voltaris Dongle WLAN', 'Voltaris Backup Box'], 1.538462, 0, 90);
+    pon('t1', 'micra', 'microinversor', ['Micra M8', 'Micra M8 HC'], 1.428571, 0, 105);
+    pon('t1', 'micra', 'accesorio', ['Micra Gateway', 'Micra cable troncal', 'Micra tapón'], 1.428571, 0, 12);
+    pon('t1', 'lumen', 'bateria', ['Lumen 5K3', 'Lumen 10K6'], 2, 0, 900);
+    pon('t2', null, 'bomba_calor', ['Termia Aire 5', 'Termia Aire 8', 'Termia Aire 12'], null, 43, 3900);
+    pon('t2', null, 'acumulador', ['Termia Acu 200', 'Termia Acu 300'], null, 43, 1500);
+    pon('t3', null, 'material', ['Soporte de suelo', 'Bancada antivibratoria'], 1.5, 0, 40);
+    return { productos,
+      proveedores: [{ codigo: 'distribuidor', nombre: 'Distribuidor Solar' }, { codigo: 'termia', nombre: 'Termia' }, { codigo: 'sysefen', nombre: 'Sysefen (partidas propias)' }],
+      tarifas: [{ id: 't1', nombre: 'Fotovoltaica 2026', proveedor: { codigo: 'fotovoltaica', nombre: 'Distribuidor fotovoltaica' } }, { id: 't2', nombre: 'Termia 2026', proveedor: { codigo: 'termia', nombre: 'Termia' } },
+        { id: 't3', nombre: 'Catálogo propio', proveedor: { codigo: 'sysefen', nombre: 'Sysefen (partidas propias)' } }],
+      marcas: ['Solen', 'Voltaris', 'Micra', 'Lumen'].map((x) => ({ marca: x, proveedor_codigo: 'distribuidor' })) };
+  })();
+
   // Unos pocos precios del modelo fotovoltaico, para la pantalla de Precios.
   const PRECIOS_FV = [
     { grupo: 'Precios de venta y margen', ruta: ['parametros', 'margen_obj'], nombre: 'Margen objetivo sobre la venta (0,5 = 50 %)', valor: 0.5, ud: '', nota: '' },
@@ -329,6 +353,13 @@
         v: { entidad: 'en1', modo: 'porcentaje', pct: '50', importe: '', concepto: '', iva: 'i21', fecha: hoy, pago: 'cash:0', nota: '', partidas: {}, descontar: {}, lineas: [{ descripcion: '', cantidad: '1', precio: '' }] } }; },
     'pres-gestoria': () => { base('u5'); V.view = 'facturas'; V.sheet = { tipo: 'facGestoria', anio: hoy.slice(0, 4), k: 'T' + Math.ceil(Number(hoy.slice(5, 7)) / 3), entidad: EMPRESA, empresas: [EMPRESA], busy: false, txt: '' }; },
     'pres-precios': () => { base('u5'); V.precios = { tab: 'fv', filtro: '', fv: PRECIOS_FV, fvVersion: 'v2.1', fvErr: null, fvEd: {}, buscar: '', prods: null, prodErr: null, buscando: false, conceptos: null, conErr: null, conEd: {}, coef: [], historial: null, hisErr: null, busy: false }; V.view = 'precios'; },
+    'pres-margenes': () => { base('u5'); V.view = 'precios'; V.precios = { tab: 'margenes', filtro: '', fv: null, fvVersion: '', fvErr: null, fvEd: {}, buscar: '', prods: null, prodErr: null, buscando: false, conceptos: null, conErr: null, conEd: {},
+      coef: [{ categoria: 'solar', clave: 'recargo_sobre_coste', valor: 1.3 }, { categoria: 'solar', clave: 'costes_complementarios_pct', valor: 10 }], historial: null, hisErr: null, busy: false };
+      V.precios.mg = { filas: m.mgPreparar(CATALOGO_MG), err: null, prov: 'distribuidor', marca: '', tipo: '', q: '', por: 'prov', nuevo: '', busy: false }; },
+    'pres-margenes-cambio': () => { ESCENAS['pres-margenes'](); V.precios.mg.marca = 'solen'; V.precios.mg.tipo = 'inversor'; V.precios.mg.nuevo = '35';
+      V.sheet = { tipo: 'prMargen', etiqueta: 'Distribuidor Solar · Solen · Inversores', pct: 35, ids: [], busy: false,
+        r: { margen: 35, recargo: 1.538462, n_cambiar: 6, n_iguales: 0, n_saltados: 0, motivos: {}, margen_antes: { min: 16.6667, max: 22 }, pvp: { n: 0, min: null, max: null },
+          ejemplos: [{ nombre: 'Solen Trio 10.0 Plus', venta_antes: 2948.72, venta: 3538.46 }, { nombre: 'Solen Trio 8.0 Plus', venta_antes: 2692.31, venta: 3230.77 }, { nombre: 'Solen Uno 6.0', venta_antes: 1680, venta: 2153.85 }] } }; },
     'colab-clientes': () => { base('u6'); V.agenda.clientes = V.agenda.clientes.filter((c) => ['c5', 'c9'].includes(c.id)); V.agenda.vista = 'lista'; V.agenda.filtroCli = 'todos'; V.view = 'clientes'; },
     'admin-ajustes-copias': () => { base('u0'); V.view = 'ajustes'; window.__scrollA = 99999; },
     'jefe-apuntar-horas': () => { base('u1'); V.view = 'obra'; V.obraId = 'o1'; V.obraRango = 'total'; A.horasObraAbrir('o1'); if (V.sheet) { V.sheet.horas = '2'; V.sheet.nota = 'Recoger material en el almacén'; } },

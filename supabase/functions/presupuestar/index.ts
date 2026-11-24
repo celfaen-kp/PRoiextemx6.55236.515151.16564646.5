@@ -43,7 +43,7 @@ import { cadenaPrecios, totalCoste } from './cadena.js';
 // hibrido.js, compartido con las pruebas y los informes.
 import { presupuestarFV, bateriaDeCatalogo } from './hibrido.js';
 import { conInversoresDelCatalogo, calcularFV } from './fv.js';
-import { leerRutaFV, ponerRutaFV, listaModeloFV, valorDesdeCosteUd, productoPara, conceptoPara } from './precios.js';
+import { leerRutaFV, ponerRutaFV, listaModeloFV, valorDesdeCosteUd, productoPara, conceptoPara, planMargen, categoriaDeTarifa } from './precios.js';
 import { opcionesAero, sustituirEquiposAero, esInercia, esAcumuladorAcs } from './aero.js';
 import { calcularAire } from './aire.js';
 
@@ -165,6 +165,11 @@ async function catalogarLineas(sb: any, lineas: any[], origen: 'presupuesto' | '
  *       { tipo: 'concepto', id, campos }                   precio_fijo, coste_fijo
  *       { tipo: 'linea', categoria, producto_ref, partida, descripcion, venta, coste }
  *                                                          lo corregido en una línea del presupuesto
+ *   { accion: 'precios_margen', ids, margen, etiqueta, probar }
+ *       el mismo margen sobre la venta a un grupo de productos del catálogo (lo
+ *       filtrado en Ajustes → Precios → Márgenes; Enzo, 24-11-2026). Cambia su
+ *       recargo propio. Con `probar` solo dice qué pasaría. Un solo apunte en el
+ *       historial, con lo que tenía cada producto en `detalle` (sql/etapa126).
  *   { accion: 'precios_deshacer', id }                    vuelve a lo de antes
  * ========================================================================== */
 const COLS_PRECIO_PROD = 'id, referencia, nombre, familia, unidad, precio_tarifa, descuento_proveedor, recargo, aplica_cdc, atributos, activo';
@@ -340,6 +345,62 @@ async function accionPrecios(sb: any, yo: any, b: any): Promise<Response> {
     return json({ ok: true, hechos, errores });
   }
 
+  if (b.accion === 'precios_margen') {
+    const ids: string[] = [...new Set<string>((Array.isArray(b.ids) ? b.ids : []).map((x: unknown) => String(x)).filter((x: string) => /^[0-9a-f-]{36}$/i.test(x)))].slice(0, 6000);
+    if (!ids.length) return json({ error: 'No hay productos a los que cambiar el margen.' }, 400);
+    const TROZO = 100;   // los ids van en la dirección de la consulta: de cien en cien
+    // deno-lint-ignore no-explicit-any
+    const prods: any[] = [];
+    for (let i = 0; i < ids.length; i += TROZO) {
+      const { data, error } = await sb.from('productos').select(COLS_PRECIO_PROD + ', tarifa:tarifas(nombre)').in('id', ids.slice(i, i + TROZO)).eq('activo', true);
+      if (error) return json({ error: 'No se pudo leer el catálogo: ' + error.message }, 500);
+      prods.push(...(data || []));
+    }
+    const { data: coef } = await sb.from('tablas_lookup').select('categoria, clave, entrada, valor')
+      .in('clave', ['recargo_sobre_coste', 'costes_complementarios_pct']).eq('entrada', 'defecto');
+    // deno-lint-ignore no-explicit-any
+    const lookupDe = (p: any) => { const cat = categoriaDeTarifa(p && p.tarifa && p.tarifa.nombre); return (coef || []).filter((x: any) => x.categoria === cat); };
+    // deno-lint-ignore no-explicit-any
+    const plan = planMargen(prods, lookupDe, b.margen) as any;
+    if (plan.error) return json({ error: plan.error }, 400);
+    const margen = Math.round(Number(String(b.margen).replace(',', '.')) * 100) / 100;
+    // deno-lint-ignore no-explicit-any
+    const ejemplos = plan.cambiar.slice().sort((x: any, y: any) => y.venta_antes - x.venta_antes).slice(0, 3)
+      // deno-lint-ignore no-explicit-any
+      .map((x: any) => ({ nombre: x.nombre, venta_antes: x.venta_antes, venta: x.venta }));
+    // deno-lint-ignore no-explicit-any
+    const motivos: Record<string, number> = {}; plan.saltados.forEach((x: any) => { motivos[x.motivo] = (motivos[x.motivo] || 0) + 1; });
+    const resumen = { margen, recargo: plan.recargo, n_cambiar: plan.cambiar.length, n_iguales: plan.iguales, n_saltados: plan.saltados.length, motivos,
+      n_no_estan: ids.length - prods.length, margen_antes: plan.margen_antes, pvp: plan.pvp, ejemplos };
+    if (b.probar) return json(Object.assign({ ok: true, probar: true }, resumen));
+    if (!plan.cambiar.length) return json(Object.assign({ ok: true, hechos: 0 }, resumen));
+    const hechosIds = new Set<string>();
+    let fallo = '';
+    // deno-lint-ignore no-explicit-any
+    const aCambiar: string[] = plan.cambiar.map((x: any) => String(x.id));
+    for (let i = 0; i < aCambiar.length && !fallo; i += TROZO) {
+      const { data, error } = await sb.from('productos').update({ recargo: plan.recargo }).in('id', aCambiar.slice(i, i + TROZO)).select('id');
+      if (error) { fallo = error.message; break; }
+      // deno-lint-ignore no-explicit-any
+      (data || []).forEach((x: any) => hechosIds.add(String(x.id)));
+    }
+    let apuntado = true;
+    if (hechosIds.size) {
+      const etiqueta = String(b.etiqueta || '').replace(/\s+/g, ' ').trim().slice(0, 200) || 'Catálogo';
+      const pctTxt = String(margen).replace('.', ',');
+      // deno-lint-ignore no-explicit-any
+      const detalle = plan.cambiar.filter((x: any) => hechosIds.has(String(x.id))).map((x: any) => [x.id, x.antes]);
+      const { error } = await sb.from('precios_cambios').insert(Object.assign({
+        origen: 'margen', clave: etiqueta, descripcion: ('Margen al ' + pctTxt + ' % · ' + hechosIds.size + (hechosIds.size === 1 ? ' producto · ' : ' productos · ') + etiqueta).slice(0, 300),
+        antes: { n: hechosIds.size, margen_min: plan.margen_antes.min, margen_max: plan.margen_antes.max },
+        despues: { n: hechosIds.size, margen, recargo: plan.recargo }, detalle, desde: 'configuracion', presupuesto_id: null,
+      }, quien));
+      if (error) apuntado = false;
+    }
+    if (fallo) return json(Object.assign({ error: 'Se cambió el margen de ' + hechosIds.size + ' de ' + aCambiar.length + ' productos y luego falló: ' + fallo, hechos: hechosIds.size, apuntado }, resumen), 500);
+    return json(Object.assign({ ok: true, hechos: hechosIds.size, apuntado }, resumen));
+  }
+
   if (b.accion === 'precios_deshacer') {
     const id = String(b.id || '');
     if (!/^[0-9a-f-]{36}$/i.test(id)) return json({ error: 'Falta el cambio.' }, 400);
@@ -362,6 +423,25 @@ async function accionPrecios(sb: any, yo: any, b: any): Promise<Response> {
       if (!antes.id || !Object.keys(campos).length) return json({ error: 'Ese cambio no guarda lo que había: no se puede deshacer.' }, 409);
       const { error } = await sb.from(c.origen === 'producto' ? 'productos' : 'partidas_items').update(campos).eq('id', antes.id);
       if (error) return json({ error: 'No se pudo deshacer: ' + error.message }, 500);
+    } else if (c.origen === 'margen') {
+      // Un margen puesto a un grupo: cada producto vuelve al recargo que tenía.
+      // Solo los que siguen como los dejó aquel cambio: lo retocado después se respeta.
+      const detalle: unknown[] = Array.isArray(c.detalle) ? c.detalle : [];
+      const rec = Number((c.despues || {}).recargo);
+      if (!detalle.length || !(rec > 0)) return json({ error: 'Ese cambio no guarda lo que había: no se puede deshacer.' }, 409);
+      const grupos: Record<string, string[]> = {};
+      // deno-lint-ignore no-explicit-any
+      detalle.forEach((x: any) => { if (!Array.isArray(x) || !/^[0-9a-f-]{36}$/i.test(String(x[0]))) return; const k = x[1] == null ? '' : String(Number(x[1])); (grupos[k] = grupos[k] || []).push(String(x[0])); });
+      let vueltos = 0;
+      for (const k of Object.keys(grupos)) {
+        for (let i = 0; i < grupos[k].length; i += 100) {
+          const { data, error } = await sb.from('productos').update({ recargo: k === '' ? null : Number(k) }).in('id', grupos[k].slice(i, i + 100)).eq('recargo', rec).select('id');
+          if (error) return json({ error: 'No se pudo deshacer del todo (' + vueltos + ' productos sí volvieron): ' + error.message }, 500);
+          vueltos += (data || []).length;
+        }
+      }
+      await sb.from('precios_cambios').update({ deshecho_en: new Date().toISOString(), deshecho_por: quien.nombre }).eq('id', id);
+      return json({ ok: true, vueltos, sin_tocar: detalle.length - vueltos });
     } else return json({ error: 'Ese cambio no se puede deshacer.' }, 400);
     await sb.from('precios_cambios').update({ deshecho_en: new Date().toISOString(), deshecho_por: quien.nombre }).eq('id', id);
     return json({ ok: true });

@@ -29,7 +29,7 @@ IMG = os.path.join(RAIZ, 'manual', 'img')
 PUERTO = 8766
 ANCHO, ALTO, ESCALA = 390, 844, 2
 # Escenas que se fotografían a otro tamaño (ancho, alto, escala): las de ordenador.
-TAMANOS = {'pres-tablero': (1280, 700, 1.5), 'pres-tablero-2': (1280, 700, 1.5), 'pres-informes-ancho': (1180, 1000, 1.5)}
+TAMANOS = {'pres-margenes': (390, 1180, 2), 'pres-tablero': (1280, 700, 1.5), 'pres-tablero-2': (1280, 700, 1.5), 'pres-informes-ancho': (1180, 1000, 1.5)}
 
 SNAP = r'''
 import WebKit
@@ -76,7 +76,7 @@ def pagina_prueba(oscuro=False):
         s = s.replace(viejo, nuevo, 1)
     i = s.rfind('</script>')
     gancho = """
-window.__m = { S, V, A, render, hojaHTML: () => sheet(), agNuevoCliente, agNuevaCita, limpiarBorradorVisita, pdfDeImpresion,
+window.__m = { S, V, A, render, hojaHTML: () => sheet(), mgPreparar, agNuevoCliente, agNuevaCita, limpiarBorradorVisita, pdfDeImpresion,
   obraColumnas: (x) => { obraColumnas = x; }, empRows: (x) => { empRows = x; }, empIdPorNombre: (x) => { empIdPorNombre = x; }, nombrePorEmpId: (x) => { nombrePorEmpId = x; } };
 """
     s = s[:i] + gancho + s[i:]

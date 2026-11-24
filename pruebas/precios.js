@@ -189,6 +189,108 @@ var hl = prLineaSheetHTML({ tipo: 'prLinea', categoria: 'aerotermia', descripcio
 comprueba('la confirmación de una línea: venta, y el coste no se toca si va en blanco', hl.indexOf('Venta 300,00') > 0 && hl.indexOf('el coste no se toca') > 0);
 V.user = { id: 'u1' };
 comprueba('un colaborador no ve el botón en la hoja de partidas', fv2DesgloseSheetHTML(Object.assign({}, sFV, { bd: null })).indexOf('pr_fv2Revisar') < 0 && !prLineaGuardable({ producto_ref: 'W-5K3' }));
+
+/* --- Los márgenes del catálogo (Enzo, 24-11-2026): por proveedor, marca y tipo --- */
+titulo('márgenes del catálogo: la cuenta del servidor');
+var LK_FV = [{ clave: 'recargo_sobre_coste', entrada: 'defecto', valor: 1.3 }, { clave: 'costes_complementarios_pct', entrada: 'defecto', valor: 10 }];
+igual('35 % sobre la venta es coste × 1,538462', recargoDeMargen(35), 1.538462);
+igual('30 % es × 1,428571 y con coma también', recargoDeMargen('30,0'), 1.428571);
+comprueba('fuera de 0,1–90 % no vale', recargoDeMargen(0) === null && recargoDeMargen(95) === null && recargoDeMargen('') === null && recargoDeMargen('abc') === null && recargoDeMargen(-5) === null);
+igual('una tarifa de fotovoltaica va a coste con recargo', categoriaDeTarifa('Fotovoltaica partidas 2026') + '|' + categoriaDeTarifa('Vaillant 2026'), 'solar|');
+var P_HUA = { id: 'h1', nombre: 'SUN2000-5K', familia: 'inversor', precio_tarifa: 1000, descuento_proveedor: 0, recargo: 1.538462, aplica_cdc: false, atributos: {} };
+var P_FRO = { id: 'f1', nombre: 'Fronius Primo', familia: 'inversor', precio_tarifa: 1000, descuento_proveedor: 0, recargo: 1.282051, aplica_cdc: false, atributos: {} };
+var P_PART = { id: 'p1', nombre: 'Perfil', familia: 'estructura', precio_tarifa: 10, descuento_proveedor: 0, recargo: null, aplica_cdc: true, atributos: {} };
+var P_VAI = { id: 'v1', nombre: 'aroTHERM plus', familia: 'bomba_calor', precio_tarifa: 1000, descuento_proveedor: 43, recargo: null, aplica_cdc: true, atributos: {} };
+var P_FIJO = { id: 'x1', nombre: 'Punto de luz', familia: 'material', precio_tarifa: 80, descuento_proveedor: 0, recargo: null, aplica_cdc: false, atributos: { sin_recargo: true } };
+var P_COSTE = { id: 'c1', nombre: 'A coste', familia: 'material', precio_tarifa: 50, descuento_proveedor: 0, recargo: 1, aplica_cdc: false, atributos: {} };
+var P_CERO = { id: 'z1', nombre: 'Sin precio', familia: 'material', precio_tarifa: 0, descuento_proveedor: 0, recargo: 1.5, atributos: {} };
+var mH = margenProducto(P_HUA, LK_FV);
+comprueba('Huawei con recargo 1,538462 está al 35 %', Math.abs(mH.margen - 35) < 0.001 && mH.cambiable && mH.venta === 1538.46 && mH.coste === 1000);
+comprueba('un producto de partidas FV sin recargo propio va con el 1,30 de la categoría: 23,1 %', Math.abs(margenProducto(P_PART, LK_FV).margen - 23.0769) < 0.001 && margenProducto(P_PART, LK_FV).cambiable);
+var mV = margenProducto(P_VAI, []);
+comprueba('Vaillant se vende a la tarifa: su margen es el descuento de proveedor', mV.margen === 43 && mV.cambiable && mV.pvp && mV.venta === 1000 && mV.coste === 570);
+comprueba('venta fija sin coste: no hay margen ni se puede cambiar', margenProducto(P_FIJO, []).margen === null && !margenProducto(P_FIJO, []).cambiable && margenProducto(P_FIJO, []).motivo === 'venta_fija');
+comprueba('sin recargo ni descuento fuera de fotovoltaica: no se sabe el coste', margenProducto({ precio_tarifa: 100, recargo: null, atributos: {} }, []).motivo === 'sin_coste');
+comprueba('recargo propio de 1: se vende a coste, margen 0 y se puede cambiar', margenProducto(P_COSTE, []).margen === 0 && margenProducto(P_COSTE, []).cambiable);
+comprueba('sin precio no entra', margenProducto(P_CERO, []).motivo === 'sin_precio' && !margenProducto(P_CERO, []).cambiable);
+var lkDe = function (p) { return p.id === 'v1' || p.id === 'x1' || p.id === 'c1' || p.id === 'z1' ? [] : LK_FV; };
+var plan = planMargen([P_HUA, P_FRO, P_PART, P_VAI, P_FIJO, P_COSTE, P_CERO], lkDe, 35);
+igual('el plan: recargo', plan.recargo, 1.538462);
+igual('cambia los que tienen coste y no están ya así', plan.cambiar.map(function (x) { return x.id; }).join(','), 'f1,p1,v1,c1');
+igual('el que ya estaba no se toca', plan.iguales, 1);
+igual('y los de venta fija o sin precio se saltan, con su motivo', plan.saltados.map(function (x) { return x.id + ':' + x.motivo; }).join(','), 'x1:venta_fija,z1:sin_precio');
+igual('guarda el recargo que tenía cada uno, para deshacer', JSON.stringify(plan.cambiar.map(function (x) { return x.antes; })), '[1.282051,null,null,1]');
+comprueba('de qué margen a qué margen estaban', plan.margen_antes.min === 0 && plan.margen_antes.max === 43);
+var cV = plan.cambiar.filter(function (x) { return x.id === 'v1'; })[0], cF = plan.cambiar.filter(function (x) { return x.id === 'f1'; })[0];
+comprueba('Vaillant al 35 %: 570 de coste → 876,92 de venta, un 12,31 % bajo la tarifa', cV.venta_antes === 1000 && cV.venta === 876.92 && plan.pvp.n === 1 && plan.pvp.min === -12.31 && plan.pvp.max === -12.31);
+comprueba('Fronius del 22 % al 35 %: 1.282,05 → 1.538,46', cF.venta_antes === 1282.05 && cF.venta === 1538.46);
+plan.cambiar.forEach(function (x) {
+  var p = [P_HUA, P_FRO, P_PART, P_VAI, P_COSTE].filter(function (y) { return y.id === x.id; })[0];
+  var m2 = margenProducto(Object.assign({}, p, { recargo: plan.recargo }), lkDe(p));
+  comprueba('después del cambio ' + p.nombre + ' queda al 35 %', Math.abs(m2.margen - 35) < 0.001);
+});
+comprueba('con el margen igual al descuento, Vaillant sigue a su tarifa', planMargen([P_VAI], lkDe, 43).cambiar[0].venta === 1000);
+comprueba('un margen que no vale da error y no cambia nada', !!planMargen([P_FRO], lkDe, 120).error && !planMargen([P_FRO], lkDe, 120).cambiar);
+
+titulo('márgenes del catálogo: la pestaña');
+V.user = { id: 'u5' };
+V.precios = null; var pMg = prEstado();
+pMg.coef = [{ categoria: 'solar', clave: 'recargo_sobre_coste', valor: 1.3 }, { categoria: 'solar', clave: 'costes_complementarios_pct', valor: 10 }];
+var BRUTO = { proveedores: [{ codigo: 'baywa', nombre: 'BayWa r.e.' }, { codigo: 'vaillant', nombre: 'Vaillant' }, { codigo: 'sysefen', nombre: 'Sysefen (partidas propias)' }, { codigo: 'fotovoltaica', nombre: 'Distribuidor fotovoltaica' }],
+  tarifas: [{ id: 't1', nombre: 'Fotovoltaica 2026', proveedor: { codigo: 'fotovoltaica', nombre: 'Distribuidor fotovoltaica' } }, { id: 't2', nombre: 'Vaillant 2026', proveedor: { codigo: 'vaillant', nombre: 'Vaillant' } },
+    { id: 't3', nombre: 'Catálogo propio', proveedor: { codigo: 'sysefen', nombre: 'Sysefen (partidas propias)' } }, { id: 't4', nombre: 'Fotovoltaica partidas 2026', proveedor: { codigo: 'sysefen', nombre: 'Sysefen (partidas propias)' } }],
+  marcas: [{ marca: 'Huawei', proveedor_codigo: 'baywa' }, { marca: 'Fronius', proveedor_codigo: 'baywa' }],
+  productos: [
+    { id: 'h1', referencia: 'FV-HUAWEI-5K', nombre: 'SUN2000-5K', familia: 'inversor', precio_tarifa: 1000, descuento_proveedor: 0, recargo: 1.538462, aplica_cdc: false, tarifa_id: 't1', marca: 'huawei', sin_recargo: null },
+    { id: 'h2', referencia: 'FV-HUAWEI-LUNA', nombre: 'LUNA2000-5-S1', familia: 'bateria', precio_tarifa: 1488.43, descuento_proveedor: 0, recargo: 1.538462, aplica_cdc: false, tarifa_id: 't1', marca: 'huawei', sin_recargo: null },
+    { id: 'f1', referencia: 'FV-FRONIUS-P3', nombre: 'Fronius Primo 3.0', familia: 'inversor', precio_tarifa: 1000, descuento_proveedor: 0, recargo: 1.282051, aplica_cdc: false, tarifa_id: 't1', marca: 'fronius', sin_recargo: null },
+    { id: 'f2', referencia: 'FV-FRONIUS-SM', nombre: 'Fronius Smart Meter', familia: 'contador', precio_tarifa: 200, descuento_proveedor: 0, recargo: 1.2, aplica_cdc: false, tarifa_id: 't1', marca: 'fronius', sin_recargo: null },
+    { id: 'p1', referencia: 'FV-07-001', nombre: 'Perfil G1', familia: 'estructura', precio_tarifa: 10, descuento_proveedor: 0, recargo: null, aplica_cdc: true, tarifa_id: 't4', marca: null, sin_recargo: null },
+    { id: 'v1', referencia: 'VA-001', nombre: 'aroTHERM plus 8', familia: 'bomba_calor', precio_tarifa: 1000, descuento_proveedor: 43, recargo: null, aplica_cdc: true, tarifa_id: 't2', marca: null, sin_recargo: null },
+    { id: 'x1', referencia: 'SY-PUNTO', nombre: 'Punto de luz', familia: 'material', precio_tarifa: 80, descuento_proveedor: 0, recargo: null, aplica_cdc: false, tarifa_id: 't3', marca: null, sin_recargo: 'true' },
+    { id: 'c1', referencia: 'SY-OTRO', nombre: 'Soporte', familia: 'otro', precio_tarifa: 50, descuento_proveedor: 0, recargo: 1.5, aplica_cdc: false, tarifa_id: 't3', marca: null, sin_recargo: null }] };
+var gMg = mgEstado(); gMg.filas = mgPreparar(BRUTO);
+var de = function (id) { return gMg.filas.filter(function (x) { return x.id === id; })[0]; };
+igual('la marca de proveedor_marcas manda sobre la tarifa: Huawei es de BayWa', de('h1')._prov + '|' + de('h1')._provN + '|' + de('h1')._marcaN + '|' + de('h1')._tipoN, 'baywa|BayWa r.e.|Huawei|Inversores');
+igual('sin marca apuntada, la de la tarifa del fabricante', de('v1')._prov + '|' + de('v1')._marcaN + '|' + de('v1')._tipoN, 'vaillant|Vaillant|Bombas de calor');
+igual('lo propio no tiene marca, y «otro» va con «otros»', de('c1')._marcaN + '|' + de('c1')._tipo + '|' + de('p1')._provN, 'Sin marca|otros|Sysefen (partidas propias)');
+// La app y el servidor tienen que dar el mismo margen a cada producto.
+var distintos = gMg.filas.filter(function (x) {
+  var lk = categoriaDeTarifa(x.tarifa.nombre) === 'solar' ? LK_FV : [];
+  var s = margenProducto(x, lk);
+  return !(x.m.cambiable === s.cambiable && x.m.motivo === s.motivo && (x.m.margen === s.margen || Math.abs(x.m.margen - s.margen) < 0.0002) && x.m.venta === s.venta && x.m.coste === s.coste);
+});
+igual('la app y el servidor dan el mismo margen a todos', distintos.map(function (x) { return x.id; }).join(','), '');
+pMg.tab = 'margenes'; V.view = 'precios';
+var hMg = vPrecios();
+comprueba('la pestaña está y enseña el catálogo entero', hMg.indexOf('data-t="margenes"') > 0 && hMg.indexOf('Todo el catálogo') > 0 && hMg.indexOf('8 productos') > 0 && hMg.indexOf('de 16,7 % a 43 %') > 0);
+comprueba('sin filtrar no deja cambiar nada', hMg.indexOf('data-a="pr_mgRevisar"') < 0 && hMg.indexOf('filtra primero') > 0);
+comprueba('reparto por proveedor, con su margen', hMg.indexOf('data-a="pr_mgGrupo" data-d="prov" data-k="baywa"') > 0 && /BayWa r\.e\.<\/div><div class="tiny"[^>]*>4 productos<\/div><\/div>\s*<div[^>]*><div class="num"[^>]*>de 16,7 % a 35 %/.test(hMg));
+comprueba('los desplegables cuentan lo que hay', hMg.indexOf('<option value="baywa" >BayWa r.e. (4)</option>') > 0 && hMg.indexOf('<option value="huawei" >Huawei (2)</option>') > 0 && hMg.indexOf('<option value="inversor" >Inversores (2)</option>') > 0);
+A.prCampo('mg:prov', 'baywa'); A.prCampo('mg:marca', 'fronius');
+var hF = mgCuerpoHTML();
+comprueba('filtrado por proveedor y marca: solo lo suyo, y deja poner el margen', hF.indexOf('Lo filtrado') > 0 && hF.indexOf('2 productos') > 0 && hF.indexOf('de 16,7 % a 22 %') > 0 && hF.indexOf('Poner a estos 2 un') > 0 && hF.indexOf('data-a="pr_mgRevisar"') > 0);
+comprueba('y ahora reparte por tipo, que es lo que queda libre', hF.indexOf('data-d="tipo" data-k="inversor"') > 0 && hF.indexOf('data-d="tipo" data-k="contador"') > 0 && hF.indexOf('data-d="prov"') < 0);
+comprueba('la lista de productos, con su margen y su venta', hF.indexOf('Fronius Primo 3.0') > 0 && hF.indexOf('>22 %<') > 0 && hF.indexOf('SUN2000') < 0);
+igual('el cambio se llama como lo filtrado', mgEtiqueta(), 'BayWa r.e. · Fronius');
+comprueba('las marcas del desplegable son las de ese proveedor', mgFiltrosHTML().indexOf('Huawei (2)') > 0 && mgFiltrosHTML().indexOf('Vaillant (1)') < 0);
+A.prCampo('mg:prov', 'vaillant');
+comprueba('un filtro que choca con otro suelta el otro', gMg.prov === 'vaillant' && gMg.marca === '' && mgFiltradas().length === 1);
+A.prCampo('mg:prov', ''); A.prCampo('mg:q', 'luna');
+comprueba('el buscador filtra por nombre o referencia, sin tildes ni mayúsculas', mgFiltradas().length === 1 && mgFiltradas()[0].id === 'h2' && mgEtiqueta() === '«luna»');
+A.prCampo('mg:q', ''); A.prCampo('mg:tipo', 'material');
+comprueba('lo que no tiene coste apuntado no se puede cambiar', mgCuerpoHTML().indexOf('pr_mgRevisar') < 0 && mgCuerpoHTML().indexOf('no hay margen que cambiar') > 0);
+A.prCampo('mg:tipo', '');
+var hoja = prMargenSheetHTML({ tipo: 'prMargen', etiqueta: 'Vaillant', pct: 35, ids: ['v1'], busy: false,
+  r: { margen: 35, recargo: 1.538462, n_cambiar: 1, n_iguales: 0, n_saltados: 0, motivos: {}, margen_antes: { min: 43, max: 43 }, pvp: { n: 1, min: -12.31, max: -12.31 }, ejemplos: [{ nombre: 'aroTHERM plus 8', venta_antes: 1000, venta: 876.92 }] } });
+comprueba('la confirmación dice el margen, el recargo, el ejemplo y avisa de la tarifa del fabricante', hoja.indexOf('Margen al 35 % en 1 producto') > 0 && hoja.indexOf('coste × 1,5385') > 0 && hoja.indexOf('53,8 % por encima del coste') > 0
+  && hoja.indexOf('Hoy está al 43 %') > 0 && hoja.indexOf('876,92') > 0 && hoja.indexOf('12,3 % por debajo de esa tarifa') > 0 && hoja.indexOf('data-a="pr_mgAplicar"') > 0);
+var hojaNada = prMargenSheetHTML({ tipo: 'prMargen', etiqueta: 'Huawei', r: { margen: 35, recargo: 1.538462, n_cambiar: 0, n_iguales: 2, n_saltados: 0, motivos: {}, margen_antes: { min: null, max: null }, pvp: { n: 0 }, ejemplos: [] } });
+comprueba('si ya estaban así, lo dice y no ofrece cambiar', hojaNada.indexOf('No hay nada que cambiar') > 0 && hojaNada.indexOf('2 ya están a ese margen') > 0 && hojaNada.indexOf('pr_mgAplicar') < 0);
+pMg.tab = 'historial'; pMg.historial = [{ id: 'k1', creado_en: '2026-11-24T10:00:00Z', nombre: 'Fabrizio', origen: 'margen', clave: 'BayWa r.e. · Fronius', descripcion: 'Margen al 35 % · 67 productos · BayWa r.e. · Fronius',
+  antes: { n: 67, margen_min: 16.6667, margen_max: 22 }, despues: { n: 67, margen: 35, recargo: 1.538462 }, desde: 'configuracion' }];
+var hHis = prHistorialHTML();
+comprueba('en Cambios sale como un solo apunte que se puede deshacer', hHis.indexOf('Margen al 35 % · 67 productos') > 0 && hHis.indexOf('de 16,7 % a 22 % → 35 % de margen') > 0 && hHis.indexOf('márgenes del catálogo') > 0 && hHis.indexOf('data-a="pr_deshacer" data-id="k1"') > 0);
 V.user = null; V.precios = null; V.view = 'login';
 
 
