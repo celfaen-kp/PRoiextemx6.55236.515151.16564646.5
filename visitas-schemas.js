@@ -340,6 +340,9 @@ const SOLAR = {
         { key: 'instalacion_existente', etiqueta: 'Hay instalación que desmontar', tipo: 'bool', motor: true },
         { key: 'via_publica', etiqueta: 'Hay que ocupar la calle', tipo: 'bool', motor: true,
           ayuda: 'Grúa o andamio en la vía pública: tasa y vallas' },
+        // Enzo, 24-11-2026: el cliente ya tiene placas y solo quiere la batería.
+        { key: 'solo_bateria', etiqueta: 'Solo batería (ya tiene placas)', tipo: 'bool', motor: true,
+          ayuda: 'Se presupuesta solo la batería con su backup, su instalación y la legalización: sin paneles, inversor ni estructura. Pon abajo el inversor que tiene, la marca de la batería y los kWh' },
         { key: 'baterias', etiqueta: 'Baterías', tipo: 'opcion', motor: true,
           opciones: ['no', 'si', 'dejar_preparado'],
           ayuda: 'Fronius: sin batería, GEN24 SC; con batería o «dejar preparado», GEN24 Plus (híbrido). Pasar un SC a Plus después cuesta unos 500 € más' },

@@ -178,3 +178,100 @@ export function presupuestarFV(datos, mod, cfg) {
     fv2: r,
   };
 }
+
+// =============================================================================
+// SOLO BATERÍA (Enzo, 24-11-2026): «quiero que en fotovoltaica me dé opción de
+// presupuestar solo batería; esto es lo que iría en el presu» (su presupuesto
+// 894, hecho a mano: 2 módulos LUNA2000-5-S1, base de control, Smart Dongle,
+// SmartGuard con su cable, instalación de la batería con pequeño material y
+// legalización).
+//
+// El cliente ya tiene placas: no hay paneles, inversor, estructura, cableado ni
+// trámites de instalación nueva; el presupuestador de Ramón (fv.js) no entra.
+// Lo que sale:
+//   · la batería y su backup. BYD, Fronius Reserva, Tesla y Enphase, por las
+//     reglas del capítulo 04, como en una instalación completa. WECO, Deye y
+//     Huawei, del catálogo: el modelo se elige en «Batería» y entran los
+//     módulos que hagan falta (y la base de la LUNA2000), igual que siempre
+//     (lo hace la función con bateriaDeCatalogo);
+//   · con Huawei, además, el Smart Dongle y, si es con backup, el SmartGuard
+//     del suministro (S0 monofásico, T0 trifásico) con su cable de comunicación;
+//   · «Instalación batería y pequeño material» y «Legalización»: los dos
+//     productos del catálogo propio que Enzo usó en el 894, a su precio del
+//     catálogo (se cambian en Ajustes → Precios).
+// El soporte o bancada del capítulo 04 (FV-04-004) no entra: va en el pequeño
+// material de la instalación.
+// =============================================================================
+export const SOLO_BATERIA = {
+  instalacion: 'SY-INSTALACION-BATERIA-Y-PEQUEN-6C01',
+  legalizacion: 'SY-LEGALIZACION-8837',
+  huawei_dongle: 'FV-HUAWEI-SMART-DONGLE-WLAN-FE-SUPPORTING-WLAN-HOTSPOT',
+  huawei_cable: 'FV-HUAWEI-ACCESORIO-SMARTGUARD-CABLE-DE-COMUNICACION',
+  huawei_backup_mono: 'FV-HUAWEI-SMARTGUARD-63A-S0',
+  huawei_backup_tri: 'FV-HUAWEI-SMARTGUARD-63A-T0',
+};
+const SEC_BATERIA = 'Almacenamiento', SEC_INSTALACION = 'Instalación y legalización';
+const siHib = (v) => v === true || v === 1 || v === '1' || v === 'true' || v === 'si' || v === 'sí';
+/** ¿Es un presupuesto de solo batería? (la casilla de la ficha o del presupuesto sin visita) */
+export function esSoloBateria(datos) { return !!datos && siHib(datos.solo_bateria); }
+/** Las marcas de batería que se eligen del catálogo (sin regla por kWh). */
+const BAT_DE_CATALOGO = ['weco', 'deye', 'huawei'];
+
+/**
+ * La parte que calcula el motor: batería y backup de las marcas con regla. El
+ * resto (lo del catálogo) lo añade la función con extrasSoloBateria().
+ * Devuelve lo mismo que calcular(), con su motor_version.
+ */
+export function presupuestarSoloBateria(datos, cfg) {
+  const d = Object.assign({}, datos, { baterias: 'si' });
+  const marcaInv = String(d.inversor_marca || 'fronius').toLowerCase();
+  const marcaBat = String(d.bateria_marca || '').toLowerCase();
+  const deCatalogo = marcaInv === 'deye' || marcaInv === 'huawei' || BAT_DE_CATALOGO.includes(marcaBat);
+  const reglas = deCatalogo ? [] : (cfg.reglas || []).filter((rg) => rg.tipo !== 'aviso' && String(rg.seccion || '').startsWith('04 · ') && String(rg.producto_ref || '') !== 'FV-04-004');
+  const viejo = calcular('solar', d, Object.assign({}, cfg, { reglas }));
+  const lineas = (viejo.lineas || []).map((l) => Object.assign({}, l, { seccion: SEC_BATERIA }));
+  // De lo que avisa el motor por capítulos solo vale lo que habla de estas líneas:
+  // lo demás son datos de una instalación que aquí no se hace (paneles, metros…).
+  const refs = lineas.map((l) => String(l.producto_ref || '')).filter(Boolean);
+  const incidencias = (viejo.incidencias || []).filter((i) => i.nivel === 'error' && i.codigo !== 'sin_lineas' ? refs.some((r) => String(i.mensaje || '').indexOf(r) >= 0) || i.codigo === 'precio_pendiente'
+    : i.codigo === 'precio_pendiente' && refs.some((r) => String(i.mensaje || '').indexOf(r) >= 0));
+  const aviso = (mensaje, campo) => incidencias.push({ nivel: 'aviso', codigo: 'solo_bateria', mensaje, campo: campo || null });
+  aviso('Solo batería: sin paneles, inversor ni estructura. Comprueba que el inversor que ya tiene el cliente admite esta batería; si no, añade el inversor del catálogo.');
+  if (!(Number(d.baterias_kwh) > 0)) aviso('Faltan los kWh de la batería: se ha puesto la capacidad por defecto. Ponlos en «Batería».', 'baterias_kwh');
+  if (BAT_DE_CATALOGO.includes(marcaBat) && !d.bateria_ref) {
+    aviso(marcaBat === 'huawei' ? 'Batería Huawei: elige el modelo en «Batería» (LUNA2000 S1, módulos de 5 o 6,9 kWh). Entran los módulos que hagan falta para los kWh y una base de control por cada tres.'
+      : 'Batería ' + marcaBat.toUpperCase() + ': elige el modelo en «Batería». Entran las unidades que hagan falta para los kWh.', 'bateria_ref');
+  } else if (deCatalogo && !BAT_DE_CATALOGO.includes(marcaBat)) {
+    aviso('Con inversor ' + marcaInv.toUpperCase() + ' la batería se elige del catálogo, en «Batería».', 'bateria_ref');
+  }
+  if (siHib(d.backup) && (marcaBat === 'weco' || marcaBat === 'deye')) aviso('Backup con ' + marcaBat.toUpperCase() + ': no entra solo. Añádelo del catálogo si hace falta.', 'backup');
+  return {
+    lineas, incidencias,
+    variables: Object.assign({}, viejo.variables, { solo_bateria: 1 }),
+    recargo_sobre_coste: viejo.recargo_sobre_coste,
+    motor_version: MOTOR_VERSION + ' · solo batería',
+    resumen: null,
+  };
+}
+
+/**
+ * Lo que se añade del catálogo en un presupuesto de solo batería, en su orden:
+ * [{ producto_ref, cantidad, seccion, _auto: 'solo_bateria' }]. Los precios los
+ * pone la función con lineaManual (coste × recargo del producto).
+ */
+export function extrasSoloBateria(datos) {
+  const d = datos || {};
+  const marcaBat = String(d.bateria_marca || '').toLowerCase();
+  const pon = (ref, seccion) => ({ producto_ref: ref, cantidad: 1, seccion, _auto: 'solo_bateria' });
+  const out = [];
+  if (marcaBat === 'huawei') {
+    out.push(pon(SOLO_BATERIA.huawei_dongle, SEC_BATERIA));
+    if (siHib(d.backup)) {
+      out.push(pon(SOLO_BATERIA.huawei_cable, SEC_BATERIA));
+      out.push(pon(/^trif/i.test(String(d.suministro || '')) ? SOLO_BATERIA.huawei_backup_tri : SOLO_BATERIA.huawei_backup_mono, SEC_BATERIA));
+    }
+  }
+  out.push(pon(SOLO_BATERIA.instalacion, SEC_INSTALACION));
+  out.push(pon(SOLO_BATERIA.legalizacion, SEC_INSTALACION));
+  return out;
+}

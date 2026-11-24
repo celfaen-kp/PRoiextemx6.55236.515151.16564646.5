@@ -503,4 +503,43 @@ igual('la base que hay que añadir', bateriaDeCatalogo(luna7, 10).base_ref, 'FV-
 igual('una WECO o una Deye no llevan base', modBase({ atributos: { marca: 'weco', capacidad_kwh: 5.12 } }, 10), '2+0');
 igual('sin kWh, un módulo', modBase(luna7, 0), '1+1');
 
+/* --- Solo batería (Enzo, 24-11-2026): el cliente ya tiene placas --- */
+titulo('solo batería: batería, backup, instalación y legalización, sin instalación fotovoltaica');
+var SOLO = function (extra) { var d = { solo_bateria: true, inversor_marca: 'fronius', suministro: 'monofasico', backup_modo: 'automatico', backup_tipo: 'total' }; for (var k in extra) d[k] = extra[k]; return d; };
+var refsDe = function (r) { return r.lineas.map(function (l) { return l.cantidad + '×' + l.producto_ref; }).join(' | '); };
+comprueba('se reconoce la casilla, de la ficha o del presupuesto sin visita', esSoloBateria({ solo_bateria: true }) && esSoloBateria({ solo_bateria: 'true' }) && !esSoloBateria({ solo_bateria: false }) && !esSoloBateria({}) && !esSoloBateria(null));
+var sByd = presupuestarSoloBateria(SOLO({ bateria_marca: 'byd', baterias_kwh: 10 }), config);
+igual('BYD 10 kWh con Fronius: 4 módulos HVS y su BCU con base, nada más', refsDe(sByd), '4×FV-BYD-PREMIUM-HVS-2.56 | 1×FV-BYD-BATTERY-BOX-PREMIUM-HVS-HVM-BCU-PLUS-BASE');
+comprueba('ni paneles, ni inversor, ni estructura, ni cable, ni trámites de instalación', !sByd.lineas.some(function (l) { return /^FV-0[1-3]-|^FV-0[5-9]-|^FV-1\d-|FRONIUS-PRIMO|FRONIUS-SYMO|ESTR_|SMART-METER/.test(String(l.producto_ref)); }));
+comprueba('el soporte de la batería no entra: va en la instalación', !linea(sByd, 'FV-04-004'));
+comprueba('todo en «Almacenamiento» y con su precio', sByd.lineas.every(function (l) { return l.seccion === 'Almacenamiento' && l.precio_tarifa > 0 && l.confirmada; }));
+comprueba('avisa de que hay que mirar el inversor que tiene, y de nada de la instalación', sByd.incidencias.length === 1 && sByd.incidencias[0].codigo === 'solo_bateria' && sByd.incidencias[0].mensaje.indexOf('admite esta batería') > 0);
+comprueba('la versión del motor lo dice', /solo batería$/.test(sByd.motor_version) && sByd.variables.solo_bateria === 1);
+igual('y del catálogo entran la instalación y la legalización', extrasSoloBateria(SOLO({ bateria_marca: 'byd', baterias_kwh: 10 })).map(function (x) { return x.producto_ref + ':' + x.seccion; }).join(' | '),
+  'SY-INSTALACION-BATERIA-Y-PEQUEN-6C01:Instalación y legalización | SY-LEGALIZACION-8837:Instalación y legalización');
+var sBk = presupuestarSoloBateria(SOLO({ bateria_marca: 'byd', baterias_kwh: 10, backup: true, backup_modo: 'manual', backup_tipo: 'parcial' }), config);
+comprueba('con backup manual de Fronius: PV Point y cuadro de cargas críticas', !!linea(sBk, 'FV-FRONIUS-PV-POINT-COMFORT') && !!linea(sBk, 'FV-04-006'));
+var sTes = presupuestarSoloBateria(SOLO({ bateria_marca: 'tesla', baterias_kwh: 27, suministro: 'trifasico', backup: true }), config);
+comprueba('Tesla 27 kWh trifásico con backup: Powerwall 3P, una expansión y el Gateway, y nada más', sTes.lineas.length === 3 && cant(sTes, 'FV-TESLA-POWERWALL-3P-13.5-KWH-15.4-KW') === 1 && cant(sTes, 'FV-TESLA-EXPANSION-POWERWALL-3-13.5-KWH') === 1 && cant(sTes, 'FV-TESLA-BACKUP-GATEWAY-2') === 1);
+var sEnp = presupuestarSoloBateria(SOLO({ inversor_marca: 'enphase', bateria_marca: 'enphase', baterias_kwh: 10 }), config);
+igual('Enphase 10 kWh: dos IQ Battery 5P', refsDe(sEnp), '2×FV-ENPHASE-IQ-BATTERY-5P');
+var sFro = presupuestarSoloBateria(SOLO({ bateria_marca: 'fronius', baterias_kwh: 6 }), config);
+comprueba('Fronius Reserva 6 kWh: 2 módulos y su BMS con base', cant(sFro, 'FV-FRONIUS-BATERIA-RESERVA-MODULO-3-15-KWH') === 2 && cant(sFro, 'FV-FRONIUS-BATERIA-RESERVA-BMS-Y-BASE') === 1 && sFro.lineas.length === 2);
+// Huawei: como el presupuesto 894 de Enzo (2 módulos LUNA2000-5-S1, base, dongle, cable, SmartGuard, instalación y legalización).
+var dHua = SOLO({ inversor_marca: 'huawei', bateria_marca: 'huawei', baterias_kwh: 10, backup: true });
+var sHua = presupuestarSoloBateria(dHua, config);
+comprueba('Huawei: el motor por capítulos no pone nada (la batería es del catálogo) y pide elegir el modelo', sHua.lineas.length === 0 && sHua.incidencias.some(function (i) { return i.campo === 'bateria_ref' && i.mensaje.indexOf('LUNA2000') > 0; }));
+comprueba('con el modelo elegido ya no lo pide', !presupuestarSoloBateria(SOLO({ inversor_marca: 'huawei', bateria_marca: 'huawei', baterias_kwh: 10, bateria_ref: 'FV-HUAWEI-LUNA2000-5-S1-MODULO-DE-BATERIA' }), config).incidencias.some(function (i) { return i.campo === 'bateria_ref'; }));
+igual('Huawei monofásico con backup: dongle, cable, SmartGuard S0, instalación y legalización, en ese orden', extrasSoloBateria(dHua).map(function (x) { return x.producto_ref; }).join(' | '),
+  'FV-HUAWEI-SMART-DONGLE-WLAN-FE-SUPPORTING-WLAN-HOTSPOT | FV-HUAWEI-ACCESORIO-SMARTGUARD-CABLE-DE-COMUNICACION | FV-HUAWEI-SMARTGUARD-63A-S0 | SY-INSTALACION-BATERIA-Y-PEQUEN-6C01 | SY-LEGALIZACION-8837');
+comprueba('en trifásico, el SmartGuard T0', extrasSoloBateria(SOLO({ inversor_marca: 'huawei', bateria_marca: 'huawei', baterias_kwh: 10, backup: true, suministro: 'trifasico' })).some(function (x) { return x.producto_ref === 'FV-HUAWEI-SMARTGUARD-63A-T0'; }));
+igual('sin backup, ni SmartGuard ni cable', extrasSoloBateria(SOLO({ inversor_marca: 'huawei', bateria_marca: 'huawei', baterias_kwh: 10 })).length, 3);
+comprueba('los módulos del 894: 10 kWh con la LUNA2000-5-S1 son 2 y una base', modBase({ atributos: { capacidad_kwh: 5, base_ref: 'FV-HUAWEI-LUNA2000-S1-BASE-Y-MODULO-DE-CONTROL', modulos_por_base: 3 } }, 10) === '2+1');
+comprueba('todo lo añadido es una unidad y va marcado como del motor', extrasSoloBateria(dHua).every(function (x) { return x.cantidad === 1 && x._auto === 'solo_bateria'; }));
+var sSin = presupuestarSoloBateria(SOLO({ bateria_marca: 'byd' }), config);
+comprueba('sin kWh avisa y pone la capacidad por defecto', sSin.lineas.length > 0 && sSin.incidencias.some(function (i) { return i.campo === 'baterias_kwh'; }));
+comprueba('WECO con backup: avisa de que el backup no entra solo', presupuestarSoloBateria(SOLO({ inversor_marca: 'deye', bateria_marca: 'weco', baterias_kwh: 10, backup: true, bateria_ref: 'X' }), config).incidencias.some(function (i) { return i.campo === 'backup'; }));
+comprueba('una instalación completa no cambia: sigue sin ser solo batería', !esSoloBateria(con({ baterias: 'si', baterias_kwh: 10 })));
+
+
 resultado();

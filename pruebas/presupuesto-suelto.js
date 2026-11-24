@@ -100,6 +100,28 @@ setTimeout(function () {
   comprueba('con paneles, mandan los paneles', vPresuNuevo().indexOf('Los paneles mandan') > -1 && datosDelSuelto(V.suelto).paneles_manual === 12);
   V.suelto.paneles = ''; V.suelto.kwp = '';
 
+  titulo('fotovoltaica sin visita: solo batería (24-11-2026)');
+  A.presuSueltoChip('inversor', 'huawei'); A.presuSueltoChip('fases', 'monofasico');
+  V.suelto.bateria = ''; V.suelto.bateria_marca = '';
+  hs = vPresuNuevo();
+  comprueba('se pregunta qué se presupuesta, y de entrada es la instalación completa', hs.indexOf('>Alcance<') > -1 && hs.indexOf('data-k="solo_bateria" data-v="1"') > -1 && hs.indexOf('data-k="paneles"') > -1 && datosDelSuelto(V.suelto).solo_bateria === false);
+  A.presuSueltoChip('solo_bateria', '1');
+  hs = vPresuNuevo();
+  comprueba('solo batería: fuera paneles, consumo y montaje', V.suelto.solo_bateria === true && hs.indexOf('data-k="paneles"') < 0 && hs.indexOf('data-k="consumo"') < 0 && hs.indexOf('Cubierta') < 0 && hs.indexOf('data-k="por_fila"') < 0);
+  comprueba('quedan el inversor que tiene, el suministro, la batería y el backup', hs.indexOf('Inversor que ya tiene') > -1 && hs.indexOf('Trifásico') > -1 && hs.indexOf('data-k="bateria"') > -1 && hs.indexOf('Huawei LUNA2000') > -1 && hs.indexOf('Con backup') > -1);
+  comprueba('y dice lo que entra además', hs.indexOf('Instalación batería y pequeño material') > -1 && hs.indexOf('Legalización') > -1);
+  V.suelto.bateria = '10'; A.presuSueltoChip('backup', '1');
+  comprueba('con backup y Huawei: el SmartGuard', vPresuNuevo().indexOf('SmartGuard') > -1);
+  ds = datosDelSuelto(V.suelto);
+  igual('al motor va marcado como solo batería, con batería', ds.solo_bateria + '|' + ds.baterias + '|' + ds.baterias_kwh + '|' + ds.backup + '|' + ds.inversor_marca, 'true|si|10|true|huawei');
+  igual('sin marca elegida, la primera que va con ese inversor', ds.bateria_marca, 'huawei');
+  V.suelto.bateria = '';
+  comprueba('sin kWh sigue siendo con batería (el motor avisa de los kWh)', datosDelSuelto(V.suelto).baterias === 'si' && bateriaBaseFV().con === true && bateriaBaseFV().marca === 'huawei');
+  comprueba('en las opciones no se puede quitar la batería', soloBateriaFV() === true);
+  A.presuSueltoChip('solo_bateria', '');
+  comprueba('y se vuelve a la instalación completa', V.suelto.solo_bateria === false && vPresuNuevo().indexOf('data-k="paneles"') > -1 && datosDelSuelto(V.suelto).baterias === 'no' && soloBateriaFV() === false);
+  A.presuSueltoChip('backup', ''); A.presuSueltoChip('inversor', 'enphase');
+
   A.presuSueltoChip('cat', 'electricidad');
   comprueba('electricidad avisa de que no tiene reglas', vPresuNuevo().indexOf('Todavía no hay reglas') > -1);
   comprueba('y solo se puede montar libre', V.suelto.libre === true && vPresuNuevo().indexOf('Con el motor') < 0);

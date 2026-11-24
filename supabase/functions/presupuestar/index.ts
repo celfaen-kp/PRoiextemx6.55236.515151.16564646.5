@@ -41,7 +41,7 @@ import { calcular, resumenDe, lineaManual, preciosProducto, MOTOR_VERSION } from
 import { cadenaPrecios, totalCoste } from './cadena.js';
 // El cálculo híbrido de fotovoltaica (v2 de Ramón + capítulos) vive en
 // hibrido.js, compartido con las pruebas y los informes.
-import { presupuestarFV, bateriaDeCatalogo } from './hibrido.js';
+import { presupuestarFV, bateriaDeCatalogo, presupuestarSoloBateria, extrasSoloBateria, esSoloBateria } from './hibrido.js';
 import { conInversoresDelCatalogo, calcularFV } from './fv.js';
 import { leerRutaFV, ponerRutaFV, listaModeloFV, valorDesdeCosteUd, productoPara, conceptoPara, planMargen, categoriaDeTarifa } from './precios.js';
 import { opcionesAero, sustituirEquiposAero, esInercia, esAcumuladorAcs } from './aero.js';
@@ -721,6 +721,11 @@ Deno.serve(async (req) => {
       } else avisoCertificado = 'El certificado energético (' + REF_CERTIFICADO_FV + ') no está en el catálogo o no tiene precio: no se ha incluido en los trámites.';
     }
   }
+  // Solo batería (Enzo, 24-11-2026): el cliente ya tiene placas. No entra el
+  // presupuestador de la instalación: batería, backup, su instalación y la
+  // legalización (hibrido.js · presupuestarSoloBateria y extrasSoloBateria).
+  const soloBateria = !!modeloFV && !!datos && esSoloBateria(datos);
+  if (soloBateria) datos = Object.assign({}, datos, { baterias: 'si' });
   // Batería compatible con el inversor (Enzo, 26-10-2026): Deye solo con WECO o
   // Deye, Enphase con Enphase o Tesla, Fronius con BYD, Fronius Reserva o Tesla.
   // Si la ficha o la opción traen otra, se cambia a la primera compatible y se avisa.
@@ -730,7 +735,9 @@ Deno.serve(async (req) => {
     const marcaInv = String(datos.inversor_marca || 'fronius').toLowerCase();
     const conBat = String(datos.baterias || '') === 'si' || Number(datos.baterias_kwh) > 0;
     const ok = COMPAT[marcaInv] || COMPAT.fronius;
-    const marcaBat = String(datos.bateria_marca || '').toLowerCase();
+    let marcaBat = String(datos.bateria_marca || '').toLowerCase();
+    // Solo batería sin marca: la primera que va con ese inversor.
+    if (soloBateria && !marcaBat) { marcaBat = ok[0]; datos = Object.assign({}, datos, { bateria_marca: ok[0] }); }
     if (conBat && marcaBat && !ok.includes(marcaBat)) {
       datos = Object.assign({}, datos, { bateria_marca: ok[0], bateria_ref: null });
       avisoBateria = 'Batería ' + marcaBat.toUpperCase() + ' no va con inversor ' + marcaInv.toUpperCase() + ': se presupuesta con ' + ok[0].toUpperCase() + '. Las compatibles son ' + ok.map((x) => x.toUpperCase()).join(', ') + '.';
@@ -751,6 +758,7 @@ Deno.serve(async (req) => {
   // deno-lint-ignore no-explicit-any
   const res: any = libre
     ? { lineas: [], incidencias: [], variables: {}, resumen: null, recargo_sobre_coste: null }
+    : soloBateria ? presupuestarSoloBateria(datos, cfg)
     : modeloFV ? presupuestarFV(datos, modeloFV, cfg)
     // Aire (19-11-2026): potencia elegida a mano y varios sistemas (un 2x1 y un 1x1) en un presupuesto.
     : categoria === 'aire_acondicionado' ? calcularAire(datos, cfg, calcular, resumenDe)
@@ -772,7 +780,7 @@ Deno.serve(async (req) => {
     }
   }
   if (avisoBateria) res.incidencias.unshift({ nivel: 'aviso', codigo: 'bateria_incompatible', mensaje: avisoBateria, campo: 'bateria_marca' });
-  if (avisoCertificado && modeloFV && !libre) res.incidencias.push({ nivel: 'aviso', codigo: 'certificado_sin_precio', mensaje: avisoCertificado, campo: null });
+  if (avisoCertificado && modeloFV && !libre && !soloBateria) res.incidencias.push({ nivel: 'aviso', codigo: 'certificado_sin_precio', mensaje: avisoCertificado, campo: null });
   const motorVersion = libre ? 'libre' : modeloFV ? res.motor_version : MOTOR_VERSION;
 
   const dtoGlobal = b.dto_global_pct != null
@@ -797,6 +805,8 @@ Deno.serve(async (req) => {
     const bb = bateriaDeCatalogo(pb, datos.baterias_kwh);
     if (bb.base_ref && bb.bases > 0) extrasBrutos.push({ producto_ref: bb.base_ref, cantidad: bb.bases, _auto: 'bateria_base' });
   }
+  // Solo batería: detrás de la batería, sus accesorios (Huawei), la instalación y la legalización.
+  if (soloBateria) extrasSoloBateria(datos).forEach((x) => extrasBrutos.push(x));
   // deno-lint-ignore no-explicit-any
   const productosExtra: Record<string, any> = {};
   const refsExtra = [...new Set(extrasBrutos.map((l) => String(l.producto_ref || '')).filter(Boolean))];
@@ -806,8 +816,18 @@ Deno.serve(async (req) => {
     if (!prods) prods = (await sb.from('productos').select(cols).in('referencia', refsExtra)).data;
     (prods || []).forEach((p) => { if (!productosExtra[p.referencia]) productosExtra[p.referencia] = p; });
   }
-  const extra = extrasBrutos.map((l) => {
+  // En solo batería, lo que pone el motor va delante de lo añadido a mano; y lo
+  // que no esté en el catálogo (o esté inactivo) no entra a cero: se avisa.
+  // deno-lint-ignore no-explicit-any
+  let extrasOrden: any[] = extrasBrutos;
+  if (soloBateria) {
+    const faltan = extrasBrutos.filter((l) => l._auto === 'solo_bateria' && !(productosExtra[String(l.producto_ref)] && productosExtra[String(l.producto_ref)].activo !== false));
+    faltan.forEach((l) => res.incidencias.push({ nivel: 'error', codigo: 'solo_bateria_sin_producto', mensaje: 'Solo batería: «' + String(l.producto_ref) + '» no está en el catálogo (o está inactivo) y no se ha incluido. Añádelo a mano.', campo: null }));
+    extrasOrden = extrasBrutos.filter((l) => l._auto && !faltan.includes(l)).concat(extrasBrutos.filter((l) => !l._auto));
+  }
+  const extra = extrasOrden.map((l) => {
     const prod = productosExtra[String(l.producto_ref || '')] || null;
+    if (l._auto === 'solo_bateria' && prod) { l.descripcion = prod.nombre; l.unidad = prod.unidad || 'ud'; }
     if (l._auto === 'bateria' && prod) {
       const cap = Number((prod.atributos || {}).capacidad_kwh) || 0;
       const kwh = Number(datos.baterias_kwh) || 0;
@@ -816,7 +836,7 @@ Deno.serve(async (req) => {
     }
     if (l._auto === 'bateria_base' && prod) { l.descripcion = prod.nombre; l.unidad = prod.unidad || 'ud'; l.seccion = 'Almacenamiento'; }
     const linea = lineaManual(l, prod, cfg.lookup);
-    if (l._auto === 'bateria' || l._auto === 'bateria_base') linea.origen_inputs = { auto: l._auto, ref: String(l.producto_ref || '') };
+    if (l._auto === 'bateria' || l._auto === 'bateria_base' || l._auto === 'solo_bateria') linea.origen_inputs = { auto: l._auto, ref: String(l.producto_ref || '') };
     return linea;
   });
   res.lineas = res.lineas.concat(extra);
@@ -954,6 +974,18 @@ Deno.serve(async (req) => {
     }
     titulo = ((cabecera ? cabecera + ' · ' : '') + detalle).slice(0, 200);
   }
+  // Solo batería: «cliente · Batería Huawei LUNA2000 10 kWh».
+  if (soloBateria) {
+    const MARCAS_BAT: Record<string, string> = { byd: 'BYD', fronius: 'Fronius Reserva', tesla: 'Tesla Powerwall', enphase: 'Enphase IQ Battery', weco: 'WECO', deye: 'Deye', huawei: 'Huawei LUNA2000' };
+    const marca = String(datos.bateria_marca || '').toLowerCase();
+    const detalle = ('Batería ' + (MARCAS_BAT[marca] || marca.toUpperCase())).trim() + (Number(datos.baterias_kwh) > 0 ? ' ' + String(Number(datos.baterias_kwh)).replace('.', ',') + ' kWh' : '');
+    let cabecera = titulo;
+    if (!cabecera && clienteId) {
+      const { data: cli } = await sb.from('clientes_cache').select('nombre').eq('id', clienteId).maybeSingle();
+      cabecera = cli?.nombre || null;
+    }
+    titulo = ((cabecera ? cabecera + ' · ' : '') + detalle).slice(0, 200);
+  }
   // Presupuesto conjunto (21-10-2026): «+ Aerotermia + Aire acondicionado» al final del título.
   const sufijo = String(b.titulo_sufijo || '').trim().slice(0, 80);
   if (sufijo) titulo = ((titulo || '') + ' + ' + sufijo).replace(/^ \+ /, '').slice(0, 200);
@@ -971,7 +1003,7 @@ Deno.serve(async (req) => {
     tarifa_id: tarifaId,
     motor_version: motorVersion,
     // Con qué modelo FV v2 se calculó (columna de la etapa 74; solo cuando lo hay).
-    ...(modeloFV ? { modelo_id: modeloFV.id } : {}),
+    ...(modeloFV && !soloBateria ? { modelo_id: modeloFV.id } : {}),
     total_bruto: totales.total_bruto,
     total_dto_linea: totales.total_dto_linea,
     dto_global_pct: dtoGlobal,
