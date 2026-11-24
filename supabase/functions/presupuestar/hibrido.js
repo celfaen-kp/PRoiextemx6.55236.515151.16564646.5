@@ -194,8 +194,15 @@ export function presupuestarFV(datos, mod, cfg) {
 //     Huawei, del catálogo: el modelo se elige en «Batería» y entran los
 //     módulos que hagan falta (y la base de la LUNA2000), igual que siempre
 //     (lo hace la función con bateriaDeCatalogo);
-//   · con Huawei, además, el Smart Dongle y, si es con backup, el SmartGuard
-//     del suministro (S0 monofásico, T0 trifásico) con su cable de comunicación;
+//   · con Huawei, además: con backup, el SmartGuard del suministro (S0
+//     monofásico, T0 trifásico) con su cable de comunicación; sin backup, el
+//     Smart Dongle. Los dos a la vez no: el SmartGuard lleva dentro el
+//     SmartAssistant y el manual de Huawei dice que en una planta solo se
+//     instala uno de los dos, o la comunicación falla («Residential Smart PV
+//     Solution User Manual (SmartAssistant Networking and SmartGuard
+//     Networking)», apartado PV+ESS, support.huawei.com, doc EDOC1100323733,
+//     leído el 24-11-2026). Las fases de cada SmartGuard y el cable como pieza
+//     aparte (04072551), de los manuales del SmartGuard-63A-S0 y -T0;
 //   · «Instalación batería y pequeño material» y «Legalización»: los dos
 //     productos del catálogo propio que Enzo usó en el 894, a su precio del
 //     catálogo (se cambian en Ajustes → Precios).
@@ -244,6 +251,10 @@ export function presupuestarSoloBateria(datos, cfg) {
   } else if (deCatalogo && !BAT_DE_CATALOGO.includes(marcaBat)) {
     aviso('Con inversor ' + marcaInv.toUpperCase() + ' la batería se elige del catálogo, en «Batería».', 'bateria_ref');
   }
+  if (marcaBat === 'huawei') {
+    aviso(siHib(d.backup) ? 'Huawei con backup: entra el SmartGuard ' + (/^trif/i.test(String(d.suministro || '')) ? '63A-T0 (trifásico)' : '63A-S0 (monofásico)') + ' con su cable, y no el Smart Dongle: el SmartGuard ya lleva la comunicación y Huawei indica instalar solo uno de los dos. Comprueba que el inversor que tiene es de las series que admite ese SmartGuard.'
+      : 'Huawei sin backup: entra el Smart Dongle. Quítalo si el inversor ya tiene el suyo.', 'backup');
+  }
   if (siHib(d.backup) && (marcaBat === 'weco' || marcaBat === 'deye')) aviso('Backup con ' + marcaBat.toUpperCase() + ': no entra solo. Añádelo del catálogo si hace falta.', 'backup');
   return {
     lineas, incidencias,
@@ -265,11 +276,11 @@ export function extrasSoloBateria(datos) {
   const pon = (ref, seccion) => ({ producto_ref: ref, cantidad: 1, seccion, _auto: 'solo_bateria' });
   const out = [];
   if (marcaBat === 'huawei') {
-    out.push(pon(SOLO_BATERIA.huawei_dongle, SEC_BATERIA));
+    // SmartGuard o Smart Dongle, nunca los dos (manual de Huawei, arriba).
     if (siHib(d.backup)) {
       out.push(pon(SOLO_BATERIA.huawei_cable, SEC_BATERIA));
       out.push(pon(/^trif/i.test(String(d.suministro || '')) ? SOLO_BATERIA.huawei_backup_tri : SOLO_BATERIA.huawei_backup_mono, SEC_BATERIA));
-    }
+    } else out.push(pon(SOLO_BATERIA.huawei_dongle, SEC_BATERIA));
   }
   out.push(pon(SOLO_BATERIA.instalacion, SEC_INSTALACION));
   out.push(pon(SOLO_BATERIA.legalizacion, SEC_INSTALACION));

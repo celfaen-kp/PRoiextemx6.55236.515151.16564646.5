@@ -525,15 +525,18 @@ var sEnp = presupuestarSoloBateria(SOLO({ inversor_marca: 'enphase', bateria_mar
 igual('Enphase 10 kWh: dos IQ Battery 5P', refsDe(sEnp), '2×FV-ENPHASE-IQ-BATTERY-5P');
 var sFro = presupuestarSoloBateria(SOLO({ bateria_marca: 'fronius', baterias_kwh: 6 }), config);
 comprueba('Fronius Reserva 6 kWh: 2 módulos y su BMS con base', cant(sFro, 'FV-FRONIUS-BATERIA-RESERVA-MODULO-3-15-KWH') === 2 && cant(sFro, 'FV-FRONIUS-BATERIA-RESERVA-BMS-Y-BASE') === 1 && sFro.lineas.length === 2);
-// Huawei: como el presupuesto 894 de Enzo (2 módulos LUNA2000-5-S1, base, dongle, cable, SmartGuard, instalación y legalización).
+// Huawei: como el presupuesto 894 de Enzo (2 módulos LUNA2000-5-S1, base, cable, SmartGuard, instalación y legalización),
+// menos el Smart Dongle: con SmartGuard no va (manual de Huawei: solo uno de los dos).
 var dHua = SOLO({ inversor_marca: 'huawei', bateria_marca: 'huawei', baterias_kwh: 10, backup: true });
 var sHua = presupuestarSoloBateria(dHua, config);
 comprueba('Huawei: el motor por capítulos no pone nada (la batería es del catálogo) y pide elegir el modelo', sHua.lineas.length === 0 && sHua.incidencias.some(function (i) { return i.campo === 'bateria_ref' && i.mensaje.indexOf('LUNA2000') > 0; }));
 comprueba('con el modelo elegido ya no lo pide', !presupuestarSoloBateria(SOLO({ inversor_marca: 'huawei', bateria_marca: 'huawei', baterias_kwh: 10, bateria_ref: 'FV-HUAWEI-LUNA2000-5-S1-MODULO-DE-BATERIA' }), config).incidencias.some(function (i) { return i.campo === 'bateria_ref'; }));
-igual('Huawei monofásico con backup: dongle, cable, SmartGuard S0, instalación y legalización, en ese orden', extrasSoloBateria(dHua).map(function (x) { return x.producto_ref; }).join(' | '),
-  'FV-HUAWEI-SMART-DONGLE-WLAN-FE-SUPPORTING-WLAN-HOTSPOT | FV-HUAWEI-ACCESORIO-SMARTGUARD-CABLE-DE-COMUNICACION | FV-HUAWEI-SMARTGUARD-63A-S0 | SY-INSTALACION-BATERIA-Y-PEQUEN-6C01 | SY-LEGALIZACION-8837');
+igual('Huawei monofásico con backup: cable, SmartGuard S0, instalación y legalización, en ese orden y sin dongle', extrasSoloBateria(dHua).map(function (x) { return x.producto_ref; }).join(' | '),
+  'FV-HUAWEI-ACCESORIO-SMARTGUARD-CABLE-DE-COMUNICACION | FV-HUAWEI-SMARTGUARD-63A-S0 | SY-INSTALACION-BATERIA-Y-PEQUEN-6C01 | SY-LEGALIZACION-8837');
+comprueba('y avisa de por qué no va el dongle', sHua.incidencias.some(function (i) { return i.campo === 'backup' && i.mensaje.indexOf('no el Smart Dongle') > 0 && i.mensaje.indexOf('63A-S0') > 0; }));
 comprueba('en trifásico, el SmartGuard T0', extrasSoloBateria(SOLO({ inversor_marca: 'huawei', bateria_marca: 'huawei', baterias_kwh: 10, backup: true, suministro: 'trifasico' })).some(function (x) { return x.producto_ref === 'FV-HUAWEI-SMARTGUARD-63A-T0'; }));
-igual('sin backup, ni SmartGuard ni cable', extrasSoloBateria(SOLO({ inversor_marca: 'huawei', bateria_marca: 'huawei', baterias_kwh: 10 })).length, 3);
+igual('sin backup, el Smart Dongle y ni SmartGuard ni cable', extrasSoloBateria(SOLO({ inversor_marca: 'huawei', bateria_marca: 'huawei', baterias_kwh: 10 })).map(function (x) { return x.producto_ref; }).join(' | '),
+  'FV-HUAWEI-SMART-DONGLE-WLAN-FE-SUPPORTING-WLAN-HOTSPOT | SY-INSTALACION-BATERIA-Y-PEQUEN-6C01 | SY-LEGALIZACION-8837');
 comprueba('los módulos del 894: 10 kWh con la LUNA2000-5-S1 son 2 y una base', modBase({ atributos: { capacidad_kwh: 5, base_ref: 'FV-HUAWEI-LUNA2000-S1-BASE-Y-MODULO-DE-CONTROL', modulos_por_base: 3 } }, 10) === '2+1');
 comprueba('todo lo añadido es una unidad y va marcado como del motor', extrasSoloBateria(dHua).every(function (x) { return x.cantidad === 1 && x._auto === 'solo_bateria'; }));
 var sSin = presupuestarSoloBateria(SOLO({ bateria_marca: 'byd' }), config);

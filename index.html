@@ -562,7 +562,7 @@ import * as idiomas from './presu-idiomas.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '33.8'; // versión visible de la app (única fuente)
+const APP_VERSION = '33.9'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -11954,15 +11954,15 @@ function camposSolarHTML(f) {
       <input class="inp" data-f="presuCampo" data-k="bateria" value="${esc(String(f.bateria))}" inputmode="decimal" placeholder="10">
       <div class="lbl" style="margin:16px 0 8px">De qué marca</div>
       <div class="wrap">${marcas.map(([m, t]) => chip('bateria_marca', m, t, marcaSel)).join('')}</div>
-      <div class="tiny" style="margin-top:8px">${BATERIAS_DE_CATALOGO.includes(marcaSel) ? 'El modelo se elige al calcular, en «Batería»: entran las unidades que hagan falta para los kWh' + (marcaSel === 'huawei' ? ', la base de control y el Smart Dongle.' : '.')
+      <div class="tiny" style="margin-top:8px">${BATERIAS_DE_CATALOGO.includes(marcaSel) ? 'El modelo se elige al calcular, en «Batería»: entran las unidades que hagan falta para los kWh' + (marcaSel === 'huawei' ? ' y la base de control.' : '.')
         : marcaSel === 'tesla' ? 'Powerwall 3 del suministro (lleva su inversor dentro); una expansión por cada 13,5 kWh más.' : 'Los módulos que hagan falta para los kWh, con su base.'}</div>
       <div class="lbl" style="margin:16px 0 8px">¿Con backup?</div>
       <div class="wrap">${chip('backup', '', 'Sin backup', f.backup ? '1' : '')}${chip('backup', '1', 'Con backup', f.backup ? '1' : '')}</div>
       ${f.backup && f.inversor === 'fronius' && marcaSel !== 'tesla' ? `<div class="wrap" style="margin-top:8px">${chip('backup_modo', 'automatico', 'Automático (full backup)')}${chip('backup_modo', 'manual', 'Manual (conmutador)')}</div>` : ''}
-      <div class="tiny" style="margin-top:8px">${!f.backup ? 'Con backup la casa sigue con luz si se va la red.'
+      <div class="tiny" style="margin-top:8px">${!f.backup ? 'Con backup la casa sigue con luz si se va la red.' + (marcaSel === 'huawei' ? ' Sin backup, con Huawei entra el Smart Dongle.' : '')
         : marcaSel === 'tesla' ? 'Con Tesla: Backup Gateway 2.'
         : marcaSel === 'enphase' ? 'Con Enphase: IQ System Controller.'
-        : marcaSel === 'huawei' ? 'Con Huawei: el SmartGuard del suministro, con su cable de comunicación.'
+        : marcaSel === 'huawei' ? 'Con Huawei: el SmartGuard del suministro con su cable de comunicación, en vez del Smart Dongle (Huawei indica instalar solo uno de los dos).'
         : f.inversor === 'deye' ? 'Con Deye el backup no entra solo: añádelo del catálogo si hace falta.'
         : 'Con Fronius: PV Point Comfort. El Backup Switch se añade del catálogo si hace falta.'}</div>
       <div class="tiny" style="margin-top:14px">Entran también «Instalación batería y pequeño material» y «Legalización», a su precio del catálogo (se cambian en Precios).</div>`;
