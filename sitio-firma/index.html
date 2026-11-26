@@ -11,7 +11,7 @@ body{margin:0;background:#f5f4ef;font-family:Arial,Helvetica,sans-serif;color:#1
 .w{max-width:720px;margin:0 auto;padding:22px 14px 60px}
 .c{background:#fff;border-radius:18px;padding:22px 20px;margin-bottom:16px;box-shadow:0 2px 8px rgba(20,23,15,.06)}
 h1{font-size:24px;margin:0 0 6px}h2{font-size:15px;margin:18px 0 8px;color:#555;text-transform:uppercase;letter-spacing:.06em}
-.sub{color:#666;font-size:14px}.l{padding:10px 0;border-bottom:1px solid #eee;overflow:hidden}.l .n{font-weight:600;font-size:15px}.l .d{color:#555;font-size:13px;margin-top:3px;white-space:pre-wrap}
+.sub{color:#666;font-size:14px}.l{padding:10px 0;border-bottom:1px solid #eee;overflow:hidden}.l .n{font-weight:600;font-size:15px}.l .d{color:#555;font-size:13px;margin-top:3px;white-space:pre-wrap}.l .dt{font:600 10.5px ui-monospace,Menlo,monospace;letter-spacing:.09em;text-transform:uppercase;color:#444;margin-top:9px}.l .dp{color:#555;font-size:13px;line-height:1.4;margin-top:2px;padding-left:13px;text-indent:-13px}
 .l .q{color:#777;font-size:12px;margin-top:4px}.l .p{float:right;font-weight:600;font-size:15px;margin-left:12px}
 .t{display:flex;justify-content:space-between;padding:6px 0;font-size:15px}.t.big{font-size:21px;font-weight:700;border-top:2px solid #14170f;padding-top:12px;margin-top:8px}
 .inp{width:100%;box-sizing:border-box;padding:13px 14px;border:1.5px solid #d9d8d2;border-radius:12px;font-size:16px;margin-top:8px;font-family:inherit}
@@ -41,6 +41,18 @@ textarea.inp{min-height:120px;resize:vertical;line-height:1.45}
   var t = new URLSearchParams(location.search).get('t') || '';
   var app = document.getElementById('app');
   var esc = function (s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); };
+  // El detalle de la instalación llave en mano («BLOQUE: a; b · BLOQUE: c») sale en
+  // listado, no en un párrafo (26-11-2026); lo demás, como texto. Igual que en el PDF.
+  var detalle = function (texto) {
+    if (!texto) return '';
+    var trozos = String(texto).trim().split(/\s+·\s+/), grupos = [], ok = trozos.length > 1;
+    for (var i = 0; ok && i < trozos.length; i++) {
+      var m = /^([^:;]{2,60}):\s+([\s\S]+)$/.exec(trozos[i]);
+      if (m) grupos.push({ t: m[1].trim(), p: m[2].split(/;\s+/) }); else ok = false;
+    }
+    if (!ok) return '<div class="d">' + esc(texto) + '</div>';
+    return grupos.map(function (g) { return '<div class="dt">' + esc(g.t) + '</div>' + g.p.map(function (x) { return x.trim() ? '<div class="dp">•&nbsp;&nbsp;' + esc(x.trim()) + '</div>' : ''; }).join(''); }).join('');
+  };
   // La página en el idioma en que se mandó el presupuesto (6-11-2026): es, en, ca, de.
   var LOC = { es: 'es-ES', en: 'en-GB', ca: 'ca-ES', de: 'de-DE' };
   var TXT = {
@@ -73,7 +85,7 @@ textarea.inp{min-height:120px;resize:vertical;line-height:1.45}
     if (firmado) h += '<div class="c"><div class="ok">' + rellena(T.ya, { n: esc(p.firma_nombre), f: fecha(p.firmado_at) }) + '</div></div>';
     if (rechazado) h += '<div class="c"><div class="nota gris">' + T.rech_ya + '</div></div>';
     if (cambios) h += '<div class="c" id="pedido"><div class="nota">' + rellena(T.mod_pend, { f: fecha(cambios.at) }) + (cambios.texto ? '<div class="cita"><b>' + T.su_coment + '</b>' + esc(cambios.texto) + '</div>' : '') + '</div></div>';
-    h += '<div class="c">' + secciones.map(function (s) { return '<h2>' + esc(s.nombre) + '</h2>' + s.lineas.map(function (l) { return '<div class="l"><span class="p">' + eur(l.precio_venta) + '</span><div class="n">' + esc(l.descripcion) + '</div>' + (l.detalle_tecnico ? '<div class="d">' + esc(l.detalle_tecnico) + '</div>' : '') + '<div class="q">' + esc(l.cantidad) + ' ' + esc(l.unidad || 'ud') + ' × ' + eur(l.precio_tarifa) + (Number(l.dto_linea_pct) ? ' · −' + esc(l.dto_linea_pct) + ' %' : '') + '</div></div>'; }).join(''); }).join('')
+    h += '<div class="c">' + secciones.map(function (s) { return '<h2>' + esc(s.nombre) + '</h2>' + s.lineas.map(function (l) { return '<div class="l"><span class="p">' + eur(l.precio_venta) + '</span><div class="n">' + esc(l.descripcion) + '</div>' + detalle(l.detalle_tecnico) + '<div class="q">' + esc(l.cantidad) + ' ' + esc(l.unidad || 'ud') + ' × ' + eur(l.precio_tarifa) + (Number(l.dto_linea_pct) ? ' · −' + esc(l.dto_linea_pct) + ' %' : '') + '</div></div>'; }).join(''); }).join('')
       + '<div style="margin-top:14px">' + (d.totales.dto_global_pct ? '<div class="t"><span>' + T.suma + '</span><span>' + eur(d.totales.bruto) + '</span></div><div class="t"><span>' + T.dto + ' ' + esc(d.totales.dto_global_pct) + ' %</span><span>−' + eur(d.totales.bruto - d.totales.base) + '</span></div>' : '')
       + '<div class="t"><span>' + T.base + '</span><span>' + eur(d.totales.base) + '</span></div><div class="t"><span>' + T.iva + '</span><span>' + eur(d.totales.iva) + '</span></div><div class="t big"><span>' + T.total + '</span><span>' + eur(d.totales.total) + '</span></div></div>'
       + (d.observaciones ? '<div class="obs"><b>' + (T.obs || 'Observaciones') + '</b>' + esc(d.observaciones) + '</div>' : '')
