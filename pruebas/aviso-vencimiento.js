@@ -8,7 +8,7 @@
 var fnA = read(RUTA_TMP + '/recordatorio-citas.ts');
 var bloque = fnA.slice(fnA.indexOf('  const AVISO_TXT'), fnA.indexOf('  // deno-lint-ignore no-explicit-any\n  const avisarClienteVencimiento'));
 // Se le quitan los tipos a mano: es JavaScript plano con cuatro anotaciones.
-bloque = bloque.replace(/: Record<string, Record<string, string>>/, '').replace(/\(s: unknown\)/, '(s)').replace(/ as string\)\);/, '));').replace(/\(p: any, nombre: string, sePuedeResponder: boolean\)/, '(p, nombre, sePuedeResponder)')
+bloque = bloque.replace(/: Record<string, Record<string, string>>/, '').replace(/\(s: unknown\)/, '(s)').replace(/ as string\)\);/, '));').replace(/\(p: any, nombre: string, sePuedeResponder: boolean, hoyISO\?: string\)/, '(p, nombre, sePuedeResponder, hoyISO)').replace(/\(d: Date\)/, '(d)')
   .replace(/\(s: string, v: Record<string, string>\)/, '(s, v)').replace(/const botones: \[string, string, string\]\[\] =/, 'const botones =').replace(/\/\/ deno-lint-ignore no-explicit-any\n/g, '');
 var hacer = new Function('ZONA', 'TEL', 'LOGO_URL', 'enlaceFirma', 'correoOficina', bloque + '\n return { AVISO_TXT: AVISO_TXT, correo: correoAvisoVencimiento };');
 var enlaceF = function (t) { return 'https://firma.sysefen.es/?t=' + t; };
@@ -17,7 +17,8 @@ var AVof = hacer('Europe/Madrid', '+34 600 000 000', 'https://x/logo.png', enlac
 var PV = function (extra) { var p = { id: 'p1', titulo: 'Paneles solares · Fronius · 5,1 kWp', categoria: 'solar', tl_numero: '912', token_cliente: 'tok123', vence: '2026-12-03', idioma_cliente: 'es' }; for (var k in extra) p[k] = extra[k]; return p; };
 
 titulo('el correo en español');
-var m = AV.correo(PV(), 'Marta');
+var HOY = '2026-11-26';
+var m = AV.correo(PV(), 'Marta', false, HOY);
 igual('el asunto, con el número y la fecha', m.asunto, 'Su presupuesto de Sysefen nº 912: validez hasta el 3 de diciembre de 2026');
 comprueba('recuerda la validez', m.texto.indexOf('le recordamos que el presupuesto «Paneles solares · Fronius · 5,1 kWp» (nº 912) tiene validez hasta el 3 de diciembre de 2026.') > -1);
 comprueba('pregunta si sigue adelante, con el tipo de instalación', m.texto.indexOf('1. ¿Sigue pensando en seguir adelante con la instalación de paneles solares?') > -1);
@@ -28,12 +29,12 @@ igual('cuatro botones, y el verde dice solo «Ver el presupuesto»', botones.joi
 comprueba('ya no dice «aceptar» en ningún botón', m.html.indexOf('Ver y aceptar') < 0);
 comprueba('en texto plano van también los cuatro enlaces', m.texto.indexOf('· Ver el presupuesto: https://firma.sysefen.es/?t=tok123\n') > -1 && m.texto.indexOf('&r=visita') > -1 && m.texto.indexOf('&r=tiempo') > -1 && m.texto.indexOf('&r=no') > -1);
 comprueba('si no hay a quién responder (sale de noreply) no invita a contestar al correo: da el teléfono', m.texto.indexOf('responder a este correo') < 0 && m.texto.indexOf('llámenos al +34 600 000 000') > -1);
-comprueba('si hay a quién responder, sí invita', AV.correo(PV(), 'Marta', true).texto.indexOf('También puede responder a este correo') > -1 && AV.correo(PV(), 'Marta', true).texto.indexOf('llámenos') < 0);
+comprueba('si hay a quién responder, sí invita', AV.correo(PV(), 'Marta', true, HOY).texto.indexOf('También puede responder a este correo') > -1 && AV.correo(PV(), 'Marta', true, HOY).texto.indexOf('llámenos') < 0);
 comprueba('la respuesta al correo va a la oficina y, si no está puesta, a quien envió el presupuesto', fnA.indexOf('let responderA = correoOficina;') > 0 && fnA.indexOf("if (!responderA && p.enviado_cliente_por)") > 0 && fnA.indexOf("responderA ? { reply_to: responderA } : {}") > 0 && fnA.indexOf('idioma_cliente, enviado_cliente_por, cliente:clientes_cache') > 0);
 comprueba('avisa de que pasada la fecha pueden cambiar los precios', m.texto.indexOf('los precios pueden cambiar') > -1);
 
 titulo('sea de lo que sea');
-var q1 = function (cat, idi) { var x = AV.correo(PV({ categoria: cat, idioma_cliente: idi || 'es' }), 'Marta').texto; var i = x.indexOf('1. '); return x.slice(i + 3, x.indexOf('\n', i)); };
+var q1 = function (cat, idi) { var x = AV.correo(PV({ categoria: cat, idioma_cliente: idi || 'es' }), 'Marta', false, HOY).texto; var i = x.indexOf('1. '); return x.slice(i + 3, x.indexOf('\n', i)); };
 igual('aerotermia', q1('aerotermia'), '¿Sigue pensando en seguir adelante con la instalación de aerotermia?');
 igual('aire acondicionado', q1('aire_acondicionado'), '¿Sigue pensando en seguir adelante con la instalación de aire acondicionado?');
 igual('electricidad', q1('electricidad'), '¿Sigue pensando en seguir adelante con la instalación eléctrica?');
@@ -42,7 +43,7 @@ igual('otro, o una categoría que no esté', q1('otro') + ' / ' + q1('lo_que_sea
 titulo('en el idioma en que se envió el presupuesto');
 var claves = Object.keys(AV.AVISO_TXT.es);
 comprueba('los cuatro idiomas tienen todos los textos', ['en', 'ca', 'de'].every(function (i) { return claves.every(function (k) { return typeof AV.AVISO_TXT[i][k] === 'string' && AV.AVISO_TXT[i][k].length > 0; }) && Object.keys(AV.AVISO_TXT[i]).length === claves.length; }));
-var en = AV.correo(PV({ idioma_cliente: 'en' }), 'Marta'), ca = AV.correo(PV({ idioma_cliente: 'ca' }), 'Marta'), de = AV.correo(PV({ idioma_cliente: 'de' }), 'Marta');
+var en = AV.correo(PV({ idioma_cliente: 'en' }), 'Marta', false, HOY), ca = AV.correo(PV({ idioma_cliente: 'ca' }), 'Marta', false, HOY), de = AV.correo(PV({ idioma_cliente: 'de' }), 'Marta', false, HOY);
 igual('inglés: asunto', en.asunto, 'Your Sysefen quote no. 912: valid until 3 December 2026');
 comprueba('inglés: las dos preguntas y el botón de ver', en.texto.indexOf('Are you still considering going ahead with the solar panel installation?') > -1 && en.texto.indexOf('Would a second visit help to clear up any questions?') > -1 && en.html.indexOf('>View the quote</a>') > -1);
 comprueba('catalán: las dos preguntas y el botón de ver', ca.asunto.indexOf('El seu pressupost de Sysefen núm. 912: validesa fins al 3 de desembre') === 0 && ca.texto.indexOf('Encara té previst tirar endavant amb la instal·lació de plaques solars?') > -1 && ca.texto.indexOf('Li aniria bé una segona visita per resoldre dubtes?') > -1 && ca.html.indexOf('>Veure el pressupost</a>') > -1);
@@ -50,8 +51,22 @@ comprueba('alemán: las dos preguntas y el botón de ver', de.asunto === 'Ihr An
 comprueba('un idioma que no esté, o ninguno: en español', AV.correo(PV({ idioma_cliente: 'fr' }), 'Marta').idioma === 'es' && AV.correo(PV({ idioma_cliente: null }), 'Marta').idioma === 'es');
 comprueba('los enlaces son los mismos en todos los idiomas', [en, ca, de].every(function (x) { return x.html.indexOf('?t=tok123&amp;r=visita') > -1 && x.html.indexOf('&amp;r=tiempo') > -1 && x.html.indexOf('&amp;r=no') > -1; }));
 
+titulo('ya vencido: el correo es de seguimiento (Enzo, 26-11-2026)');
+var VENC = { vence: '2026-11-03', enviado_cliente_at: '2026-10-19T09:30:00Z' };
+var v = AV.correo(PV(VENC), 'Marta', true, HOY);
+comprueba('se sabe vencido, y en plazo no', v.vencido === true && m.vencido === false);
+igual('el asunto ya no habla de validez', v.asunto, 'Su presupuesto de Sysefen nº 912: ¿seguimos adelante?');
+comprueba('dice cuándo se le envió, que la validez terminó y que se le actualiza', v.texto.indexOf('le escribimos por el presupuesto «Paneles solares · Fronius · 5,1 kWp» (nº 912) que le enviamos el 19 de octubre de 2026. Su validez terminó el 3 de noviembre de 2026, pero si sigue interesado se lo actualizamos sin compromiso.') > -1);
+comprueba('no dice «tiene validez hasta» una fecha pasada ni «pasada esa fecha»', v.texto.indexOf('tiene validez hasta') < 0 && v.texto.indexOf('Pasada esa fecha') < 0 && v.texto.indexOf('Los precios pueden haber cambiado desde entonces') > -1);
+comprueba('lleva las dos preguntas y los cuatro botones, igual', v.texto.indexOf('1. ¿Sigue pensando en seguir adelante con la instalación de paneles solares?') > -1 && v.texto.indexOf('2. ¿Le vendría bien una segunda visita') > -1 && v.html.split('<a href="').length - 1 === 4 && v.html.indexOf('>Ver el presupuesto</a>') > -1);
+comprueba('el día que vence todavía es recordatorio de validez', AV.correo(PV({ vence: HOY, enviado_cliente_at: '2026-11-11T09:30:00Z' }), 'Marta', true, HOY).vencido === false);
+var ven = AV.correo(PV(Object.assign({ idioma_cliente: 'en' }, VENC)), 'Marta', true, HOY), vca = AV.correo(PV(Object.assign({ idioma_cliente: 'ca' }, VENC)), 'Marta', true, HOY), vde = AV.correo(PV(Object.assign({ idioma_cliente: 'de' }, VENC)), 'Marta', true, HOY);
+comprueba('en inglés', ven.asunto === 'Your Sysefen quote no. 912: shall we go ahead?' && ven.texto.indexOf('that we sent you on 19 October 2026. Its validity ended on 3 November 2026') > -1);
+comprueba('en catalán', vca.asunto === 'El seu pressupost de Sysefen núm. 912: tirem endavant?' && vca.texto.indexOf('La seva validesa va acabar el 3 de novembre') > -1 && vca.texto.indexOf("l'actualitzem sense compromís") > -1);
+comprueba('en alemán', vde.asunto === 'Ihr Angebot von Sysefen Nr. 912: Sollen wir weitermachen?' && vde.texto.indexOf('das wir Ihnen am 19. Oktober 2026 gesendet haben. Die Gültigkeit endete am 3. November 2026') > -1);
+
 titulo('sin enlace (enviado por otro lado) y con caracteres raros');
-var sin = AV.correo(PV({ token_cliente: null }), 'Marta');
+var sin = AV.correo(PV({ token_cliente: null }), 'Marta', false, HOY);
 comprueba('sin enlace no hay botones, pero sí las preguntas y cómo contactar', sin.html.indexOf('<a href') < 0 && sin.texto.indexOf('1. ¿Sigue') > -1 && sin.texto.indexOf('llámenos') > -1 && sin.texto.indexOf('con un toque') < 0);
 comprueba('el título y el nombre van escapados en el HTML', AV.correo(PV({ titulo: 'Aire <b>x</b> & más' }), 'Ana <script>').html.indexOf('<script>') < 0 && AV.correo(PV({ titulo: 'Aire <b>x</b> & más' }), 'Ana').html.indexOf('Aire &lt;b&gt;x&lt;/b&gt; &amp; más') > -1);
 comprueba('la función lee el idioma del presupuesto y manda un correo por presupuesto', fnA.indexOf("token_cliente, idioma_cliente, enviado_cliente_por, cliente:clientes_cache") > 0 && fnA.indexOf('const m = correoAvisoVencimiento(p, nombre, !!responderA);') > 0);

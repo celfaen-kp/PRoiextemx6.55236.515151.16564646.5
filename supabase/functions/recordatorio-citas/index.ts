@@ -679,21 +679,25 @@ Deno.serve(async (req) => {
   // correo que abren los enlaces solos.
   const AVISO_TXT: Record<string, Record<string, string>> = {
     es: { loc: 'es-ES', num: ' nº ', asunto: 'Su presupuesto de Sysefen{num}: validez hasta el {f}', hola: 'Hola {n},', recuerda: 'le recordamos que el presupuesto {d} tiene validez hasta el {f}.',
+      asunto_v: 'Su presupuesto de Sysefen{num}: ¿seguimos adelante?', recuerda_v: 'le escribimos por el presupuesto {d} que le enviamos el {e}. Su validez terminó el {f}, pero si sigue interesado se lo actualizamos sin compromiso.', precios_v: 'Los precios pueden haber cambiado desde entonces; se los confirmamos al actualizarlo.',
       intro: 'Para poder ayudarle, nos gustaría saber dos cosas:', q1: '¿Sigue pensando en seguir adelante con {x}?', q2: '¿Le vendría bien una segunda visita para resolver dudas?',
       toque: 'Puede contestarnos con un toque:', b_ver: 'Ver el presupuesto', b_visita: 'Quiero una segunda visita', b_tiempo: 'Sigo interesado, necesito más tiempo', b_no: 'No voy a seguir adelante',
       responde: 'También puede responder a este correo con cualquier duda.', llama: 'Para cualquier duda, llámenos al {tel}.', precios: 'Pasada esa fecha, los precios pueden cambiar.', saludo: 'Un saludo,',
       solar: 'la instalación de paneles solares', aerotermia: 'la instalación de aerotermia', aire_acondicionado: 'la instalación de aire acondicionado', electricidad: 'la instalación eléctrica', otro: 'el trabajo presupuestado' },
     en: { loc: 'en-GB', num: ' no. ', asunto: 'Your Sysefen quote{num}: valid until {f}', hola: 'Hello {n},', recuerda: 'this is a reminder that the quote {d} is valid until {f}.',
+      asunto_v: 'Your Sysefen quote{num}: shall we go ahead?', recuerda_v: 'we are writing about the quote {d} that we sent you on {e}. Its validity ended on {f}, but if you are still interested we will gladly update it, with no obligation.', precios_v: 'Prices may have changed since then; we will confirm them when we update it.',
       intro: 'So that we can help you, we would like to know two things:', q1: 'Are you still considering going ahead with {x}?', q2: 'Would a second visit help to clear up any questions?',
       toque: 'You can answer with one tap:', b_ver: 'View the quote', b_visita: 'I would like a second visit', b_tiempo: 'I am still interested, I need more time', b_no: 'I will not go ahead',
       responde: 'You can also reply to this email with any questions.', llama: 'If you have any questions, call us on {tel}.', precios: 'After that date, prices may change.', saludo: 'Kind regards,',
       solar: 'the solar panel installation', aerotermia: 'the heat pump installation', aire_acondicionado: 'the air conditioning installation', electricidad: 'the electrical installation', otro: 'the quoted work' },
     ca: { loc: 'ca-ES', num: ' núm. ', asunto: 'El seu pressupost de Sysefen{num}: validesa fins al {f}', hola: 'Hola {n},', recuerda: 'li recordem que el pressupost {d} té validesa fins al {f}.',
+      asunto_v: 'El seu pressupost de Sysefen{num}: tirem endavant?', recuerda_v: 'li escrivim pel pressupost {d} que li vam enviar el {e}. La seva validesa va acabar el {f}, però si segueix interessat l\'actualitzem sense compromís.', precios_v: 'Els preus poden haver canviat des de llavors; els hi confirmarem en actualitzar-lo.',
       intro: 'Per poder ajudar-lo, ens agradaria saber dues coses:', q1: 'Encara té previst tirar endavant amb {x}?', q2: 'Li aniria bé una segona visita per resoldre dubtes?',
       toque: 'Ens pot respondre amb un toc:', b_ver: 'Veure el pressupost', b_visita: 'Vull una segona visita', b_tiempo: 'Segueixo interessat, necessito més temps', b_no: 'No tiraré endavant',
       responde: 'També pot respondre a aquest correu amb qualsevol dubte.', llama: 'Per a qualsevol dubte, truqui\'ns al {tel}.', precios: 'Passada aquesta data, els preus poden canviar.', saludo: 'Salutacions,',
       solar: 'la instal·lació de plaques solars', aerotermia: 'la instal·lació d\'aerotèrmia', aire_acondicionado: 'la instal·lació d\'aire condicionat', electricidad: 'la instal·lació elèctrica', otro: 'la feina pressupostada' },
     de: { loc: 'de-DE', num: ' Nr. ', asunto: 'Ihr Angebot von Sysefen{num}: gültig bis {f}', hola: 'Guten Tag {n},', recuerda: 'wir möchten Sie daran erinnern, dass das Angebot {d} bis zum {f} gültig ist.',
+      asunto_v: 'Ihr Angebot von Sysefen{num}: Sollen wir weitermachen?', recuerda_v: 'wir melden uns wegen des Angebots {d}, das wir Ihnen am {e} gesendet haben. Die Gültigkeit endete am {f}; wenn Sie weiterhin interessiert sind, aktualisieren wir es gerne unverbindlich.', precios_v: 'Die Preise können sich seitdem geändert haben; wir bestätigen sie Ihnen bei der Aktualisierung.',
       intro: 'Damit wir Ihnen weiterhelfen können, möchten wir zwei Dinge wissen:', q1: 'Möchten Sie {x} weiterhin umsetzen?', q2: 'Würde Ihnen ein zweiter Besuch helfen, offene Fragen zu klären?',
       toque: 'Sie können uns mit einem Klick antworten:', b_ver: 'Angebot ansehen', b_visita: 'Ich wünsche einen zweiten Besuch', b_tiempo: 'Ich bin weiterhin interessiert, brauche aber mehr Zeit', b_no: 'Ich möchte nicht fortfahren',
       responde: 'Sie können auch auf diese E-Mail antworten, wenn Sie Fragen haben.', llama: 'Bei Fragen erreichen Sie uns telefonisch unter {tel}.', precios: 'Nach diesem Datum können sich die Preise ändern.', saludo: 'Mit freundlichen Grüßen',
@@ -701,17 +705,24 @@ Deno.serve(async (req) => {
   };
   const escV = (s: unknown) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] as string));
   // deno-lint-ignore no-explicit-any
-  const correoAvisoVencimiento = (p: any, nombre: string, sePuedeResponder: boolean) => {
+  // Con el presupuesto ya vencido el correo es de seguimiento (Enzo, 26-11-2026: «el recordatorio
+  // es para ya vencidos prácticamente, para darle seguimiento»): no dice «tiene validez hasta»
+  // una fecha pasada, sino cuándo se le envió, que su validez terminó y que se le actualiza.
+  const correoAvisoVencimiento = (p: any, nombre: string, sePuedeResponder: boolean, hoyISO?: string) => {
     const idioma = AVISO_TXT[String(p.idioma_cliente || '')] ? String(p.idioma_cliente) : 'es';
     const T = AVISO_TXT[idioma];
     const rell = (s: string, v: Record<string, string>) => s.replace(/\{(\w+)\}/g, (_m, k) => (v[k] == null ? '' : v[k]));
-    const f = new Date(p.vence + 'T12:00:00').toLocaleDateString(T.loc, { timeZone: ZONA, day: 'numeric', month: 'long', year: 'numeric' });
+    const fechaL = (d: Date) => d.toLocaleDateString(T.loc, { timeZone: ZONA, day: 'numeric', month: 'long', year: 'numeric' });
+    const f = fechaL(new Date(p.vence + 'T12:00:00'));
+    const hoy = hoyISO || new Date().toLocaleDateString('sv-SE', { timeZone: ZONA });
+    const vencido = String(p.vence) < hoy;
+    const e = p.enviado_cliente_at ? fechaL(new Date(p.enviado_cliente_at)) : '';
     const num = p.tl_numero ? T.num + String(p.tl_numero) : '';
     const detalle = `«${p.titulo || ''}»${p.tl_numero ? ' (' + T.num.trim() + ' ' + p.tl_numero + ')' : ''}`;
     const x = T[String(p.categoria || '')] || T.otro;
-    const asunto = rell(T.asunto, { num, f });
-    const q1 = rell(T.q1, { x }), recuerda = rell(T.recuerda, { d: detalle, f }), hola = rell(T.hola, { n: nombre });
-    const pie = (sePuedeResponder ? T.responde : rell(T.llama, { tel: TEL })) + ' ' + T.precios;
+    const asunto = rell(vencido ? T.asunto_v : T.asunto, { num, f });
+    const q1 = rell(T.q1, { x }), recuerda = rell(vencido && e ? T.recuerda_v : T.recuerda, { d: detalle, f, e }), hola = rell(T.hola, { n: nombre });
+    const pie = (sePuedeResponder ? T.responde : rell(T.llama, { tel: TEL })) + ' ' + (vencido ? T.precios_v : T.precios);
     const enlace = p.token_cliente ? enlaceFirma(p.token_cliente) : '';
     const botones: [string, string, string][] = enlace ? [
       [T.b_ver, enlace, 'background:#206028;color:#fff;border:2px solid #206028'],
@@ -732,7 +743,7 @@ Deno.serve(async (req) => {
       ${botones.length ? `<p>${escV(T.toque)}</p>${botones.map(([t, u, e]) => `<p style="margin:8px 0"><a href="${escV(u)}" style="display:block;text-align:center;text-decoration:none;font-weight:700;padding:12px 18px;border-radius:12px;${e}">${escV(t)}</a></p>`).join('')}` : ''}
       <p style="color:#555;font-size:14px;margin-top:18px">${escV(pie)}</p>
       <p style="margin-top:22px">${escV(T.saludo)}<br><b>Sysefen</b></p></div>`;
-    return { idioma, asunto, texto, html, fecha: f };
+    return { idioma, asunto, texto, html, fecha: f, vencido };
   };
   // deno-lint-ignore no-explicit-any
   const avisarClienteVencimiento = async (lista: any[]) => {

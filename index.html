@@ -569,7 +569,7 @@ import * as idiomas from './presu-idiomas.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '34.7'; // versión visible de la app (única fuente)
+const APP_VERSION = '34.8'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -16256,7 +16256,7 @@ function sheet() {
   if (s.tipo === 'presuAvisoVenc') {
     return `<div class="sheet"><div>
       <div style="font:600 23px/1.15 var(--cond)">${s.otraVez ? '¿Volver a avisar' : '¿Avisar'} ${s.nombre ? 'a ' + esc(s.nombre) : 'al cliente'}?</div>
-      <div class="sub" style="margin-top:8px">Le llega un correo, en el idioma en que se le envió el presupuesto, recordándole que tiene validez hasta el ${s.vence ? fechaCorta(s.vence + 'T12:00') : '…'} y preguntándole dos cosas: si sigue pensando en seguir adelante y si le vendría bien una segunda visita para resolver dudas.</div>
+      <div class="sub" style="margin-top:8px">Le llega un correo, en el idioma en que se le envió el presupuesto, ${s.vence && s.vence < hoyISO() ? 'de seguimiento (su validez terminó el ' + fechaCorta(s.vence + 'T12:00') + ' y se le ofrece actualizarlo)' : 'recordándole que tiene validez hasta el ' + (s.vence ? fechaCorta(s.vence + 'T12:00') : '…')} y preguntándole dos cosas: si sigue pensando en seguir adelante y si le vendría bien una segunda visita para resolver dudas.</div>
       <div class="sub" style="margin-top:8px;font-size:13px">Contesta con un toque: ver el presupuesto, pedir una segunda visita, pedir más tiempo o decir que no sigue. Lo que conteste te llega por correo y a «Comentarios de presupuestos».</div>
       <div class="sub" style="margin-top:8px;font-size:13px">Va al correo que tiene en su ficha. Si no tiene, no se envía y te lo digo.</div>
       <div class="row g8" style="margin-top:18px">
