@@ -569,7 +569,7 @@ import * as idiomas from './presu-idiomas.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '34.4'; // versión visible de la app (única fuente)
+const APP_VERSION = '34.5'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -13197,6 +13197,9 @@ function seguimientoHTML(d) {
     <div style="margin-top:10px">${pasos.map(([t, sub, ok]) => `<div class="row g10" style="align-items:center;padding:7px 0;border-bottom:1px solid var(--l1)">
       <span class="dot" style="width:9px;height:9px;background:${ok ? 'var(--verde)' : 'rgba(var(--tinta-rgb),.15)'}"></span>
       <span class="grow" style="font:500 14px var(--sans);${ok ? '' : 'color:var(--t2)'}">${t}</span><span class="tiny">${esc(sub)}</span></div>`).join('')}</div>
+    ${presuCerradoSinAceptar(d) ? `<div class="presu-coment" style="margin-top:12px"><b>${d.respuesta_cliente === 'caducado' ? 'Caducado' : 'Rechazado por el cliente'}</b>${d.motivo_rechazo ? `<div class="tiny" style="margin-top:3px">${esc(d.motivo_rechazo)}</div>` : ''}
+      <button class="btn btn-verde" data-a="presuReabrir" style="margin-top:10px" ${busy ? 'disabled' : ''}>Reabrir: vuelve a «por revisar»</button>
+      <div class="tiny" style="margin-top:6px">Para rehacerlo y volver a enviarlo. Se quitan el ${d.respuesta_cliente === 'caducado' ? 'caducado' : 'rechazo'} y el envío anterior; lo que pasó queda en la ficha del cliente.${d.tl_quotation_id ? ' En Teamleader la oportunidad sigue como esté: si está perdida, reábrela allí.' : ''}</div></div>` : ''}
     ${!d.revisado_at && !d.enviado_cliente_at ? `<button class="btn btn-verde" data-a="presuRevisado" style="margin-top:12px" ${busy ? 'disabled' : ''}>Ya lo revisé</button>
       <div class="tiny" style="margin-top:6px;text-align:center">${d.tl_quotation_id ? 'Repásalo en Teamleader (precios, textos, descuento) y márcalo aquí.' : 'Lo normal: subirlo a Teamleader, repasarlo allí y marcarlo aquí.'}</div>`
     : !d.enviado_cliente_at ? `<button class="btn btn-verde btn-enviar" data-a="presuEnviarAbrir" style="margin-top:14px" ${busy ? 'disabled' : ''}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg><span>Enviar al cliente</span></button>
@@ -13236,10 +13239,40 @@ A.presuEnviadoCliente = async () => {
   catch (e) { avisar(/enviado_cliente/i.test(msgError(e)) ? 'Falta ejecutar sql/etapa64 en Supabase.' : 'No se pudo guardar: ' + msgError(e)); }
   V.presuSegBusy = false; render();
 };
+/* Reabrir un presupuesto rechazado o caducado (Enzo, 26-11-2026: «a los rechazados no puedo
+ * regresarlos a presupuesto por revisar… no me deja»). Vuelve a «por revisar» para rehacerlo y
+ * enviarlo otra vez: se quitan el rechazo y el envío anterior (lo que pasó queda en la ficha
+ * del cliente). `aEsperando`: solo se quita el rechazo y sigue como enviado. Deja apuntado
+ * cuándo se reabrió (sql/etapa131) para que la sincronización con Teamleader no lo devuelva. */
+const presuCerradoSinAceptar = (p) => !!p && ['rechazado', 'caducado'].includes(p.respuesta_cliente);
+function cambiosReabrir(p, aEsperando) {
+  const ahora = new Date().toISOString();
+  const c = { respuesta_cliente: 'pendiente', respondido_at: null, motivo_rechazo: null, reabierto_at: ahora, reabierto_por: miEmpId() || null };
+  // El comentario con el que lo rechazó desde su página ya está atendido.
+  if (p && p.comentario_cliente_at && !p.comentario_visto_at) { c.comentario_visto_at = ahora; c.comentario_visto_por = miEmpId() || null; }
+  if (!aEsperando) Object.assign(c, { estado: 'generado', revisado_at: null, revisado_por: null, enviado_cliente_at: null, enviado_cliente_por: null, prorroga_dias: 0, aviso_vencimiento_at: null, aviso_oficina_at: null });
+  return c;
+}
+async function reabrirPresupuesto(p, aEsperando) {
+  return Object.assign(p, await visitasDB.seguimientoPresupuesto(p.id, cambiosReabrir(p, aEsperando)));
+}
+A.presuReabrir = async () => {
+  const d = V.presuVer && V.presuVer.datos; if (!d || V.presuSegBusy || !presuCerradoSinAceptar(d)) return;
+  const era = d.respuesta_cliente;
+  V.presuSegBusy = true; render();
+  try {
+    await reabrirPresupuesto(d, false);
+    toast('Reabierto: vuelve a «por revisar».');
+    anotar(d.cliente && d.cliente.id, 'presupuesto', 'Presupuesto de ' + nombreCatDe(d) + (d.tl_numero ? ' nº ' + d.tl_numero : '') + ' reabierto (estaba ' + era + '): vuelve a por revisar');
+    V.presuLista.cargado = false; if (V.agenda.cargado) A.cargarAgenda();
+  } catch (e) { avisar(/reabierto/i.test(msgError(e)) ? 'Falta ejecutar sql/etapa131 en Supabase.' : 'No se pudo reabrir: ' + msgError(e)); }
+  V.presuSegBusy = false; render();
+};
 A.presuRespuesta = async (r) => {
   const d = V.presuVer && V.presuVer.datos; if (!d || V.presuSegBusy) return;
   V.presuSegBusy = true; render();
-  try { Object.assign(d, await visitasDB.seguimientoPresupuesto(d.id, { respuesta_cliente: r, respondido_at: r === 'pendiente' ? null : new Date().toISOString() })); if (V.agenda.cargado) A.cargarAgenda();
+  // De rechazado o caducado a «Esperando»: es reabrirlo (sin tocar el envío), para que la sincronización no lo devuelva.
+  try { Object.assign(d, await visitasDB.seguimientoPresupuesto(d.id, r === 'pendiente' && presuCerradoSinAceptar(d) ? cambiosReabrir(d, true) : { respuesta_cliente: r, respondido_at: r === 'pendiente' ? null : new Date().toISOString() })); if (V.agenda.cargado) A.cargarAgenda();
     if (r === 'aceptado' && d.tl_quotation_id) visitasDB.aceptarEnTeamleader(d.id).then(() => toast('La oferta queda aceptada también en Teamleader.')).catch((e) => avisar('Aceptado en la app, pero no en Teamleader: ' + msgError(e)));
     // Aceptado → la obra se crea sola (Enzo, 27-10-2026) y el cliente sale de Otros/Rechazados si estaba colocado a mano.
     if (r === 'aceptado' && !d.obra_id) { try { await crearObraDePresupuesto(d); } catch (e) { avisar('Aceptado, pero no se pudo crear la obra: ' + msgError(e)); } }
@@ -13596,6 +13629,20 @@ A.tbMover = async (id, k) => {
       toast('Presupuesto ' + k + '.'); render();
     } catch (e) { avisar('No se pudo: ' + msgError(e)); render(); }
     return;
+  }
+  // De Rechazados a «por revisar» o a «enviado · esperando» (Enzo, 26-11-2026): se reabre su presupuesto.
+  if (k === 'presupuestado' || k === 'esperando') {
+    const p = presuQueManda(c);
+    if (presuCerradoSinAceptar(p)) {
+      if (k === 'esperando' && !p.enviado_cliente_at) { avisar('Ese presupuesto no llegó a enviarse: muévelo a «por revisar» y envíalo desde su ficha.'); render(); return; }
+      const era = p.respuesta_cliente;
+      try {
+        await reabrirPresupuesto(p, k === 'esperando');
+        anotar(id, 'presupuesto', 'Presupuesto' + (p.tl_numero ? ' nº ' + p.tl_numero : '') + ' reabierto (estaba ' + era + '): ' + (k === 'esperando' ? 'vuelve a enviado · esperando' : 'vuelve a por revisar') + ' (movido en el tablero)');
+        toast(k === 'esperando' ? 'Presupuesto reabierto: sigue enviado, esperando respuesta.' : 'Presupuesto reabierto: vuelve a «por revisar».'); V.presuLista.cargado = false; render();
+      } catch (e) { avisar(/reabierto/i.test(msgError(e)) ? 'Falta ejecutar sql/etapa131 en Supabase.' : 'No se pudo reabrir: ' + msgError(e)); render(); }
+      return;
+    }
   }
   if (k === 'presupuestado') return A.tlTraerCliente(id);   // hecho en Teamleader: se trae de allí con sus líneas
   avisar('A esa fase se llega con su acción: enviar el presupuesto al cliente desde su ficha.'); render();
@@ -16467,6 +16514,7 @@ function sheet() {
       <div style="font:600 23px/1.15 var(--cond)">Mover a otra fase</div>
       <div class="sub" style="margin-top:6px">${esc(c.nombre || '')}. También se puede arrastrar la tarjeta a la columna.</div>
       <button class="btn btn-gris" data-a="tbSubir" data-id="${s.id}" style="margin-top:14px;border-radius:14px;text-align:left"><b>Subir al principio de su columna</b><br><span class="tiny">También puedes arrastrarlo encima de otro cliente de la misma columna.</span></button>
+      ${presuCerradoSinAceptar(presuQueManda(c)) ? `<button class="btn btn-verde" data-a="tbMover" data-id="${s.id}" data-k="presupuestado" style="margin-top:14px;border-radius:14px;text-align:left;padding:12px 14px"><div style="font:600 15px var(--sans)">Presupuesto por revisar o enviar</div><div class="tiny" style="margin-top:2px;color:rgba(255,255,255,.8)">Reabre su presupuesto ${presuQueManda(c).respuesta_cliente === 'caducado' ? 'caducado' : 'rechazado'} para rehacerlo y volver a enviarlo</div></button>` : ''}
       <div class="col g8" style="margin-top:14px">${TB_DESTINOS.filter(([k]) => k !== s.actual).map(([k, t, d]) => `<button class="btn btn-gris" data-a="tbMover" data-id="${s.id}" data-k="${k}" style="border-radius:14px;text-align:left;padding:12px 14px"><div style="font:600 15px var(--sans)">${esc(t)}</div><div class="tiny" style="margin-top:3px">${esc(d)}</div></button>`).join('')}</div>
       <button class="btn btn-gris" data-a="cerrarSheet" style="margin-top:14px;border-radius:99px">Cancelar</button>
     </div></div>`;
@@ -16971,6 +17019,7 @@ document.addEventListener('click', (e) => {
   if (a === 'presuNuevo') return A.presuNuevo();
   if (a === 'presuAbrir') return A.presuAbrir(d.id);
   if (a === 'presuEditar') return A.presuEditar();
+  if (a === 'presuReabrir') return A.presuReabrir();
   if (a === 'presuAbrirAparte') return A.presuAbrirAparte();
   if (a === 'abrirAparte') return A.abrirAparte();
   if (a === 'presuPdf') return A.presuPdf();

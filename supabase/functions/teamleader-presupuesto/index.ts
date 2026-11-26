@@ -561,7 +561,7 @@ async function sincronizar(sb: any, opciones: { cliente_id?: string } = {}) {
 
   // Lo nuestro: presupuestos con oferta y visitas con oportunidad.
   const { data: presus } = await sb.from('presupuestos')
-    .select('id, tl_quotation_id, visita_id, cliente_id, estado, revisado_at, enviado_cliente_at, respuesta_cliente, categoria, motor_version, tl_updated_at, sync_at, dto_global_pct')
+    .select('id, tl_quotation_id, visita_id, cliente_id, estado, revisado_at, enviado_cliente_at, respuesta_cliente, categoria, motor_version, tl_updated_at, sync_at, dto_global_pct, reabierto_at')
     .not('tl_quotation_id', 'is', null).gte('created_at', desde);
   // Los tipos de IVA por id (0.21 → 21), para traducir las líneas que vengan del CRM.
   const ivaPorId: Record<string, number> = {};
@@ -727,8 +727,18 @@ async function sincronizar(sb: any, opciones: { cliente_id?: string } = {}) {
     const d = deals[q.deal?.id];
     // deno-lint-ignore no-explicit-any
     const cambios: Record<string, any> = {};
-    const env = enviadoDe(d);
-    const [resp, cuando] = respuestaDe(q, d);
+    let env = enviadoDe(d);
+    let [resp, cuando] = respuestaDe(q, d);
+    // Reabierto a mano en la app (sql/etapa131, Enzo 26-11-2026: «a los rechazados no puedo
+    // regresarlos a presupuesto por revisar»): si la oportunidad sigue perdida en Teamleader, o
+    // en una fase de «enviado», desde ANTES de reabrirlo, eso ya no manda. Lo que pase allí
+    // después (se gana, se vuelve a perder, se vuelve a enviar) sí.
+    if (p.reabierto_at) {
+      const desde = new Date(p.reabierto_at).getTime();
+      const despues = (f: string | null) => !!f && new Date(f).getTime() > desde;
+      if (resp && resp !== 'aceptado' && !despues(cuando)) { resp = null; cuando = null; }
+      if (env && !despues(env)) env = null;
+    }
     if (!p.enviado_cliente_at && (env || resp === 'aceptado')) {
       cambios.enviado_cliente_at = env || cuando; cambios.estado = 'enviado';
       if (!p.revisado_at) cambios.revisado_at = env || cuando;
