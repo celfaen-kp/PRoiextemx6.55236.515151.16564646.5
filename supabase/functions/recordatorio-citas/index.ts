@@ -669,6 +669,71 @@ Deno.serve(async (req) => {
   const venceDe = (p: any) => sumaDias(fechaEnZona(new Date(p.enviado_cliente_at)), (Number(p.validez_dias) || 15) + (Number(p.prorroga_dias) || 0));
   let correoOficina = '';
   try { const { data: aj } = await sb.from('ajustes').select('valor').eq('clave', 'correo_oficina').maybeSingle(); correoOficina = String(aj?.valor || '').trim(); } catch (_) { /* sin ajuste */ }
+  // El aviso al cliente (Enzo, 26-11-2026): «quiero que se pregunte si es necesaria una segunda
+  // visita para solventar dudas y si sigue considerando seguir adelante con la instalación, sea
+  // de lo que sea, y siempre tener en cuenta los idiomas». Va en el idioma en que se le envió el
+  // presupuesto (presupuestos.idioma_cliente: es, en, ca, de), con textos fijos, y con cuatro
+  // respuestas de un toque que abren su página (firma.sysefen.es): ver el presupuesto, pedir una
+  // segunda visita, pedir más tiempo o decir que no sigue. La respuesta se confirma en la página
+  // (presupuesto-cliente · responder): pulsar en el correo no apunta nada, porque hay filtros de
+  // correo que abren los enlaces solos.
+  const AVISO_TXT: Record<string, Record<string, string>> = {
+    es: { loc: 'es-ES', num: ' nº ', asunto: 'Su presupuesto de Sysefen{num}: validez hasta el {f}', hola: 'Hola {n},', recuerda: 'le recordamos que el presupuesto {d} tiene validez hasta el {f}.',
+      intro: 'Para poder ayudarle, nos gustaría saber dos cosas:', q1: '¿Sigue pensando en seguir adelante con {x}?', q2: '¿Le vendría bien una segunda visita para resolver dudas?',
+      toque: 'Puede contestarnos con un toque:', b_ver: 'Ver el presupuesto', b_visita: 'Quiero una segunda visita', b_tiempo: 'Sigo interesado, necesito más tiempo', b_no: 'No voy a seguir adelante',
+      responde: 'También puede responder a este correo con cualquier duda.', llama: 'Para cualquier duda, llámenos al {tel}.', precios: 'Pasada esa fecha, los precios pueden cambiar.', saludo: 'Un saludo,',
+      solar: 'la instalación de paneles solares', aerotermia: 'la instalación de aerotermia', aire_acondicionado: 'la instalación de aire acondicionado', electricidad: 'la instalación eléctrica', otro: 'el trabajo presupuestado' },
+    en: { loc: 'en-GB', num: ' no. ', asunto: 'Your Sysefen quote{num}: valid until {f}', hola: 'Hello {n},', recuerda: 'this is a reminder that the quote {d} is valid until {f}.',
+      intro: 'So that we can help you, we would like to know two things:', q1: 'Are you still considering going ahead with {x}?', q2: 'Would a second visit help to clear up any questions?',
+      toque: 'You can answer with one tap:', b_ver: 'View the quote', b_visita: 'I would like a second visit', b_tiempo: 'I am still interested, I need more time', b_no: 'I will not go ahead',
+      responde: 'You can also reply to this email with any questions.', llama: 'If you have any questions, call us on {tel}.', precios: 'After that date, prices may change.', saludo: 'Kind regards,',
+      solar: 'the solar panel installation', aerotermia: 'the heat pump installation', aire_acondicionado: 'the air conditioning installation', electricidad: 'the electrical installation', otro: 'the quoted work' },
+    ca: { loc: 'ca-ES', num: ' núm. ', asunto: 'El seu pressupost de Sysefen{num}: validesa fins al {f}', hola: 'Hola {n},', recuerda: 'li recordem que el pressupost {d} té validesa fins al {f}.',
+      intro: 'Per poder ajudar-lo, ens agradaria saber dues coses:', q1: 'Encara té previst tirar endavant amb {x}?', q2: 'Li aniria bé una segona visita per resoldre dubtes?',
+      toque: 'Ens pot respondre amb un toc:', b_ver: 'Veure el pressupost', b_visita: 'Vull una segona visita', b_tiempo: 'Segueixo interessat, necessito més temps', b_no: 'No tiraré endavant',
+      responde: 'També pot respondre a aquest correu amb qualsevol dubte.', llama: 'Per a qualsevol dubte, truqui\'ns al {tel}.', precios: 'Passada aquesta data, els preus poden canviar.', saludo: 'Salutacions,',
+      solar: 'la instal·lació de plaques solars', aerotermia: 'la instal·lació d\'aerotèrmia', aire_acondicionado: 'la instal·lació d\'aire condicionat', electricidad: 'la instal·lació elèctrica', otro: 'la feina pressupostada' },
+    de: { loc: 'de-DE', num: ' Nr. ', asunto: 'Ihr Angebot von Sysefen{num}: gültig bis {f}', hola: 'Guten Tag {n},', recuerda: 'wir möchten Sie daran erinnern, dass das Angebot {d} bis zum {f} gültig ist.',
+      intro: 'Damit wir Ihnen weiterhelfen können, möchten wir zwei Dinge wissen:', q1: 'Möchten Sie {x} weiterhin umsetzen?', q2: 'Würde Ihnen ein zweiter Besuch helfen, offene Fragen zu klären?',
+      toque: 'Sie können uns mit einem Klick antworten:', b_ver: 'Angebot ansehen', b_visita: 'Ich wünsche einen zweiten Besuch', b_tiempo: 'Ich bin weiterhin interessiert, brauche aber mehr Zeit', b_no: 'Ich möchte nicht fortfahren',
+      responde: 'Sie können auch auf diese E-Mail antworten, wenn Sie Fragen haben.', llama: 'Bei Fragen erreichen Sie uns telefonisch unter {tel}.', precios: 'Nach diesem Datum können sich die Preise ändern.', saludo: 'Mit freundlichen Grüßen',
+      solar: 'die Installation der Photovoltaikanlage', aerotermia: 'die Installation der Wärmepumpe', aire_acondicionado: 'die Installation der Klimaanlage', electricidad: 'die Elektroinstallation', otro: 'die angebotenen Arbeiten' },
+  };
+  const escV = (s: unknown) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] as string));
+  // deno-lint-ignore no-explicit-any
+  const correoAvisoVencimiento = (p: any, nombre: string) => {
+    const idioma = AVISO_TXT[String(p.idioma_cliente || '')] ? String(p.idioma_cliente) : 'es';
+    const T = AVISO_TXT[idioma];
+    const rell = (s: string, v: Record<string, string>) => s.replace(/\{(\w+)\}/g, (_m, k) => (v[k] == null ? '' : v[k]));
+    const f = new Date(p.vence + 'T12:00:00').toLocaleDateString(T.loc, { timeZone: ZONA, day: 'numeric', month: 'long', year: 'numeric' });
+    const num = p.tl_numero ? T.num + String(p.tl_numero) : '';
+    const detalle = `«${p.titulo || ''}»${p.tl_numero ? ' (' + T.num.trim() + ' ' + p.tl_numero + ')' : ''}`;
+    const x = T[String(p.categoria || '')] || T.otro;
+    const asunto = rell(T.asunto, { num, f });
+    const q1 = rell(T.q1, { x }), recuerda = rell(T.recuerda, { d: detalle, f }), hola = rell(T.hola, { n: nombre });
+    const pie = (correoOficina ? T.responde : rell(T.llama, { tel: TEL })) + ' ' + T.precios;
+    const enlace = p.token_cliente ? enlaceFirma(p.token_cliente) : '';
+    const botones: [string, string, string][] = enlace ? [
+      [T.b_ver, enlace, 'background:#206028;color:#fff;border:2px solid #206028'],
+      [T.b_visita, enlace + '&r=visita', 'background:#fff;color:#206028;border:2px solid #206028'],
+      [T.b_tiempo, enlace + '&r=tiempo', 'background:#fff;color:#14170f;border:2px solid #cfd2c8'],
+      [T.b_no, enlace + '&r=no', 'background:#fff;color:#777a70;border:2px solid #e3e5dd'],
+    ] : [];
+    const texto = `${hola}\n\n${recuerda}\n\n${T.intro}\n1. ${q1}\n2. ${T.q2}\n\n`
+      + (botones.length ? `${T.toque}\n${botones.map(([t, u]) => `· ${t}: ${u}`).join('\n')}\n\n` : '')
+      + `${pie}\n\n${T.saludo}\nSysefen`;
+    const html = `<div style="font-family:Arial,sans-serif;color:#14170f;max-width:560px;margin:0 auto;padding:24px;font-size:15px;line-height:1.5">
+      <img src="${LOGO_URL}" alt="Sysefen" style="height:40px;margin-bottom:18px">
+      <p>${escV(hola)}</p>
+      <p>${escV(recuerda).replace(escV(f), '<b>' + escV(f) + '</b>')}</p>
+      <p>${escV(T.intro)}</p>
+      <p style="margin:0 0 6px 0"><b>1.</b> ${escV(q1)}</p>
+      <p style="margin:0 0 16px 0"><b>2.</b> ${escV(T.q2)}</p>
+      ${botones.length ? `<p>${escV(T.toque)}</p>${botones.map(([t, u, e]) => `<p style="margin:8px 0"><a href="${escV(u)}" style="display:block;text-align:center;text-decoration:none;font-weight:700;padding:12px 18px;border-radius:12px;${e}">${escV(t)}</a></p>`).join('')}` : ''}
+      <p style="color:#555;font-size:14px;margin-top:18px">${escV(pie)}</p>
+      <p style="margin-top:22px">${escV(T.saludo)}<br><b>Sysefen</b></p></div>`;
+    return { idioma, asunto, texto, html, fecha: f };
+  };
   // deno-lint-ignore no-explicit-any
   const avisarClienteVencimiento = async (lista: any[]) => {
     const cli = lista[0].cliente || {};
@@ -676,37 +741,29 @@ Deno.serve(async (req) => {
     const email = esEmail(cli.email) ? String(cli.email).trim() : '';
     if (!email) throw new Error('El cliente no tiene correo en su ficha.');
     const vence = lista.map((p) => p.vence).sort()[0];
-    // deno-lint-ignore no-explicit-any
-    const detalle = (p: any) => `«${p.titulo || ''}»${p.tl_numero ? ' (nº ' + p.tl_numero + ')' : ''}`;
-    const cual = lista.length === 1 ? 'el presupuesto ' + detalle(lista[0]) : 'los presupuestos ' + lista.map(detalle).join(', ');
-    const asunto = (lista.length === 1 ? 'Su presupuesto' : 'Sus presupuestos') + ' de Sysefen' + (lista.length === 1 && lista[0].tl_numero ? ' nº ' + lista[0].tl_numero : '') + ': validez hasta el ' + fechaLargaV(vence);
-    const conEnlace = lista.filter((p) => p.token_cliente);
-    const enlacesTxt = conEnlace.map((p) => `· ${p.titulo || 'Presupuesto'}: ${enlaceFirma(p.token_cliente)}`).join('\n');
-    const texto = `Hola ${nombre},\n\nle recordamos que ${cual} ${lista.length === 1 ? 'tiene' : 'tienen'} validez hasta el ${fechaLargaV(vence)}.\n\n`
-      + (enlacesTxt ? `Si está conforme, puede aceptarlo y firmarlo en línea desde ${conEnlace.length === 1 ? 'este enlace' : 'estos enlaces'}:\n${enlacesTxt}\n\n` : '')
-      + 'Si necesita más tiempo para decidir o quiere una prórroga, díganoslo' + (correoOficina ? ' respondiendo a este correo' : ' y la ampliamos sin problema') + '. Y si ha decidido no seguir adelante, agradeceremos que nos lo comunique con una respuesta a este correo. Pasada esa fecha, los precios pueden cambiar.\n\nUn saludo,\nSysefen';
-    const html = `<div style="font-family:Arial,sans-serif;color:#14170f;max-width:560px;margin:0 auto;padding:24px">
-      <img src="${LOGO_URL}" alt="Sysefen" style="height:40px;margin-bottom:18px">
-      <p>Hola ${nombre},</p>
-      <p>le recordamos que ${cual.replace(/</g, '&lt;')} ${lista.length === 1 ? 'tiene' : 'tienen'} validez hasta el <b>${fechaLargaV(vence)}</b>.</p>
-      ${conEnlace.length ? `<p>Si está conforme, puede aceptarlo y firmarlo en línea:</p>${conEnlace.map((p) => `<p><a href="${enlaceFirma(p.token_cliente)}" style="display:inline-block;background:#206028;color:#fff;text-decoration:none;font-weight:700;padding:12px 18px;border-radius:12px">Ver y aceptar${conEnlace.length > 1 ? ': ' + String(p.titulo || '').replace(/</g, '&lt;') : ' el presupuesto'}</a></p>`).join('')}` : ''}
-      <p>Si necesita más tiempo para decidir o quiere una prórroga, díganoslo${correoOficina ? ' respondiendo a este correo' : ' y la ampliamos sin problema'}. Y si ha decidido no seguir adelante, agradeceremos que nos lo comunique con una respuesta a este correo. Pasada esa fecha, los precios pueden cambiar.</p>
-      <p style="margin-top:22px">Un saludo,<br><b>Sysefen</b></p></div>`;
-    const r = await fetch('https://api.resend.com/emails', {
-      method: 'POST', headers: { Authorization: 'Bearer ' + RESEND, 'Content-Type': 'application/json' },
-      body: JSON.stringify(Object.assign({ from: REMITENTE, to: [email], subject: asunto, text: texto, html }, correoOficina ? { reply_to: correoOficina } : {})),
-    });
-    if (!r.ok) throw new Error('Resend ' + String(r.status));
+    let asunto = '';
+    // Un correo por presupuesto: cada uno lleva sus preguntas y sus botones, en su idioma.
+    for (const p of lista) {
+      const m = correoAvisoVencimiento(p, nombre);
+      if (!asunto) asunto = m.asunto;
+      const r = await fetch('https://api.resend.com/emails', {
+        method: 'POST', headers: { Authorization: 'Bearer ' + RESEND, 'Content-Type': 'application/json' },
+        body: JSON.stringify(Object.assign({ from: REMITENTE, to: [email], subject: m.asunto, text: m.texto, html: m.html }, correoOficina ? { reply_to: correoOficina } : {})),
+      });
+      if (!r.ok) throw new Error('Resend ' + String(r.status));
+    }
     const ahora = new Date().toISOString();
     await sb.from('presupuestos').update({ aviso_vencimiento_at: ahora }).in('id', lista.map((p) => p.id));
-    try { await sb.from('cliente_bitacora').insert({ cliente_id: cli.id, tipo: 'email', texto: 'Aviso de vencimiento enviado al cliente: ' + cual + ', hasta el ' + fechaLargaV(vence) + '. Si pide prórroga, darla desde el presupuesto.', por: null }); } catch (_) { /* sin bitácora */ }
+    // deno-lint-ignore no-explicit-any
+    const cual = lista.map((p: any) => `«${p.titulo || ''}»${p.tl_numero ? ' (nº ' + p.tl_numero + ')' : ''}`).join(', ');
+    try { await sb.from('cliente_bitacora').insert({ cliente_id: cli.id, tipo: 'email', texto: 'Aviso de vencimiento enviado al cliente: ' + cual + ', hasta el ' + fechaLargaV(vence) + '. Se le pregunta si sigue adelante y si quiere una segunda visita; lo que conteste desde su página llega a la Agenda. Si pide prórroga, darla desde el presupuesto.', por: null }); } catch (_) { /* sin bitácora */ }
     return { para: email, asunto, vence };
   };
 
   // --- aviso de vencimiento AL CLIENTE, a mano desde la app (6-11-2026) ---------
   if (presuVencimiento) {
     const { data: p, error: errP } = await sb.from('presupuestos')
-      .select('id, titulo, categoria, total_venta, enviado_cliente_at, validez_dias, prorroga_dias, respuesta_cliente, tl_numero, token_cliente, cliente:clientes_cache(id, nombre, email, telefono)')
+      .select('id, titulo, categoria, total_venta, enviado_cliente_at, validez_dias, prorroga_dias, respuesta_cliente, tl_numero, token_cliente, idioma_cliente, cliente:clientes_cache(id, nombre, email, telefono)')
       .eq('id', presuVencimiento).maybeSingle();
     if (errP) return json({ error: errP.message }, 500);
     if (!p) return json({ error: 'Ese presupuesto no existe.' }, 404);

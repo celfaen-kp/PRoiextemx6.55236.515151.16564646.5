@@ -569,7 +569,7 @@ import * as idiomas from './presu-idiomas.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '34.5'; // versión visible de la app (única fuente)
+const APP_VERSION = '34.6'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -13069,6 +13069,8 @@ A.presuEnviarToggle = (id) => {
 A.presuEnviarRevisar = async () => {
   const s = V.sheet; if (!s || s.tipo !== 'presuEnviar' || s.busy) return;
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(s.v.para || '').trim())) { avisar('Pon un correo válido del cliente.'); return; }
+  // El correo ya no lleva saludo ni texto fijo delante (Enzo, 26-11-2026): lo escribe la persona.
+  if (!String(s.v.mensaje || '').trim()) { avisar('Escribe el mensaje para el cliente: el correo ya no lleva saludo ni texto fijo, empieza por lo que pongas aquí.'); return; }
   // En otro idioma, el asunto y el mensaje se traducen antes de confirmar,
   // para verlos tal como le llegarán al cliente (Enzo, 6-11-2026).
   s.trad = null;
@@ -13153,7 +13155,10 @@ A.presuProrrogar = async () => {
   const d = V.presuVer && V.presuVer.datos; if (!d || V.presuSegBusy || !d.enviado_cliente_at) return;
   V.presuSegBusy = true; render();
   try {
-    Object.assign(d, await visitasDB.seguimientoPresupuesto(d.id, { prorroga_dias: (Number(d.prorroga_dias) || 0) + 15, aviso_vencimiento_at: null }));
+    const pedia = comentarioPendiente(d) && d.comentario_cliente_tipo === 'tiempo';
+    const visto = pedia ? { comentario_visto_at: new Date().toISOString(), comentario_visto_por: miEmpId() || null } : {};
+    Object.assign(d, await visitasDB.seguimientoPresupuesto(d.id, Object.assign({ prorroga_dias: (Number(d.prorroga_dias) || 0) + 15, aviso_vencimiento_at: null }, visto)));
+    if (pedia) agPresuActualizar(d.id, visto);
     toast('Prorrogado 15 días: vence el ' + fechaCorta(vencePresu(d) + 'T12:00') + '.');
     anotar(d.cliente_id || (d.cliente && d.cliente.id), 'presupuesto', 'Prórroga de 15 días del presupuesto' + (d.tl_numero ? ' nº ' + d.tl_numero : '') + ': vence el ' + fechaCorta(vencePresu(d) + 'T12:00'));
   } catch (e) { avisar(/prorroga_dias|schema cache/i.test(msgError(e)) ? 'Falta ejecutar sql/etapa88 en Supabase.' : 'No se pudo: ' + msgError(e)); }
@@ -13186,7 +13191,7 @@ function seguimientoHTML(d) {
     ['Validez', (() => { const v = vencePresu(d); if (!v) return (d.validez_dias || 15) + ' días desde el envío'; const vencido = v < hoyISO() && (d.respuesta_cliente || 'pendiente') === 'pendiente';
       return (vencido ? 'Vencido el ' : 'Hasta el ') + fechaCorta(v + 'T12:00') + (d.prorroga_dias ? ' · prórroga ' + d.prorroga_dias + ' días' : '') + (d.aviso_vencimiento_at ? ' · cliente avisado ' + fechaCorta(d.aviso_vencimiento_at) : ''); })(),
       !!d.enviado_cliente_at && !(vencePresu(d) < hoyISO() && (d.respuesta_cliente || 'pendiente') === 'pendiente')],
-    ['Respuesta del cliente', d.respuesta_cliente && d.respuesta_cliente !== 'pendiente' ? { aceptado: 'Aceptado', rechazado: 'Rechazado', caducado: 'Caducado' }[d.respuesta_cliente] + (d.respondido_at ? ' · ' + fechaCorta(d.respondido_at) : '') : pideCambios(d) ? 'pide cambios · ' + fechaCorta(d.comentario_cliente_at) : 'esperando', d.respuesta_cliente && d.respuesta_cliente !== 'pendiente'],
+    ['Respuesta del cliente', d.respuesta_cliente && d.respuesta_cliente !== 'pendiente' ? { aceptado: 'Aceptado', rechazado: 'Rechazado', caducado: 'Caducado' }[d.respuesta_cliente] + (d.respondido_at ? ' · ' + fechaCorta(d.respondido_at) : '') : pideAlgo(d) ? comentTipo(d).corto.toLowerCase() + ' · ' + fechaCorta(d.comentario_cliente_at) : 'esperando', d.respuesta_cliente && d.respuesta_cliente !== 'pendiente'],
   ];
   const busy = V.presuSegBusy;
   return `<div class="card" style="margin-top:12px;padding:12px 15px">
@@ -13215,7 +13220,7 @@ function seguimientoHTML(d) {
         <button class="btn btn-gris" data-a="presuProrrogar" style="border-radius:99px" ${busy ? 'disabled' : ''}>Prorrogar 15 días</button>
         <button class="btn ${d.aviso_vencimiento_at ? 'btn-gris' : 'btn-verde'}" data-a="presuAvisoVencAbrir" style="border-radius:99px" ${busy ? 'disabled' : ''}>${d.aviso_vencimiento_at ? 'Volver a avisar al cliente' : 'Avisar al cliente de que vence'}</button>
       </div>
-      <div class="tiny" style="margin-top:6px;text-align:center">Dos días laborables antes de vencer nos llega un aviso a presupuestos. Al cliente se le avisa desde aquí, cuando tú quieras: correo con la fecha y el enlace para aceptar.${d.aviso_vencimiento_at ? ' Avisado el ' + fechaCorta(d.aviso_vencimiento_at) + '.' : ''}</div>` : ''}
+      <div class="tiny" style="margin-top:6px;text-align:center">Dos días laborables antes de vencer nos llega un aviso a presupuestos. Al cliente se le avisa desde aquí, cuando tú quieras: correo en su idioma con la fecha, las dos preguntas (si sigue adelante y si quiere una segunda visita) y los botones para contestar; lo que conteste llega a la Agenda.${d.aviso_vencimiento_at ? ' Avisado el ' + fechaCorta(d.aviso_vencimiento_at) + '.' : ''}</div>` : ''}
       <div class="lbl" style="margin:12px 0 6px">¿Qué dijo el cliente?</div>
       <div class="row g8" style="flex-wrap:wrap">${[['pendiente', 'Esperando'], ['aceptado', 'Aceptó'], ['rechazado', 'Rechazó'], ['caducado', 'Caducó']].map(([k, l]) => `<span class="chip ${(d.respuesta_cliente || 'pendiente') === k ? 'on' : ''}" data-a="presuRespuesta" data-r="${k}" style="cursor:pointer;${k === 'aceptado' && (d.respuesta_cliente || 'pendiente') === k ? 'background:var(--verde);border-color:var(--verde)' : ''}">${l}</span>`).join('')}</div>
       ${d.respuesta_cliente === 'rechazado' ? `<input class="inp" data-f="presuMotivoRechazo" value="${esc(d.motivo_rechazo || '')}" placeholder="Por qué (precio, otra empresa, lo aplaza…)" style="margin-top:10px">` : ''}
@@ -13817,6 +13822,17 @@ const presupuestosDeCliente = (c) => {
  * ------------------------------------------------------------------------------- */
 const comentarioPendiente = (p) => !!(p && p.comentario_cliente_at && !p.comentario_visto_at);
 const pideCambios = (p) => comentarioPendiente(p) && p.comentario_cliente_tipo === 'modificacion' && (p.respuesta_cliente || 'pendiente') === 'pendiente';
+// Lo que contesta al aviso de vencimiento (sql/etapa132, 26-11-2026): quiere una segunda visita
+// ('visita') o sigue interesado y necesita más tiempo ('tiempo'). Como pedir cambios, no cambia
+// la respuesta: el presupuesto sigue esperando, pero nos toca a nosotros.
+const pideAlgo = (p) => comentarioPendiente(p) && ['modificacion', 'visita', 'tiempo'].includes(p.comentario_cliente_tipo) && (p.respuesta_cliente || 'pendiente') === 'pendiente';
+const COMENT_TIPO = {
+  rechazo: { corto: 'Ha rechazado el presupuesto', toast: ' ha rechazado su presupuesto.', ficha: '✗ El cliente lo rechazó desde su página', estado: 'Rechazado' },
+  modificacion: { corto: 'Pide cambios', toast: ' pide cambios en su presupuesto.', ficha: '✎ El cliente pide cambios', estado: 'El cliente pide cambios' },
+  visita: { corto: 'Pide una segunda visita', toast: ' pide una segunda visita por su presupuesto.', ficha: '☎ El cliente pide una segunda visita', estado: 'El cliente pide una segunda visita' },
+  tiempo: { corto: 'Sigue interesado · pide más tiempo', toast: ' sigue interesado y pide más tiempo.', ficha: '⏳ El cliente sigue interesado y pide más tiempo', estado: 'El cliente pide más tiempo' },
+};
+const comentTipo = (p) => COMENT_TIPO[p && p.comentario_cliente_tipo] || COMENT_TIPO.modificacion;
 // Los comentarios sin ver de los clientes que esta persona ve, el más nuevo arriba.
 function comentariosPendientes() {
   const out = [];
@@ -13830,7 +13846,7 @@ function comentariosClientesHTML() {
   return `<div class="row" style="justify-content:space-between;align-items:baseline;margin:0 0 10px"><div class="ag-sec">Comentarios de presupuestos</div><span class="ag-sec-n">${lista.length}</span></div>
     ${lista.map(({ c, p }) => { const rech = p.comentario_cliente_tipo === 'rechazo';
       return `<div class="card ag-coment ${rech ? 'rech' : ''}" data-a="presuAbrir" data-id="${p.id}">
-      <div class="row g8" style="align-items:center"><span class="dot" style="width:9px;height:9px;flex:none;background:${rech ? 'var(--rojo)' : 'var(--ambar)'}"></span><span class="lbl" style="color:${rech ? 'var(--rojo)' : 'var(--ambar-o)'}">${rech ? 'Ha rechazado el presupuesto' : 'Pide cambios'} · ${esc(fechaCorta(p.comentario_cliente_at))}</span><div class="grow"></div><span class="pill" style="flex:none;padding:8px 12px;font-size:12px">Ver</span></div>
+      <div class="row g8" style="align-items:center"><span class="dot" style="width:9px;height:9px;flex:none;background:${rech ? 'var(--rojo)' : 'var(--ambar)'}"></span><span class="lbl" style="color:${rech ? 'var(--rojo)' : 'var(--ambar-o)'}">${esc(comentTipo(p).corto)} · ${esc(fechaCorta(p.comentario_cliente_at))}</span><div class="grow"></div><span class="pill" style="flex:none;padding:8px 12px;font-size:12px">Ver</span></div>
       <div class="h2" style="font-size:17px;margin-top:8px">${esc(c.nombre || 'Cliente')}</div>
       <div class="sub" style="margin-top:3px">${esc([p.tl_numero ? 'Presupuesto nº ' + p.tl_numero : 'Presupuesto de ' + String(nombreCatDe(p) || p.categoria || '').toLowerCase(), p.total_venta != null ? eur(p.total_venta) : ''].filter(Boolean).join(' · '))}</div>
       <div class="ag-coment-txt">${p.comentario_cliente ? '«' + esc(p.comentario_cliente) + '»' : 'No ha escrito ningún comentario.'}</div>
@@ -13849,7 +13865,7 @@ function avisarComentariosNuevos() {
   if (!nuevos.length) return;
   const x = nuevos[0];
   toast(nuevos.length === 1
-    ? (x.c.nombre || 'Un cliente') + (x.p.comentario_cliente_tipo === 'rechazo' ? ' ha rechazado su presupuesto.' : ' pide cambios en su presupuesto.')
+    ? (x.c.nombre || 'Un cliente') + comentTipo(x.p).toast
     : nuevos.length + ' comentarios nuevos de clientes en sus presupuestos.');
 }
 // La copia del presupuesto que va dentro de cada cliente de la agenda, al día sin recargar.
@@ -13859,14 +13875,19 @@ function agPresuActualizar(id, cambios) {
 function comentarioClienteHTML(d) {
   if (!d || !d.comentario_cliente_at) return '';
   const rech = d.comentario_cliente_tipo === 'rechazo', pend = comentarioPendiente(d), busy = V.presuSegBusy;
+  const tipo = d.comentario_cliente_tipo, cid = d.cliente_id || (d.cliente && d.cliente.id) || '';
   return `<div class="presu-coment ${rech ? 'rech' : ''} ${pend ? '' : 'visto'}">
-    <div style="font:600 15px var(--sans);color:${rech ? 'var(--rojo)' : 'var(--ambar-o)'}">${rech ? '✗ El cliente lo rechazó desde su página' : '✎ El cliente pide cambios'}</div>
+    <div style="font:600 15px var(--sans);color:${rech ? 'var(--rojo)' : 'var(--ambar-o)'}">${esc(comentTipo(d).ficha)}</div>
     <div class="tiny" style="margin-top:3px">${esc(fechaCorta(d.comentario_cliente_at))}${pend ? '' : ' · visto' + (d.comentario_visto_at ? ' el ' + esc(fechaCorta(d.comentario_visto_at)) : '') + (d.comentario_visto_por ? ' por ' + esc(agNombreEmp(d.comentario_visto_por)) : '')}</div>
     <div class="presu-coment-txt">${d.comentario_cliente ? esc(d.comentario_cliente) : '<span style="color:var(--t2)">No ha escrito ningún comentario.</span>'}</div>
     ${pend ? `<div class="row g8" style="margin-top:10px;flex-wrap:wrap">
-      ${rech ? '' : `<button class="pill pill-verde" data-a="presuEditar" style="padding:9px 13px">Modificar el presupuesto</button>`}
+      ${rech ? '' : tipo === 'visita' ? (cid && puedeCitar() ? `<button class="pill pill-verde" data-a="ag_nuevaCita" data-id="${esc(cid)}" style="padding:9px 13px">Agendar la visita</button>` : '')
+        : tipo === 'tiempo' ? (d.enviado_cliente_at ? `<button class="pill pill-verde" data-a="presuProrrogar" style="padding:9px 13px" ${busy ? 'disabled' : ''}>Prorrogar 15 días</button>` : '')
+        : `<button class="pill pill-verde" data-a="presuEditar" style="padding:9px 13px">Modificar el presupuesto</button>`}
       <button class="pill" data-a="presuComentarioVisto" style="padding:9px 13px;background:var(--l1);color:var(--tinta)" ${busy ? 'disabled' : ''}>Ya está visto</button></div>
-      ${rech ? '' : `<div class="tiny" style="margin-top:8px">Al modificarlo eliges: «Guardar cambios» cambia este mismo presupuesto, y «Guardar como presupuesto nuevo» deja este como está. Al reenviárselo al cliente, este aviso se da por visto solo.</div>`}` : ''}
+      ${rech ? '' : tipo === 'visita' ? `<div class="tiny" style="margin-top:8px">Lo contestó desde el aviso de vencimiento. Llámale y agenda la visita; si el plazo se queda corto, dale una prórroga más abajo.</div>`
+        : tipo === 'tiempo' ? `<div class="tiny" style="margin-top:8px">Lo contestó desde el aviso de vencimiento. Al darle la prórroga, este aviso se da por visto solo.</div>`
+        : `<div class="tiny" style="margin-top:8px">Al modificarlo eliges: «Guardar cambios» cambia este mismo presupuesto, y «Guardar como presupuesto nuevo» deja este como está. Al reenviárselo al cliente, este aviso se da por visto solo.</div>`}` : ''}
   </div>`;
 }
 A.presuComentarioVisto = async () => {
@@ -13888,7 +13909,7 @@ function seguimientoPresu(p) {
   if (p.respuesta_cliente === 'rechazado') return { k: 'rechazado', color: 'var(--rojo)', txt: 'Rechazado', paso: 6 };
   if (p.respuesta_cliente === 'caducado') return { k: 'rechazado', color: 'var(--t3)', txt: 'Caducado', paso: 6 };
   // Pidió cambios desde su página y nadie lo ha visto todavía: sigue esperando, pero nos toca a nosotros.
-  if (pideCambios(p)) return { k: 'esperando', color: 'var(--rojo)', txt: 'El cliente pide cambios', paso: 5 };
+  if (pideAlgo(p)) return { k: 'esperando', color: 'var(--rojo)', txt: comentTipo(p).estado, paso: 5 };
   // Solo cuenta la fecha que apunta una persona: subirlo a Teamleader no es
   // enviarlo (la oferta se queda allí sin mandar hasta que se revisa).
   if (p.enviado_cliente_at) return { k: 'esperando', color: 'var(--ambar)', txt: 'Enviado al cliente · esperando', paso: 5 };
@@ -16235,7 +16256,8 @@ function sheet() {
   if (s.tipo === 'presuAvisoVenc') {
     return `<div class="sheet"><div>
       <div style="font:600 23px/1.15 var(--cond)">${s.otraVez ? '¿Volver a avisar' : '¿Avisar'} ${s.nombre ? 'a ' + esc(s.nombre) : 'al cliente'}?</div>
-      <div class="sub" style="margin-top:8px">Le llega un correo diciendo que el presupuesto tiene validez hasta el ${s.vence ? fechaCorta(s.vence + 'T12:00') : '…'}, con el enlace para aceptarlo y firmarlo, y que si necesita más tiempo nos lo diga.</div>
+      <div class="sub" style="margin-top:8px">Le llega un correo, en el idioma en que se le envió el presupuesto, recordándole que tiene validez hasta el ${s.vence ? fechaCorta(s.vence + 'T12:00') : '…'} y preguntándole dos cosas: si sigue pensando en seguir adelante y si le vendría bien una segunda visita para resolver dudas.</div>
+      <div class="sub" style="margin-top:8px;font-size:13px">Contesta con un toque: ver el presupuesto, pedir una segunda visita, pedir más tiempo o decir que no sigue. Lo que conteste te llega por correo y a «Comentarios de presupuestos».</div>
       <div class="sub" style="margin-top:8px;font-size:13px">Va al correo que tiene en su ficha. Si no tiene, no se envía y te lo digo.</div>
       <div class="row g8" style="margin-top:18px">
         <button class="btn btn-gris" data-a="cerrarSheet" style="border-radius:99px">Cancelar</button>
@@ -16419,7 +16441,8 @@ function sheet() {
       <div class="lbl" style="margin:12px 0 6px">Para</div><input class="inp" data-f="pe:para" type="email" inputmode="email" autocapitalize="off" value="${esc(v.para)}" placeholder="cliente@correo.es">
       <div class="lbl" style="margin:12px 0 6px">Copia (opcional)</div><input class="inp" data-f="pe:cc" type="email" inputmode="email" autocapitalize="off" value="${esc(v.cc)}" placeholder="otro@correo.es">
       <div class="lbl" style="margin:12px 0 6px">Asunto (opcional)</div><input class="inp" data-f="pe:asunto" value="${esc(v.asunto)}" placeholder="${esc((elegidos.length > 1 ? 'Sus presupuestos' : 'Su presupuesto') + ' de Sysefen')}">
-      <div class="lbl" style="margin:12px 0 6px">Mensaje para el cliente</div><textarea class="inp" data-f="pe:mensaje" rows="4" placeholder="Explica aquí lo que haga falta: qué incluye cada opción, plazos, qué le recomiendas…">${esc(v.mensaje)}</textarea>
+      <div class="lbl" style="margin:12px 0 6px">Mensaje para el cliente</div><textarea class="inp" data-f="pe:mensaje" rows="7" placeholder="Escribe aquí el correo entero, empezando por el saludo: qué incluye cada opción, plazos, qué le recomiendas…">${esc(v.mensaje)}</textarea>
+      <div class="tiny" style="margin-top:6px">El correo empieza por lo que escribas aquí: ya no lleva «Hola…, le enviamos el presupuesto» delante. Debajo van solos el presupuesto con su botón, el pie y tu firma.</div>
       <div class="lbl" style="margin:12px 0 6px">Debajo va siempre este texto</div>
       <div class="tiny" style="padding:10px 12px;border-radius:10px;background:var(--l1);line-height:1.45">Cada presupuesto con su importe, validez y botón «Ver y aceptar este presupuesto». Y al final: «Puede ver cada presupuesto en el enlace y descargarlo en PDF (también va adjunto). Si está conforme, acéptelo y fírmelo ahí mismo. Si tiene dudas, prefiere cambiar algo o ha decidido no seguir adelante, díganoslo respondiendo a este correo: así sabremos su respuesta.»</div>
       ${(s.otros || []).length ? `<div class="lbl" style="margin:14px 0 6px">Qué va en el correo</div>

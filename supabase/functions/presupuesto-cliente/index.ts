@@ -428,14 +428,30 @@ Deno.serve(async (req) => {
   if (b.accion === 'responder') {
     const t = limpio(b.t);
     if (!/^[a-z0-9]{36,60}$/i.test(t)) return json({ error: 'Enlace no válido.' }, 404);
-    const tipo = b.tipo === 'rechazo' ? 'rechazo' : b.tipo === 'modificacion' ? 'modificacion' : '';
-    if (!tipo) return json({ error: 'Falta decir si pide cambios o lo rechaza.' }, 400);
+    // Además de pedir cambios o rechazar (etapa127), lo que contesta al aviso de vencimiento
+    // (etapa132, 26-11-2026): quiere una segunda visita, o sigue interesado y necesita más tiempo.
+    const tipo = ['rechazo', 'modificacion', 'visita', 'tiempo'].includes(String(b.tipo)) ? String(b.tipo) : '';
+    if (!tipo) return json({ error: 'Falta decir qué responde.' }, 400);
+    // Lo que se apunta y se avisa en cada caso.
+    const R: Record<string, { bitacora: string; titulo: string; asunto: string; frase: string; etiqueta: string; hacer: string }> = {
+      rechazo: { bitacora: 'El cliente RECHAZÓ el presupuesto', titulo: 'Presupuesto rechazado por el cliente', asunto: '✗ Presupuesto rechazado', frase: 'ha rechazado desde su página el presupuesto', etiqueta: 'Motivo',
+        hacer: 'En la app ya figura como rechazado, con este motivo.' },
+      modificacion: { bitacora: 'El cliente PIDE CAMBIOS en el presupuesto', titulo: 'El cliente pide cambios en su presupuesto', asunto: '✎ Cambios pedidos en el presupuesto', frase: 'pide cambios desde su página en el presupuesto', etiqueta: 'Lo que pide',
+        hacer: 'El presupuesto sigue esperando respuesta. Modifícalo y reenvíaselo (verá la versión nueva en su mismo enlace) o guarda los cambios como presupuesto nuevo.' },
+      visita: { bitacora: 'El cliente PIDE UNA SEGUNDA VISITA por el presupuesto', titulo: 'El cliente pide una segunda visita', asunto: '☎ Segunda visita pedida por el presupuesto', frase: 'pide desde su página una segunda visita para resolver dudas del presupuesto', etiqueta: 'Lo que dice',
+        hacer: 'El presupuesto sigue esperando respuesta. Llámale y agenda la visita desde su ficha; si hace falta, dale una prórroga.' },
+      tiempo: { bitacora: 'El cliente SIGUE INTERESADO y pide más tiempo para el presupuesto', titulo: 'El cliente sigue interesado y pide más tiempo', asunto: '⏳ Más tiempo pedido para el presupuesto', frase: 'dice desde su página que sigue interesado y necesita más tiempo para decidir el presupuesto', etiqueta: 'Lo que dice',
+        hacer: 'El presupuesto sigue esperando respuesta. Dale una prórroga desde su ficha («Prorrogar 15 días») si te encaja.' },
+    };
     const { data: p } = await sb.from('presupuestos').select('*, cliente:clientes_cache(id, nombre, email, telefono)').eq('token_cliente', t).maybeSingle();
     if (!p) return json({ error: 'Este enlace ya no está disponible.' }, 404);
     if (p.firmado_at || p.respuesta_cliente === 'aceptado') return json({ error: 'Este presupuesto ya está aceptado.', codigo: 'ya_aceptado' }, 409);
     const comentario = String(b.comentario == null ? '' : b.comentario).replace(/\r\n?/g, '\n').replace(/[\u0000-\u0008\u000b-\u001f]/g, '').replace(/\n{3,}/g, '\n\n').trim().slice(0, 2000);
     if (tipo === 'modificacion' && comentario.length < 5) return json({ error: 'Falta decir qué quiere cambiar.', codigo: 'falta_comentario' }, 400);
     if (tipo === 'rechazo' && p.respuesta_cliente === 'rechazado') return json({ ok: true, ya: true });
+    if (p.respuesta_cliente === 'rechazado' && tipo !== 'rechazo') return json({ error: 'Este presupuesto figura como rechazado. Escríbanos si ha cambiado de idea.', codigo: 'rechazado' }, 409);
+    // La misma petición de visita o de tiempo, repetida antes de que la veamos, no manda otro aviso.
+    if ((tipo === 'visita' || tipo === 'tiempo') && p.comentario_cliente_tipo === tipo && p.comentario_cliente_at && !p.comentario_visto_at) return json({ ok: true, ya: true });
     // Un doble toque o una recarga no mandan dos avisos.
     const cuando = new Date();
     if (p.comentario_cliente_at && cuando.getTime() - new Date(p.comentario_cliente_at).getTime() < 20_000) return json({ ok: true, ya: true });
@@ -454,7 +470,7 @@ Deno.serve(async (req) => {
     if (p.cliente_id) {
       try {
         await sb.from('cliente_bitacora').insert({ cliente_id: p.cliente_id, tipo: 'presupuesto', por: null,
-          texto: (tipo === 'rechazo' ? 'El cliente RECHAZÓ el presupuesto' : 'El cliente PIDE CAMBIOS en el presupuesto') + numTxt + ' desde su página (' + tituloCliente(p) + ' · ' + eur(p.total_venta) + '): ' + cita });
+          texto: R[tipo].bitacora + numTxt + ' desde su página (' + tituloCliente(p) + ' · ' + eur(p.total_venta) + '): ' + cita });
       } catch (_) { /* sin bitácora */ }
     }
     // El aviso: a quien se lo mandó; si no se sabe (salió de Teamleader o «por otro lado»), a
@@ -477,18 +493,12 @@ Deno.serve(async (req) => {
           const enlaceApp = APP_URL + '#presupuesto=' + p.id;
           const emailCli = esEmail(p.enviado_correo_a) ? limpio(p.enviado_correo_a) : (esEmail(cli.email) ? limpio(cli.email) : '');
           const hora = cuando.toLocaleString('es-ES', { timeZone: ZONA });
-          const titulo = tipo === 'rechazo' ? 'Presupuesto rechazado por el cliente' : 'El cliente pide cambios en su presupuesto';
-          const frase = tipo === 'rechazo'
-            ? 'ha rechazado desde su página el presupuesto'
-            : 'pide cambios desde su página en el presupuesto';
-          const queHacer = tipo === 'rechazo'
-            ? 'En la app ya figura como rechazado, con este motivo.'
-            : 'El presupuesto sigue esperando respuesta. Modifícalo y reenvíaselo (verá la versión nueva en su mismo enlace) o guarda los cambios como presupuesto nuevo.';
+          const titulo = R[tipo].titulo, frase = R[tipo].frase, queHacer = R[tipo].hacer, etiqueta = R[tipo].etiqueta;
           await mandar(RESEND, Object.assign({ to: para,
-            subject: (tipo === 'rechazo' ? '✗ Presupuesto rechazado' : '✎ Cambios pedidos en el presupuesto') + numTxt + ': ' + (cli.nombre || 'cliente') + ' · ' + eur(p.total_venta),
-            text: `${cli.nombre || 'El cliente'} ${frase}${numTxt} «${tituloCliente(p)}» (${eur(p.total_venta)} sin IVA) el ${hora}.\n\n${tipo === 'rechazo' ? 'Motivo' : 'Lo que pide'}:\n${comentario || '(no ha escrito nada)'}\n\n${queHacer}\n${[emailCli, limpio(cli.telefono)].filter(Boolean).join(' · ')}\nAbrir el presupuesto: ${enlaceApp}`,
+            subject: R[tipo].asunto + numTxt + ': ' + (cli.nombre || 'cliente') + ' · ' + eur(p.total_venta),
+            text: `${cli.nombre || 'El cliente'} ${frase}${numTxt} «${tituloCliente(p)}» (${eur(p.total_venta)} sin IVA) el ${hora}.\n\n${etiqueta}:\n${comentario || '(no ha escrito nada)'}\n\n${queHacer}\n${[emailCli, limpio(cli.telefono)].filter(Boolean).join(' · ')}\nAbrir el presupuesto: ${enlaceApp}`,
             html: marco(titulo, `<p><b>${esc(cli.nombre || 'El cliente')}</b> ${frase}${esc(numTxt)} <b>${esc(tituloCliente(p))}</b> (${eur(p.total_venta)} sin IVA) el ${esc(hora)}.</p>
-              <div style="font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:#777;margin-top:14px">${tipo === 'rechazo' ? 'Motivo' : 'Lo que pide'}</div>
+              <div style="font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:#777;margin-top:14px">${etiqueta}</div>
               <div style="background:#f5f4ef;border-radius:12px;padding:14px 16px;white-space:pre-wrap;font-size:15px;line-height:1.5;margin-top:6px">${comentario ? esc(comentario) : '<span style="color:#777">(no ha escrito nada)</span>'}</div>
               <p style="font-size:14px;color:#555">${esc(queHacer)}</p>
               ${emailCli || limpio(cli.telefono) ? `<p style="font-size:14px;color:#555">${esc([emailCli, limpio(cli.telefono)].filter(Boolean).join(' · '))}</p>` : ''}
@@ -569,13 +579,15 @@ Deno.serve(async (req) => {
   }
   let replyTo = ''; try { const { data: aj } = await sb.from('ajustes').select('valor').eq('clave', 'correo_oficina').maybeSingle(); replyTo = limpio(aj?.valor); } catch (_) { /* sin ajuste */ }
   if (!replyTo && esEmail(yo.email_avisos)) replyTo = limpio(yo.email_avisos);
-  const saludo = rellena(T.hola, { n: cli?.nombre || '' }).replace(/\s+,/, ',');
-  const intro = ps.length === 1 ? T.intro1 : rellena(T.introN, { k: ps.length });
-  const cuerpoHtml = `<p>${esc(saludo)}</p><p>${esc(intro)}</p>${mensaje ? `<div style="background:#f5f4ef;border-radius:12px;padding:14px 16px;white-space:pre-wrap;font-size:15px;line-height:1.5">${esc(mensaje)}</div>` : ''}
+  // Sin saludo ni texto fijo delante (Enzo, 26-11-2026: «el texto predeterminado, "Hola cliente,
+  // le enviamos el presupuesto…", sácalo totalmente, así escribimos a cada cliente manualmente»):
+  // el correo empieza por el mensaje que escribe la persona, tal cual; después, el presupuesto
+  // con su botón, el pie y la firma.
+  const cuerpoHtml = `${mensaje ? `<div style="white-space:pre-wrap;font-size:15px;line-height:1.55">${esc(mensaje)}</div>` : ''}
     ${tarjetas.join('')}
     <p style="font-size:14px;color:#555">${esc(T.pie)}</p>
     <p>${esc(T.saludo)}<br><b>${esc(yo.nombre || 'Sysefen')}</b><br>Sysefen</p>`;
-  const cuerpoTxt = `${saludo}\n\n${intro}\n\n${mensaje ? mensaje + '\n\n' : ''}${textos.join('\n\n')}\n\n${T.pie}\n\n${T.saludo}\n${yo.nombre || 'Sysefen'}\nSysefen`;
+  const cuerpoTxt = `${mensaje ? mensaje + '\n\n' : ''}${textos.join('\n\n')}\n\n${T.pie}\n\n${T.saludo}\n${yo.nombre || 'Sysefen'}\nSysefen`;
   try {
     await mandar(RESEND, Object.assign({ to: [para], subject: asunto, text: cuerpoTxt, html: marco(ps.length === 1 ? T.titulo1 : T.tituloN, cuerpoHtml), attachments: adjuntos.length ? adjuntos : undefined }, cc.length ? { cc } : {}, replyTo ? { reply_to: replyTo } : {}));
   } catch (e) { return json({ error: 'No se pudo mandar el correo: ' + (e as Error).message }, 502); }
