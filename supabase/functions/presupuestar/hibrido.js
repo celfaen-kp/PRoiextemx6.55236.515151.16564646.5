@@ -243,7 +243,7 @@ export function presupuestarSoloBateria(datos, cfg) {
   const incidencias = (viejo.incidencias || []).filter((i) => i.nivel === 'error' && i.codigo !== 'sin_lineas' ? refs.some((r) => String(i.mensaje || '').indexOf(r) >= 0) || i.codigo === 'precio_pendiente'
     : i.codigo === 'precio_pendiente' && refs.some((r) => String(i.mensaje || '').indexOf(r) >= 0));
   const aviso = (mensaje, campo) => incidencias.push({ nivel: 'aviso', codigo: 'solo_bateria', mensaje, campo: campo || null });
-  aviso('Solo batería: sin paneles, inversor ni estructura. Comprueba que el inversor que ya tiene el cliente admite esta batería; si no, añade el inversor del catálogo.');
+  aviso((esSoloPaneles(d) ? 'Batería en una instalación que ya existe: sin inversor.' : 'Solo batería: sin paneles, inversor ni estructura.') + ' Comprueba que el inversor que ya tiene el cliente admite esta batería; si no, añade el inversor del catálogo.');
   if (!(Number(d.baterias_kwh) > 0)) aviso('Faltan los kWh de la batería: se ha puesto la capacidad por defecto. Ponlos en «Batería».', 'baterias_kwh');
   if (BAT_DE_CATALOGO.includes(marcaBat) && !d.bateria_ref) {
     aviso(marcaBat === 'huawei' ? 'Batería Huawei: elige el modelo en «Batería» (LUNA2000 S1, módulos de 5 o 6,9 kWh). Entran los módulos que hagan falta para los kWh y una base de control por cada tres.'
@@ -285,4 +285,188 @@ export function extrasSoloBateria(datos) {
   out.push(pon(SOLO_BATERIA.instalacion, SEC_INSTALACION));
   out.push(pon(SOLO_BATERIA.legalizacion, SEC_INSTALACION));
   return out;
+}
+
+// =============================================================================
+// SOLO PANELES (Enzo, 26-11-2026): «hacer un presupuesto para solo agregar
+// paneles, donde preguntaría el tipo de lugar para saber si va en teja o con
+// lastre o perfiles, y las unidades a agregar… solo montaje y paneles como ya
+// sabes hacerlo, y los cables no hacen falta, ya que se conecta al string que
+// haya al lado… nada de trámites ni materiales, solo algo de pequeño material
+// de conexión, unos 30 € por panel… así, si hago un presu de baterías y quiero
+// agregar paneles a una instalación existente, ya lo pueda hacer».
+//
+// El cliente ya tiene instalación: no hay inversor, cableado, protecciones,
+// trámites ni costes internos. Lo que sale, cada cosa en su línea:
+//   · los paneles: el del modelo de Ramón (fv.js), a su coste con el margen
+//     objetivo del modelo;
+//   · la estructura de esos paneles, con las mismas cuentas del modelo: en teja,
+//     perfiles, presores y anclajes químicos; en plana o suelo, lastres Sun
+//     Ballast. En una sola línea, con su desglose por dentro. Chapa y pérgola no
+//     están en el modelo: salen de las reglas del capítulo 02, como en una
+//     instalación completa, con sus precios pendientes de confirmar;
+//   · el montaje: jornadas de la pareja al precio de venta del modelo
+//     (parametros.venta_jornada). Una jornada por cada 8 paneles
+//     (parametros.paneles_por_jornada_extra, lo mismo que el modelo cuenta por
+//     cada 8 paneles de más en una instalación grande), o las que se pongan a mano;
+//   · el elevador, si hay horas apuntadas (en plana, las mínimas del modelo,
+//     para subir los lastres);
+//   · el pequeño material eléctrico de conexión: un producto del catálogo
+//     propio, por panel (lo añade la función con extrasSoloPaneles()).
+// Se puede juntar con «solo batería»: presupuestarAmpliacion() hace los dos.
+// =============================================================================
+export const SOLO_PANELES = { pequeno_material: 'SY-PEQUENO-MATERIAL-ELECTRICO-AMPLIACION-PANELES' };
+const SEC_PANELES = 'Ampliación de paneles';
+/** ¿Se añaden paneles a una instalación que ya existe? (la casilla de la ficha o del presupuesto sin visita) */
+export function esSoloPaneles(datos) { return !!datos && siHib(datos.solo_paneles); }
+/** Cuántos paneles se añaden: los puestos a mano o, en la visita, los que caben. */
+export function panelesAmpliacion(datos) {
+  const d = datos || {};
+  const n = numHib(d.paneles_manual) > 0 ? numHib(d.paneles_manual) : numHib(d.modulos_estimados);
+  return Math.max(0, Math.round(n));
+}
+/** Jornadas de la pareja para montar n paneles: las puestas a mano o una por cada 8. */
+export function jornadasAmpliacion(n, modelo, aMano) {
+  const m = numHib(aMano);
+  if (m > 0) return Math.round(m * 2) / 2;   // de media en media jornada
+  const par = modelo && modelo.parametros && modelo.parametros.paneles_por_jornada_extra;
+  const por = numHib(par && par.valor) || 8;
+  return Math.max(1, Math.ceil(numHib(n) / por - 1e-9));
+}
+
+export function presupuestarSoloPaneles(datos, mod, cfg) {
+  const modelo = mod.datos;
+  const P = {};
+  Object.keys(modelo.parametros || {}).forEach((k) => { P[k] = modelo.parametros[k].valor; });
+  const n = panelesAmpliacion(datos);
+  const incidencias = [];
+  const aviso = (mensaje, campo, nivel) => incidencias.push({ nivel: nivel || 'aviso', codigo: 'solo_paneles', mensaje, campo: campo || null });
+  const fuera = { lineas: [], incidencias, variables: { solo_paneles: 1 }, recargo_sobre_coste: null, motor_version: MOTOR_VERSION + ' · solo paneles · FV v2 ' + String(mod.version), modelo_id: mod.id, resumen: null };
+  if (!n) { aviso('Faltan los paneles que se añaden.', 'paneles_manual', 'error'); return fuera; }
+
+  // Sin filas apuntadas, una sola fila (lo normal al alargar un string); el modelo cuenta dos.
+  const filasDadas = Array.isArray(datos.filas_paneles) && datos.filas_paneles.some((f) => f && numHib(f.paneles) > 0);
+  const d = Object.assign({}, datos, { paneles_manual: n, filas_paneles: filasDadas ? datos.filas_paneles : [{ paneles: n }] });
+  const m = entradaDesdeDatos(d, modelo);
+  const entrada = Object.assign({}, m.entrada, { paneles_forzado: n, sis: 'Fronius', inv_modelo: null, subv: 'No', cee: 'No' });
+  const r = calcularFV(entrada, modelo, { chapaAMedida: false, inversorFuera: true });
+  const margen = numHib(P.margen_obj);
+  const conMargen = (coste) => (margen > 0 && margen < 1 ? coste / (1 - margen) : coste);
+  const linea = (o) => Object.assign({ producto_ref: null, detalle_tecnico: null, especificaciones: [], dto_linea_pct: 0, iva: 21, seccion: SEC_PANELES,
+    origen: 'partida', origen_regla_id: null, confirmada: true }, o);
+  const renglon = (x) => ({ nombre: x.partida, cantidad: Math.round(x.cantidad * 1000) / 1000, unidad: x.ud, coste_ud: x.coste_ud, coste: x.coste,
+    venta_ud: r2(conMargen(x.coste_ud)), venta: r2(conMargen(x.coste)) });
+  const lineas = [];
+
+  // --- los paneles
+  const pan = r.partidas.find((x) => x.bloque === 'MÓDULOS FOTOVOLTAICOS' && x.cantidad > 0);
+  if (pan) {
+    const nombre = String(pan.partida).replace(/^Panel /, '');
+    lineas.push(linea({
+      descripcion: 'Módulo fotovoltaico ' + nombre,
+      detalle_tecnico: n + (n === 1 ? ' módulo ' : ' módulos ') + nombre + ' (' + String(r.kwp).replace('.', ',') + ' kWp) que se añaden a la instalación existente',
+      cantidad: n, unidad: 'ud', precio_tarifa: r2(conMargen(pan.coste_ud)), precio_coste: pan.coste_ud,
+      origen_inputs: { auto: 'solo_paneles', grupo: 'Paneles', desglose: [renglon(pan)] },
+    }));
+  }
+
+  // --- la estructura
+  const cubiertaModelo = entrada.cubierta === 'Teja' || entrada.cubierta === 'Plana';
+  let variablesViejo = {};
+  if (cubiertaModelo) {
+    const est = r.partidas.filter((x) => x.bloque === 'ESTRUCTURA' && x.cantidad > 0);
+    const coste = r2(est.reduce((s, x) => s + x.coste, 0));
+    const texto = (est.find((x) => x.texto) || {}).texto || 'Estructura de los paneles';
+    if (est.length) lineas.push(linea({
+      descripcion: (entrada.cubierta === 'Teja' ? 'Estructura coplanar de aluminio para teja' : 'Estructura con lastres de hormigón para cubierta plana') + ' (' + n + (n === 1 ? ' panel)' : ' paneles)'),
+      detalle_tecnico: texto,
+      cantidad: 1, unidad: 'ud', precio_tarifa: r2(conMargen(coste)), precio_coste: coste,
+      origen_inputs: { auto: 'solo_paneles', grupo: 'Estructura', desglose: est.map(renglon) },
+    }));
+    const avEst = est.map((x) => x.aviso).filter(Boolean);
+    avEst.filter((a, i) => avEst.indexOf(a) === i).forEach((a) => aviso(a, 'tipo_cubierta'));
+  } else {
+    // Chapa, pérgola…: el capítulo 02 del motor por capítulos, como en una instalación completa.
+    const reglas = (cfg.reglas || []).filter((rg) => rg.tipo !== 'aviso' && String(rg.seccion || '').startsWith('02 · '));
+    const viejo = calcular('solar', Object.assign({}, d, { inversor_kw: 0 }), Object.assign({}, cfg, { reglas }));
+    variablesViejo = viejo.variables || {};
+    (viejo.lineas || []).forEach((l) => lineas.push(Object.assign({}, l, { seccion: SEC_PANELES })));
+    const refs = (viejo.lineas || []).map((l) => String(l.producto_ref || '')).filter(Boolean);
+    (viejo.incidencias || []).filter((i) => i.codigo === 'precio_pendiente' && refs.some((x) => String(i.mensaje || '').indexOf(x) >= 0)).forEach((i) => incidencias.push(i));
+    aviso('Cubierta «' + m.cubierta_app + '»: no está en el presupuestador nuevo; la estructura sale de las reglas antiguas, con sus precios pendientes de confirmar. Revisar.'
+      + ((viejo.lineas || []).length ? '' : ' No ha salido ninguna línea de estructura: añádela a mano.'), 'tipo_cubierta');
+  }
+
+  // --- el montaje
+  const jornadas = jornadasAmpliacion(n, modelo, datos.jornadas_montaje);
+  const aMano = numHib(datos.jornadas_montaje) > 0;
+  const ventaJornada = numHib(P.venta_jornada) > 0 ? numHib(P.venta_jornada) : r2(conMargen(r.jornada));
+  lineas.push(linea({
+    descripcion: 'Montaje de los paneles y conexión a la instalación existente',
+    detalle_tecnico: 'Montaje por personal propio (oficial y ayudante): estructura, módulos, conexión al string existente y pruebas',
+    cantidad: jornadas, unidad: 'jornada', precio_tarifa: ventaJornada, precio_coste: r2(r.jornada),
+    origen_inputs: { auto: 'solo_paneles', montaje: true, jornadas, a_mano: aMano },
+  }));
+
+  // --- el elevador, como en una instalación completa
+  if (r.horas_elev > 0) lineas.push(linea({
+    descripcion: 'Elevador de carga (' + String(r.horas_elev).replace('.', ',') + ' h)',
+    detalle_tecnico: 'Elevador propio para subir el material a la cubierta; se cobra aparte por horas.',
+    cantidad: r.horas_elev, unidad: 'h', precio_tarifa: r.pvp_elev, precio_coste: 0, seccion: 'Medios auxiliares',
+    origen_inputs: { auto: 'solo_paneles', elevador: true },
+  }));
+
+  // --- los avisos
+  aviso('Añadir paneles: sin inversor, cableado ni protecciones. Comprueba que el inversor y el string que ya hay admiten ' + n + (n === 1 ? ' panel' : ' paneles')
+    + ' más (tensión, intensidad y potencia) y que este panel es compatible con los instalados.'
+    + (String(datos.inversor_marca || '').toLowerCase() === 'enphase' ? ' Con microinversores Enphase hace falta uno por panel, con su cable: añádelos del catálogo.' : ' Si la instalación es de microinversores, añade uno por panel del catálogo.'));
+  aviso('Montaje: ' + String(jornadas).replace('.', ',') + (jornadas === 1 ? ' jornada' : ' jornadas') + ' de la pareja' + (aMano ? ', puestas a mano.' : ' (una por cada ' + (numHib(P.paneles_por_jornada_extra) || 8) + ' paneles). Cámbialas si no son esas.'), 'jornadas_montaje');
+  if (!filasDadas && n > 1) aviso('Sin «paneles por fila»: la estructura se cuenta en una sola fila de ' + n + ' paneles.', 'filas_paneles');
+  m.avisos.filter((a) => /pizarra/i.test(a) || /Wp de la ficha/.test(a)).forEach((a) => aviso(a));
+  if (r.horas_elev > 0 && !(numHib(entrada.horas_elev) > 0)) aviso('Cubierta plana: entran ' + String(r.horas_elev).replace('.', ',') + ' h de elevador para subir los lastres, como en una instalación completa. Quítalo si no hace falta.', 'horas_elevador');
+  if (!esSoloBateria(datos)) aviso('Sin trámites: si la ampliación cambia la potencia legalizada de la instalación, mira si hay que actualizar la legalización y añádela del catálogo.');
+
+  return {
+    lineas, incidencias,
+    variables: Object.assign({}, variablesViejo, { solo_paneles: 1, amp_n_pan: n, amp_kwp: r.kwp, amp_jornadas: jornadas }),
+    recargo_sobre_coste: null,
+    motor_version: fuera.motor_version,
+    modelo_id: mod.id,
+    resumen: null,
+  };
+}
+
+/** Lo que se añade del catálogo al añadir paneles: el pequeño material de conexión, uno por panel. */
+export function extrasSoloPaneles(datos) {
+  const n = panelesAmpliacion(datos);
+  return n ? [{ producto_ref: SOLO_PANELES.pequeno_material, cantidad: n, seccion: SEC_PANELES, _auto: 'solo_paneles' }] : [];
+}
+
+/**
+ * Trabajos en una instalación que ya existe: solo batería, solo paneles o los
+ * dos a la vez. Primero la batería, después los paneles.
+ */
+export function presupuestarAmpliacion(datos, mod, cfg) {
+  const bat = esSoloBateria(datos), pan = esSoloPaneles(datos);
+  if (bat && !pan) return presupuestarSoloBateria(datos, cfg);
+  if (pan && !bat) return presupuestarSoloPaneles(datos, mod, cfg);
+  const rb = presupuestarSoloBateria(datos, cfg), rp = presupuestarSoloPaneles(datos, mod, cfg);
+  return {
+    lineas: rb.lineas.concat(rp.lineas),
+    incidencias: rb.incidencias.concat(rp.incidencias),
+    variables: Object.assign({}, rb.variables, rp.variables),
+    recargo_sobre_coste: rb.recargo_sobre_coste,
+    motor_version: MOTOR_VERSION + ' · batería y paneles · FV v2 ' + String(mod.version),
+    modelo_id: mod.id,
+    resumen: null,
+  };
+}
+
+/** Lo del catálogo en un trabajo sobre una instalación existente, en su orden:
+ *  accesorios de la batería, pequeño material de los paneles y, al final, instalación y legalización de la batería. */
+export function extrasAmpliacion(datos) {
+  const bat = esSoloBateria(datos) ? extrasSoloBateria(datos) : [];
+  const pan = esSoloPaneles(datos) ? extrasSoloPaneles(datos) : [];
+  const finales = bat.filter((x) => x.seccion === SEC_INSTALACION);
+  return bat.filter((x) => x.seccion !== SEC_INSTALACION).concat(pan, finales);
 }

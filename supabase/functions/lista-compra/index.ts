@@ -177,7 +177,7 @@ function clasificar(presupuestos: Fila[], lineasPor: Map<string, Fila[]>, produc
           const c = num(d.cantidad); if (c <= 0) continue;
           const nombre = String(d.nombre || d.articulo || '');
           if (esServicioTexto(nombre, String(d.unidad || ''))) items.push(item({ articulo: nombre, cantidad: c, ud: d.unidad, coste_ud: d.coste_ud, venta_ud: d.venta_ud, importe: d.coste, tipo: 'servicio', presupuesto: p.id }));
-          else items.push(item({ articulo: nombre, ref: l.producto_ref || null, cantidad: c, ud: d.unidad, coste_ud: d.coste_ud, venta_ud: d.venta_ud, proveedor: proveedorPorMarca(nombre, marcas as { marca: string; proveedor_codigo: string }[], provs), tipo: 'material', presupuesto: p.id }));
+          else items.push(item({ articulo: nombre, ref: l.producto_ref || null, cantidad: c, ud: d.unidad, coste_ud: d.coste_ud, venta_ud: d.venta_ud, proveedor: provPorCodigo(articulos.get(nombre)) || proveedorPorMarca(nombre, marcas as { marca: string; proveedor_codigo: string }[], provs), tipo: 'material', presupuesto: p.id }));
         }
         continue;
       }

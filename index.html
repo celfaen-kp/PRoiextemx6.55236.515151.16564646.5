@@ -569,7 +569,7 @@ import * as idiomas from './presu-idiomas.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '34.0'; // versión visible de la app (única fuente)
+const APP_VERSION = '34.1'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -8332,9 +8332,11 @@ function marcaBaseFV() {
 /** La batería con la que se calcula sin opción: la del suelto o la de la ficha. */
 function bateriaBaseFV() {
   if (enSuelto()) { const f = V.suelto; const kwh = Number(String(f.bateria || '').replace(',', '.')) || 0; const solo = !!f.solo_bateria;
+    if (f.solo_paneles && !solo) return { con: false, marca: '', kwh: 0 };   // solo paneles: sin batería
     return { con: solo || kwh > 0, marca: f.bateria_marca || (solo ? (((BATERIAS_DE[f.inversor] || BATERIAS_DE.fronius)[0] || [''])[0]) : ''), kwh }; }
   const f = fichaVisitaActual('solar'); const d = (f && f.datos) || {};
   const solo = d.solo_bateria === true;
+  if (d.solo_paneles === true && !solo) return { con: false, marca: '', kwh: 0 };
   return { con: solo || d.baterias === 'si' || Number(d.baterias_kwh) > 0, marca: d.bateria_marca || (solo ? (((BATERIAS_DE[d.inversor_marca] || BATERIAS_DE.fronius)[0] || [''])[0]) : ''), kwh: Number(d.baterias_kwh) || 0 };
 }
 /** ¿Se está presupuestando solo la batería? (Enzo, 24-11-2026): lo dice el presupuesto sin visita o la ficha. */
@@ -8342,6 +8344,12 @@ function soloBateriaFV() {
   if (enSuelto()) return !!(V.suelto && V.suelto.solo_bateria);
   const f = fichaVisitaActual('solar');
   return !!(f && f.datos && f.datos.solo_bateria === true);
+}
+/** ¿Se añaden paneles a una instalación que ya existe? (Enzo, 26-11-2026): lo dice el presupuesto sin visita o la ficha. */
+function soloPanelesFV() {
+  if (enSuelto()) return !!(V.suelto && V.suelto.solo_paneles);
+  const f = fichaVisitaActual('solar');
+  return !!(f && f.datos && f.datos.solo_paneles === true);
 }
 /** Los datos con la opción encima. La batería se adapta a la marca, como en el suelto. */
 /** Dónde viven las opciones de fotovoltaica ahora mismo: en el presupuesto
@@ -8511,12 +8519,14 @@ A.presuOpcionEquipoAero = (clave, ref) => {
 };
 function opcionesMarcaHTML() {
   const t = fvObjetivo(); if (!t) return '';
+  // Solo paneles: no hay marca de inversor ni batería que elegir.
+  if (soloPanelesFV() && !soloBateriaFV()) return '';
   const p = t.holder;
   const actual = (p.opcion && p.opcion.inversor_marca) || marcaBaseFV();
   return `<div style="margin-top:12px;padding:10px 12px;border-radius:12px;background:rgba(var(--tinta-rgb),.045)">
     ${t.conjunto ? '<div class="lbl" style="font-size:11px;margin-bottom:8px;color:var(--verde-o)">Paneles solares · dentro del conjunto</div>' : ''}
     <div class="row g8" style="align-items:center;flex-wrap:wrap">
-      <span class="lbl" style="font-size:11px">${soloBateriaFV() ? 'Solo batería · inversor que tiene' : 'Opción con'}</span>
+      <span class="lbl" style="font-size:11px">${soloBateriaFV() ? (soloPanelesFV() ? 'Batería y paneles' : 'Solo batería') + ' · inversor que tiene' : 'Opción con'}</span>
       ${MARCAS_FV.map(([k, l]) => `<span class="chip ${actual === k ? 'on' : ''}" data-a="presuOpcionMarca" data-m="${k}" style="cursor:pointer">${l}</span>`).join('')}
     </div>
     ${(() => {
@@ -10826,6 +10836,10 @@ const presuNuevoVacio = () => ({
   // solo batería (Enzo, 24-11-2026): el cliente ya tiene placas; sale la batería
   // con su backup, su instalación y la legalización, sin paneles ni inversor.
   solo_bateria: false,
+  // solo paneles (Enzo, 26-11-2026): se añaden paneles a una instalación que ya
+  // existe; salen los paneles, su estructura, el montaje y el pequeño material de
+  // conexión. jornadas_amp: los días de montaje a mano (vacío = uno por cada 8 paneles).
+  solo_paneles: false, jornadas_amp: '',
   // presupuestador FV v2 (Ramón, 12-10-2026): sin paneles ni kWp, el
   // dimensionado sale del consumo anual o de la factura mensual.
   consumo: '', factura: '', factura_rango: '', orientacion: 'vertical', km: '', cee: false, cee_h: '', horas_elev: '',
@@ -10859,7 +10873,9 @@ function datosDelSuelto(f) {
   const num = (v) => Number(String(v == null ? '' : v).replace(',', '.')) || 0;
   if (f.cat === 'solar') {
     const solo = !!f.solo_bateria;
-    const conBateria = solo || num(f.bateria) > 0;
+    // Solo paneles sin batería: lo que hubiera escrito de batería no cuenta.
+    const soloPan = !!f.solo_paneles;
+    const conBateria = solo || (!soloPan && num(f.bateria) > 0);
     const n = Math.max(0, Math.min(400, Number(f.paneles) || 0));
     // Las filas: tantas de «por fila» como quepan y una con el resto. Sin
     // dato, no se mandan y el motor reparte con su valor por defecto.
@@ -10883,9 +10899,11 @@ function datosDelSuelto(f) {
       certificado_energetico: true,   // va siempre (19-11-2026)
       cee_desplaz_h: num(f.cee_h),
       horas_elevador: num(f.horas_elev),
-      baterias: conBateria ? 'si' : (f.bateria_futuro ? 'dejar_preparado' : 'no'),
-      baterias_kwh: num(f.bateria),
+      baterias: conBateria ? 'si' : (f.bateria_futuro && !soloPan ? 'dejar_preparado' : 'no'),
+      baterias_kwh: conBateria || !soloPan ? num(f.bateria) : 0,
       solo_bateria: solo,
+      solo_paneles: soloPan,
+      jornadas_montaje: soloPan ? num(f.jornadas_amp) : 0,
       // En solo batería la marca va siempre: la elegida o la primera que va con ese inversor.
       bateria_marca: conBateria ? (f.bateria_marca || (solo ? (((BATERIAS_DE[f.inversor] || BATERIAS_DE.fronius)[0] || [''])[0]) : '')) : '',
       backup: conBateria && !!f.backup,
@@ -11085,6 +11103,9 @@ A.presuSueltoChip = (k, v) => {
   if (['subvencion', 'cargador', 'cee', 'bateria_futuro'].includes(k)) { V.suelto[k] = !V.suelto[k]; render(); return; }
   // Con el motor o libre: al cambiar, lo calculado antes ya no vale.
   if (k === 'libre') { V.suelto.libre = v === '1'; V.presu.datos = null; V.presu.cat = null; V.presu.extra = []; V.presu.quitadas = []; V.presu.ajustes = {}; V.presu.guardado = null; render(); return; }
+  // Alcance en fotovoltaica (26-11-2026): instalación completa o, en una que ya
+  // existe, solo batería, solo paneles o las dos cosas.
+  if (k === 'alcance') { V.suelto.solo_bateria = v === 'bateria' || v === 'bateria_paneles'; V.suelto.solo_paneles = v === 'paneles' || v === 'bateria_paneles'; render(); return; }
   // Los chips de sí/no mandan '' para apagarse y '1' para encenderse.
   V.suelto[k] = v === '' ? false : (/^\d+$/.test(String(v)) && k !== 'cat' ? Number(v) : v);
   if (['sustituye', 'apoyo', 'limpieza', 'backup', 'recuperar', 'solo_bateria'].includes(k)) V.suelto[k] = v !== '';
@@ -11946,12 +11967,18 @@ function camposSolarHTML(f) {
   const kwpPedidos = num(f.kwp);
   const nDeKwp = n ? 0 : (kwpPedidos && wp ? Math.ceil((kwpPedidos * 1000) / wp) : 0);
   const kwp = n ? Math.round(n * wp) / 1000 : Math.round(nDeKwp * wp) / 1000;
-  // Instalación completa o solo batería (Enzo, 24-11-2026).
+  // Qué se presupuesta (Enzo, 24 y 26-11-2026): la instalación completa o, en una
+  // que ya existe, solo la batería, solo paneles o las dos cosas a la vez.
+  const alc = f.solo_bateria && f.solo_paneles ? 'bateria_paneles' : f.solo_bateria ? 'bateria' : f.solo_paneles ? 'paneles' : 'completa';
   const modo = `<div class="lbl" style="margin:16px 0 8px">Alcance</div>
-      <div class="wrap">${chip('solo_bateria', '', 'Instalación completa', f.solo_bateria ? '1' : '')}${chip('solo_bateria', '1', 'Solo batería', f.solo_bateria ? '1' : '')}</div>`;
-  if (f.solo_bateria) {
+      <div class="wrap">${chip('alcance', 'completa', 'Instalación completa', alc)}${chip('alcance', 'bateria', 'Solo batería', alc)}${chip('alcance', 'paneles', 'Solo paneles', alc)}${chip('alcance', 'bateria_paneles', 'Batería y paneles', alc)}</div>`;
+  if (f.solo_bateria || f.solo_paneles) {
     const marcaSel = f.bateria_marca || (marcas[0] || [''])[0];
-    return modo + `<div class="tiny" style="margin-top:8px">El cliente ya tiene placas: sale la batería con su backup, su instalación y la legalización. Sin paneles, inversor ni estructura.</div>
+    const dos = f.solo_bateria && f.solo_paneles;
+    const intro = dos ? 'El cliente ya tiene instalación: sale la batería con su backup, su instalación y la legalización, y los paneles que se añaden con su estructura y su montaje. Sin inversor ni cableado.'
+      : f.solo_bateria ? 'El cliente ya tiene placas: sale la batería con su backup, su instalación y la legalización. Sin paneles, inversor ni estructura.'
+      : 'El cliente ya tiene instalación: salen los paneles que se añaden, su estructura, el montaje y el pequeño material de conexión. Sin inversor, cableado ni trámites: se conectan al string que ya hay.';
+    const bateria = !f.solo_bateria ? '' : `${dos ? '<div class="h2" style="margin-top:26px">Batería</div>' : ''}
       <div class="lbl" style="margin:16px 0 8px">Inversor que ya tiene</div>
       <div class="wrap">${chip('inversor', 'fronius', 'Fronius')}${chip('inversor', 'deye', 'Deye')}${chip('inversor', 'huawei', 'Huawei')}${chip('inversor', 'enphase', 'Enphase')}</div>
       <div class="tiny" style="margin-top:8px">De él depende qué batería le va. Comprueba que admite batería (híbrido); si no, añade el inversor del catálogo al calcular.</div>
@@ -11973,6 +12000,32 @@ function camposSolarHTML(f) {
         : f.inversor === 'deye' ? 'Con Deye el backup no entra solo: añádelo del catálogo si hace falta.'
         : 'Con Fronius: PV Point Comfort. El Backup Switch se añade del catálogo si hace falta.'}</div>
       <div class="tiny" style="margin-top:14px">Entran también «Instalación batería y pequeño material» y «Legalización», a su precio del catálogo (se cambian en Precios).</div>`;
+    // Los paneles que se añaden: cuántos, dónde van y cómo se montan.
+    const jAuto = n ? Math.max(1, Math.ceil(n / 8)) : 0;
+    const paneles = !f.solo_paneles ? '' : `${dos ? '<div class="h2" style="margin-top:26px">Paneles que se añaden</div>' : ''}
+      <div class="row g8" style="margin-top:16px">
+        <div class="grow"><div class="lbl">Paneles a añadir</div>
+          <input class="inp" data-f="presuCampo" data-k="paneles" value="${esc(String(f.paneles))}" inputmode="numeric" placeholder="4" style="margin-top:8px"></div>
+        <div class="grow"><div class="lbl">Paneles por fila</div>
+          <input class="inp" data-f="presuCampo" data-k="por_fila" value="${esc(String(f.por_fila ?? ''))}" inputmode="numeric" placeholder="todos en una" style="margin-top:8px"></div>
+      </div>
+      <div class="tiny" style="margin-top:8px">${n ? 'Son ' + (Math.round(n * 510) / 1000).toLocaleString('es-ES') + ' kWp más, con el panel de 510 Wp del presupuestador. Si el cliente tiene otro panel, cámbialo al calcular.' : 'Pon cuántos paneles se añaden.'}</div>
+      <div class="lbl" style="margin:16px 0 8px">Dónde van</div>
+      <div class="wrap">${chip('cubierta', 'teja_arabe', 'Teja')}${chip('cubierta', 'plana_transitable', 'Plana (lastres)')}${chip('cubierta', 'suelo', 'Suelo (lastres)')}${chip('cubierta', 'chapa_sandwich', 'Chapa / sándwich')}${chip('cubierta', 'pergola', 'Pérgola')}</div>
+      <div class="tiny" style="margin-top:8px${f.cubierta === 'chapa_sandwich' || f.cubierta === 'pergola' ? ';color:var(--ambar-o)' : ''}">${f.cubierta === 'chapa_sandwich' || f.cubierta === 'pergola' ? 'Chapa y pérgola no están en el presupuestador nuevo: la estructura sale de las reglas antiguas, pendiente de confirmar.'
+        : esPlana ? 'Lastres de hormigón Sun Ballast, sin perforar. Entran 4 h de elevador para subirlos, como en una instalación completa; se quitan al calcular si no hacen falta.'
+        : 'Estructura coplanar de aluminio: perfiles, presores y anclajes químicos.'}</div>
+      <div class="lbl" style="margin:14px 0 8px">Panel en</div>
+      <div class="wrap">${chip('orientacion', 'vertical', 'Vertical')}${chip('orientacion', 'horizontal', 'Horizontal')}</div>
+      <div class="row g8" style="margin-top:14px">
+        <div class="grow"><div class="lbl">Días de montaje</div>
+          <input class="inp" data-f="presuCampo" data-k="jornadas_amp" value="${esc(String(f.jornadas_amp ?? ''))}" inputmode="decimal" placeholder="${jAuto ? 'automático: ' + jAuto : 'automático'}" style="margin-top:8px"></div>
+        <div class="grow"><div class="lbl">Horas de elevador</div>
+          <input class="inp" data-f="presuCampo" data-k="horas_elev" value="${esc(String(f.horas_elev ?? ''))}" inputmode="decimal" placeholder="0" style="margin-top:8px"></div>
+      </div>
+      <div class="tiny" style="margin-top:6px">Montaje: una jornada de la pareja por cada 8 paneles, a su precio de venta; pon otra cifra si no es esa (vale 0,5). El elevador se cobra aparte a 65 €/h.</div>
+      <div class="tiny" style="margin-top:14px">Entra también «Pequeño material eléctrico de conexión», uno por panel, a su precio del catálogo (se cambia en Precios).</div>`;
+    return modo + `<div class="tiny" style="margin-top:8px">${intro}</div>` + bateria + paneles;
   }
   return modo + `<div class="row g8" style="margin-top:16px">
         <div class="grow"><div class="lbl">Paneles</div>

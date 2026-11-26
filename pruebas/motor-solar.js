@@ -545,4 +545,60 @@ comprueba('WECO con backup: avisa de que el backup no entra solo', presupuestarS
 comprueba('una instalación completa no cambia: sigue sin ser solo batería', !esSoloBateria(con({ baterias: 'si', baterias_kwh: 10 })));
 
 
+/* --- Solo paneles (Enzo, 26-11-2026): se añaden paneles a una instalación que ya existe --- */
+titulo('solo paneles: paneles, estructura, montaje y pequeño material, sin instalación nueva');
+var modAmp = { id: 'm-amp', version: 'prueba', datos: JSON.parse(read(RUTA_TARIFAS + '/modelo_fv.json')) };
+var PA = function (k) { return modAmp.datos.parametros[k].valor; };
+var PAN = function (extra) { var d = { solo_paneles: true, tipo_cubierta: 'teja_arabe' }; for (var k in extra) d[k] = extra[k]; return d; };
+var lin = function (r, t) { return r.lineas.filter(function (l) { return l.descripcion.indexOf(t) > -1; })[0]; };
+var totalDe = function (r) { return Math.round(r.lineas.reduce(function (s, l) { return s + l.cantidad * l.precio_tarifa; }, 0) * 100) / 100; };
+comprueba('se reconoce la casilla, de la ficha o del presupuesto sin visita', esSoloPaneles({ solo_paneles: true }) && esSoloPaneles({ solo_paneles: 'true' }) && !esSoloPaneles({ solo_paneles: false }) && !esSoloPaneles({}) && !esSoloPaneles(null));
+igual('los paneles que se añaden: los puestos a mano o, en la visita, los que caben', panelesAmpliacion({ paneles_manual: 4, modulos_estimados: 30 }) + '|' + panelesAmpliacion({ modulos_estimados: 6 }) + '|' + panelesAmpliacion({}), '4|6|0');
+igual('jornadas de la pareja: una por cada 8 paneles, o las puestas a mano de media en media', [1, 8, 9, 16, 17].map(function (n) { return jornadasAmpliacion(n, modAmp.datos, 0); }).join(',') + '|' + jornadasAmpliacion(4, modAmp.datos, 0.5) + '|' + jornadasAmpliacion(4, modAmp.datos, 3), '1,1,2,2,3|0.5|3');
+var a4 = presupuestarSoloPaneles(PAN({ paneles_manual: 4 }), modAmp, config);
+igual('4 paneles en teja: tres líneas (paneles, estructura y montaje)', a4.lineas.map(function (l) { return l.cantidad + ' ' + l.unidad; }).join(' | '), '4 ud | 1 ud | 1 jornada');
+var lp = lin(a4, 'Módulo fotovoltaico'), le = lin(a4, 'Estructura coplanar'), lm = lin(a4, 'Montaje de los paneles');
+comprueba('el panel, a su coste del modelo con el margen del modelo', lp.precio_coste === PA('coste_panel') && Math.abs(lp.precio_tarifa - PA('coste_panel') / (1 - PA('margen_obj'))) < 0.006 && lp.detalle_tecnico.indexOf('2,04 kWp') > -1);
+var costeEst = Math.round(le.origen_inputs.desglose.reduce(function (s, x) { return s + x.coste; }, 0) * 100) / 100;
+comprueba('la estructura en una línea con su desglose: su coste es la suma y su venta lleva el margen del modelo', le.cantidad === 1 && le.precio_coste === costeEst && costeEst > 0 && Math.abs(le.precio_tarifa - costeEst / (1 - PA('margen_obj'))) < 0.006);
+comprueba('en teja: perfiles, presores y anclajes, y nada de lastres', le.origen_inputs.desglose.some(function (x) { return x.nombre === 'Perfil G1 4,8 m'; }) && le.origen_inputs.desglose.some(function (x) { return /Pincho/.test(x.nombre); }) && !le.origen_inputs.desglose.some(function (x) { return /Lastre/.test(x.nombre); }));
+comprueba('sin filas apuntadas, una sola fila (el modelo contaría dos) y lo avisa', le.detalle_tecnico.indexOf('1 filas') > -1 && a4.incidencias.some(function (i) { return i.campo === 'filas_paneles'; }));
+comprueba('el montaje: una jornada de la pareja al precio de venta del modelo y a su coste', lm.cantidad === 1 && lm.precio_tarifa === PA('venta_jornada') && lm.precio_coste === Math.round(PA('horas_jornada') * (PA('eur_h_oficial') + PA('eur_h_peon')) * 100) / 100);
+comprueba('ni inversor, ni medidor, ni cable, ni cuadros, ni trámites, ni elevador', a4.lineas.length === 3 && !a4.lineas.some(function (l) { return /nversor|Smart Meter|Cable|Cuadro|Legaliz|Document|Elevador|llave en mano/.test(l.descripcion); }));
+comprueba('todo en «Ampliación de paneles», con precio y marcado como del motor', a4.lineas.every(function (l) { return l.seccion === 'Ampliación de paneles' && l.precio_tarifa > 0 && l.confirmada && l.origen_inputs.auto === 'solo_paneles'; }));
+comprueba('avisa de comprobar el inversor y el string, de las jornadas y de la legalización; ningún error', a4.incidencias.every(function (i) { return i.nivel === 'aviso'; }) && a4.incidencias.some(function (i) { return i.mensaje.indexOf('admiten 4 paneles más') > 0; })
+  && a4.incidencias.some(function (i) { return i.campo === 'jornadas_montaje'; }) && a4.incidencias.some(function (i) { return i.mensaje.indexOf('Sin trámites') === 0; }));
+comprueba('no avisa de metros de cable ni de km: aquí no cuentan', !a4.incidencias.some(function (i) { return /metros|km/.test(i.mensaje); }));
+comprueba('la versión del motor lo dice, con el modelo', /solo paneles · FV v2 prueba$/.test(a4.motor_version) && a4.modelo_id === 'm-amp' && a4.variables.solo_paneles === 1 && a4.variables.amp_n_pan === 4 && a4.variables.amp_kwp === 2.04);
+igual('del catálogo entra el pequeño material, uno por panel', extrasSoloPaneles(PAN({ paneles_manual: 4 })).map(function (x) { return x.cantidad + '×' + x.producto_ref + ':' + x.seccion + ':' + x._auto; }).join(' | '), '4×' + SOLO_PANELES.pequeno_material + ':Ampliación de paneles:solo_paneles');
+var a10 = presupuestarSoloPaneles(PAN({ paneles_manual: 10, filas_paneles: [{ paneles: 5 }, { paneles: 5 }] }), modAmp, config);
+comprueba('10 paneles en dos filas: dos jornadas, estructura de dos filas y sin aviso de filas', lin(a10, 'Montaje').cantidad === 2 && lin(a10, 'Estructura coplanar').detalle_tecnico.indexOf('2 filas') > -1 && !a10.incidencias.some(function (i) { return i.campo === 'filas_paneles'; }));
+comprueba('con los días de montaje a mano, esos', lin(presupuestarSoloPaneles(PAN({ paneles_manual: 10, jornadas_montaje: 1.5 }), modAmp, config), 'Montaje').cantidad === 1.5);
+var aPl = presupuestarSoloPaneles(PAN({ paneles_manual: 6, tipo_cubierta: 'plana_transitable' }), modAmp, config);
+var lePl = lin(aPl, 'Estructura con lastres');
+comprueba('en plana: lastres Sun Ballast (paneles + 1 en una fila), sin perfiles ni pinchos', !!lePl && lePl.origen_inputs.desglose.filter(function (x) { return /^Lastre/.test(x.nombre); })[0].cantidad === 7 && !lePl.origen_inputs.desglose.some(function (x) { return /Perfil|Pincho/.test(x.nombre); }));
+comprueba('y el elevador mínimo del modelo, aparte, con su aviso', !!lin(aPl, 'Elevador de carga') && lin(aPl, 'Elevador de carga').cantidad === PA('horas_elev_plana') && lin(aPl, 'Elevador de carga').precio_tarifa === PA('pvp_elev') && aPl.incidencias.some(function (i) { return i.campo === 'horas_elevador'; }));
+comprueba('en suelo, igual que en plana', !!lin(presupuestarSoloPaneles(PAN({ paneles_manual: 6, tipo_cubierta: 'suelo' }), modAmp, config), 'Estructura con lastres'));
+comprueba('en teja con horas de elevador apuntadas, entran', lin(presupuestarSoloPaneles(PAN({ paneles_manual: 4, horas_elevador: 2 }), modAmp, config), 'Elevador de carga').cantidad === 2);
+var aCh = presupuestarSoloPaneles(PAN({ paneles_manual: 5, tipo_cubierta: 'chapa_sandwich' }), modAmp, config);
+comprueba('en chapa: la estructura sale de las reglas del capítulo 02 y avisa de revisarla', aCh.lineas.some(function (l) { return /chapa/i.test(l.descripcion) && l.seccion === 'Ampliación de paneles'; }) && aCh.incidencias.some(function (i) { return i.campo === 'tipo_cubierta' && i.mensaje.indexOf('reglas antiguas') > 0; })
+  && !!lin(aCh, 'Módulo fotovoltaico') && !!lin(aCh, 'Montaje'));
+comprueba('en chapa tampoco entra nada del resto de la instalación', !aCh.lineas.some(function (l) { return /^FV-0[13-9]-|^FV-1\d-|FRONIUS|SMART-METER/.test(String(l.producto_ref)); }));
+var aSin = presupuestarSoloPaneles(PAN({}), modAmp, config);
+comprueba('sin paneles: ninguna línea y un error que lo dice', aSin.lineas.length === 0 && aSin.incidencias.length === 1 && aSin.incidencias[0].nivel === 'error' && aSin.incidencias[0].campo === 'paneles_manual' && extrasSoloPaneles(PAN({})).length === 0);
+comprueba('con Enphase apuntado avisa de los microinversores', presupuestarSoloPaneles(PAN({ paneles_manual: 2, inversor_marca: 'enphase' }), modAmp, config).incidencias.some(function (i) { return i.mensaje.indexOf('microinversores Enphase') > 0; }));
+igual('el total de 4 paneles en teja es la suma de sus tres líneas', totalDe(a4), Math.round((4 * lp.precio_tarifa + le.precio_tarifa + lm.precio_tarifa) * 100) / 100);
+
+titulo('batería y paneles a la vez en una instalación existente');
+var dAmb = SOLO({ solo_paneles: true, paneles_manual: 4, tipo_cubierta: 'teja_arabe', bateria_marca: 'byd', baterias_kwh: 10 });
+var rAmb = presupuestarAmpliacion(dAmb, modAmp, config);
+igual('primero la batería y después los paneles', rAmb.lineas.map(function (l) { return l.seccion; }).filter(function (s, i, a) { return a.indexOf(s) === i; }).join(' > '), 'Almacenamiento > Ampliación de paneles');
+comprueba('las líneas son las de las dos cosas por separado', rAmb.lineas.length === sByd.lineas.length + a4.lineas.length && totalDe(rAmb) === Math.round((totalDe(sByd) + totalDe(a4)) * 100) / 100);
+comprueba('la versión lo dice y no avisa de «sin trámites»: la legalización entra con la batería', /batería y paneles · FV v2 prueba$/.test(rAmb.motor_version) && !rAmb.incidencias.some(function (i) { return i.mensaje.indexOf('Sin trámites') === 0; }) && rAmb.incidencias.some(function (i) { return i.mensaje.indexOf('Batería en una instalación que ya existe') === 0; }));
+igual('del catálogo: el pequeño material de los paneles y, al final, la instalación y la legalización de la batería', extrasAmpliacion(dAmb).map(function (x) { return x.cantidad + '×' + x.producto_ref; }).join(' | '),
+  '4×' + SOLO_PANELES.pequeno_material + ' | 1×SY-INSTALACION-BATERIA-Y-PEQUEN-6C01 | 1×SY-LEGALIZACION-8837');
+comprueba('solo batería sigue igual por este camino', JSON.stringify(presupuestarAmpliacion(SOLO({ bateria_marca: 'byd', baterias_kwh: 10 }), modAmp, config).lineas) === JSON.stringify(sByd.lineas) && extrasAmpliacion(SOLO({ bateria_marca: 'byd', baterias_kwh: 10 })).length === 2);
+comprueba('y solo paneles, igual que su función', JSON.stringify(presupuestarAmpliacion(PAN({ paneles_manual: 4 }), modAmp, config).lineas) === JSON.stringify(a4.lineas) && extrasAmpliacion(PAN({ paneles_manual: 4 })).length === 1);
+
+
 resultado();

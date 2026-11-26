@@ -343,6 +343,9 @@ const SOLAR = {
         // Enzo, 24-11-2026: el cliente ya tiene placas y solo quiere la batería.
         { key: 'solo_bateria', etiqueta: 'Solo batería (ya tiene placas)', tipo: 'bool', motor: true,
           ayuda: 'Se presupuesta solo la batería con su backup, su instalación y la legalización: sin paneles, inversor ni estructura. Pon abajo el inversor que tiene, la marca de la batería y los kWh' },
+        // Enzo, 26-11-2026: el cliente ya tiene instalación y solo se le añaden paneles.
+        { key: 'solo_paneles', etiqueta: 'Solo añadir paneles (ya tiene instalación)', tipo: 'bool', motor: true,
+          ayuda: 'Se presupuestan solo los paneles que se añaden, su estructura, el montaje y el pequeño material de conexión: sin inversor, cableado ni trámites. Los paneles que se añaden son los de «Módulos que caben»; pon también la cubierta y las filas. Con «Solo batería» a la vez salen las dos cosas' },
         { key: 'baterias', etiqueta: 'Baterías', tipo: 'opcion', motor: true,
           opciones: ['no', 'si', 'dejar_preparado'],
           ayuda: 'Fronius: sin batería, GEN24 SC; con batería o «dejar preparado», GEN24 Plus (híbrido). Pasar un SC a Plus después cuesta unos 500 € más' },

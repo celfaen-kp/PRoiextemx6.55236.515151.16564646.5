@@ -104,8 +104,8 @@ setTimeout(function () {
   A.presuSueltoChip('inversor', 'huawei'); A.presuSueltoChip('fases', 'monofasico');
   V.suelto.bateria = ''; V.suelto.bateria_marca = '';
   hs = vPresuNuevo();
-  comprueba('se pregunta qué se presupuesta, y de entrada es la instalación completa', hs.indexOf('>Alcance<') > -1 && hs.indexOf('data-k="solo_bateria" data-v="1"') > -1 && hs.indexOf('data-k="paneles"') > -1 && datosDelSuelto(V.suelto).solo_bateria === false);
-  A.presuSueltoChip('solo_bateria', '1');
+  comprueba('se pregunta qué se presupuesta, y de entrada es la instalación completa', hs.indexOf('>Alcance<') > -1 && hs.indexOf('data-k="alcance" data-v="bateria"') > -1 && hs.indexOf('data-k="paneles"') > -1 && datosDelSuelto(V.suelto).solo_bateria === false);
+  A.presuSueltoChip('alcance', 'bateria');
   hs = vPresuNuevo();
   comprueba('solo batería: fuera paneles, consumo y montaje', V.suelto.solo_bateria === true && hs.indexOf('data-k="paneles"') < 0 && hs.indexOf('data-k="consumo"') < 0 && hs.indexOf('Cubierta') < 0 && hs.indexOf('data-k="por_fila"') < 0);
   comprueba('quedan el inversor que tiene, el suministro, la batería y el backup', hs.indexOf('Inversor que ya tiene') > -1 && hs.indexOf('Trifásico') > -1 && hs.indexOf('data-k="bateria"') > -1 && hs.indexOf('Huawei LUNA2000') > -1 && hs.indexOf('Con backup') > -1);
@@ -118,8 +118,46 @@ setTimeout(function () {
   V.suelto.bateria = '';
   comprueba('sin kWh sigue siendo con batería (el motor avisa de los kWh)', datosDelSuelto(V.suelto).baterias === 'si' && bateriaBaseFV().con === true && bateriaBaseFV().marca === 'huawei');
   comprueba('en las opciones no se puede quitar la batería', soloBateriaFV() === true);
-  A.presuSueltoChip('solo_bateria', '');
+  A.presuSueltoChip('alcance', 'completa');
   comprueba('y se vuelve a la instalación completa', V.suelto.solo_bateria === false && vPresuNuevo().indexOf('data-k="paneles"') > -1 && datosDelSuelto(V.suelto).baterias === 'no' && soloBateriaFV() === false);
+
+  titulo('fotovoltaica sin visita: solo paneles, y batería y paneles (26-11-2026)');
+  hs = vPresuNuevo();
+  comprueba('el alcance ofrece las cuatro cosas', ['completa', 'bateria', 'paneles', 'bateria_paneles'].every(function (v) { return hs.indexOf('data-k="alcance" data-v="' + v + '"') > -1; }) && hs.indexOf('Solo paneles') > -1 && hs.indexOf('Batería y paneles') > -1);
+  comprueba('de entrada no es solo paneles', datosDelSuelto(V.suelto).solo_paneles === false && soloPanelesFV() === false);
+  V.suelto.bateria = '10';   // lo que hubiera de batería de antes no cuenta
+  A.presuSueltoChip('alcance', 'paneles');
+  hs = vPresuNuevo();
+  comprueba('solo paneles: se piden los paneles, dónde van, cómo y los días de montaje', V.suelto.solo_paneles === true && V.suelto.solo_bateria === false && hs.indexOf('Paneles a añadir') > -1 && hs.indexOf('data-k="paneles"') > -1
+    && hs.indexOf('Dónde van') > -1 && hs.indexOf('Plana (lastres)') > -1 && hs.indexOf('Chapa / sándwich') > -1 && hs.indexOf('data-k="orientacion"') > -1 && hs.indexOf('data-k="por_fila"') > -1 && hs.indexOf('data-k="jornadas_amp"') > -1 && hs.indexOf('data-k="horas_elev"') > -1);
+  comprueba('fuera lo de una instalación nueva: consumo, inversor, batería, cables, cuadro y trámites', hs.indexOf('data-k="consumo"') < 0 && hs.indexOf('data-k="kwp"') < 0 && hs.indexOf('data-k="inversor"') < 0 && hs.indexOf('data-k="bateria"') < 0
+    && hs.indexOf('data-k="dist_dc"') < 0 && hs.indexOf('Cuadro general') < 0 && hs.indexOf('Excedentes') < 0 && hs.indexOf('data-k="cargador"') < 0);
+  comprueba('y dice lo que entra además', hs.indexOf('Pequeño material eléctrico de conexión') > -1);
+  V.suelto.paneles = '4'; A.presuSueltoChip('cubierta', 'teja_arabe');
+  hs = vPresuNuevo();
+  comprueba('con 4 paneles dice los kWp que se añaden y la jornada que sale', hs.indexOf('2,04 kWp más') > -1 && hs.indexOf('automático: 1') > -1 && hs.indexOf('anclajes químicos') > -1);
+  ds = datosDelSuelto(V.suelto);
+  igual('al motor: solo paneles, 4, en teja y sin batería aunque hubiera kWh escritos', ds.solo_paneles + '|' + ds.solo_bateria + '|' + ds.paneles_manual + '|' + ds.tipo_cubierta + '|' + ds.baterias + '|' + ds.baterias_kwh + '|' + ds.jornadas_montaje, 'true|false|4|teja_arabe|no|0|0');
+  comprueba('sin «paneles por fila» no se mandan filas (el motor cuenta una)', ds.filas_paneles.length === 0);
+  V.suelto.por_fila = '2'; V.suelto.jornadas_amp = '0,5';
+  ds = datosDelSuelto(V.suelto);
+  igual('con 2 por fila, dos filas de 2; y los días de montaje puestos a mano', ds.filas_paneles.map(function (x) { return x.paneles; }).join('+') + '|' + ds.jornadas_montaje, '2+2|0.5');
+  V.suelto.por_fila = ''; V.suelto.jornadas_amp = '';
+  A.presuSueltoChip('cubierta', 'plana_transitable');
+  comprueba('en plana: lastres y elevador', vPresuNuevo().indexOf('Lastres de hormigón Sun Ballast') > -1 && vPresuNuevo().indexOf('4 h de elevador') > -1);
+  A.presuSueltoChip('cubierta', 'chapa_sandwich');
+  comprueba('en chapa avisa de que sale de las reglas antiguas', vPresuNuevo().indexOf('reglas antiguas') > -1);
+  A.presuSueltoChip('cubierta', 'teja_arabe');
+  comprueba('sin batería: en las opciones del presupuesto no hay batería', bateriaBaseFV().con === false && soloPanelesFV() === true && soloBateriaFV() === false);
+  A.presuSueltoChip('alcance', 'bateria_paneles');
+  hs = vPresuNuevo();
+  comprueba('batería y paneles: los dos bloques, cada uno con su título', V.suelto.solo_bateria === true && V.suelto.solo_paneles === true && hs.indexOf('>Batería</div>') > -1 && hs.indexOf('>Paneles que se añaden</div>') > -1
+    && hs.indexOf('Inversor que ya tiene') > -1 && hs.indexOf('data-k="bateria"') > -1 && hs.indexOf('data-k="paneles"') > -1 && hs.indexOf('Dónde van') > -1);
+  ds = datosDelSuelto(V.suelto);
+  igual('al motor van las dos cosas, con la batería', ds.solo_paneles + '|' + ds.solo_bateria + '|' + ds.baterias + '|' + ds.baterias_kwh + '|' + ds.paneles_manual, 'true|true|si|10|4');
+  comprueba('y en las opciones sí hay batería', bateriaBaseFV().con === true && soloBateriaFV() === true && soloPanelesFV() === true);
+  A.presuSueltoChip('alcance', 'completa'); V.suelto.bateria = ''; V.suelto.paneles = '';
+  comprueba('de vuelta a la instalación completa', V.suelto.solo_bateria === false && V.suelto.solo_paneles === false && vPresuNuevo().indexOf('data-k="consumo"') > -1 && datosDelSuelto(V.suelto).solo_paneles === false);
   A.presuSueltoChip('backup', ''); A.presuSueltoChip('inversor', 'enphase');
 
   A.presuSueltoChip('cat', 'electricidad');
