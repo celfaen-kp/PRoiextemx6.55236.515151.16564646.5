@@ -701,7 +701,7 @@ Deno.serve(async (req) => {
   };
   const escV = (s: unknown) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] as string));
   // deno-lint-ignore no-explicit-any
-  const correoAvisoVencimiento = (p: any, nombre: string) => {
+  const correoAvisoVencimiento = (p: any, nombre: string, sePuedeResponder: boolean) => {
     const idioma = AVISO_TXT[String(p.idioma_cliente || '')] ? String(p.idioma_cliente) : 'es';
     const T = AVISO_TXT[idioma];
     const rell = (s: string, v: Record<string, string>) => s.replace(/\{(\w+)\}/g, (_m, k) => (v[k] == null ? '' : v[k]));
@@ -711,7 +711,7 @@ Deno.serve(async (req) => {
     const x = T[String(p.categoria || '')] || T.otro;
     const asunto = rell(T.asunto, { num, f });
     const q1 = rell(T.q1, { x }), recuerda = rell(T.recuerda, { d: detalle, f }), hola = rell(T.hola, { n: nombre });
-    const pie = (correoOficina ? T.responde : rell(T.llama, { tel: TEL })) + ' ' + T.precios;
+    const pie = (sePuedeResponder ? T.responde : rell(T.llama, { tel: TEL })) + ' ' + T.precios;
     const enlace = p.token_cliente ? enlaceFirma(p.token_cliente) : '';
     const botones: [string, string, string][] = enlace ? [
       [T.b_ver, enlace, 'background:#206028;color:#fff;border:2px solid #206028'],
@@ -744,11 +744,19 @@ Deno.serve(async (req) => {
     let asunto = '';
     // Un correo por presupuesto: cada uno lleva sus preguntas y sus botones, en su idioma.
     for (const p of lista) {
-      const m = correoAvisoVencimiento(p, nombre);
+      // Si el cliente contesta al correo en vez de usar los botones (Enzo, 26-11-2026: «si se manda
+      // del noreply, ¿cómo sabemos qué eligieron?»): la respuesta va al correo de la oficina si
+      // está puesto y, si no, a quien le envió el presupuesto, como en el correo de envío. Sin
+      // ninguno de los dos el correo no invita a responder: da el teléfono.
+      let responderA = correoOficina;
+      if (!responderA && p.enviado_cliente_por) {
+        try { const { data: quien } = await sb.from('empleados').select('email_avisos, activo').eq('id', p.enviado_cliente_por).maybeSingle(); if (quien && quien.activo !== false && esEmail(quien.email_avisos)) responderA = String(quien.email_avisos).trim(); } catch (_) { /* sin remitente conocido */ }
+      }
+      const m = correoAvisoVencimiento(p, nombre, !!responderA);
       if (!asunto) asunto = m.asunto;
       const r = await fetch('https://api.resend.com/emails', {
         method: 'POST', headers: { Authorization: 'Bearer ' + RESEND, 'Content-Type': 'application/json' },
-        body: JSON.stringify(Object.assign({ from: REMITENTE, to: [email], subject: m.asunto, text: m.texto, html: m.html }, correoOficina ? { reply_to: correoOficina } : {})),
+        body: JSON.stringify(Object.assign({ from: REMITENTE, to: [email], subject: m.asunto, text: m.texto, html: m.html }, responderA ? { reply_to: responderA } : {})),
       });
       if (!r.ok) throw new Error('Resend ' + String(r.status));
     }
@@ -763,7 +771,7 @@ Deno.serve(async (req) => {
   // --- aviso de vencimiento AL CLIENTE, a mano desde la app (6-11-2026) ---------
   if (presuVencimiento) {
     const { data: p, error: errP } = await sb.from('presupuestos')
-      .select('id, titulo, categoria, total_venta, enviado_cliente_at, validez_dias, prorroga_dias, respuesta_cliente, tl_numero, token_cliente, idioma_cliente, cliente:clientes_cache(id, nombre, email, telefono)')
+      .select('id, titulo, categoria, total_venta, enviado_cliente_at, validez_dias, prorroga_dias, respuesta_cliente, tl_numero, token_cliente, idioma_cliente, enviado_cliente_por, cliente:clientes_cache(id, nombre, email, telefono)')
       .eq('id', presuVencimiento).maybeSingle();
     if (errP) return json({ error: errP.message }, 500);
     if (!p) return json({ error: 'Ese presupuesto no existe.' }, 404);

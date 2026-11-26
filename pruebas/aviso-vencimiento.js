@@ -8,7 +8,7 @@
 var fnA = read(RUTA_TMP + '/recordatorio-citas.ts');
 var bloque = fnA.slice(fnA.indexOf('  const AVISO_TXT'), fnA.indexOf('  // deno-lint-ignore no-explicit-any\n  const avisarClienteVencimiento'));
 // Se le quitan los tipos a mano: es JavaScript plano con cuatro anotaciones.
-bloque = bloque.replace(/: Record<string, Record<string, string>>/, '').replace(/\(s: unknown\)/, '(s)').replace(/ as string\)\);/, '));').replace(/\(p: any, nombre: string\)/, '(p, nombre)')
+bloque = bloque.replace(/: Record<string, Record<string, string>>/, '').replace(/\(s: unknown\)/, '(s)').replace(/ as string\)\);/, '));').replace(/\(p: any, nombre: string, sePuedeResponder: boolean\)/, '(p, nombre, sePuedeResponder)')
   .replace(/\(s: string, v: Record<string, string>\)/, '(s, v)').replace(/const botones: \[string, string, string\]\[\] =/, 'const botones =').replace(/\/\/ deno-lint-ignore no-explicit-any\n/g, '');
 var hacer = new Function('ZONA', 'TEL', 'LOGO_URL', 'enlaceFirma', 'correoOficina', bloque + '\n return { AVISO_TXT: AVISO_TXT, correo: correoAvisoVencimiento };');
 var enlaceF = function (t) { return 'https://firma.sysefen.es/?t=' + t; };
@@ -27,8 +27,9 @@ igual('cuatro botones, y el verde dice solo «Ver el presupuesto»', botones.joi
   'https://firma.sysefen.es/?t=tok123 | Ver el presupuesto ## https://firma.sysefen.es/?t=tok123&amp;r=visita | Quiero una segunda visita ## https://firma.sysefen.es/?t=tok123&amp;r=tiempo | Sigo interesado, necesito más tiempo ## https://firma.sysefen.es/?t=tok123&amp;r=no | No voy a seguir adelante');
 comprueba('ya no dice «aceptar» en ningún botón', m.html.indexOf('Ver y aceptar') < 0);
 comprueba('en texto plano van también los cuatro enlaces', m.texto.indexOf('· Ver el presupuesto: https://firma.sysefen.es/?t=tok123\n') > -1 && m.texto.indexOf('&r=visita') > -1 && m.texto.indexOf('&r=tiempo') > -1 && m.texto.indexOf('&r=no') > -1);
-comprueba('sin correo de oficina puesto no invita a responder al correo (sale de noreply): da el teléfono', m.texto.indexOf('responder a este correo') < 0 && m.texto.indexOf('llámenos al +34 600 000 000') > -1);
-comprueba('con correo de oficina, sí invita a responder', AVof.correo(PV(), 'Marta').texto.indexOf('También puede responder a este correo') > -1);
+comprueba('si no hay a quién responder (sale de noreply) no invita a contestar al correo: da el teléfono', m.texto.indexOf('responder a este correo') < 0 && m.texto.indexOf('llámenos al +34 600 000 000') > -1);
+comprueba('si hay a quién responder, sí invita', AV.correo(PV(), 'Marta', true).texto.indexOf('También puede responder a este correo') > -1 && AV.correo(PV(), 'Marta', true).texto.indexOf('llámenos') < 0);
+comprueba('la respuesta al correo va a la oficina y, si no está puesta, a quien envió el presupuesto', fnA.indexOf('let responderA = correoOficina;') > 0 && fnA.indexOf("if (!responderA && p.enviado_cliente_por)") > 0 && fnA.indexOf("responderA ? { reply_to: responderA } : {}") > 0 && fnA.indexOf('idioma_cliente, enviado_cliente_por, cliente:clientes_cache') > 0);
 comprueba('avisa de que pasada la fecha pueden cambiar los precios', m.texto.indexOf('los precios pueden cambiar') > -1);
 
 titulo('sea de lo que sea');
@@ -53,7 +54,7 @@ titulo('sin enlace (enviado por otro lado) y con caracteres raros');
 var sin = AV.correo(PV({ token_cliente: null }), 'Marta');
 comprueba('sin enlace no hay botones, pero sí las preguntas y cómo contactar', sin.html.indexOf('<a href') < 0 && sin.texto.indexOf('1. ¿Sigue') > -1 && sin.texto.indexOf('llámenos') > -1 && sin.texto.indexOf('con un toque') < 0);
 comprueba('el título y el nombre van escapados en el HTML', AV.correo(PV({ titulo: 'Aire <b>x</b> & más' }), 'Ana <script>').html.indexOf('<script>') < 0 && AV.correo(PV({ titulo: 'Aire <b>x</b> & más' }), 'Ana').html.indexOf('Aire &lt;b&gt;x&lt;/b&gt; &amp; más') > -1);
-comprueba('la función lee el idioma del presupuesto y manda un correo por presupuesto', fnA.indexOf("token_cliente, idioma_cliente, cliente:clientes_cache") > 0 && fnA.indexOf('const m = correoAvisoVencimiento(p, nombre);') > 0);
+comprueba('la función lee el idioma del presupuesto y manda un correo por presupuesto', fnA.indexOf("token_cliente, idioma_cliente, enviado_cliente_por, cliente:clientes_cache") > 0 && fnA.indexOf('const m = correoAvisoVencimiento(p, nombre, !!responderA);') > 0);
 
 titulo('la página del cliente contesta');
 var pagA = read(RUTA_TMP + '/firmar.html'), fnP = read(RUTA_TMP + '/presupuesto-cliente.ts');
