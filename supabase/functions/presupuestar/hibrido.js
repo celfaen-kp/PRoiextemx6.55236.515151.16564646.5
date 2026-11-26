@@ -305,8 +305,9 @@ export function extrasSoloBateria(datos) {
 //     Ballast. En una sola línea, con su desglose por dentro. Chapa y pérgola no
 //     están en el modelo: salen de las reglas del capítulo 02, como en una
 //     instalación completa, con sus precios pendientes de confirmar;
-//   · el montaje: jornadas de la pareja al precio de venta del modelo
-//     (parametros.venta_jornada). Una jornada por cada 8 paneles
+//   · el montaje: jornadas de la pareja a 450 € (parametros.venta_jornada_ampliacion;
+//     no los 880 € de venta_jornada, que son los de una instalación completa).
+//     Una jornada por cada 8 paneles
 //     (parametros.paneles_por_jornada_extra, lo mismo que el modelo cuenta por
 //     cada 8 paneles de más en una instalación grande), o las que se pongan a mano;
 //   · el elevador, si hay horas apuntadas (en plana, las mínimas del modelo,
@@ -317,6 +318,7 @@ export function extrasSoloBateria(datos) {
 // =============================================================================
 export const SOLO_PANELES = { pequeno_material: 'SY-PEQUENO-MATERIAL-ELECTRICO-AMPLIACION-PANELES' };
 const SEC_PANELES = 'Ampliación de paneles';
+export const VENTA_JORNADA_AMPLIACION = 450;
 /** ¿Se añaden paneles a una instalación que ya existe? (la casilla de la ficha o del presupuesto sin visita) */
 export function esSoloPaneles(datos) { return !!datos && siHib(datos.solo_paneles); }
 /** Cuántos paneles se añaden: los puestos a mano o, en la visita, los que caben. */
@@ -400,7 +402,11 @@ export function presupuestarSoloPaneles(datos, mod, cfg) {
   // --- el montaje
   const jornadas = jornadasAmpliacion(n, modelo, datos.jornadas_montaje);
   const aMano = numHib(datos.jornadas_montaje) > 0;
-  const ventaJornada = numHib(P.venta_jornada) > 0 ? numHib(P.venta_jornada) : r2(conMargen(r.jornada));
+  // La jornada de solo paneles se vende a 450 € (Enzo, 26-11-2026: «la mano de obra al
+  // colocar solo paneles, que sea 450, no 880»), no a la de una instalación completa
+  // (venta_jornada). Va en el modelo, parametros.venta_jornada_ampliacion, y se cambia en
+  // Precios → Fotovoltaica; si el modelo no lo trae, 450.
+  const ventaJornada = numHib(P.venta_jornada_ampliacion) > 0 ? numHib(P.venta_jornada_ampliacion) : VENTA_JORNADA_AMPLIACION;
   lineas.push(linea({
     descripcion: 'Montaje de los paneles y conexión a la instalación existente',
     detalle_tecnico: 'Montaje por personal propio (oficial y ayudante): estructura, módulos, conexión al string existente y pruebas',

@@ -569,7 +569,7 @@ import * as idiomas from './presu-idiomas.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '34.3'; // versión visible de la app (única fuente)
+const APP_VERSION = '34.4'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -12146,7 +12146,7 @@ function camposSolarHTML(f) {
         <div class="grow"><div class="lbl">Horas de elevador</div>
           <input class="inp" data-f="presuCampo" data-k="horas_elev" value="${esc(String(f.horas_elev ?? ''))}" inputmode="decimal" placeholder="0" style="margin-top:8px"></div>
       </div>
-      <div class="tiny" style="margin-top:6px">Montaje: una jornada de la pareja por cada 8 paneles, a su precio de venta; pon otra cifra si no es esa (vale 0,5). El elevador se cobra aparte a 65 €/h.</div>
+      <div class="tiny" style="margin-top:6px">Montaje: una jornada de la pareja por cada 8 paneles, a 450 € la jornada (se cambia en Precios → Fotovoltaica); pon otros días si no son esos (vale 0,5). El elevador se cobra aparte a 65 €/h.</div>
       <div class="tiny" style="margin-top:14px">Entra también «Pequeño material eléctrico de conexión», uno por panel, a su precio del catálogo (se cambia en Precios).</div>`;
     return modo + `<div class="tiny" style="margin-top:8px">${intro}</div>` + bateria + paneles;
   }

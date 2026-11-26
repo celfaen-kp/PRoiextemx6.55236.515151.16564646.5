@@ -98,7 +98,7 @@ export function ponerRutaFV(datos, ruta, valor, opciones) {
 const NOMBRES_PARAM = {
   margen_obj: 'Margen objetivo sobre la venta (0,5 = 50 %)', redondeo: 'Redondeo del precio (múltiplos de)',
   venta_jornada: 'Mano de obra: venta de la jornada de la pareja', venta_documentacion: 'Documentación y legalización: precio de venta',
-  horas_documentacion: 'Documentación y legalización: horas de Xavi', venta_jornada_bateria: 'Jornada de batería (solo si no hay venta por jornada)',
+  horas_documentacion: 'Documentación y legalización: horas de Xavi', venta_jornada_bateria: 'Jornada de batería (solo si no hay venta por jornada)', venta_jornada_ampliacion: 'Solo paneles: venta de la jornada de la pareja',
   pvp_elev: 'Elevador: precio de venta por hora', horas_elev_plana: 'Elevador en cubierta plana: horas',
   eur_h: 'Coste de la hora de técnico y oficina', eur_h_oficial: 'Coste de la hora del oficial', eur_h_peon: 'Coste de la hora del peón',
   horas_jornada: 'Horas de una jornada', eur_km: 'Coste del kilómetro', vel_media: 'Velocidad media para los trayectos',
@@ -112,7 +112,7 @@ const NOMBRES_PARAM = {
   panel_vmp: 'Tensión Vmp del panel', panel_imp: 'Corriente Imp del panel', cdt_max_cc: 'Caída de tensión máxima en continua', conductividad_cu: 'Conductividad del cobre',
 };
 const GRUPOS_PARAM = [
-  ['Precios de venta y margen', ['margen_obj', 'redondeo', 'venta_jornada', 'venta_documentacion', 'horas_documentacion', 'venta_jornada_bateria', 'pvp_elev', 'horas_elev_plana', 'iva']],
+  ['Precios de venta y margen', ['margen_obj', 'redondeo', 'venta_jornada', 'venta_jornada_ampliacion', 'venta_documentacion', 'horas_documentacion', 'venta_jornada_bateria', 'pvp_elev', 'horas_elev_plana', 'iva']],
   ['Costes de personal y desplazamiento', ['eur_h', 'eur_h_oficial', 'eur_h_peon', 'horas_jornada', 'eur_km', 'vel_media']],
   ['Compras', ['coste_panel', 'portes_baywa', 'portes_rebacas', 'dto_rebacas', 'dto_saltoki', 'pct_peq']],
 ];
