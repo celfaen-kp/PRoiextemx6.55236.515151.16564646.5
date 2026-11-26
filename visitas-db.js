@@ -464,6 +464,12 @@ export async function presupuestarVisita(visitaId, categoria, opciones) {
     titulo: o.titulo || undefined,
     titulo_sufijo: o.tituloSufijo || undefined,   // presupuesto conjunto: «+ Aerotermia»
     observaciones: String(o.observaciones || '').trim() || undefined,   // la nota para el cliente (etapa 110)
+    // Cambiar los datos de uno guardado y recalcular (sql/etapa129, 26-11-2026): el estado de
+    // la pantalla viaja con el presupuesto, y lo calculado puede sustituir las líneas de uno
+    // que ya existe (reemplazar_id) o guardarse como nuevo apuntando a él (copia_de).
+    estado_app: o.estadoApp || undefined,
+    reemplazar_id: o.reemplazarId || undefined,
+    copia_de: o.copiaDe || undefined,
   });
 }
 
@@ -488,6 +494,12 @@ export async function presupuestarSuelto(categoria, datos, opciones) {
     // Etapa 110 (13-11-2026): el tipo escrito de un «otro» y la nota para el cliente.
     categoria_texto: String(o.categoriaTexto || '').trim() || undefined,
     observaciones: String(o.observaciones || '').trim() || undefined,
+    // Cambiar los datos de uno guardado y recalcular (sql/etapa129, 26-11-2026): el estado de
+    // la pantalla viaja con el presupuesto, y lo calculado puede sustituir las líneas de uno
+    // que ya existe (reemplazar_id) o guardarse como nuevo apuntando a él (copia_de).
+    estado_app: o.estadoApp || undefined,
+    reemplazar_id: o.reemplazarId || undefined,
+    copia_de: o.copiaDe || undefined,
   });
 }
 /** Un producto nuevo en el catálogo propio (27-10-2026), para usarlo ahora y en el futuro. */
@@ -643,7 +655,7 @@ export async function duplicarPresupuesto(id, { cliente_id, titulo, copia_de }) 
   const d = await verPresupuesto(id);
   const copia = (o, campos) => { const r = {}; campos.forEach((k) => { if (o[k] !== undefined) r[k] = o[k]; }); return r; };
   const fila = Object.assign(copia(d, ['categoria', 'categoria_texto', 'observaciones', 'conjunto_reglas_id', 'tarifa_id', 'motor_version', 'modelo_id', 'estimativo_min', 'estimativo_max', 'ratio_aplicado',
-    'total_bruto', 'total_dto_linea', 'dto_global_pct', 'total_coste', 'total_venta', 'confianza', 'validez_dias']),
+    'total_bruto', 'total_dto_linea', 'dto_global_pct', 'total_coste', 'total_venta', 'confianza', 'validez_dias', 'datos_motor']),
     { cliente_id, titulo: titulo || d.titulo || null, visita_id: null, ficha_id: null, estado: 'generado', sync_estado: 'pendiente' });
   // «Guardar como presupuesto nuevo» (24-11-2026): el nuevo apunta al que le dio origen (sql/etapa127).
   if (copia_de) fila.copia_de = copia_de;

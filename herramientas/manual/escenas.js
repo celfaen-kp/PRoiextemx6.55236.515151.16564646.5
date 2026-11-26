@@ -376,6 +376,9 @@
     'pres-presu-nuevo': () => { base('u5'); A.presuNuevo(); V.suelto.cat = 'aire_acondicionado'; V.suelto.cliente = 'Familia Gil'; V.suelto.equipos = 3; V.suelto.estancias = [{ m2: '', metros: '6', potencia: '25', exterior: '1' }, { m2: '', metros: '9', potencia: '25', exterior: '1' }, { m2: '30', metros: '4', potencia: '', exterior: '2' }]; },
     'pres-presu-nuevo-aire': () => { ESCENAS['pres-presu-nuevo'](); window.__scrollTxt = 'Equipos interiores'; },
     'pres-presu-solo-bateria': () => { base('u5'); A.presuNuevo(); V.suelto.cat = 'solar'; V.suelto.cliente = 'Familia Gil'; V.suelto.solo_bateria = true; V.suelto.inversor = 'huawei'; V.suelto.bateria = '10'; V.suelto.backup = true; window.__scrollTxt = 'Alcance'; },
+    // Cambiar los datos de un presupuesto guardado y recalcular (V34.3): la pantalla abierta con lo que tenía.
+    'pres-presu-cambiar-datos': () => { base('u5'); V.presuVer = { datos: { id: 'p-amp', categoria: 'solar', titulo: 'Familia Gil · Ampliación 4 paneles (2,04 kWp)', tl_numero: '912', tl_quotation_id: 'q1', visita_id: null, dto_global_pct: 0, motor_version: '1.5', cliente: { id: 'c1', nombre: 'Familia Gil' }, lineas: [],
+      datos_motor: { v: 1, origen: 'suelto', app: { suelto: Object.assign({}, { cat: 'solar', cliente: 'Familia Gil', solo_paneles: true, paneles: '4', cubierta: 'teja_arabe' }), extra: [], quitadas: [], ajustes: {}, dto: 0, fusion: [] } } } }; A.presuCambiarDatos(); },
     'pres-presu-solo-paneles': () => { base('u5'); A.presuNuevo(); V.suelto.cat = 'solar'; V.suelto.cliente = 'Familia Gil'; V.suelto.solo_paneles = true; V.suelto.paneles = '4'; V.suelto.cubierta = 'teja_arabe'; window.__scrollTxt = 'Alcance'; },
     // --- flujos paso a paso ------------------------------------------------------
     'jefe-parte-avance': () => { base('u1'); A.nuevoParte('o1'); V.draft.desc = 'Montaje de los últimos paneles y tirada del cableado de continua.'; V.draft.avance = { f11: 100, f12: 75 }; },

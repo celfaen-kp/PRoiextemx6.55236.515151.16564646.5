@@ -626,6 +626,29 @@ Deno.serve(async (req) => {
   }
   // Colaborador: solo con una visita o un cliente suyos (sin cliente, nada).
   if (!(await clienteDeColaborador(sb, yo, clienteId, visitaId))) return json({ error: SOLO_SUS_CLIENTES }, 403);
+  // Lo que recibe el motor, tal cual llega (de la ficha o de la pantalla): se guarda con
+  // el presupuesto para poder cambiar los datos y recalcular después (etapa 129).
+  const datosRecibidos = datos;
+
+  // --- cambiar los datos de uno ya guardado y recalcularlo (Enzo, 26-11-2026) ----
+  // «Cuando quiera modificar un presupuesto, que pueda hacerlo modificando datos del
+  // mismo y recalculando.» Con `reemplazar_id` y guardar, lo calculado no crea un
+  // presupuesto nuevo: sustituye las líneas del que ya existe, que conserva su número,
+  // su oferta de Teamleader, su envío y su enlace. Uno ya aceptado no se toca.
+  const reemplazarId = guardar ? uuid(b.reemplazar_id) : null;
+  // deno-lint-ignore no-explicit-any
+  let previo: any = null;
+  if (reemplazarId) {
+    const { data: pre } = await sb.from('presupuestos').select('id, categoria, cliente_id, visita_id, estado, respuesta_cliente, firmado_at, motor_version').eq('id', reemplazarId).maybeSingle();
+    if (!pre) return json({ error: 'El presupuesto que se iba a cambiar ya no existe.' }, 404);
+    if (!(await clienteDeColaborador(sb, yo, pre.cliente_id, pre.visita_id))) return json({ error: SOLO_SUS_CLIENTES }, 403);
+    if (pre.firmado_at || pre.respuesta_cliente === 'aceptado') return json({ error: 'Ese presupuesto ya lo aceptó el cliente: no se cambia. Guárdalo como presupuesto nuevo.', codigo: 'aceptado' }, 409);
+    if (String(pre.categoria) !== categoria) return json({ error: 'Ese presupuesto es de otro tipo de trabajo: guárdalo como presupuesto nuevo.', codigo: 'otra_categoria' }, 409);
+    if (pre.motor_version === 'teamleader') return json({ error: 'Ese presupuesto se hizo en Teamleader: no se recalcula desde aquí.', codigo: 'teamleader' }, 409);
+    previo = pre;
+  }
+  // «Guardar como presupuesto nuevo» desde uno que se estaba recalculando: apunta al que le dio origen.
+  const copiaDe = guardar && !reemplazarId ? uuid(b.copia_de) : null;
 
   // --- la configuración vigente ------------------------------------------------
   const { data: conjunto } = await sb.from('conjuntos_reglas')
@@ -1013,7 +1036,95 @@ Deno.serve(async (req) => {
   // Presupuesto conjunto (21-10-2026): «+ Aerotermia + Aire acondicionado» al final del título.
   const sufijo = String(b.titulo_sufijo || '').trim().slice(0, 80);
   if (sufijo) titulo = ((titulo || '') + ' + ' + sufijo).replace(/^ \+ /, '').slice(0, 200);
-  const { data: creado, error: errP } = await sb.from('presupuestos').insert({
+  // Los datos con los que se ha calculado (sql/etapa129): lo que recibió el motor y, si la
+  // app lo manda, el formulario y los retoques de la pantalla para volver a abrirla igual.
+  const pesa = (o: unknown) => { try { return JSON.stringify(o).length; } catch (_) { return Infinity; } };
+  const estadoApp = b.estado_app && typeof b.estado_app === 'object' && !Array.isArray(b.estado_app) && pesa(b.estado_app) <= 120000 ? b.estado_app : null;
+  const datosMotor = {
+    v: 1, origen: visitaId ? 'visita' : 'suelto', libre,
+    datos: !libre && datosRecibidos && pesa(datosRecibidos) <= 200000 ? datosRecibidos : null,
+    app: estadoApp, at: new Date().toISOString(), por: yo.id || null,
+  };
+  const hayErrores = res.incidencias.some((i: { nivel: string }) => i.nivel === 'error');
+  const estadoNuevo = hayErrores ? 'revisar' : 'generado';
+  const cuentas = {
+    conjunto_reglas_id: conjuntoId,
+    tarifa_id: tarifaId,
+    motor_version: motorVersion,
+    total_bruto: totales.total_bruto,
+    total_dto_linea: totales.total_dto_linea,
+    dto_global_pct: dtoGlobal,
+    total_venta: totales.total,
+    total_coste: coste.total,
+    confianza: res.incidencias.length ? (hayErrores ? 'baja' : 'media') : 'alta',
+  };
+  // Con qué modelo FV v2 se calculó (columna de la etapa 74; solo cuando lo hay).
+  const modeloId = modeloFV && (!soloBateria || soloPaneles) ? modeloFV.id : null;
+  const nota = String(b.observaciones || '').trim().slice(0, 4000);
+  // deno-lint-ignore no-explicit-any
+  const filasDe = (presupuestoId: string) => res.lineas.map((l: any, i: number) => ({
+    presupuesto_id: presupuestoId,
+    orden: l.orden || i + 1,
+    seccion: l.seccion || null,
+    producto_ref: l.producto_ref || null,
+    descripcion: l.descripcion,
+    detalle_tecnico: l.detalle_tecnico || null,
+    especificaciones: l.especificaciones || [],
+    cantidad: l.cantidad,
+    unidad: l.unidad || 'ud',
+    precio_tarifa: l.precio_tarifa,
+    precio_coste: l.precio_coste == null ? null : l.precio_coste,
+    dto_linea_pct: l.dto_linea_pct || 0,
+    precio_venta: totales.lineas[i].total,
+    iva: l.iva == null ? 21 : l.iva,
+    origen: l.origen || 'regla',
+    origen_regla_id: l.origen_regla_id || null,
+    origen_inputs: l.origen_inputs || null,
+    confirmada: l.confirmada !== false,
+  }));
+  // deno-lint-ignore no-explicit-any
+  const incidenciasDe = (presupuestoId: string) => res.incidencias.map((i: any) => ({
+    presupuesto_id: presupuestoId, nivel: i.nivel, codigo: i.codigo,
+    mensaje: i.mensaje, campo: i.campo || null,
+  }));
+
+  // --- sustituir las líneas de uno ya guardado ---------------------------------
+  if (previo) {
+    // Primero entran las líneas nuevas y solo entonces salen las de antes: si algo
+    // falla a medias, el presupuesto no se queda vacío.
+    const { data: viejas } = await sb.from('presupuesto_lineas').select('id').eq('presupuesto_id', previo.id);
+    const { data: incViejas } = await sb.from('presupuesto_incidencias').select('id').eq('presupuesto_id', previo.id);
+    if (res.lineas.length) {
+      const { error: errL } = await sb.from('presupuesto_lineas').insert(filasDe(previo.id));
+      if (errL) return json({ error: 'No se pudieron guardar las líneas nuevas; el presupuesto sigue como estaba: ' + errL.message }, 500);
+    }
+    // deno-lint-ignore no-explicit-any
+    const idsViejas = (viejas || []).map((x: any) => x.id);
+    if (idsViejas.length) {
+      const { error: errD } = await sb.from('presupuesto_lineas').delete().in('id', idsViejas);
+      if (errD) return json({ error: 'Las líneas nuevas están guardadas, pero no se pudieron quitar las de antes: revisa el presupuesto. ' + errD.message }, 500);
+    }
+    // deno-lint-ignore no-explicit-any
+    const idsInc = (incViejas || []).map((x: any) => x.id);
+    if (idsInc.length) await sb.from('presupuesto_incidencias').delete().in('id', idsInc);
+    if (res.incidencias.length) await sb.from('presupuesto_incidencias').insert(incidenciasDe(previo.id));
+    const { error: errU } = await sb.from('presupuestos').update(Object.assign({}, cuentas, {
+      titulo, modelo_id: modeloId, datos_motor: datosMotor,
+      // Revisado, enviado… se quedan como estaban; solo cambia entre «generado» y «revisar».
+      ...(['generado', 'revisar'].includes(String(previo.estado)) ? { estado: estadoNuevo } : {}),
+      ...(nota ? { observaciones: nota } : {}),
+    })).eq('id', previo.id);
+    if (errU) return json({ error: 'Las líneas están cambiadas, pero no la cabecera del presupuesto: ' + errU.message }, 500);
+    return json(Object.assign({ presupuesto_id: previo.id, estado: ['generado', 'revisar'].includes(String(previo.estado)) ? estadoNuevo : previo.estado, reemplazado: true }, salida));
+  }
+
+  // «Guardar como presupuesto nuevo»: sin nota propia, hereda la del original.
+  let notaHeredada = '';
+  if (copiaDe && !nota) {
+    const { data: orig } = await sb.from('presupuestos').select('observaciones').eq('id', copiaDe).maybeSingle();
+    notaHeredada = String(orig?.observaciones || '').trim().slice(0, 4000);
+  }
+  const { data: creado, error: errP } = await sb.from('presupuestos').insert(Object.assign({
     visita_id: visitaId,
     ficha_id: fichaId,
     cliente_id: clienteId,
@@ -1022,53 +1133,20 @@ Deno.serve(async (req) => {
     // Etapa 110 (13-11-2026): el tipo escrito a mano cuando la categoría es «otro»
     // y la nota para el cliente al final del presupuesto.
     ...(categoria === 'otro' && String(b.categoria_texto || '').trim() ? { categoria_texto: String(b.categoria_texto).trim().slice(0, 80) } : {}),
-    ...(String(b.observaciones || '').trim() ? { observaciones: String(b.observaciones).trim().slice(0, 4000) } : {}),
-    conjunto_reglas_id: conjuntoId,
-    tarifa_id: tarifaId,
-    motor_version: motorVersion,
-    // Con qué modelo FV v2 se calculó (columna de la etapa 74; solo cuando lo hay).
-    ...(modeloFV && (!soloBateria || soloPaneles) ? { modelo_id: modeloFV.id } : {}),
-    total_bruto: totales.total_bruto,
-    total_dto_linea: totales.total_dto_linea,
-    dto_global_pct: dtoGlobal,
-    total_venta: totales.total,
-    total_coste: coste.total,
-    estado: res.incidencias.some((i) => i.nivel === 'error') ? 'revisar' : 'generado',
-    confianza: res.incidencias.length ? (res.incidencias.some((i) => i.nivel === 'error') ? 'baja' : 'media') : 'alta',
-  }).select().single();
+    ...(nota || notaHeredada ? { observaciones: nota || notaHeredada } : {}),
+    ...(modeloId ? { modelo_id: modeloId } : {}),
+    ...(copiaDe ? { copia_de: copiaDe } : {}),
+    datos_motor: datosMotor,
+    estado: estadoNuevo,
+  }, cuentas)).select().single();
   if (errP) return json({ error: 'No se pudo guardar el presupuesto: ' + errP.message }, 500);
 
   if (res.lineas.length) {
-    const filas = res.lineas.map((l, i) => ({
-      presupuesto_id: creado.id,
-      orden: l.orden || i + 1,
-      seccion: l.seccion || null,
-      producto_ref: l.producto_ref || null,
-      descripcion: l.descripcion,
-      detalle_tecnico: l.detalle_tecnico || null,
-      especificaciones: l.especificaciones || [],
-      cantidad: l.cantidad,
-      unidad: l.unidad || 'ud',
-      precio_tarifa: l.precio_tarifa,
-      precio_coste: l.precio_coste == null ? null : l.precio_coste,
-      dto_linea_pct: l.dto_linea_pct || 0,
-      precio_venta: totales.lineas[i].total,
-      iva: l.iva == null ? 21 : l.iva,
-      origen: l.origen || 'regla',
-      origen_regla_id: l.origen_regla_id || null,
-      origen_inputs: l.origen_inputs || null,
-      confirmada: l.confirmada !== false,
-    }));
-    const { error: errL } = await sb.from('presupuesto_lineas').insert(filas);
+    const { error: errL } = await sb.from('presupuesto_lineas').insert(filasDe(creado.id));
     if (errL) return json({ error: 'El presupuesto se guardó pero sus líneas no: ' + errL.message }, 500);
   }
 
-  if (res.incidencias.length) {
-    await sb.from('presupuesto_incidencias').insert(res.incidencias.map((i) => ({
-      presupuesto_id: creado.id, nivel: i.nivel, codigo: i.codigo,
-      mensaje: i.mensaje, campo: i.campo || null,
-    })));
-  }
+  if (res.incidencias.length) await sb.from('presupuesto_incidencias').insert(incidenciasDe(creado.id));
 
   return json(Object.assign({ presupuesto_id: creado.id, estado: creado.estado }, salida));
 });

@@ -569,7 +569,7 @@ import * as idiomas from './presu-idiomas.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '34.2'; // versión visible de la app (única fuente)
+const APP_VERSION = '34.3'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -8093,6 +8093,7 @@ function presupuestoHTML(v, fichas) {
     <div class="row g8"><span class="lbl">Presupuesto</span><div class="grow"></div>
       ${d ? `<span class="tiny">reglas ${esc(d.conjunto_version || '')}</span>` : ''}</div>
     <div class="sub" style="margin-top:6px;font-size:13px">El motor propone a partir de la ficha; tú confirmas. Los precios salen de la tarifa cargada, no de la app.</div>
+    ${presuReemplazaHTML()}
 
     <div class="row g8" style="margin-top:14px;flex-wrap:wrap">
       ${cats.map((c) => { const activa = d && p.cat === c; const fusionada = !!(p.fusion || {})[c];
@@ -8313,7 +8314,7 @@ function presuPanelHTML() {
         <textarea class="inp" data-f="presuObs" rows="3" maxlength="4000" placeholder="Observaciones, plazos, lo que no incluye… Sale al final del presupuesto." style="margin-top:8px;font-size:14px">${esc(presuObsActual())}</textarea>
       </div>
 
-      <button class="btn btn-verde" data-a="presuGuardar" style="margin-top:16px" ${p.guardando ? 'disabled' : ''}>${p.guardando ? 'Guardando…' : p.guardado ? 'Guardar otra versión' : 'Guardar este presupuesto'}</button>
+      ${presuReemplaza() && !p.guardado ? presuGuardarReemplazoHTML(p) : `<button class="btn btn-verde" data-a="presuGuardar" style="margin-top:16px" ${p.guardando ? 'disabled' : ''}>${p.guardando ? 'Guardando…' : p.guardado ? 'Guardar otra versión' : 'Guardar este presupuesto'}</button>`}
       ${p.guardado ? `<div class="tiny" style="margin-top:8px;text-align:center">✓ Guardado en la app.${p.enTL ? '' : p.enviando ? ' Subiéndolo a Teamleader…' : ' Todavía no está en Teamleader.'}</div>
         ${p.enTL ? '<div class="tiny" style="margin-top:10px;text-align:center;color:var(--verde-o)">✓ Está en Teamleader, con su PDF</div>'
           : p.enviando ? '' : `${p.errTL ? `<div class="aviso-rojo" style="margin-top:10px"><span class="ex">!</span><span style="font:400 13px/1.4 var(--sans)">${esc(p.errTL)}</span></div>` : ''}
@@ -8692,10 +8693,95 @@ A.presuDto = (v) => {
 };
 A.presuRecalcular = () => { if (V.presu.cat) A.presuCalcular(V.presu.cat); };
 
-A.presuGuardar = async () => {
+/* ---------- cambiar los datos de un presupuesto guardado y recalcular (Enzo, 26-11-2026) ----------
+ * «Cuando quiera modificar un presupuesto, que pueda hacerlo modificando datos del
+ * mismo y recalculando, manteniendo los datos que se usaron en el motor.»
+ * Al guardar, la función deja en presupuestos.datos_motor (sql/etapa129) lo que recibió
+ * el motor y el estado de esta pantalla (el formulario, la opción, lo añadido, lo quitado,
+ * lo retocado y el descuento). Desde «Modificar», «Cambiar los datos y recalcular» vuelve
+ * a abrir la pantalla con todo eso; al guardar se elige: cambiar ese presupuesto (conserva
+ * su número, su oferta de Teamleader y su enlace) o guardarlo como presupuesto nuevo. */
+/** El estado de la pantalla que se guarda con el presupuesto. */
+function presuEstadoApp(p) {
+  const copia = (o) => { try { return JSON.parse(JSON.stringify(o == null ? null : o)); } catch (_) { return null; } };
+  return { v: 1, suelto: enSuelto() ? copia(V.suelto) : null, opcion: copia(p.opcion), extra: copia(p.extra) || [], quitadas: copia(p.quitadas) || [],
+    ajustes: copia(p.ajustes) || {}, dto: Number(p.dto) || 0, fusion: Object.keys(p.fusion || {}) };
+}
+/** El presupuesto guardado que se está recalculando, si la pantalla de ahora es la suya. */
+function presuReemplaza() {
+  const r = V.presu && V.presu.reemplaza; if (!r) return null;
+  if (enSuelto()) return r.suelto ? r : null;
+  const vv = V.visitaVer;
+  return !r.suelto && V.view === 'visita' && vv && vv.visita && vv.visita.id === r.visita_id && V.presu.cat === r.cat ? r : null;
+}
+/** ¿Se pueden cambiar los datos de este presupuesto guardado y recalcularlo? { ok, por } */
+function presuRecalculable(d) {
+  if (!d || d.motor_version === 'teamleader' || !(esPresupuestos() || esAdmin())) return { ok: false, por: '' };
+  if (d.visita_id) return { ok: true };
+  const dm = d.datos_motor && typeof d.datos_motor === 'object' ? d.datos_motor : null;
+  if (dm && dm.app && dm.app.suelto) return { ok: true };
+  return { ok: false, por: 'Este presupuesto se guardó antes de que la app apuntara sus datos (versión 34.3): se modifica línea a línea, aquí abajo.' };
+}
+A.presuCambiarDatos = async () => {
+  const v = V.presuVer, d = v && v.datos;
+  if (!presuRecalculable(d).ok) return;
+  const app = (d.datos_motor && d.datos_motor.app && typeof d.datos_motor.app === 'object' ? d.datos_motor.app : null) || {};
+  const lista = (x) => (Array.isArray(x) ? x : []);
+  V.presuEdit = null;
+  V.presu = { cat: null, cargando: false, error: null, datos: null, dto: Number(app.dto != null ? app.dto : d.dto_global_pct) || 0, extra: lista(app.extra), fusion: {}, quitadas: lista(app.quitadas),
+    ajustes: app.ajustes && typeof app.ajustes === 'object' ? app.ajustes : {}, guardando: false, buscar: '', buscando: false, resultados: [], guardado: null, opcion: app.opcion && typeof app.opcion === 'object' ? app.opcion : null,
+    // La nota para el cliente sigue siendo la suya.
+    observaciones: String(d.observaciones || ''), obsDe: d.visita_id || 'suelto',
+    reemplaza: { id: d.id, numero: d.tl_numero || '', titulo: d.titulo || '', suelto: !d.visita_id, visita_id: d.visita_id || null, cat: d.categoria, tl: !!d.tl_quotation_id,
+      enviado: !!(d.enviado_correo_at || d.enviado_cliente_at), aceptado: !!(d.firmado_at || d.respuesta_cliente === 'aceptado'), conjunto: lista(app.fusion) } };
+  if (!d.visita_id) {
+    V.suelto = Object.assign(presuNuevoVacio(), app.suelto || {}, { cat: d.categoria });
+    // El cliente es el que tiene hoy el presupuesto (se le pudo asignar después de guardarlo).
+    if (d.cliente && d.cliente.id) { V.suelto.clienteId = d.cliente.id; V.suelto.cliente = d.cliente.nombre || V.suelto.cliente || ''; }
+    V.view = 'presuNuevo'; scrollMemo.presuNuevo = 0; render();
+    if (!V.agenda.cargado) A.cargarAgenda();
+    return;
+  }
+  // Hecho desde una visita: sus datos son los de la ficha. Se abre la visita y se
+  // calcula con la opción que tenía; la ficha se cambia allí, como siempre.
+  recordarOrigen(); await abrirVisitaSinOrigen(d.visita_id);
+  if (V.view === 'visita' && V.visitaVer && fichaVisitaActual(d.categoria)) await A.presuCalcular(d.categoria);
+};
+/** Al modificar un presupuesto guardado: la puerta a cambiar sus datos y recalcular. */
+function presuCambiarDatosHTML(d) {
+  const rc = presuRecalculable(d);
+  if (!rc.ok) return rc.por ? `<div class="card"><div class="lbl">¿Cambian los datos?</div><div class="tiny" style="margin-top:6px">${esc(rc.por)}</div></div>` : '';
+  return `<div class="card"><div class="lbl">¿Cambian los datos?</div>
+    <div class="sub" style="margin-top:6px;font-size:13px">${d.visita_id ? 'Si cambia algo de la ficha de la visita (paneles, cubierta, potencia, estancias…), vuelve a calcularlo con el motor desde la visita.'
+      : 'Si cambia lo que se le preguntó al motor (paneles, cubierta, potencia, estancias…), vuelve a abrirlo con los datos que tenía, cámbialos y recalcula.'} Si solo es retocar una línea, hazlo aquí abajo. Lo que se retocó a mano después de guardarlo no se arrastra al recalcular.</div>
+    <button class="btn btn-verde" data-a="presuCambiarDatos" style="margin-top:12px">Cambiar los datos y recalcular</button></div>`;
+}
+/** El aviso de que se está recalculando uno guardado, con lo que pasará al guardar. */
+function presuReemplazaHTML() {
+  const r = presuReemplaza(); if (!r) return '';
+  const cual = r.numero ? 'el presupuesto nº ' + r.numero : 'un presupuesto guardado';
+  return `<div class="presu-coment" style="margin-top:12px"><b>Estás cambiando los datos de ${esc(cual)}</b>${r.titulo ? `<div class="tiny" style="margin-top:3px">${esc(r.titulo)}</div>` : ''}
+    <div class="tiny" style="margin-top:6px">${r.suelto ? 'Cambia lo que haga falta y pulsa Calcular.' : 'Los datos son los de la ficha de la visita: cámbiala con «Editar» y vuelve a calcular.'} Al guardar eliges si se cambia ese presupuesto o se guarda como uno nuevo.${r.conjunto && r.conjunto.length ? ' Era un presupuesto conjunto con ' + esc(r.conjunto.map((c) => nombreCat(c)).join(' y ')) + ': vuelve a sumarlo desde «Presupuesto conjunto».' : ''}</div></div>`;
+}
+/** Los botones de guardar mientras se recalcula uno guardado. */
+function presuGuardarReemplazoHTML(p) {
+  const r = presuReemplaza(); if (!r) return '';
+  const cual = r.numero ? 'el nº ' + r.numero : 'el presupuesto';
+  return `${r.aceptado ? '' : `<button class="btn btn-verde" data-a="presuGuardarReemplazo" style="margin-top:16px" ${p.guardando ? 'disabled' : ''}>${p.guardando === 'reemplazo' ? 'Guardando…' : 'Guardar cambios en ' + esc(cual)}</button>`}
+      <button class="btn ${r.aceptado ? 'btn-verde' : 'btn-gris'}" data-a="presuGuardarNuevoDatos" style="margin-top:${r.aceptado ? 16 : 8}px${r.aceptado ? '' : ';border-radius:99px'}" ${p.guardando ? 'disabled' : ''}>${p.guardando === 'nuevo' ? 'Creando el presupuesto nuevo…' : 'Guardar como presupuesto nuevo'}</button>
+      <div class="tiny" style="margin-top:8px">${r.aceptado ? 'El cliente ya aceptó ' + esc(cual) + ': no se cambia. Lo calculado se guarda como presupuesto nuevo y el aceptado sigue como está.'
+        : '«Guardar cambios» sustituye sus líneas por estas y le deja su número' + (r.tl ? ', su oferta de Teamleader (se actualiza)' : '') + ' y su enlace. «Guardar como presupuesto nuevo» lo deja como estaba.'
+          + (r.enviado ? ' Ese presupuesto ya se le envió al cliente: si lo cambias, vuelve a enviárselo.' : '')}</div>`;
+}
+A.presuGuardar = async (modo) => {
   const vv = V.visitaVer, p = V.presu, suelto = enSuelto();
   if ((!vv && !suelto) || !p.cat || p.guardando) return;
-  p.guardando = true; render();
+  // Recalculando uno guardado: 'reemplazo' cambia ese; 'nuevo' crea otro que apunta a él.
+  const rr = presuReemplaza();
+  const reemplazarId = rr && modo === 'reemplazo' && !rr.aceptado ? rr.id : undefined;
+  const copiaDe = rr && !reemplazarId ? rr.id : undefined;
+  const estadoApp = presuEstadoApp(p);
+  p.guardando = reemplazarId ? 'reemplazo' : (rr ? 'nuevo' : true); render();
   try {
     const ficha = suelto ? null : fichaVisitaActual(p.cat);
     const r = suelto
@@ -8703,6 +8789,7 @@ A.presuGuardar = async () => {
           guardar: true, dtoGlobalPct: p.dto, lineasExtra: extrasEnvio(p), lineasQuitar: p.quitadas, lineasAjustar: Object.values(p.ajustes || {}), tituloSufijo: sufijoFusion(p),
           clienteId: V.suelto.clienteId, titulo: tituloDelSuelto(), libre: enLibre(),
           categoriaTexto: p.cat === 'otro' ? String(V.suelto.cat_texto || '').trim() : undefined, observaciones: presuObsActual(),
+          estadoApp, reemplazarId, copiaDe,
         })
       : await visitasDB.presupuestarVisita(vv.visita.id, p.cat, {
           guardar: true, dtoGlobalPct: p.dto, lineasExtra: extrasEnvio(p), lineasQuitar: p.quitadas, lineasAjustar: Object.values(p.ajustes || {}), tituloSufijo: sufijoFusion(p),
@@ -8710,8 +8797,10 @@ A.presuGuardar = async () => {
           datos: p.opcion && ficha ? datosConOpcion(ficha.datos || {}) : undefined,
           fichaId: p.opcion && ficha ? ficha.id : undefined,
           titulo: undefined,
+          estadoApp, reemplazarId, copiaDe,
         });
     p.datos = r; p.guardado = r.presupuesto_id || null; p.enTL = false; p.errTL = null;
+    if (rr) p.reemplaza = null;   // hecho: lo siguiente que se guarde ya es otra versión
     fv2Local(p, r);
     // Desglose FV editado: si la función no lo guardó (versión antigua), se apunta en la línea desde aquí.
     if (p.guardado && Object.values(p.ajustes || {}).some((a) => a.fv2)) {
@@ -8720,11 +8809,23 @@ A.presuGuardar = async () => {
         for (const l of (d && d.lineas) || []) { const a = ajusteFv2De(p, l), oi = l.origen_inputs; if (!a || !oi || !oi.fv2 || oi.desglose_editado) continue; await visitasDB.guardarLineaPresupuesto(l.id, { origen_inputs: oiConFv2(oi, a.fv2) }); }
       } catch (err) { registrarError('fv2 desglose guardado', err); }
     }
-    toast(presuSueltoSinCliente() ? 'Presupuesto guardado. Sin cliente no se puede subir a Teamleader.' : 'Presupuesto guardado. Subiéndolo a Teamleader…');
+    toast(reemplazarId ? 'Presupuesto' + (rr.numero ? ' nº ' + rr.numero : '') + ' cambiado.' + (rr.tl ? ' Actualizando la oferta en Teamleader…' : '')
+      : copiaDe ? 'Presupuesto nuevo guardado. El anterior' + (rr.numero ? ' (nº ' + rr.numero + ')' : '') + ' sigue como estaba.'
+      : presuSueltoSinCliente() ? 'Presupuesto guardado. Sin cliente no se puede subir a Teamleader.' : 'Presupuesto guardado. Subiéndolo a Teamleader…');
     V.presuLista.cargado = false; A.cargarPresupuestos();
-    anotar(suelto ? V.suelto.clienteId : (vv.visita && vv.visita.cliente_id), 'presupuesto', 'Presupuesto de ' + (suelto ? tipoDelSuelto(V.suelto) : nombreCat(p.cat)) + sufijoOpcion() + ' creado' + (r && r.total_venta != null ? ' · ' + eur(r.total_venta) : ''));
+    anotar(suelto ? V.suelto.clienteId : (vv.visita && vv.visita.cliente_id), 'presupuesto', 'Presupuesto de ' + (suelto ? tipoDelSuelto(V.suelto) : nombreCat(p.cat)) + sufijoOpcion()
+      + (reemplazarId ? (rr.numero ? ' nº ' + rr.numero : '') + ' recalculado con otros datos' : copiaDe ? ' creado a partir del' + (rr.numero ? ' nº ' + rr.numero : ' anterior') + ', con otros datos' : ' creado')
+      + (r && r.totales && r.totales.total != null ? ' · ' + eur(r.totales.total) : r && r.total_venta != null ? ' · ' + eur(r.total_venta) : ''));
   } catch (e) { avisar('No se pudo guardar: ' + msgError(e)); p.guardando = false; render(); return; }
   p.guardando = false; render();
+  // Cambiado uno que ya tenía su oferta en Teamleader: se actualiza allí, no se crea otra.
+  if (reemplazarId && rr.tl) {
+    p.enviando = true; render();
+    try { await visitasDB.actualizarPresupuestoEnTeamleader(p.guardado); p.enTL = true; toast('Presupuesto cambiado, también en Teamleader.'); }
+    catch (err) { p.errTL = 'Cambiado en la app, pero no en Teamleader: ' + msgError(err); }
+    p.enviando = false; render();
+    return;
+  }
   // Guardado = a Teamleader, sin más botones. Menos si es un presupuesto suelto
   // sin cliente elegido (Enzo, 19-11-2026: «creo un presupuesto, le agrego el
   // cliente y dice que no se guardó en Teamleader»): la oportunidad del CRM
@@ -11877,11 +11978,12 @@ function vPresuNuevo() {
   const f = V.suelto || presuNuevoVacio(), p = V.presu;
   return `<div class="hdr-dark">
     ${volverHTML('<div class="back" data-a="ir" data-v="presupuestos">‹ Presupuestos</div>')}
-    <div style="font:600 27px/1.1 var(--cond)">Presupuesto nuevo</div>
-    <div class="sub" style="color:rgba(255,255,255,.5);margin-top:6px">Sin visita. Solo hacen falta cuatro datos.</div>
+    <div style="font:600 27px/1.1 var(--cond)">${presuReemplaza() ? 'Cambiar los datos' : 'Presupuesto nuevo'}</div>
+    <div class="sub" style="color:rgba(255,255,255,.5);margin-top:6px">${presuReemplaza() ? 'Los datos con los que se calculó. Cámbialos y vuelve a calcular.' : 'Sin visita. Solo hacen falta cuatro datos.'}</div>
   </div>
   <div class="scroll pad pb-nav">
-    <div class="card">
+    ${presuReemplazaHTML()}
+    <div class="card"${presuReemplaza() ? ' style="margin-top:12px"' : ''}>
       <div class="lbl">Para quién (opcional)</div>
       <input class="inp" data-f="presuCliente" value="${esc(f.cliente)}" placeholder="Nombre del cliente" autocomplete="off" style="margin-top:8px">
       <div id="presu-sugerencias">${presuSugerenciasHTML(f)}</div>
@@ -12891,7 +12993,7 @@ function vPresupuestoVer() {
   </div>
   <div class="scroll pad pb-nav">
     ${v.error ? `<div class="card" style="background:var(--rojo-cl)"><div class="sub" style="color:var(--rojo)">${esc(v.error)}</div></div>` : ''}
-    ${d && editando ? `<div class="card">${presuLineasEditHTML(d)}</div>` : ''}
+    ${d && editando ? `${presuCambiarDatosHTML(d)}<div class="card"${presuCambiarDatosHTML(d) ? ' style="margin-top:12px"' : ''}>${presuLineasEditHTML(d)}</div>` : ''}
     ${d && !editando ? `<div class="card">
       <div class="row g8" style="align-items:center;justify-content:space-between;margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid var(--l1)">
         <span style="font:500 14px var(--sans);${d.cliente ? '' : 'color:var(--ambar-o)'}">${d.cliente ? 'Cliente: <b>' + esc(d.cliente.nombre) + '</b>' : '⚠ Sin cliente'}</span>
@@ -16797,6 +16899,9 @@ document.addEventListener('click', (e) => {
   if (a === 'presuOpcionBateria') return A.presuOpcionBateria(d.m, null);
   if (a === 'presuRecalcular') return A.presuRecalcular();
   if (a === 'presuGuardar') return A.presuGuardar();
+  if (a === 'presuGuardarReemplazo') return A.presuGuardar('reemplazo');
+  if (a === 'presuGuardarNuevoDatos') return A.presuGuardar('nuevo');
+  if (a === 'presuCambiarDatos') return A.presuCambiarDatos();
   if (a === 'presuBuscar') return A.presuBuscar();
   if (a === 'presuAnadir') return A.presuAnadir(d.ref);
   if (a === 'presuAnadirConjunto') return A.presuAnadirConjunto(d.id);
