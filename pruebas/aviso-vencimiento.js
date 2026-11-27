@@ -135,6 +135,33 @@ setTimeout(function () {
       return A.presuEnviarRevisar();
     }).then(function () {
       comprueba('con mensaje, sigue a la confirmación', V.sheet.confirmar === true && avisos.length === 1);
+      // La copia, por defecto a quien lo envía (Enzo, 27-11-2026).
+      titulo('la copia va por defecto a quien envía el presupuesto');
+      empIdPorNombre['Fabrizio'] = 'e9';
+      empRows = [{ id: 'e9', nombre: 'Fabrizio', email: 'fabrizio@sysefen.app', email_avisos: ' comercial@ejemplo.es ' }];
+      igual('es su correo de avisos, sin espacios', miCorreoCopia('marta@ejemplo.es'), 'comercial@ejemplo.es');
+      igual('si el cliente es esa misma dirección, no se repite', miCorreoCopia('COMERCIAL@ejemplo.es'), '');
+      V.agenda.clientes = [{ id: 'c1', nombre: 'Marta Pons', email: 'marta@ejemplo.es' }];
+      V.presuVer = { datos: con({ cliente_id: 'c1' }), idioma: 'es' }; V.presuLista.cargado = true; V.presuLista.filas = [];
+      V.sheet = null;
+      return A.presuEnviarAbrir();
+    }).then(function () {
+      comprueba('al abrir la hoja, la copia ya trae el correo de quien envía', !!V.sheet && V.sheet.tipo === 'presuEnviar' && V.sheet.v.cc === 'comercial@ejemplo.es' && V.sheet.v.para === 'marta@ejemplo.es');
+      comprueba('y la hoja lo explica: se puede cambiar o borrar', sheet().indexOf('value="comercial@ejemplo.es"') > -1 && sheet().indexOf('Viene puesto tu correo') > -1);
+      empRows = [{ id: 'e9', nombre: 'Fabrizio', email: 'fabrizio@sysefen.app', email_avisos: null }];
+      igual('sin correo de avisos no se pone el de acceso, que es inventado', miCorreoCopia('marta@ejemplo.es'), '');
+      V.sheet = null;
+      return A.presuEnviarAbrir();
+    }).then(function () {
+      comprueba('sin correo de avisos la copia sale vacía y la hoja dice cómo ponerlo', V.sheet.v.cc === '' && sheet().indexOf('No tienes correo de avisos') > -1);
+      // Una hoja que se repinta no vuelve arriba (Enzo, 27-11-2026).
+      titulo('la hoja que se repinta se queda donde estaba');
+      var h1 = { tipo: 'fv2Desglose', modo: 'ajuste', items: [1, 2, 3] };
+      igual('quitar un renglón no cambia de hoja', hojaClave(h1), hojaClave({ tipo: 'fv2Desglose', modo: 'ajuste', items: [1, 2] }));
+      comprueba('otra hoja, u otro presupuesto, sí', hojaClave(h1) !== hojaClave({ tipo: 'presuEnviar' }) && hojaClave({ tipo: 'presuEnviar', id: 'p1' }) !== hojaClave({ tipo: 'presuEnviar', id: 'p2' }));
+      comprueba('pasar a confirmar empieza arriba', hojaClave({ tipo: 'presuEnviar', id: 'p1' }) !== hojaClave({ tipo: 'presuEnviar', id: 'p1', confirmar: true }));
+      var fuente = read(RUTA_TMP + '/app.js');
+      comprueba('render guarda dónde estaba la hoja antes de repintar y lo repone', fuente.indexOf("const hojaBajada = hojaVieja ? hojaVieja.scrollTop : null;") > -1 && fuente.indexOf('hoja.scrollTop = hojaBajada;') > -1 && fuente.indexOf('hojaPintada = hojaClaveAhora;') > -1);
       V.sheet = null;
       resultado();
     });

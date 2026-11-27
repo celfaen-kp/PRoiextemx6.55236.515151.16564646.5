@@ -323,7 +323,7 @@
     'pres-presu-ver': () => { base('u5'); V.view = 'presupuestoVer'; V.presuVer = { id: 'q2', cargando: false, datos: PRESU_VER, error: null }; V.presuEdit = null; },
     'pres-presu-enviar-btn': () => { base('u5'); V.view = 'presupuestoVer'; V.presuVer = { id: 'q2', cargando: false, datos: PRESU_REVISADO, error: null, facturas: [] }; window.__scrollTxt = 'Revisado · por enviar'; },
     'pres-presu-enviar': () => { ESCENAS['pres-presu-enviar-btn'](); window.__scrollA = 0;
-      V.sheet = { tipo: 'presuEnviar', id: 'q2', ids: ['q2'], otros: [], v: { para: 'familia.gil@correo.es', cc: '', asunto: '', mensaje: 'Hola Marta: te mando el presupuesto del aire del salón y el dormitorio, como hablamos. Cualquier duda, me llamas.', idioma: 'es' }, confirmar: false, busy: false, paso: '', trad: null }; },
+      V.sheet = { tipo: 'presuEnviar', id: 'q2', ids: ['q2'], otros: [], v: { para: 'familia.gil@correo.es', cc: 'ramon@sysefen.app', asunto: '', mensaje: 'Hola Marta: te mando el presupuesto del aire del salón y el dormitorio, como hablamos. Cualquier duda, me llamas.', idioma: 'es' }, confirmar: false, busy: false, paso: '', trad: null }; },
     'pres-presu-aceptado': () => { base('u5'); V.view = 'presupuestoVer'; V.presuVer = { id: 'q2', cargando: false, datos: PRESU_ACEPTADO, error: null, facturas: [FACTURAS[0]] }; window.__scrollTxt = '✓ Aceptado y firmado'; },
     // El cliente contesta desde su página (V34.0): pide cambios o rechaza, con su comentario.
     'pres-agenda-comentarios': () => { base('u5'); V.view = 'agenda';

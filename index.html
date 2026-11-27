@@ -569,7 +569,7 @@ import * as idiomas from './presu-idiomas.js';
 window.Sysefen = { supabase, auth: sysAuth, db: sysDB };
 
 const KEY = 'ch_v1';
-const APP_VERSION = '34.8'; // versión visible de la app (única fuente)
+const APP_VERSION = '34.9'; // versión visible de la app (única fuente)
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -4650,7 +4650,19 @@ function render() {
   // datos que cambiaron justo antes, como el usuario tras salir), que se
   // cierre solo en vez de dejar toda la pantalla congelada sin avisar.
   if (V.sheet) { try { html += sheet(); } catch (e) { V.sheet = null; } }
+  // Una hoja que se repinta (quitar un renglón, marcar una casilla) se queda donde
+  // estaba, sin volver arriba ni repetir la entrada (Enzo, 27-11-2026: «elimino un
+  // renglón, sube al inicio y debo bajar nuevamente»). Solo si es la misma hoja y
+  // el mismo paso: al abrir otra o pasar a confirmar, empieza arriba.
+  const hojaClaveAhora = V.sheet ? hojaClave(V.sheet) : null;
+  const hojaVieja = hojaClaveAhora && hojaClaveAhora === hojaPintada ? app.querySelector('.sheet>div') : null;
+  const hojaBajada = hojaVieja ? hojaVieja.scrollTop : null;
   app.innerHTML = html;
+  hojaPintada = hojaClaveAhora;
+  if (hojaBajada != null) {
+    const hoja = app.querySelector('.sheet>div');
+    if (hoja) { hoja.style.animation = 'none'; if (hoja.parentNode && hoja.parentNode.style) hoja.parentNode.style.animation = 'none'; hoja.scrollTop = hojaBajada; }
+  }
   escenasAnimar();
   if (V.view === 'p2') montarFirma();
   if (V.sheet && V.sheet.tipo === 'firmaPlanilla') montarFirmaPlanilla();
@@ -4716,6 +4728,9 @@ let actualizacionPendiente = false;
 let cartelActualizarFn = null;
 window.addEventListener('pagehide', () => { if (/^p[123]$/.test(V.view) && V.draft) guardarBorradorParte(); });
 const scrollMemo = {};
+// Qué hoja hay pintada y en qué paso, para saber si un repintado es «la misma».
+let hojaPintada = null;
+const hojaClave = (s) => [s.tipo, s.id || '', s.confirmar ? 'c' : '', s.modo || ''].join('|');
 document.addEventListener('scroll', (e) => {
   if (e.target.classList && (e.target.classList.contains('scroll') || e.target.classList.contains('hoja'))) scrollMemo[V.view] = e.target.scrollTop;
 }, true);
@@ -13048,14 +13063,22 @@ function vPresupuestoVer() {
 // respuesta del cliente, y los botones para marcar cada uno (sql/etapa64).
 const CAT_A_OBRA = { aerotermia: 'AE', solar: 'FV', aire_acondicionado: 'AC', electricidad: 'EL', otro: 'OT' };
 /* ---------- enviar el presupuesto al cliente por correo (Enzo, 27-10-2026) ---------- */
+// La copia va por defecto a quien lo envía (Enzo, 27-11-2026: «que esté predeterminado
+// el del mismo usuario que lo envía, así se le manda como copia»). Es su correo de
+// avisos: el de acceso es inventado (…@sysefen.app) y no recibe nada.
+const miCorreoCopia = (para) => {
+  const r = empRowById(miEmpId()); const c = String((r && r.email_avisos) || '').trim();
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(c) && c.toLowerCase() !== String(para || '').trim().toLowerCase() ? c : '';
+};
 A.presuEnviarAbrir = async () => {
   const d = V.presuVer && V.presuVer.datos; if (!d) return;
   if (!navigator.onLine) { avisar('Sin conexión.'); return; }
   const cli = d.cliente_id ? agCliente(d.cliente_id) : null;
   if (!V.presuLista.cargado) { try { await A.cargarPresupuestos(); } catch (_) { /* da igual */ } }
   const otros = (V.presuLista.filas || []).filter((p) => p.cliente_id && p.cliente_id === d.cliente_id && p.id !== d.id && (p.respuesta_cliente || 'pendiente') === 'pendiente');
+  const para = (cli && cli.email) || d.enviado_correo_a || '';
   V.sheet = { tipo: 'presuEnviar', id: d.id, ids: [d.id], otros,
-    v: { para: (cli && cli.email) || d.enviado_correo_a || '', cc: '', asunto: '', mensaje: '', idioma: idiomas.idiomaValido(V.presuVer.idioma) }, confirmar: false, busy: false, paso: '', trad: null };
+    v: { para, cc: miCorreoCopia(para), asunto: '', mensaje: '', idioma: idiomas.idiomaValido(V.presuVer.idioma) }, confirmar: false, busy: false, paso: '', trad: null };
   render();
 };
 A.presuEnviarCampo = (k, v) => { const s = V.sheet; if (s && s.tipo === 'presuEnviar') s.v[k] = v; };
@@ -16440,6 +16463,7 @@ function sheet() {
       ${v.idioma !== 'es' ? '<div class="tiny" style="margin-top:6px">Las líneas del presupuesto, tu asunto y tu mensaje se traducen al revisar; el texto fijo del correo va en ese idioma.</div>' : ''}
       <div class="lbl" style="margin:12px 0 6px">Para</div><input class="inp" data-f="pe:para" type="email" inputmode="email" autocapitalize="off" value="${esc(v.para)}" placeholder="cliente@correo.es">
       <div class="lbl" style="margin:12px 0 6px">Copia (opcional)</div><input class="inp" data-f="pe:cc" type="email" inputmode="email" autocapitalize="off" value="${esc(v.cc)}" placeholder="otro@correo.es">
+      <div class="tiny" style="margin-top:6px">${miCorreoCopia() ? 'Viene puesto tu correo, para que te llegue una copia de lo que recibe el cliente. Puedes cambiarlo o borrarlo.' : 'No tienes correo de avisos en tu ficha de empleado: si lo pones, aquí saldrá solo para que te llegue una copia.'}</div>
       <div class="lbl" style="margin:12px 0 6px">Asunto (opcional)</div><input class="inp" data-f="pe:asunto" value="${esc(v.asunto)}" placeholder="${esc((elegidos.length > 1 ? 'Sus presupuestos' : 'Su presupuesto') + ' de Sysefen')}">
       <div class="lbl" style="margin:12px 0 6px">Mensaje para el cliente</div><textarea class="inp" data-f="pe:mensaje" rows="7" placeholder="Escribe aquí el correo entero, empezando por el saludo: qué incluye cada opción, plazos, qué le recomiendas…">${esc(v.mensaje)}</textarea>
       <div class="tiny" style="margin-top:6px">El correo empieza por lo que escribas aquí: ya no lleva «Hola…, le enviamos el presupuesto» delante. Debajo van solos el presupuesto con su botón, el pie y tu firma.</div>
